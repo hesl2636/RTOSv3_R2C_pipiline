@@ -76,6 +76,17 @@ test('the default manifest has exactly four stages with one prompt step each', (
   assert.equal(allSteps(manifest).filter((step) => step.type === 'shell').length, 0);
 });
 
+test('the default manifest carries no stale path instructions', () => {
+  // taskFile is the authoritative body; the old inline prompt told the model to
+  // derive <插件根> from a bin/cli.js path that no longer exists.
+  const text = readFileSync(MANIFEST, 'utf8');
+  assert.doesNotMatch(text, /bin\/cli\.js/);
+  assert.doesNotMatch(text, /<插件根>/);
+  for (const step of allSteps(readManifest())) {
+    assert.ok(!('prompt' in step), `${step.id}: prompt body belongs in taskFile`);
+  }
+});
+
 test('every manifest skill reference is a real pack/skills directory', () => {
   const dirs = skillDirs();
   for (const step of allSteps(readManifest())) {
