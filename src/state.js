@@ -290,6 +290,63 @@ export function createRun({
 }
 
 /**
+ * Per-step transition times from the event log, keyed by step id. `state.json`
+ * does not carry times, so both the replay and the write path read them here;
+ * sharing this keeps every stage timestamp derivable exactly one way.
+ */
+function stepTransitionTimes(state, events) {
+  const known = new Set(state.steps.map((step) => step.id));
+  const started = new Map();
+  const completed = new Map();
+  for (const event of events) {
+    if (event?.kind !== 'step') continue;
+    const id = event.step?.id;
+    if (!id || !known.has(id)) continue;
+    const time = event.time ?? null;
+    if (event.event === 'started') {
+      started.set(id, time);
+    } else if (event.event === 'submitted' || event.event === 'completed') {
+      completed.set(id, time);
+    }
+  }
+  return { started, completed };
+}
+
+/**
+ * The single stage derivation shared by `replayDerived` and every write
+ * transaction. `fallbackTime` is the transition timestamp, used only when the
+ * caller has no event history to read the member timestamps from.
+ */
+function deriveStage(stage, members, times, fallbackTime = null) {
+  const firstStartedAt = members
+    .map((step) => times.started.get(step.id))
+    .find(Boolean) ?? fallbackTime;
+  const completedTimes = members.map((step) => times.completed.get(step.id)).filter(Boolean);
+  const lastCompletedAt = completedTimes.length > 0
+    ? completedTimes[completedTimes.length - 1]
+    : fallbackTime;
+  const allDone = members.length > 0
+    && members.every((step) => step.status === 'completed' || step.status === 'skipped');
+  const anyLive = members.some((step) => step.status === 'active' || step.status === 'failed');
+
+  if (allDone) {
+    return {
+      status: 'completed',
+      started_at: stage.started_at ?? firstStartedAt ?? null,
+      completed_at: stage.completed_at ?? lastCompletedAt ?? null,
+    };
+  }
+  if (anyLive) {
+    return {
+      status: 'active',
+      started_at: stage.started_at ?? firstStartedAt ?? null,
+      completed_at: null,
+    };
+  }
+  return { status: 'pending', started_at: null, completed_at: null };
+}
+
+/**
  * Replay events into the derived fields of state. Returns a repaired copy plus
  * the list of deeply changed derived fields (for diagnostics only).
  */
@@ -297,9 +354,6 @@ export function replayDerived(state, events) {
   const repaired = structuredClone(state);
   const stepById = new Map(repaired.steps.map((step) => [step.id, step]));
   const stepStatus = new Map(repaired.steps.map((step) => [step.id, 'pending']));
-  const stepStartedAt = new Map();
-  const stepCompletedAt = new Map();
-  const stageById = new Map(repaired.stages.map((stage) => [stage.id, stage]));
   let runStatus = 'pending';
   let currentStepId = null;
   let sessionId = repaired.session_id;
@@ -336,11 +390,9 @@ export function replayDerived(state, events) {
       if (!id || !stepById.has(id)) continue;
       if (event.event === 'started') {
         stepStatus.set(id, 'active');
-        stepStartedAt.set(id, time);
         currentStepId = id;
       } else if (event.event === 'submitted' || event.event === 'completed') {
         stepStatus.set(id, 'completed');
-        stepCompletedAt.set(id, time);
         if (currentStepId === id) currentStepId = null;
       } else if (event.event === 'failed') {
         stepStatus.set(id, 'failed');
@@ -356,36 +408,10 @@ export function replayDerived(state, events) {
     step.status = stepStatus.get(step.id) ?? step.status;
   }
 
+  const times = stepTransitionTimes(repaired, events);
   for (const stage of repaired.stages) {
     const members = repaired.steps.filter((step) => step.stage_id === stage.id);
-    const allDone = members.length > 0 && members.every(
-      (step) => step.status === 'completed' || step.status === 'skipped',
-    );
-    const anyLive = members.some(
-      (step) => step.status === 'active' || step.status === 'failed',
-    );
-    if (allDone) {
-      stage.status = 'completed';
-      if (stage.started_at === null) {
-        const first = members.map((step) => stepStartedAt.get(step.id)).find(Boolean);
-        stage.started_at = first ?? null;
-      }
-      if (stage.completed_at === null) {
-        const times = members.map((step) => stepCompletedAt.get(step.id)).filter(Boolean);
-        stage.completed_at = times.length > 0 ? times[times.length - 1] : null;
-      }
-    } else if (anyLive) {
-      stage.status = 'active';
-      if (stage.started_at === null) {
-        const first = members.map((step) => stepStartedAt.get(step.id)).find(Boolean);
-        stage.started_at = first ?? null;
-      }
-      stage.completed_at = null;
-    } else {
-      stage.status = 'pending';
-      stage.started_at = null;
-      stage.completed_at = null;
-    }
+    Object.assign(stage, deriveStage(stage, members, times));
   }
 
   repaired.status = runStatus;
@@ -394,6 +420,23 @@ export function replayDerived(state, events) {
   repaired.started_at = startedAt;
   repaired.completed_at = completedAt;
   return repaired;
+}
+
+/**
+ * Recompute one stage from its member steps exactly as `replayDerived` would.
+ * Callers append the transition event first and pass the event history (state
+ * alone carries no per-step times); `time` is the fallback for callers with no
+ * history to read.
+ */
+export function refreshStageFromSteps(state, stageId, time, events = null) {
+  const stage = state.stages.find((item) => item.id === stageId);
+  if (!stage) return null;
+  const members = state.steps.filter((step) => step.stage_id === stageId);
+  const times = events === null
+    ? { started: new Map(), completed: new Map() }
+    : stepTransitionTimes(state, events);
+  Object.assign(stage, deriveStage(stage, members, times, events === null ? time : null));
+  return stage;
 }
 
 function claimedRoutes(events) {

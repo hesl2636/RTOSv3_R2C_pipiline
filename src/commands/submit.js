@@ -19,6 +19,7 @@ import {
   appendEvent,
   loadRun,
   nowIso,
+  refreshStageFromSteps,
   resolveRunForSession,
   writeState,
 } from '../state.js';
@@ -117,7 +118,7 @@ export async function run(_argv, ctx) {
         EXIT_CODES.NO_ACTIVE_RUN,
       );
     }
-    return fn(locked.state);
+    return fn(locked.state, locked.events);
   });
 
   /** Revalidate the preflight step inside a lock and return its state object. */
@@ -184,16 +185,21 @@ export async function run(_argv, ctx) {
   }
 
   const preflightStepId = current.id;
-  writeTransaction((lockedState) => {
+  writeTransaction((lockedState, lockedEvents) => {
     const lockedCurrent = lockedCurrentStep(lockedState, preflightStepId);
     const time = nowIso(ctx.now());
     const eventStep = { id: lockedCurrent.id, name: lockedCurrent.name };
     const submitted = { kind: 'step', event: 'submitted', step: eventStep, time };
     if (typeof ctx.note === 'string' && ctx.note !== '') submitted.note = ctx.note;
     appendEvent(ctx.projectRoot, runId, submitted);
+    lockedEvents.push(submitted);
 
     lockedCurrent.status = 'completed';
+    // replayDerived clears the cursor on `submitted`; the stage timestamps come
+    // from the same shared derivation so the next loadRun finds no drift.
+    if (lockedState.current_step_id === lockedCurrent.id) lockedState.current_step_id = null;
     lockedState.updated_at = time;
+    refreshStageFromSteps(lockedState, lockedCurrent.stage_id, time, lockedEvents);
     writeState(ctx.projectRoot, runId, lockedState);
   });
 

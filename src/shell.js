@@ -9,7 +9,14 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { R2cError, EXIT_CODES } from './errors.js';
 import { flattenSteps } from './manifest.js';
-import { appendEvent, deactivateLatestRun, nowIso, writeState } from './state.js';
+import {
+  appendEvent,
+  deactivateLatestRun,
+  nowIso,
+  readEvents,
+  refreshStageFromSteps,
+  writeState,
+} from './state.js';
 
 /** Spec §3: gate commands default to 120s; shell steps fall back to the same. */
 export const DEFAULT_COMMAND_TIMEOUT_MS = 120_000;
@@ -137,26 +144,6 @@ function stateStepOf(state, step) {
   return stateStep;
 }
 
-function activateStage(state, stageId, time) {
-  const stage = state.stages.find((item) => item.id === stageId);
-  if (!stage) return;
-  stage.status = 'active';
-  if (stage.started_at === null) stage.started_at = time;
-}
-
-/** Derived stage completion; the run status itself is written by the caller. */
-function completeFinishedStages(state, time) {
-  for (const stage of state.stages) {
-    const members = state.steps.filter((step) => step.stage_id === stage.id);
-    if (members.length === 0) continue;
-    if (members.every((step) => step.status === 'completed' || step.status === 'skipped')) {
-      stage.status = 'completed';
-      if (stage.started_at === null) stage.started_at = time;
-      if (stage.completed_at === null) stage.completed_at = time;
-    }
-  }
-}
-
 function shellFailure(step, result, timeoutMs) {
   const details = {
     phase: 'shell',
@@ -211,14 +198,24 @@ export async function executeShellSteps({
 }) {
   const flat = flattenSteps(manifest);
   let latest = state;
+  const eventsNow = () => readEvents(projectRoot, runId) ?? [];
   const mutate = typeof transaction === 'function'
-    ? (fn) => transaction((current) => {
+    ? (fn) => transaction((current, events) => {
         latest = current;
-        return fn(current);
+        return fn(current, events ?? eventsNow());
       })
-    : (fn) => fn(latest);
+    : (fn) => fn(latest, eventsNow());
 
-  const prepare = (current, entry, entryIndex) => {
+  /**
+   * Append the event and keep the in-flight history in step with it: the stage
+   * refresh reads the same history `replayDerived` will read.
+   */
+  const emit = (events, event) => {
+    appendEvent(projectRoot, runId, event);
+    events.push(event);
+  };
+
+  const prepare = (current, entry, entryIndex, events) => {
     if (current.status !== 'running') {
       throw new R2cError(
         'NO_ACTIVE_RUN',
@@ -234,8 +231,10 @@ export async function executeShellSteps({
       current.current_step_id = null;
       current.completed_at = time;
       current.updated_at = time;
-      completeFinishedStages(current, time);
-      appendEvent(projectRoot, runId, { kind: 'run', event: 'completed', time });
+      emit(events, { kind: 'run', event: 'completed', time });
+      for (const stage of current.stages) {
+        refreshStageFromSteps(current, stage.id, time, events);
+      }
       writeState(projectRoot, runId, current);
       deactivateLatestRun(projectRoot, current.session_id, runId);
       return { kind: 'complete' };
@@ -247,17 +246,16 @@ export async function executeShellSteps({
     if (step.type !== 'shell') {
       if (stateStep.status !== 'active' || current.current_step_id !== stateStep.id) {
         const time = nowIso(now());
-        completeFinishedStages(current, time);
         stateStep.status = 'active';
         current.current_step_id = stateStep.id;
         current.updated_at = time;
-        activateStage(current, stateStep.stage_id, time);
-        appendEvent(projectRoot, runId, {
+        emit(events, {
           kind: 'step',
           event: 'started',
           step: { id: stateStep.id, name: stateStep.name },
           time,
         });
+        refreshStageFromSteps(current, stateStep.stage_id, time, events);
         writeState(projectRoot, runId, current);
       }
       return {
@@ -277,17 +275,16 @@ export async function executeShellSteps({
 
     if (stateStep.status !== 'active' || current.current_step_id !== stateStep.id) {
       const time = nowIso(now());
-      completeFinishedStages(current, time);
       stateStep.status = 'active';
       current.current_step_id = stateStep.id;
       current.updated_at = time;
-      activateStage(current, stateStep.stage_id, time);
-      appendEvent(projectRoot, runId, {
+      emit(events, {
         kind: 'step',
         event: 'started',
         step: { id: stateStep.id, name: stateStep.name },
         time,
       });
+      refreshStageFromSteps(current, stateStep.stage_id, time, events);
       writeState(projectRoot, runId, current);
     }
 
@@ -300,7 +297,7 @@ export async function executeShellSteps({
     };
   };
 
-  const record = (current, action, result) => {
+  const record = (current, action, result, events) => {
     const stateStep = stateStepOf(current, action.step);
     if (
       current.status !== 'running'
@@ -326,7 +323,7 @@ export async function executeShellSteps({
       stateStep.status = 'failed';
       current.status = 'paused';
       current.updated_at = time;
-      appendEvent(projectRoot, runId, {
+      emit(events, {
         kind: 'step',
         event: 'failed',
         step: { id: stateStep.id, name: stateStep.name },
@@ -335,7 +332,8 @@ export async function executeShellSteps({
         timed_out: result.timedOut,
         time,
       });
-      appendEvent(projectRoot, runId, { kind: 'run', event: 'paused', time });
+      emit(events, { kind: 'run', event: 'paused', time });
+      refreshStageFromSteps(current, stateStep.stage_id, time, events);
       writeState(projectRoot, runId, current);
       return { error: shellFailure(action.step, result, action.timeoutMs) };
     }
@@ -343,21 +341,21 @@ export async function executeShellSteps({
     stateStep.status = 'completed';
     if (current.current_step_id === stateStep.id) current.current_step_id = null;
     current.updated_at = time;
-    appendEvent(projectRoot, runId, {
+    emit(events, {
       kind: 'step',
       event: 'completed',
       step: { id: stateStep.id, name: stateStep.name },
       exit_code: result.exitCode,
       time,
     });
-    completeFinishedStages(current, time);
+    refreshStageFromSteps(current, stateStep.stage_id, time, events);
     writeState(projectRoot, runId, current);
     return { nextIndex: action.index + 1 };
   };
 
   let index = startIndex;
   for (;;) {
-    const action = mutate((current) => prepare(current, flat[index], index));
+    const action = mutate((current, events) => prepare(current, flat[index], index, events));
     if (action.kind === 'complete') return { step: null, state: latest };
     if (action.kind === 'deliver') return { step: action.step, state: latest };
 
@@ -366,7 +364,7 @@ export async function executeShellSteps({
       cwd: projectRoot,
       timeoutMs: action.timeoutMs,
     });
-    const outcome = mutate((current) => record(current, action, result));
+    const outcome = mutate((current, events) => record(current, action, result, events));
     if (outcome.error) throw outcome.error;
     index = outcome.nextIndex;
   }
