@@ -1,0 +1,83 @@
+{
+  "schema": "r2c.adapter-map/v1",
+  "entries": [
+    {
+      "from": "skills",
+      "to": "{project}/.opencode/skills",
+      "action": "link-root",
+      "scope": "project"
+    },
+    {
+      "from": "skills",
+      "to": "{user}/.config/opencode/skills",
+      "action": "link-root",
+      "scope": "user"
+    },
+    {
+      "from": "commands/r2c-*.md",
+      "to": "{project}/.opencode/commands/{stem}.md",
+      "action": "render",
+      "scope": "project"
+    },
+    {
+      "from": "commands/r2c-*.md",
+      "to": "{user}/.config/opencode/commands/{stem}.md",
+      "action": "render",
+      "scope": "user"
+    },
+    {
+      "from": "skills/*/SKILL.md",
+      "to": "{project}/.opencode/skills/{dir}/SKILL.md",
+      "action": "copy",
+      "scope": "project"
+    },
+    {
+      "from": "skills/*/SKILL.md",
+      "to": "{user}/.config/opencode/skills/{dir}/SKILL.md",
+      "action": "copy",
+      "scope": "user"
+    },
+    {
+      "from": "adapters/opencode/assets/plugins/r2c.ts",
+      "to": "{project}/.opencode/plugins/r2c.ts",
+      "action": "render",
+      "scope": "project"
+    },
+    {
+      "from": "adapters/opencode/assets/plugins/r2c.ts",
+      "to": "{user}/.config/opencode/plugins/r2c.ts",
+      "action": "render",
+      "scope": "user"
+    },
+    {
+      "from": "assets/agent.md.tpl",
+      "to": "{project}/.opencode/agents/r2c-{name}.md",
+      "action": "derive-agent",
+      "enabledBy": "capabilities.agents",
+      "scope": "project"
+    },
+    {
+      "from": "assets/agent.md.tpl",
+      "to": "{user}/.config/opencode/agents/r2c-{name}.md",
+      "action": "derive-agent",
+      "enabledBy": "capabilities.agents",
+      "scope": "user"
+    },
+    {
+      "from": "--mcp",
+      "to": "{project}/opencode.json",
+      "action": "merge-json",
+      "pointers": ["mcp"],
+      "scope": "project",
+      "optional": "mcp"
+    },
+    {
+      "from": "--mcp",
+      "to": "{user}/.config/opencode/opencode.json",
+      "action": "merge-json",
+      "pointers": ["mcp"],
+      "scope": "user",
+      "optional": "mcp"
+    }
+  ]
+}

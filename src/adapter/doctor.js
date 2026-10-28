@@ -121,6 +121,22 @@ export function doctorAdapter({ ctx, agentId, options }) {
     checks.push(check('agent.version', 'pass', detection.version));
   }
 
+  if (adapter?.capabilities?.stop === 'idle' && agentRange !== null) {
+    const pinned = detection.version !== null
+      && detection.version !== undefined
+      && isValidRange(agentRange)
+      && satisfies(detection.version, agentRange);
+    checks.push(
+      check(
+        'platform.pin',
+        pinned ? 'pass' : 'warn',
+        pinned
+          ? `${agentId} ${detection.version} satisfies the V1 pin ${agentRange}`
+          : `${agentId} ${detection.version ?? '(unknown)'} is outside the V1 pin ${agentRange}; A′ is unavailable, use B: r2c next --format plain`,
+      ),
+    );
+  }
+
   const engineRange = receipt.engine?.requires ?? receipt.requires?.engine ?? adapter?.requires?.engine ?? null;
   if (engineRange === null) {
     checks.push(check('engine.version', 'warn', 'receipt does not pin an engine range'));
@@ -147,7 +163,20 @@ export function doctorAdapter({ ctx, agentId, options }) {
 
   const carrier = adapter?.hooks?.stop?.carrier ?? null;
   const merged = carrier === null ? [] : carrierMerged(receipt, carrier);
-  if (carrier === null) {
+  const idlePlugin = adapter?.capabilities?.stop === 'idle'
+    ? (receipt.files ?? []).find((file) => /[\\/]plugins[\\/]r2c\.ts$/i.test(file.path)) ?? null
+    : null;
+  if (idlePlugin !== null) {
+    checks.push(
+      existsSync(idlePlugin.path)
+        ? check('hooks.wired', 'pass', `plugin carrier installed: ${idlePlugin.path}`)
+        : check('hooks.wired', 'fail', `plugin carrier missing: ${idlePlugin.path}`),
+    );
+  } else if (adapter?.capabilities?.stop === 'idle') {
+    checks.push(
+      check('hooks.wired', 'fail', `adapter requires the plugin carrier ${carrier} but the receipt records no plugin file`),
+    );
+  } else if (carrier === null) {
     checks.push(check('hooks.wired', 'pass', 'adapter declares no Stop carrier'));
   } else if (merged.length === 0) {
     checks.push(
@@ -163,7 +192,7 @@ export function doctorAdapter({ ctx, agentId, options }) {
   }
 
   const shim = shimPath(receipt);
-  if (merged.length === 0 || shim === null || !existsSync(shim)) {
+  if ((merged.length === 0 && idlePlugin === null) || shim === null || !existsSync(shim)) {
     checks.push(check('hooks.smoke', 'warn', 'no wired shim to smoke'));
   } else {
     const result = runShim(shim, agentId, { stdin: '{}' });
@@ -211,6 +240,14 @@ export function doctorAdapter({ ctx, agentId, options }) {
       receipt.plugin_activated === true
         ? check('plugin.activated', 'pass', 'dsh bundle reported active')
         : check('plugin.activated', 'fail', 'dsh bundle is not reported active'),
+    );
+  } else if (adapter?.capabilities?.stop === 'idle') {
+    checks.push(
+      check(
+        'plugin.loaded',
+        'warn',
+        `plugin load cannot be probed without a live ${agentId} session; installed file: ${idlePlugin?.path ?? '(none)'}. If it is not loaded, use B: r2c next --format plain`,
+      ),
     );
   } else {
     checks.push(check('plugin.activated', 'warn', `not applicable to ${agentId}`));
