@@ -53,6 +53,15 @@ function smokeAdapter({ ctx, agentId, options }) {
     found: result.result?.found ?? null,
     missing: result.result?.missing ?? [],
   };
+  if (!result.available) {
+    throw new R2cError(
+      'SMOKE_UNAVAILABLE',
+      `adapter ${agentId} has no smoke.mjs in its payload`,
+      { adapter: agentId, payload_home: receipt.payload_home },
+      EXIT_CODES.GATE,
+      data,
+    );
+  }
   if (result.available && !result.ok) {
     throw new R2cError(
       'SMOKE_FAILED',

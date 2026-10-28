@@ -250,7 +250,13 @@ export function buildPlan({
     }
 
     if (entry.action === 'merge-json') {
-      mergeEntries.push(buildMergeEntry({ entry, resolved, adapter, target: expandTarget(entry.to, scopeRoots), mcpAbsolute, warnings }));
+      const target = expandTarget(entry.to, scopeRoots);
+      const pointers = Array.isArray(entry.pointers) && entry.pointers.length > 0 ? entry.pointers : [null];
+      for (const pointer of pointers) {
+        mergeEntries.push(
+          buildMergeEntry({ entry, adapter, target, pointer, mcpAbsolute, warnings }),
+        );
+      }
       continue;
     }
 
@@ -334,22 +340,23 @@ export function buildPlan({
   }
   for (const entry of mergeEntries) entries.push(entry);
 
-  const seen = new Set();
+  const seen = new Map();
   for (const entry of entries) {
     const key = entry.target;
-    if (seen.has(key)) {
+    const previous = seen.get(key);
+    if (previous !== undefined && !(previous === 'merge-json' && entry.action === 'merge-json')) {
       throw usageError('MAP_TARGET_CONFLICT', `two map entries target the same path: ${key}`, {
         adapter: adapter.id,
         path: key,
       });
     }
-    seen.add(key);
+    seen.set(key, entry.action);
   }
 
   return { entries, warnings };
 }
 
-function buildMergeEntry({ entry, resolved, adapter, target, mcpAbsolute, warnings }) {
+function buildMergeEntry({ entry, adapter, target, pointer, mcpAbsolute, warnings }) {
   if (mcpAbsolute === null) {
     throw usageError('MCP_SOURCE_MISSING', `merge-json entry ${entry.from} needs --mcp <file>`, {
       adapter: adapter.id,
@@ -363,7 +370,6 @@ function buildMergeEntry({ entry, resolved, adapter, target, mcpAbsolute, warnin
       file: mcpAbsolute,
     });
   }
-  const pointer = Array.isArray(entry.pointers) && entry.pointers.length > 0 ? entry.pointers[0] : null;
   let values = {};
   if (pointer === null) {
     if (document === null || typeof document !== 'object' || Array.isArray(document)) {
