@@ -82,11 +82,11 @@ function envelope({ command = null, code, error = null, data = null, runId = nul
   };
 }
 
-function writeFailure({ json, command, code, errorCode, message, details = null, runId = null, sessionId = null, step = null }) {
+function writeFailure({ json, command, code, errorCode, message, details = null, data = null, runId = null, sessionId = null, step = null }) {
   const error = { code: errorCode, message, details };
   if (json) {
     process.stdout.write(
-      `${JSON.stringify(envelope({ command, code, error, runId, sessionId, step }))}\n`,
+      `${JSON.stringify(envelope({ command, code, error, data, runId, sessionId, step }))}\n`,
     );
   } else {
     process.stderr.write(`r2c: ${message}\n`);
@@ -304,6 +304,7 @@ export async function main(argv) {
         errorCode: error.code,
         message: error.message,
         details: error.details,
+        data: error.data ?? null,
         runId: error.runId ?? null,
         sessionId: error.sessionId ?? sessionId,
       });
