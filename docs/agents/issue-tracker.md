@@ -2,7 +2,7 @@
 
 Issues and specs for this repo live as GitHub issues in `hesl2636/RTOSv3_R2C_pipiline`.
 
-**Canonical**: GitHub issues. `.scratch/blue-zone-port/` holds a local snapshot of the wayfinder map created before the tracker was switched; do not treat it as a second source of truth.
+**Canonical**: GitHub issues. No local copy is kept in the repo: `.scratch/` is gitignored and the wayfinder map lives only in issue #1.
 
 ## Conventions
 
