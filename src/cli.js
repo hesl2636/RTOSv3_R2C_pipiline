@@ -40,7 +40,7 @@ Global options:
       --workflow ID       hook stop: only consider this workflow's runs.
 
 Adapter options:
-      --from DIR          Payload directory (unpacked payload or source checkout).
+      --from PATH         Payload directory or r2c-plugin-<V>.tgz archive.
       --scope SCOPE       project | user (default from adapter.json).
       --plugin VERSION    Payload version for cache lookup (default: engine).
       --mcp FILE          Merge mcpServers from FILE into the agent config.
