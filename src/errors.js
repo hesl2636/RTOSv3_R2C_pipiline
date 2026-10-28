@@ -15,12 +15,13 @@ export const EXIT_CODES = Object.freeze({
 });
 
 export class R2cError extends Error {
-  constructor(code, message, details = null, exitCode = EXIT_CODES.USAGE) {
+  constructor(code, message, details = null, exitCode = EXIT_CODES.USAGE, data = null) {
     super(message);
     this.name = 'R2cError';
     this.code = code;
     this.details = details;
     this.exitCode = exitCode;
+    this.data = data;
   }
 }
 

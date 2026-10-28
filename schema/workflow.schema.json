@@ -1,0 +1,178 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://r2c.runner/schema/workflow.schema.json",
+  "title": "r2c.workflow/v1",
+  "description": "Declarative workflow manifest (workflows/<name>.yaml). This file is the documented source of truth for the manifest shape; src/manifest.js implements the same rules by hand so the runner needs no JSON Schema runtime dependency. Every structural violation becomes an entry in errors[] as {path, code, message}.",
+  "$comment": "Semantic rules not expressible (or only partly expressible) in JSON Schema, all reported in one pass by src/manifest.js: stage ids unique among stages (DUPLICATE_STAGE_ID); step ids unique across the whole manifest (DUPLICATE_STEP_ID); taskFile must exist relative to the manifest root (TASKFILE_MISSING); expect.outputs entries must be syntactically valid globs (GLOB_INVALID) and must not target skills/** or any SKILL.md (OUTPUT_FORBIDDEN); a missing singular `skill` is a warning only (SKILL_MISSING) and never fails validation; `agent` is prompt metadata and is not validated; `stages` and each `steps` must be non-empty (EMPTY); prompt steps require non-empty prompt text or taskFile (PROMPT_SOURCE_MISSING); shell steps require shell and timeout (SHELL_REQUIRED, TIMEOUT_REQUIRED) and must not carry prompt/taskFile (PAYLOAD_CONFLICT); gate[].command must be non-empty (GATE_COMMAND_EMPTY).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "id", "name", "stages"],
+  "properties": {
+    "schema": {
+      "const": "r2c.workflow/v1",
+      "description": "Manifest schema revision. An unsupported value is MANIFEST_SCHEMA_UNSUPPORTED (exit 2)."
+    },
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Stable workflow id, recorded in state.json as workflow_id."
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Human-readable workflow name."
+    },
+    "version": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Workflow authoring version (independent of the runner package version)."
+    },
+    "description": {
+      "type": "string",
+      "description": "Optional free-form description."
+    },
+    "stages": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/stage" },
+      "description": "Ordered stages; every stage embeds its steps."
+    }
+  },
+  "$defs": {
+    "stage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "steps"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Unique among stages."
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "steps": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/step" }
+        }
+      }
+    },
+    "step": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "type"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Unique across the whole manifest; used by submit --step."
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "type": {
+          "enum": ["prompt", "shell"],
+          "description": "prompt steps are delivered to the agent; shell steps are executed by the runner under timeout."
+        },
+        "agent": {
+          "description": "Rendered into the prompt as the role hint only; never validated and never dispatched."
+        },
+        "skill": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Primary skill name; resolved as skills/<skill>/SKILL.md under the manifest root. Missing file warns (SKILL_MISSING) but does not fail."
+        },
+        "taskFile": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Prompt payload file path relative to the manifest root; must exist (TASKFILE_MISSING). Prompt steps only."
+        },
+        "prompt": {
+          "type": "string",
+          "description": "Inline prompt text. Prompt steps need this or taskFile."
+        },
+        "shell": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Command executed by the runner (never handed to the model). Shell steps only."
+        },
+        "timeout": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "description": "Seconds. Required for shell steps; optional elsewhere."
+        },
+        "input": {
+          "description": "Opaque step input passed through by the runner; not interpreted by validation."
+        },
+        "skills": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "description": "Skill whitelist rendered into the prompt."
+        },
+        "mcp": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "description": "MCP whitelist rendered into the prompt."
+        },
+        "subagent": {
+          "type": "boolean",
+          "description": "Rendered as a hint only; v1 never dispatches subagents."
+        },
+        "expect": { "$ref": "#/$defs/expect" },
+        "gate": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/gate" },
+          "description": "Run in order by submit; any non-zero exit refuses the submission."
+        }
+      },
+      "allOf": [
+        {
+          "if": { "required": ["type"], "properties": { "type": { "const": "prompt" } } },
+          "then": {
+            "anyOf": [{ "required": ["prompt"] }, { "required": ["taskFile"] }],
+            "not": { "required": ["shell"] }
+          }
+        },
+        {
+          "if": { "required": ["type"], "properties": { "type": { "const": "shell" } } },
+          "then": {
+            "required": ["shell", "timeout"],
+            "not": { "anyOf": [{ "required": ["prompt"] }, { "required": ["taskFile"] }] }
+          }
+        }
+      ]
+    },
+    "expect": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "outputs": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "description": "Globs (relative to the project root) that must exist before submit succeeds. Each item must be a syntactically valid glob (GLOB_INVALID) and must not target skills/** or any SKILL.md (OUTPUT_FORBIDDEN)."
+        }
+      }
+    },
+    "gate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["command"],
+      "properties": {
+        "command": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Shell command run by the runner with cwd = project root; empty is GATE_COMMAND_EMPTY."
+        },
+        "timeout": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "description": "Seconds; defaults to 120 when omitted."
+        }
+      }
+    }
+  }
+}
