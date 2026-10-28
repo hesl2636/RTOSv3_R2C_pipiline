@@ -1,15 +1,16 @@
 /**
- * `r2c submit`: the only regular state writer. It validates the step, calls the
- * gate seam, records `submitted`, completes the step, advances the cursor and
- * delivers the next step (or the completed banner on the last step).
+ * `r2c submit`: the only regular state writer. It validates the step, runs the
+ * machine gates (`expect.outputs` then `gate[]`), records `submitted`, then
+ * advances through any runner-executed shell steps to the next prompt step (or
+ * the completed banner at the end of the workflow).
  */
 import { R2cError, EXIT_CODES } from '../errors.js';
 import { checkGates } from '../gate.js';
 import { flattenSteps, loadManifest } from '../manifest.js';
 import { assertRenderableSteps, defaultRunnerCommand, renderCompleted, renderStep } from '../render.js';
+import { executeShellSteps } from '../shell.js';
 import {
   appendEvent,
-  deactivateLatestRun,
   nowIso,
   resolveRunForSession,
   writeState,
@@ -82,15 +83,29 @@ export async function run(_argv, ctx) {
   }
 
   const gate = await checkGates({
-    root: loadedManifest.root,
-    projectRoot: ctx.projectRoot,
-    manifest,
-    state,
     step: flat[currentIndex].step,
+    projectRoot: ctx.projectRoot,
   });
   if (!gate.ok) {
+    const time = nowIso(ctx.now());
+    current.retry_count += 1;
+    state.updated_at = time;
+    const rejection = {
+      kind: 'gate',
+      event: 'rejected',
+      step: { id: current.id, name: current.name },
+      phase: gate.phase,
+      code: gate.code ?? 'GATE_REJECTED',
+      time,
+    };
+    if (Array.isArray(gate.patterns)) rejection.patterns = gate.patterns;
+    if (typeof gate.command === 'string') rejection.command = gate.command;
+    if (gate.exitCode !== undefined && gate.exitCode !== null) rejection.exit_code = gate.exitCode;
+    if (gate.timedOut === true) rejection.timed_out = true;
+    appendEvent(ctx.projectRoot, runId, rejection);
+    writeState(ctx.projectRoot, runId, state);
     throw new R2cError(
-      'GATE_REJECTED',
+      gate.code ?? 'GATE_REJECTED',
       gate.message ?? 'gate rejected this submission',
       gate.details ?? null,
       EXIT_CODES.GATE,
@@ -106,81 +121,35 @@ export async function run(_argv, ctx) {
   current.status = 'completed';
   state.updated_at = time;
 
-  const currentStage = state.stages.find((stage) => stage.id === current.stage_id);
-  const stageSteps = state.steps.filter((step) => step.stage_id === current.stage_id);
-  if (stageSteps.every((step) => step.status === 'completed' || step.status === 'skipped')) {
-    currentStage.status = 'completed';
-    currentStage.completed_at = time;
-  }
-
-  const nextEntry = flat[currentIndex + 1];
   const runnerCmd = ctx.runnerCmd ?? defaultRunnerCommand(ctx.binPath);
+  const settled = await executeShellSteps({
+    manifest,
+    projectRoot: ctx.projectRoot,
+    state,
+    runId,
+    startIndex: currentIndex + 1,
+    now: ctx.now,
+  });
 
-  if (nextEntry) {
-    const nextStep = state.steps.find((step) => step.id === nextEntry.step.id);
-    if (!nextStep) {
-      throw new R2cError(
-        'STATE_INCONSISTENT',
-        `next step missing from state: ${nextEntry.step.id}`,
-        { step: nextEntry.step.id },
-        EXIT_CODES.INTERNAL,
-      );
-    }
-    nextStep.status = 'active';
-    state.current_step_id = nextStep.id;
-    state.status = 'running';
-    const nextStage = state.stages.find((stage) => stage.id === nextStep.stage_id);
-    nextStage.status = 'active';
-    if (nextStage.started_at === null) nextStage.started_at = time;
-
-    appendEvent(ctx.projectRoot, runId, {
-      kind: 'step',
-      event: 'started',
-      step: { id: nextStep.id, name: nextStep.name },
-      time,
-    });
-    writeState(ctx.projectRoot, runId, state);
-
-    const text = renderStep({
-      manifest,
-      root: loadedManifest.root,
-      stepId: nextStep.id,
-      runnerCmd,
-      sessionId: state.session_id,
-    });
-    return {
-      runId,
-      sessionId: state.session_id,
-      step: { id: nextStep.id, name: nextStep.name, status: nextStep.status },
-      text,
-      data: {
-        status: state.status,
-        current_step_id: state.current_step_id,
-        next_step: { id: nextStep.id, name: nextStep.name },
-        text,
-      },
-    };
-  }
-
-  state.status = 'completed';
-  state.current_step_id = null;
-  state.completed_at = time;
-  currentStage.status = 'completed';
-  if (currentStage.started_at === null) currentStage.started_at = time;
-  currentStage.completed_at = time;
-  appendEvent(ctx.projectRoot, runId, { kind: 'run', event: 'completed', time });
-  writeState(ctx.projectRoot, runId, state);
-  deactivateLatestRun(ctx.projectRoot, state.session_id, runId);
-
-  const text = renderCompleted(runId);
+  const nextStep = settled.step;
+  const text = nextStep === null
+    ? renderCompleted(runId)
+    : renderStep({
+        manifest,
+        root: loadedManifest.root,
+        stepId: nextStep.id,
+        runnerCmd,
+        sessionId: state.session_id,
+      });
   return {
     runId,
     sessionId: state.session_id,
-    step: null,
+    step: nextStep === null ? null : { id: nextStep.id, name: nextStep.name, status: nextStep.status },
     text,
     data: {
       status: state.status,
-      current_step_id: null,
+      current_step_id: state.current_step_id,
+      ...(nextStep === null ? {} : { next_step: { id: nextStep.id, name: nextStep.name } }),
       text,
     },
   };

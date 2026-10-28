@@ -1,11 +1,13 @@
 /**
- * `r2c run`: create a run from the discovered manifest, then deliver the first
- * step. When no session id is supplied the run mints `cli-<runId>`; an explicit
- * synthetic id is reserved and an explicit session with a live run is refused.
+ * `r2c run`: create a run from the discovered manifest, execute any leading
+ * shell steps, then deliver the first prompt step. When no session id is
+ * supplied the run mints `cli-<runId>`; an explicit synthetic id is reserved
+ * and an explicit session with a live run is refused.
  */
 import { R2cError, EXIT_CODES } from '../errors.js';
 import { loadManifest } from '../manifest.js';
-import { assertRenderableSteps, defaultRunnerCommand, renderStep } from '../render.js';
+import { assertRenderableSteps, defaultRunnerCommand, renderCompleted, renderStep } from '../render.js';
+import { executeShellSteps } from '../shell.js';
 import { createRun, hasRunningRun, isCliSessionId } from '../state.js';
 
 export async function run(_argv, ctx) {
@@ -40,18 +42,28 @@ export async function run(_argv, ctx) {
   });
 
   const runnerCmd = ctx.runnerCmd ?? defaultRunnerCommand(ctx.binPath);
-  const text = renderStep({
+  const settled = await executeShellSteps({
     manifest: loaded.data,
-    root: loaded.root,
-    stepId: created.state.current_step_id,
-    runnerCmd,
-    sessionId: created.sessionId,
+    projectRoot: ctx.projectRoot,
+    state: created.state,
+    runId: created.runId,
+    startIndex: 0,
+    now: ctx.now,
   });
-  const step = created.state.steps.find((item) => item.id === created.state.current_step_id);
+  const step = settled.step;
+  const text = step === null
+    ? renderCompleted(created.runId)
+    : renderStep({
+        manifest: loaded.data,
+        root: loaded.root,
+        stepId: step.id,
+        runnerCmd,
+        sessionId: created.sessionId,
+      });
   return {
     runId: created.runId,
     sessionId: created.sessionId,
-    step: { id: step.id, name: step.name, status: step.status },
+    step: step === null ? null : { id: step.id, name: step.name, status: step.status },
     text,
     data: {
       status: created.state.status,
