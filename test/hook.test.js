@@ -197,7 +197,9 @@ test('hook stop plain and json match next --format plain byte for byte after tri
 });
 
 test('hook stop no-ops with no sid, a cli sid or no routed run', (t) => {
-  const project = startRun(t);
+  // An explicit session produces no claimable cli run, so every case below is
+  // a pure no-op (claiming is covered by test/claim.test.js).
+  const project = startRun(t, ['--session-id', 'sid-explicit']);
   const before = snapshot(project.root);
 
   const runIds = readdirSync(join(project.root, '.r2c', 'runs')).filter((name) => name.startsWith('R'));

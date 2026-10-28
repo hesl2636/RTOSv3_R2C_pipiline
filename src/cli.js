@@ -37,6 +37,7 @@ Global options:
       --manifest FILE     Absolute workflow manifest path.
       --runner-cmd CMD    Prefix used in rendered Submit lines.
       --retry             resume: re-activate the current failed step.
+      --workflow ID       hook stop: only consider this workflow's runs.
 
 Adapter options:
       --from DIR          Payload directory (unpacked payload or source checkout).
@@ -68,6 +69,7 @@ const VALUE_OPTIONS = new Set([
   '--plugin',
   '--mcp',
   '--agent',
+  '--workflow',
 ]);
 
 const FLAG_OPTIONS = new Set([
@@ -154,6 +156,7 @@ function parseOptions(argv) {
     copy: false,
     link: false,
     provided: [],
+    workflow: null,
   };
   const positionals = [];
 
@@ -216,6 +219,7 @@ function parseOptions(argv) {
       else if (name === '--plugin') options.plugin = value;
       else if (name === '--mcp') options.mcp = value;
       else if (name === '--agent') options.agent = value;
+      else if (name === '--workflow') options.workflow = value;
       continue;
     }
     if (arg.startsWith('-') && arg !== '-') {
@@ -359,6 +363,7 @@ export async function main(argv) {
       note: options.note,
       json,
       format: options.format,
+      workflow: options.workflow,
       retry: options.retry,
       version: readVersion(),
       packageName: readPackageName(),
