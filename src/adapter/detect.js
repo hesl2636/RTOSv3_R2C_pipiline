@@ -8,7 +8,7 @@
  * token and leave interpretation to `requires.agent`.
  */
 import { spawnSync } from 'node:child_process';
-import { existsSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, statSync } from 'node:fs';
 import { delimiter, isAbsolute, join, resolve, sep } from 'node:path';
 import { userHome } from './util.js';
 
@@ -47,6 +47,70 @@ export function which(bin) {
     }
   }
   return null;
+}
+
+function expandEnvVars(value) {
+  let missing = false;
+  const text = value.replace(/%([^%]+)%/g, (_, name) => {
+    const replacement = process.env[name];
+    if (replacement === undefined || replacement === '') {
+      missing = true;
+      return '';
+    }
+    return replacement;
+  });
+  return { text, missing };
+}
+
+/**
+ * Expand a declarative binary glob such as
+ * `%LOCALAPPDATA%/OpenAI/Codex/bin/*\/codex.exe`, newest file first.
+ * Only `*` and `?` are supported; a missing environment variable means no hit.
+ */
+function globBinaries(pattern) {
+  const expanded = expandEnvVars(pattern);
+  if (expanded.missing) return [];
+  const normalized = expanded.text.replaceAll('\\', '/');
+  if (normalized === '' || normalized.includes('%')) return [];
+  const drive = /^[A-Za-z]:\//.exec(normalized);
+  const prefix = drive ? drive[0].slice(0, 2) : normalized.startsWith('/') ? '/' : '';
+  const parts = normalized.slice(prefix.length).split('/').filter(Boolean);
+  let candidates = [prefix];
+  for (const part of parts) {
+    const next = [];
+    for (const current of candidates) {
+      if (!part.includes('*') && !part.includes('?')) {
+        next.push(current === '' ? part : current.endsWith('/') ? `${current}${part}` : `${current}/${part}`);
+        continue;
+      }
+      let entries;
+      try {
+        entries = readdirSync(current === '' ? '.' : current);
+      } catch {
+        continue;
+      }
+      const escaped = part.replace(/[.+^${}()|[\]\\]/g, '\\$&');
+      const regex = new RegExp(
+        `^${escaped.replaceAll('*', '.*').replaceAll('?', '.')}$`,
+        process.platform === 'win32' ? 'i' : '',
+      );
+      for (const entry of entries) {
+        if (!regex.test(entry)) continue;
+        next.push(current === '' ? entry : current.endsWith('/') ? `${current}${entry}` : `${current}/${entry}`);
+      }
+    }
+    candidates = next;
+    if (candidates.length === 0) break;
+  }
+  return candidates
+    .filter((candidate) => {
+      try {
+        return statSync(candidate).isFile();
+      } catch {
+        return false;
+      }
+    })
+    .sort((left, right) => statSync(right).mtimeMs - statSync(left).mtimeMs);
 }
 
 function runCommand(bin, args) {
@@ -90,6 +154,42 @@ export function detectAgent(detect = {}) {
     if (outcome.ok && bin === null) {
       bin = resolved;
       version = outcome.version;
+    }
+  }
+
+  const versionArgs = Array.isArray(detect.versionArgs) ? detect.versionArgs : ['--version'];
+  for (const name of detect.envBins ?? []) {
+    const declared = process.env[name];
+    if (declared === undefined || declared === '') {
+      probes.push({ kind: 'env', name, ok: false, error: 'not set' });
+      continue;
+    }
+    const resolved = which(expandHome(declared));
+    if (resolved === null) {
+      probes.push({ kind: 'env', name, path: declared, ok: false, error: 'file not found' });
+      continue;
+    }
+    const outcome = runCommand(resolved, versionArgs);
+    probes.push({ kind: 'env', name, bin: resolved, ...outcome });
+    if (bin === null) {
+      bin = resolved;
+      version = outcome.ok ? outcome.version : null;
+    }
+  }
+
+  for (const pattern of detect.globBins ?? []) {
+    const matches = globBinaries(pattern);
+    if (matches.length === 0) {
+      probes.push({ kind: 'glob', pattern, ok: false, error: 'no match' });
+      continue;
+    }
+    for (const candidate of matches) {
+      const outcome = runCommand(candidate, versionArgs);
+      probes.push({ kind: 'glob', pattern, bin: candidate, ...outcome });
+      if (bin === null) {
+        bin = candidate;
+        version = outcome.ok ? outcome.version : null;
+      }
     }
   }
 

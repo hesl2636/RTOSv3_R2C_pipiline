@@ -6,7 +6,7 @@
  * one `fail` makes the command exit 3.
  */
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { EXIT_CODES, R2cError } from '../errors.js';
 import { isValidRange, satisfies } from '../version.js';
@@ -80,6 +80,96 @@ function runShim(shim, agentId, { stdin } = {}) {
   });
 }
 
+function pathKey(path) {
+  return process.platform === 'win32' ? path.toLowerCase() : path;
+}
+
+function carrierFile(adapter, scope, projectRoot) {
+  const carrier = adapter?.hooks?.stop?.carrier ?? null;
+  if (carrier === null) return null;
+  const root = scope === 'user' ? userHome() : projectRoot;
+  return join(root, ...carrier.split('/'));
+}
+
+function readCarrierHandlers(file) {
+  if (file === null || !existsSync(file)) return { document: null, handlers: [] };
+  let document;
+  try {
+    document = JSON.parse(readFileSync(file, 'utf8'));
+  } catch {
+    return { document: null, handlers: [], invalid: true };
+  }
+  const handlers = [];
+  for (const event of ['Stop', 'PreToolUse']) {
+    for (const group of document?.hooks?.[event] ?? []) {
+      for (const handler of group?.hooks ?? []) {
+        if (handler !== null && typeof handler === 'object') handlers.push({ event, handler });
+      }
+    }
+  }
+  return { document, handlers };
+}
+
+/**
+ * Run one configured hook command the way the agent will. On Windows the
+ * adapter renders a `.cmd` launcher and names it in `commandWindows`; the path
+ * stays unquoted here because the .cmd quotes node/shim internally and codex
+ * must not receive a quoted argument list.
+ */
+function runConfiguredHook(handler, cwd) {
+  const command = process.platform === 'win32'
+    ? handler.commandWindows ?? handler.command
+    : handler.command ?? handler.commandWindows;
+  if (typeof command !== 'string' || command === '') {
+    return { error: new Error('hook handler has no command'), status: null };
+  }
+  const isWin = process.platform === 'win32';
+  const shell = isWin ? process.env.ComSpec || 'cmd.exe' : '/bin/sh';
+  return spawnSync(shell, isWin ? ['/d', '/c', command] : ['-c', command], {
+    cwd,
+    encoding: 'utf8',
+    timeout: 30_000,
+    input: '{}',
+    windowsHide: true,
+  });
+}
+
+/** Hook-shaped child: same payload/cwd/env a real hook receives. */
+function probeHookSandboxWrite(projectRoot) {
+  const probe = join(projectRoot, '.r2c', `.doctor-probe-${process.pid}-${Date.now()}`);
+  const script = [
+    "const { mkdirSync, readFileSync, writeFileSync } = require('node:fs');",
+    "const { dirname } = require('node:path');",
+    "const input = JSON.parse(readFileSync(0, 'utf8') || '{}');",
+    "const target = input.tool_input && input.tool_input.file_path;",
+    'if (typeof target !== "string" || target === "") process.exit(3);',
+    'mkdirSync(dirname(target), { recursive: true });',
+    "writeFileSync(target, 'probe');",
+  ].join('\n');
+  const payload = {
+    session_id: `doctor-${process.pid}`,
+    cwd: projectRoot,
+    hook_event_name: 'PreToolUse',
+    tool_name: 'write',
+    tool_input: { file_path: probe },
+  };
+  const result = spawnSync(process.execPath, ['-e', script], {
+    cwd: projectRoot,
+    encoding: 'utf8',
+    timeout: 15_000,
+    input: JSON.stringify(payload),
+    windowsHide: true,
+  });
+  let written = false;
+  try {
+    written = readFileSync(probe, 'utf8') === 'probe';
+    unlinkSync(probe);
+  } catch {
+    written = false;
+  }
+  return { ok: result.status === 0 && written, result, probe };
+}
+
 export function doctorAdapter({ ctx, agentId, options }) {
   const requested = options.scope ?? null;
   let scope = requested;
@@ -113,8 +203,17 @@ export function doctorAdapter({ ctx, agentId, options }) {
   }
 
   const agentRange = receipt.requires?.agent ?? adapter?.requires?.agent ?? null;
+  const warnPrefix = adapter?.options?.warnVersionPrefix;
   if (detection.version === null || detection.version === undefined) {
     checks.push(check('agent.version', 'warn', 'agent version could not be determined'));
+  } else if (typeof warnPrefix === 'string' && warnPrefix !== '' && detection.version.startsWith(warnPrefix)) {
+    checks.push(
+      check(
+        'agent.version',
+        'warn',
+        `${detection.version}: ${adapter?.options?.warnVersionDetail ?? 'this build is not an acceptance baseline'}`,
+      ),
+    );
   } else if (agentRange !== null && isValidRange(agentRange) && !satisfies(detection.version, agentRange)) {
     checks.push(check('agent.version', 'warn', `${detection.version} is outside ${agentRange}`));
   } else {
@@ -147,23 +246,35 @@ export function doctorAdapter({ ctx, agentId, options }) {
 
   const carrier = adapter?.hooks?.stop?.carrier ?? null;
   const merged = carrier === null ? [] : carrierMerged(receipt, carrier);
+  const carrierPath = carrierFile(adapter, scope, ctx.projectRoot);
+  const renderedCarrier = carrierPath !== null
+    && (receipt.files ?? []).some((file) => pathKey(file.path) === pathKey(carrierPath));
+  const carrierState = readCarrierHandlers(carrierPath);
+  const wired = carrier !== null && (merged.length > 0 || renderedCarrier);
   if (carrier === null) {
     checks.push(check('hooks.wired', 'pass', 'adapter declares no Stop carrier'));
-  } else if (merged.length === 0) {
+  } else if (!wired) {
     checks.push(
       check('hooks.wired', 'warn', `hooks are declared (${carrier}) but this install does not wire them yet`),
     );
+  } else if (!existsSync(carrierPath)) {
+    checks.push(check('hooks.wired', 'fail', `carrier missing: ${carrierPath}`));
+  } else if (carrierState.invalid === true) {
+    checks.push(check('hooks.wired', 'fail', `carrier is not valid JSON: ${carrierPath}`));
+  } else if (carrierState.handlers.length === 0) {
+    checks.push(check('hooks.wired', 'fail', `carrier has no Stop/PreToolUse handlers: ${carrierPath}`));
   } else {
-    const carrierFile = join(scope === 'user' ? userHome() : ctx.projectRoot, ...carrier.split('/'));
     checks.push(
-      existsSync(carrierFile)
-        ? check('hooks.wired', 'pass', `${merged.length} merged entr(ies) in ${carrier}`)
-        : check('hooks.wired', 'fail', `carrier missing: ${carrierFile}`),
+      check(
+        'hooks.wired',
+        'pass',
+        `${carrierState.handlers.length} hook handler(s) in ${carrier}`,
+      ),
     );
   }
 
   const shim = shimPath(receipt);
-  if (merged.length === 0 || shim === null || !existsSync(shim)) {
+  if (!wired || shim === null || !existsSync(shim)) {
     checks.push(check('hooks.smoke', 'warn', 'no wired shim to smoke'));
   } else {
     const result = runShim(shim, agentId, { stdin: '{}' });
@@ -174,7 +285,23 @@ export function doctorAdapter({ ctx, agentId, options }) {
     );
   }
 
-  if (shim === null || !existsSync(shim)) {
+  if (!wired) {
+    checks.push(check('hooks.launch', 'warn', 'no wired hook carrier to launch'));
+  } else if (carrierState.handlers.length > 0) {
+    const stop = carrierState.handlers.find((entry) => entry.event === 'Stop') ?? carrierState.handlers[0];
+    const result = runConfiguredHook(stop.handler, ctx.projectRoot);
+    checks.push(
+      result.error
+        ? check('hooks.launch', 'fail', `configured hook could not be launched: ${result.error.message}`)
+        : result.status === 0
+          ? check('hooks.launch', 'pass', `${stop.event} launch command exited 0`)
+          : check(
+            'hooks.launch',
+            'fail',
+            `${stop.event} launch command exited ${result.status ?? 'signal'}: ${(result.stderr || '').trim()}`,
+          ),
+    );
+  } else if (shim === null || !existsSync(shim)) {
     checks.push(check('hooks.launch', 'warn', 'payload has no shims/hook.mjs yet'));
   } else {
     const result = runShim(shim, agentId, { stdin: '' });
@@ -186,21 +313,15 @@ export function doctorAdapter({ ctx, agentId, options }) {
   }
 
   if (['dsh', 'codex'].includes(agentId)) {
-    const probeDir = join(ctx.projectRoot, '.r2c', 'usage');
-    let writable = false;
-    try {
-      mkdirSync(probeDir, { recursive: true });
-      const probe = join(probeDir, `.doctor-probe-${process.pid}`);
-      writeFileSync(probe, 'probe');
-      unlinkSync(probe);
-      writable = true;
-    } catch {
-      writable = false;
-    }
+    const probe = probeHookSandboxWrite(ctx.projectRoot);
     checks.push(
-      writable
-        ? check('hooks.sandbox_write', 'pass', 'hook runtime can write project .r2c')
-        : check('hooks.sandbox_write', 'fail', 'hook runtime cannot write project .r2c'),
+      probe.ok
+        ? check('hooks.sandbox_write', 'pass', 'hook-shaped subprocess wrote project .r2c')
+        : check(
+          'hooks.sandbox_write',
+          'fail',
+          `hook-shaped subprocess could not write project .r2c: exit ${probe.result.status ?? 'signal'} ${(probe.result.stderr || '').trim()}`.trim(),
+        ),
     );
   } else {
     checks.push(check('hooks.sandbox_write', 'warn', `not applicable to ${agentId}`));
