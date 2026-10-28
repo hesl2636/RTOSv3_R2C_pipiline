@@ -1,0 +1,27 @@
+schema: r2c.workflow/v1
+id: workflow-two-step
+name: two-step
+version: 0.1.0
+description: 内核验收用两步清单
+stages:
+  - id: stg-one
+    name: 阶段一
+    steps:
+      - id: step-a
+        name: 第一步
+        type: prompt
+        agent: tester
+        taskFile: tasks/a.md
+        skills:
+          - alpha
+          - beta
+        mcp:
+          - mcp-demo
+  - id: stg-two
+    name: 阶段二
+    steps:
+      - id: step-b
+        name: 第二步
+        type: prompt
+        prompt: |
+          执行第二步（内联提示）。
