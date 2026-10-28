@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://r2c.runner/schema/usage.schema.json",
+  "title": "r2c.usage/v1",
+  "description": "One cumulative token snapshot per line in `.r2c/usage/<runId>.jsonl` (spec #7 §9.2). Lines are snapshots, never increments: `token-usage` keeps only the last line per (run_id, session_id).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "time",
+    "run_id",
+    "session_id",
+    "adapter",
+    "model",
+    "event",
+    "cumulative",
+    "usage",
+    "source"
+  ],
+  "properties": {
+    "schema": { "const": "r2c.usage/v1" },
+    "time": { "type": "string", "format": "date-time" },
+    "run_id": { "type": "string", "pattern": "^R[0-9]{8}T[0-9]{6}Z-[0-9a-f]{6}$" },
+    "session_id": { "type": ["string", "null"] },
+    "adapter": { "enum": ["claude-code", "codex", "dsh", "omp", "opencode"] },
+    "model": { "type": ["string", "null"] },
+    "event": { "enum": ["stop"] },
+    "cumulative": { "const": true },
+    "usage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "input_tokens",
+        "output_tokens",
+        "cache_read_tokens",
+        "cache_creation_tokens"
+      ],
+      "properties": {
+        "input_tokens": { "type": "number", "minimum": 0 },
+        "output_tokens": { "type": "number", "minimum": 0 },
+        "cache_read_tokens": { "type": "number", "minimum": 0 },
+        "cache_creation_tokens": { "type": "number", "minimum": 0 }
+      }
+    },
+    "source": { "enum": ["transcript", "hook"] }
+  }
+}
