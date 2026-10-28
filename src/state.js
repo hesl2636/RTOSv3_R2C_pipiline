@@ -22,6 +22,7 @@ import {
 import { basename, dirname, join } from 'node:path';
 import { R2cError, EXIT_CODES, isR2cError } from './errors.js';
 import { withLatestLock, withRunLock, withRunWriteLock } from './lock.js';
+import { SUPPORTED, isNewerSchema } from './schema.js';
 import {
   eventsPath,
   latestPath,
@@ -457,6 +458,16 @@ export function loadRun(
 ) {
   const state = readState(root, runId);
   if (!state) return null;
+  // A run written by a newer engine is readable by nobody here: refusing keeps
+  // this engine from repairing (and thereby downgrading) its state.
+  if (isNewerSchema('state', state.schema)) {
+    throw new R2cError(
+      'STATE_SCHEMA_NEWER',
+      `state schema is newer than this runner: ${state.schema}`,
+      { run_id: runId, schema: state.schema, supported: SUPPORTED.state },
+      EXIT_CODES.USAGE,
+    );
+  }
   const events = readEvents(root, runId);
   if (!repair || events === null) return { runId, state, events: events ?? [] };
 

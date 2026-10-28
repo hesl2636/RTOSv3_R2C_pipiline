@@ -451,6 +451,51 @@ test('--version prints exactly one line', () => {
   assert.equal(result.stderr, '');
 });
 
+test('an unsupported Node version exits 2 with NODE_UNSUPPORTED', (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'r2c-node-floor-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const preload = join(dir, 'node-floor.cjs');
+  writeFileSync(
+    preload,
+    "Object.defineProperty(process.versions, 'node', { value: '23.0.0' });\n",
+  );
+  const run = (args) => spawnSync(process.execPath, ['--require', preload, BIN, ...args], {
+    cwd: dir,
+    encoding: 'utf8',
+    env: cleanEnv(),
+  });
+
+  const plain = run(['--version']);
+  assert.equal(plain.status, 2, plain.stderr);
+  assert.equal(plain.stdout, '');
+  assert.match(plain.stderr, /unsupported Node\.js 23\.0\.0/);
+
+  const json = run(['status', '--json']);
+  assert.equal(json.status, 2, json.stderr);
+  const lines = json.stdout.trimEnd().split(/\r?\n/).filter(Boolean);
+  assert.equal(lines.length, 1, `expected one JSON line, got ${JSON.stringify(json.stdout)}`);
+  const envelope = JSON.parse(lines[0]);
+  assert.equal(envelope.ok, false);
+  assert.equal(envelope.error.code, 'NODE_UNSUPPORTED');
+});
+
+test('state from a newer schema exits 2 STATE_SCHEMA_NEWER without writes', (t) => {
+  const { root, runId, sessionId } = startRun(t);
+  const file = join(root, '.r2c', 'runs', runId, 'state.json');
+  const state = JSON.parse(readFileSync(file, 'utf8'));
+  state.schema = 'r2c.state/v2';
+  writeFileSync(file, `${JSON.stringify(state, null, 2)}\n`);
+  const before = readFileSync(file, 'utf8');
+
+  const result = cliJson(['status', '--project-root', root, '--session-id', sessionId], {
+    cwd: root,
+  });
+  assert.equal(result.result.status, 2);
+  assert.equal(result.envelope.error.code, 'STATE_SCHEMA_NEWER');
+  assert.equal(result.envelope.error.details.schema, 'r2c.state/v2');
+  assert.equal(readFileSync(file, 'utf8'), before, 'state must not be repaired or downgraded');
+});
+
 test('unknown commands and options exit 2 with stable error codes', () => {
   const unknown = cliJson(['nope']);
   assert.equal(unknown.result.status, 2);

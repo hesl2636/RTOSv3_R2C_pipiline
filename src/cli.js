@@ -110,6 +110,20 @@ function isSupportedNode(version) {
 }
 
 /**
+ * `--json` detection before the node floor rejects the process.
+ *
+ * The floor check runs before argv parsing (an unsupported node must fail
+ * before any command work), so it cannot rely on the parsed options. It only
+ * needs the two spellings `--json` accepts.
+ */
+function jsonRequested(argv) {
+  return argv.includes('--json')
+    || argv.some(
+      (arg, index) => arg === '--format=json' || (arg === '--format' && argv[index + 1] === 'json'),
+    );
+}
+
+/**
  * The unified JSON envelope. Every `--json` response is exactly this shape and
  * exactly one line on stdout.
  */
@@ -274,10 +288,14 @@ function readHookInput(command) {
 
 export async function main(argv) {
   if (!isSupportedNode(process.versions.node)) {
-    process.stderr.write(
-      `r2c: unsupported Node.js ${process.versions.node}; r2c-runner requires ${NODE_RANGE}\n`,
-    );
-    process.exitCode = EXIT_INTERNAL;
+    writeFailure({
+      json: jsonRequested(argv),
+      command: null,
+      code: EXIT_USAGE,
+      errorCode: 'NODE_UNSUPPORTED',
+      message: `unsupported Node.js ${process.versions.node}; r2c-runner requires ${NODE_RANGE}`,
+      details: { node: process.versions.node, required: NODE_RANGE },
+    });
     return;
   }
 
