@@ -213,7 +213,7 @@ test('release gates tag==version, builds, checksums, drafts two assets, then pub
 });
 
 test('npm pack ships exactly package.json plus the files whitelist', () => {
-  const actual = npmPack();
+  const packed = npmPack();
   const tracked = trackedFiles();
   const expected = ['package.json'];
   for (const entry of pkg.files) {
@@ -225,8 +225,13 @@ test('npm pack ships exactly package.json plus the files whitelist', () => {
   }
   expected.sort();
 
-  assert.deepEqual(actual, expected);
-  for (const file of actual) {
+  // Compare only tracked paths: a stray untracked file in a developer checkout
+  // must not turn this contract test red (CI runs on a clean checkout anyway).
+  const packedTracked = packed.filter(
+    (file) => file === 'package.json' || tracked.includes(file),
+  );
+  assert.deepEqual(packedTracked, expected);
+  for (const file of packed) {
     assert.equal(FORBIDDEN.some((prefix) => file.startsWith(prefix)), false, `${file} must not be packed`);
   }
 });

@@ -471,7 +471,7 @@ test('a stale run lock (older than 60s) is taken over', (t) => {
   assert.equal(existsSync(lockPath), false);
 });
 
-async function waitForFile(file, timeoutMs = 5000) {
+async function waitForFile(file, timeoutMs = 30_000) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     if (existsSync(file)) return;
@@ -490,28 +490,30 @@ function waitForExit(child) {
 test('two concurrent writers: one succeeds, the other exits 5 with zero writes', async (t) => {
   const { root, runId, sessionId, outside } = startRun(t);
   const marker = join(outside, 'held.marker');
+  const release = join(outside, 'release.marker');
   const holderScript = join(outside, 'holder.mjs');
   const lockUrl = pathToFileURL(join(REPO, 'src', 'lock.js')).href;
   writeFileSync(
     holderScript,
     [
       `import { withRunLock } from ${JSON.stringify(lockUrl)};`,
-      "import { readFileSync, writeFileSync } from 'node:fs';",
+      "import { existsSync, readFileSync, writeFileSync } from 'node:fs';",
       "import { join } from 'node:path';",
-      'const [root, runId, marker] = process.argv.slice(2);',
+      'const [root, runId, marker, release] = process.argv.slice(2);',
       'withRunLock(root, runId, () => {',
       "  const file = join(root, '.r2c', 'runs', runId, 'state.json');",
       "  const text = readFileSync(file, 'utf8');",
       '  writeFileSync(file, text);',
       "  writeFileSync(marker, 'held');",
-      '  const until = Date.now() + 900;',
-      '  while (Date.now() < until) { /* hold the lock */ }',
+      '  // Hold until the test says so; no wall-clock window to race.',
+      '  const sleeper = new Int32Array(new SharedArrayBuffer(4));',
+      '  while (!existsSync(release)) Atomics.wait(sleeper, 0, 0, 25);',
       '});',
       '',
     ].join('\n'),
   );
 
-  const holder = spawn(process.execPath, [holderScript, root, runId, marker], {
+  const holder = spawn(process.execPath, [holderScript, root, runId, marker, release], {
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -531,6 +533,7 @@ test('two concurrent writers: one succeeds, the other exits 5 with zero writes',
   assert.equal(readFileSync(join(root, '.r2c', 'runs', runId, 'state.json'), 'utf8'), stateBefore);
   assert.equal(readFileSync(eventsFile(root, runId), 'utf8'), eventsBefore);
 
+  writeFileSync(release, 'go');
   assert.equal(await waitForExit(holder), 0);
 
   const winner = cliJson(

@@ -200,10 +200,12 @@ test('a held install lock exits 5', (t) => {
 test('--keep retains the sandbox and --json stays one line', (t) => {
   const home = tempDir(t, 'keep-home');
   const result = cli(['acceptance', '--keep', '--json'], { env: cleanEnv({ home }) });
-  assert.equal(result.status, 0, `${result.stderr}\n${result.stdout}`);
   const json = envelope(result, 'keep');
   assert.equal(typeof json.data.temp_dir, 'string');
+  // Register the cleanup before any assertion can throw, so a kept sandbox
+  // never leaks out of a failing run.
+  t.after(() => rmSync(json.data.temp_dir, { recursive: true, force: true }));
+  assert.equal(result.status, 0, `${result.stderr}\n${result.stdout}`);
   assert.equal(existsSync(json.data.temp_dir), true, '--keep must retain the sandbox');
   assert.equal(existsSync(join(json.data.temp_dir, 'home')), true);
-  t.after(() => rmSync(json.data.temp_dir, { recursive: true, force: true }));
 });
