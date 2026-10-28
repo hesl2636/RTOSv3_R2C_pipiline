@@ -43,7 +43,3 @@ export function workflowSnapshotPath(root, runId) {
 export function runLockPath(root, runId) {
   return join(runDir(root, runId), '.lock');
 }
-
-export function usageDir(root) {
-  return join(r2cDir(root), 'usage');
-}

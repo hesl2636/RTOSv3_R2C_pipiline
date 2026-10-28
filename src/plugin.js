@@ -14,6 +14,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, lstatSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { gunzipSync, gzipSync } from 'node:zlib';
+import { EXIT_CODES, R2cError } from './errors.js';
 
 export const PLUGIN_SCHEMA = 'r2c.plugin/v1';
 export const PLUGIN_MANIFEST = 'r2c-plugin.json';
@@ -206,9 +207,12 @@ export function createTarGz(entries) {
     seen.add(entry.path);
   }
   if (problems.length > 0) {
-    const error = new Error(`invalid payload entries:\n- ${problems.join('\n- ')}`);
-    error.problems = problems;
-    throw error;
+    throw new R2cError(
+      'PAYLOAD_INVALID',
+      `invalid payload entries:\n- ${problems.join('\n- ')}`,
+      { problems },
+      EXIT_CODES.INTERNAL,
+    );
   }
 
   const blocks = [];

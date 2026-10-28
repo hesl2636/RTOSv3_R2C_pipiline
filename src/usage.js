@@ -2,11 +2,10 @@
  * Token usage aggregation.
  *
  * Adapters append cumulative snapshots to `.r2c/usage/<runId>.jsonl` (one JSON
- * object per line, schema `r2c.usage/v1`). Snapshots are *not* increments: the
+ * objects per line, schema `r2c.usage/v1`). Snapshots are *not* increments: the
  * last line for a `(run_id, session_id)` pair is the current total. Summing all
  * lines would count the same tokens again, so the last line always wins.
  */
-export const USAGE_SCHEMA = 'r2c.usage/v1';
 
 export const TOKEN_FIELDS = Object.freeze([
   'input_tokens',

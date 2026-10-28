@@ -301,6 +301,3 @@ export async function rollback(context) {
   }
   return {};
 }
-
-/** Exported for tests: the plugin owns the profile convention, not the loader. */
-export const internals = { dshHome, profileName, mcpRows };

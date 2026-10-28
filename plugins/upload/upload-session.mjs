@@ -93,10 +93,6 @@ function getProjectsCandidates(projectRoot) {
   return [...new Set([newRule, oldRule])].filter(Boolean).map(id => join(homedir(), ".legacy-state", "projects", id));
 }
 
-function getProjectsBase(projectRoot) {
-  return getProjectsCandidates(projectRoot)[0];
-}
-
 // ── 解析用户工号（用于上传 userId 字段）─────────────────────
 function resolveUserId() {
   // 1. 尝试从 ~/.legacy-state/.credentials.json 读取 idaasOAuth.accountId（IdaaS 认证工号）

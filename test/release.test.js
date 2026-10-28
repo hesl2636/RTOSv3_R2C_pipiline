@@ -15,7 +15,8 @@ import { basename, dirname, join, resolve, sep } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { gunzipSync, gzipSync } from 'node:zlib';
-import { sha256, sha256File } from '../src/plugin.js';
+import { sha256, sha256File, createTarGz } from '../src/plugin.js';
+import { isR2cError } from '../src/errors.js';
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const BIN = join(REPO, 'bin', 'r2c.js');
@@ -309,4 +310,21 @@ test('install --from <tgz> verifies the archive, caches it and installs the adap
   assert.equal(receipt.payload.version, VERSION);
   assert.equal(receipt.payload.sha256, sha256(manifestEntry.data));
   assert.equal(receipt.engine.requires, `^${VERSION}`);
+});
+
+test('createTarGz rejects invalid entries with a coded runner error', () => {
+  assert.throws(
+    () => createTarGz([
+      { path: 'a.txt', data: '' },
+      { path: 'a.txt', data: '' },
+    ]),
+    (error) => {
+      assert.ok(isR2cError(error), 'must be an R2cError');
+      assert.equal(error.code, 'PAYLOAD_INVALID');
+      assert.equal(error.exitCode, 1);
+      assert.deepEqual(error.details.problems, ['duplicate payload path: a.txt']);
+      assert.match(error.message, /^invalid payload entries:\n- duplicate payload path: a\.txt$/);
+      return true;
+    },
+  );
 });
