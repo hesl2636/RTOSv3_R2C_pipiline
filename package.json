@@ -1,0 +1,9 @@
+{
+  "name": "RTOSv3_R2C_pipiline",
+  "version": "0.1.1",
+  "type": "module",
+  "private": true,
+  "dependencies": {
+    "yazl": "^3.3.1"
+  }
+}

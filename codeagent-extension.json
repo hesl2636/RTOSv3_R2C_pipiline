@@ -1,0 +1,59 @@
+{
+  "name": "RTOSv3_R2C_pipiline",
+  "version": "0.1.1",
+  "description": "Generated Harness workflow plugin for RTOSv3_R2C_pipiline",
+  "mcp": {
+    "ar-fetcher-mcp": {
+      "type": "local",
+      "command": [
+        "uvx",
+        "--index-url",
+        "https://mirrors.tools.huawei.com/pypi/simple",
+        "--allow-insecure-host",
+        "mirrors.tools.huawei.com",
+        "--allow-insecure-host",
+        "cmc.centralrepo.rnd.huawei.com",
+        "--from",
+        "https://cmc.centralrepo.rnd.huawei.com/artifactory/product_generic/csitool/mcp-server/python/ar-fetcher-mcp/0.0.4/ar_fetcher_mcp-0.0.4.tar.gz",
+        "ar-fetcher-mcp"
+      ],
+      "enabled": true,
+      "environment": {
+        "W3_NAME": "W3_NAME"
+      }
+    },
+    "codebase-mcp-server": {
+      "type": "local",
+      "command": [
+        "npx",
+        "-y",
+        "https://cmc.centralrepo.rnd.huawei.com/artifactory/product_generic/hw-codebase-understanding/codebase-mcp-server/plugin/codebase-ts-mcp-server-1.0.6.tgz",
+        "codebase-mcp"
+      ],
+      "enabled": true,
+      "environment": {
+        "w3Account": "",
+        "password": ""
+      }
+    },
+    "sr-fetcher-mcp": {
+      "type": "local",
+      "command": [
+        "uvx",
+        "--index-url",
+        "https://mirrors.tools.huawei.com/pypi/simple",
+        "--allow-insecure-host",
+        "mirrors.tools.huawei.com",
+        "--allow-insecure-host",
+        "cmc.centralrepo.rnd.huawei.com",
+        "--from",
+        "https://cmc.centralrepo.rnd.huawei.com/artifactory/product_generic/csitool/mcp-server/python/sr-fetcher-mcp/0.0.6/sr_fetcher_mcp-0.0.6.tar.gz",
+        "sr-fetcher-mcp"
+      ],
+      "enabled": true,
+      "environment": {
+        "W3_NAME": "{{W3_NAME}}"
+      }
+    }
+  }
+}

@@ -1,0 +1,86 @@
+workflow:
+  id: workflow-RTOSv3_R2C_pipiline-frnz-new.yaml
+  name: RTOSv3_R2C_pipiline
+  version: 0.1.1
+  engine: RTOSv3_R2C_pipiline
+  description: ''
+  artifact_defaults:
+    target: change
+  stages:
+    - id: stg-8749f706-ec6d-426a-a5fd-46c215c4c8aa
+      name: 分析设计
+      steps:
+        - step-01479654-57d0-468a-9a53-78c821a29f5b
+    - id: stg-22483f60-0ea8-4d1a-8dc3-3502b61b527f
+      name: 详细设计
+      steps:
+        - step-b36f057d-e366-4169-afeb-2b3b23b22b18
+    - id: stg-ae37726a-00f8-44b6-94f5-e34073939f7d
+      name: 编码实现
+      steps:
+        - step-eb5bed2f-b911-473b-b111-46d4a3a963de
+    - id: stg-5a7e5822-a044-48b0-8206-695e8b905f20
+      name: 验证检视
+      steps:
+        - step-d69854c5-e22f-4998-a0df-82433e5c1e9e
+    - id: stg-9fe1a09c-71e6-44a9-af79-5ebd9d462f53
+      name: Session Upload
+      steps:
+        - step-12f584cb-5b03-4f64-a419-0089719277ea
+    - id: stg-871cbd1f-022e-4b2c-b47e-35103e991a66
+      name: Session Analysis
+      steps:
+        - step-3e67d76a-06b3-45dc-88c5-34ddc35c3e70
+  steps:
+    - id: step-01479654-57d0-468a-9a53-78c821a29f5b
+      stage: stg-8749f706-ec6d-426a-a5fd-46c215c4c8aa
+      name: 需求分析与设计编排
+      command:
+        type: prompt
+        prompt: "## 任务\n\n本步骤的完整任务、角色设定、约束条件和技能限制保存在任务文件中，**必须先读取该文件，才能执行本步骤**。\n\n任务文件位于：<插件根>/tasks/step-01479654-57d0-468a-9a53-78c821a29f5b.md\n1. <插件根> = 本步骤 Submit command 中 `node \"<插件根>/bin/cli.js\"` 的路径部分\n2. 用 Read 工具读取 <插件根>/tasks/step-01479654-57d0-468a-9a53-78c821a29f5b.md，严格按照文件内容执行本步骤\n3. 若无法确定插件根路径，用 Glob 搜索 pattern `**/tasks/step-01479654-57d0-468a-9a53-78c821a29f5b.md` 定位后读取\n4. **未读取任务文件之前禁止提交本步骤**；若任务文件不存在或读取失败，停止并报告，不要提交"
+      agent: bys-architect
+      taskFile: tasks/step-01479654-57d0-468a-9a53-78c821a29f5b.md
+      skill: req-analysis
+    - id: step-b36f057d-e366-4169-afeb-2b3b23b22b18
+      stage: stg-22483f60-0ea8-4d1a-8dc3-3502b61b527f
+      name: 详细设计编排
+      command:
+        type: prompt
+        prompt: "## 任务\n\n本步骤的完整任务、角色设定、约束条件和技能限制保存在任务文件中，**必须先读取该文件，才能执行本步骤**。\n\n任务文件位于：<插件根>/tasks/step-b36f057d-e366-4169-afeb-2b3b23b22b18.md\n1. <插件根> = 本步骤 Submit command 中 `node \"<插件根>/bin/cli.js\"` 的路径部分\n2. 用 Read 工具读取 <插件根>/tasks/step-b36f057d-e366-4169-afeb-2b3b23b22b18.md，严格按照文件内容执行本步骤\n3. 若无法确定插件根路径，用 Glob 搜索 pattern `**/tasks/step-b36f057d-e366-4169-afeb-2b3b23b22b18.md` 定位后读取\n4. **未读取任务文件之前禁止提交本步骤**；若任务文件不存在或读取失败，停止并报告，不要提交"
+      agent: bys-designer
+      taskFile: tasks/step-b36f057d-e366-4169-afeb-2b3b23b22b18.md
+      skill: r2c-imdesign
+    - id: step-eb5bed2f-b911-473b-b111-46d4a3a963de
+      stage: stg-ae37726a-00f8-44b6-94f5-e34073939f7d
+      name: 编码实施编排
+      command:
+        type: prompt
+        prompt: "## 任务\n\n本步骤的完整任务、角色设定、约束条件和技能限制保存在任务文件中，**必须先读取该文件，才能执行本步骤**。\n\n任务文件位于：<插件根>/tasks/step-eb5bed2f-b911-473b-b111-46d4a3a963de.md\n1. <插件根> = 本步骤 Submit command 中 `node \"<插件根>/bin/cli.js\"` 的路径部分\n2. 用 Read 工具读取 <插件根>/tasks/step-eb5bed2f-b911-473b-b111-46d4a3a963de.md，严格按照文件内容执行本步骤\n3. 若无法确定插件根路径，用 Glob 搜索 pattern `**/tasks/step-eb5bed2f-b911-473b-b111-46d4a3a963de.md` 定位后读取\n4. **未读取任务文件之前禁止提交本步骤**；若任务文件不存在或读取失败，停止并报告，不要提交"
+      agent: bys-impl-lead
+      taskFile: tasks/step-eb5bed2f-b911-473b-b111-46d4a3a963de.md
+      skill: r2c-implement-redblue
+    - id: step-d69854c5-e22f-4998-a0df-82433e5c1e9e
+      stage: stg-5a7e5822-a044-48b0-8206-695e8b905f20
+      name: 验证检视编排
+      command:
+        type: prompt
+        prompt: "## 任务\n\n本步骤的完整任务、角色设定、约束条件和技能限制保存在任务文件中，**必须先读取该文件，才能执行本步骤**。\n\n任务文件位于：<插件根>/tasks/step-d69854c5-e22f-4998-a0df-82433e5c1e9e.md\n1. <插件根> = 本步骤 Submit command 中 `node \"<插件根>/bin/cli.js\"` 的路径部分\n2. 用 Read 工具读取 <插件根>/tasks/step-d69854c5-e22f-4998-a0df-82433e5c1e9e.md，严格按照文件内容执行本步骤\n3. 若无法确定插件根路径，用 Glob 搜索 pattern `**/tasks/step-d69854c5-e22f-4998-a0df-82433e5c1e9e.md` 定位后读取\n4. **未读取任务文件之前禁止提交本步骤**；若任务文件不存在或读取失败，停止并报告，不要提交"
+      agent: bys-release-lead
+      taskFile: tasks/step-d69854c5-e22f-4998-a0df-82433e5c1e9e.md
+      skill: v3-personal-pipeline
+    - id: step-12f584cb-5b03-4f64-a419-0089719277ea
+      stage: stg-9fe1a09c-71e6-44a9-af79-5ebd9d462f53
+      name: Upload Session Data
+      command:
+        type: shell
+        command: |
+          node -e "const{homedir}=require('node:os');const{join}=require('node:path');const{existsSync,readdirSync,readFileSync}=require('node:fs');const{pathToFileURL}=require('node:url');const cwd=process.cwd();const np=cwd.replace(new RegExp(String.fromCharCode(92).repeat(2),'g'),'/');const pid1=np.replace(/[^A-Za-z0-9]/g,'-');const pid2=cwd.replace(/[^a-zA-Z0-9]/g,'-').replace(/^-+|-+$/g,'');const pdir=[...new Set([pid1,pid2])].map(x=>join(homedir(),'.cac','projects',x)).find(d=>existsSync(join(d,'runs')))||join(homedir(),'.cac','projects',pid1);const runsDir=join(pdir,'runs');let engineName='';try{for(const r of readdirSync(runsDir).filter(e=>e.startsWith('R')).sort().reverse()){const sp=join(runsDir,r,'state.json');if(existsSync(sp)){const st=JSON.parse(readFileSync(sp,'utf-8'));if(st.workflow_engine){engineName=st.workflow_engine;break}}}}catch(e){}const b=join(homedir(),'.cac','plugins','marketplaces');let found='';let fuzzyFound='';try{for(const m of readdirSync(b))for(const p of readdirSync(join(b,m))){const pp=join(b,m,p);if(existsSync(join(pp,'scripts','upload-session.mjs'))){if(engineName&&p===engineName){found=pp;break}if(engineName&&(p.includes(engineName)||engineName.includes(p))){fuzzyFound=fuzzyFound||pp}}}}catch(e){}if(!found&&fuzzyFound){found=fuzzyFound}if(!found){for(const m of readdirSync(b))for(const p of readdirSync(join(b,m))){const pp=join(b,m,p);if(existsSync(join(pp,'scripts','upload-session.mjs'))){found=pp;break}}}if(!found){console.error('upload: plugin root not found');process.exit(0)}import(pathToFileURL(join(found,'scripts','upload-session.mjs')).href)"
+      timeout: 300
+    - id: step-3e67d76a-06b3-45dc-88c5-34ddc35c3e70
+      stage: stg-871cbd1f-022e-4b2c-b47e-35103e991a66
+      name: Analyze Session
+      command:
+        type: shell
+        command: |
+          node -e "const{homedir}=require('node:os');const{join}=require('node:path');const{existsSync,readdirSync,readFileSync}=require('node:fs');const{pathToFileURL}=require('node:url');const cwd=process.cwd();const np=cwd.replace(new RegExp(String.fromCharCode(92).repeat(2),'g'),'/');const pid1=np.replace(/[^A-Za-z0-9]/g,'-');const pid2=cwd.replace(/[^a-zA-Z0-9]/g,'-').replace(/^-+|-+$/g,'');const pdir=[...new Set([pid1,pid2])].map(x=>join(homedir(),'.cac','projects',x)).find(d=>existsSync(join(d,'runs')))||join(homedir(),'.cac','projects',pid1);const runsDir=join(pdir,'runs');let engineName='';try{for(const r of readdirSync(runsDir).filter(e=>e.startsWith('R')).sort().reverse()){const sp=join(runsDir,r,'state.json');if(existsSync(sp)){const st=JSON.parse(readFileSync(sp,'utf-8'));if(st.workflow_engine){engineName=st.workflow_engine;break}}}}catch(e){}const b=join(homedir(),'.cac','plugins','marketplaces');let found='';try{for(const m of readdirSync(b))for(const p of readdirSync(join(b,m))){const pp=join(b,m,p);if(existsSync(join(pp,'scripts','analyze-session.mjs'))){if(!engineName||p===engineName){found=pp;break}}}}catch(e){}if(!found){for(const m of readdirSync(b))for(const p of readdirSync(join(b,m))){const pp=join(b,m,p);if(existsSync(join(pp,'scripts','analyze-session.mjs'))){found=pp;break}}}if(!found){console.error('analysis: plugin root not found');process.exit(0)}import(pathToFileURL(join(found,'scripts','analyze-session.mjs')).href)"
+      timeout: 1800
