@@ -249,6 +249,19 @@ test('a version outside the V1 pin warns but does not fail install or doctor', (
   assert.match(check(checks, 'platform.pin').detail, /r2c next --format plain/);
 });
 
+test('a deleted plugin fails doctor hooks.wired instead of silently passing', (t) => {
+  const { project, env } = setup(t);
+  assert.equal(install(env, project).status, 0);
+  rmSync(join(project, '.opencode', 'plugins', 'r2c.ts'));
+
+  const doctor = cli(['adapter', 'doctor', 'opencode', '--project-root', project, '--json'], { env, cwd: project });
+  assert.equal(doctor.status, 3, doctor.stderr);
+  const checks = envelope(doctor).data.checks;
+  assert.equal(check(checks, 'hooks.wired').status, 'fail');
+  assert.match(check(checks, 'hooks.wired').detail, /plugin carrier missing/);
+  assert.equal(check(checks, 'plugin.loaded').status, 'warn');
+});
+
 test('session.idle injects once, dedupes (run_id, step_id) and caps a run at 32', async (t) => {
   const { project, env } = setup(t);
   assert.equal(install(env, project).status, 0);
