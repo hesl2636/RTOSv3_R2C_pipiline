@@ -11,12 +11,12 @@ write; this directory holds no install logic.
 | Commands (7 × `r2c-*`) | `<P>/.claude/commands/r2c-<id>.md` |
 | Skills (35 placeholder skills) | `<P>/.claude/skills/<id>/SKILL.md` |
 | Child agents | not installed in v1 (`capabilities.agents = "none"`) |
-| Hooks | `<P>/.claude/settings.json` (declared now, wired by ticket 28) |
+| Hooks | `<P>/.claude/settings.json` `hooks.Stop` + `hooks.PreToolUse` |
 | MCP servers | `<P>/.mcp.json` `mcpServers.<id>`, only with `--mcp <file>` |
 
-User scope (`--scope user`) writes `~/.claude/{commands,skills}`; MCP is not
-written there (Claude Code keeps user MCP in `~/.claude.json`, which is out of
-the adapter contract).
+User scope (`--scope user`) writes `~/.claude/{commands,skills,settings.json}`;
+MCP is not written there (Claude Code keeps user MCP in `~/.claude.json`, which
+is out of the adapter contract).
 
 `--link` is only accepted with `--from <dir>`. It links the skills directory
 (junction on Windows, directory symlink on POSIX); flat command files are
@@ -41,16 +41,28 @@ release repository is private.
 - Claude Code `>=2.1.312 <3` (warning only).
 - Detection: `claude --version` on `PATH`, or `~/.claude` existing.
 
+## Hooks
+
+Install merges two entries into `.claude/settings.json` (project or user):
+`hooks.Stop` and `hooks.PreToolUse`, each invoking
+`node "<payload>/shims/hook.mjs" --agent claude-code --event ... --runner-cmd="<runner>"`.
+Existing Stop/PreToolUse entries are appended to, never overwritten; uninstall
+removes only the items this install added. The shared shim enforces eight
+blocks per (run_id, step_id), then exits 0 and points the user at `/r2c-next`.
+
+`r2c adapter doctor` verifies `hooks.wired` (settings contains this payload's
+shim path), `hooks.smoke` (shim present, carrier parses as JSON) and
+`hooks.launch` (the configured Stop command really exits 0), plus `discovery`
+from `smoke.mjs` — all without a model call.
+
 ## Manual steps
 
-- Stop/PreToolUse hook wiring in `.claude/settings.json` is delivered by ticket
-  28; until then hooks are declared but not merged, and `doctor` reports
-  `hooks.wired` as a warning.
 - The optional native marketplace flow (`claude plugin marketplace`) is
   documented in the spec as an alternative, not as the supported install path.
 
 ## Uninstall
 
 `r2c adapter uninstall claude-code` deletes exactly the receipt files, removes
-only the `mcpServers` keys this install merged, recycles self-created empty
-directories, and keeps `.r2c` runtime state. No agent-side residue is expected.
+only the `mcpServers` keys and `hooks.Stop`/`hooks.PreToolUse` items this
+install merged, recycles self-created empty directories, and keeps `.r2c`
+runtime state. No agent-side residue is expected.

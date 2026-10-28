@@ -61,23 +61,66 @@ function verifyFiles(receipt) {
   return { problems, verified };
 }
 
-function carrierMerged(receipt, carrier) {
-  const suffix = carrier.replaceAll('\\', '/');
-  return (receipt.merged ?? []).filter((entry) =>
-    entry.file.replaceAll('\\', '/').endsWith(suffix),
-  );
-}
-
 function shimPath(receipt) {
   return receipt.payload_home ? join(receipt.payload_home, 'shims', 'hook.mjs') : null;
 }
 
-function runShim(shim, agentId, { stdin } = {}) {
-  return spawnSync(process.execPath, [shim, '--agent', agentId, '--event', 'stop', '--format', 'json'], {
-    encoding: 'utf8',
-    timeout: 30_000,
-    input: stdin ?? '',
-  });
+/** Declaration key → Claude-style settings event key. */
+const HOOK_EVENTS = [
+  ['stop', 'Stop'],
+  ['preToolUse', 'PreToolUse'],
+];
+
+function declaredHooks(adapter) {
+  const hooks = adapter?.hooks ?? {};
+  const declared = [];
+  for (const [key, event] of HOOK_EVENTS) {
+    const carrier = hooks[key]?.carrier;
+    if (typeof carrier === 'string' && carrier !== '') declared.push({ event, carrier });
+  }
+  return declared;
+}
+
+/** Every `command` string nested under one settings event array. */
+function hookCommands(node) {
+  const commands = [];
+  const walk = (value) => {
+    if (Array.isArray(value)) {
+      for (const item of value) walk(item);
+      return;
+    }
+    if (value === null || typeof value !== 'object') return;
+    if (typeof value.command === 'string') commands.push(value.command);
+    for (const [key, child] of Object.entries(value)) {
+      if (key !== 'command') walk(child);
+    }
+  };
+  walk(node);
+  return commands;
+}
+
+function eventCommands(document, event) {
+  const node = document?.hooks?.[event];
+  return node === undefined ? [] : hookCommands(node);
+}
+
+function usesShim(command, shim) {
+  const comparable = (value) =>
+    (process.platform === 'win32' ? value.toLowerCase() : value).replaceAll('\\', '/');
+  return comparable(command).includes(comparable(shim));
+}
+
+function readCarrierFile(file) {
+  if (!existsSync(file)) return { ok: false, detail: `carrier missing: ${file}` };
+  try {
+    const document = JSON.parse(readFileSync(file, 'utf8'));
+    if (document === null || typeof document !== 'object' || Array.isArray(document)) {
+      return { ok: false, detail: `carrier is not a JSON object: ${file}` };
+    }
+    return { ok: true, document };
+  } catch (error) {
+    return { ok: false, detail: `carrier is not valid JSON: ${file}: ${error.message}` };
+  }
 }
 
 export function doctorAdapter({ ctx, agentId, options }) {
@@ -145,44 +188,101 @@ export function doctorAdapter({ ctx, agentId, options }) {
     checks.push(check('receipt.files', 'pass', `${files.verified} file(s) match the receipt`));
   }
 
-  const carrier = adapter?.hooks?.stop?.carrier ?? null;
-  const merged = carrier === null ? [] : carrierMerged(receipt, carrier);
-  if (carrier === null) {
-    checks.push(check('hooks.wired', 'pass', 'adapter declares no Stop carrier'));
-  } else if (merged.length === 0) {
-    checks.push(
-      check('hooks.wired', 'warn', `hooks are declared (${carrier}) but this install does not wire them yet`),
-    );
-  } else {
-    const carrierFile = join(scope === 'user' ? userHome() : ctx.projectRoot, ...carrier.split('/'));
-    checks.push(
-      existsSync(carrierFile)
-        ? check('hooks.wired', 'pass', `${merged.length} merged entr(ies) in ${carrier}`)
-        : check('hooks.wired', 'fail', `carrier missing: ${carrierFile}`),
-    );
-  }
-
+  const declared = declaredHooks(adapter);
   const shim = shimPath(receipt);
-  if (merged.length === 0 || shim === null || !existsSync(shim)) {
-    checks.push(check('hooks.smoke', 'warn', 'no wired shim to smoke'));
+  const shimPresent = shim !== null && existsSync(shim);
+  const carrierRoot = scope === 'user' ? userHome() : ctx.projectRoot;
+  const carriers = new Map();
+  for (const entry of declared) {
+    const file = join(carrierRoot, ...entry.carrier.split('/'));
+    if (!carriers.has(file)) carriers.set(file, readCarrierFile(file));
+  }
+  const carrierProblems = [...carriers.entries()]
+    .filter(([, state]) => !state.ok)
+    .map(([file, state]) => state.detail ?? `invalid carrier: ${file}`);
+
+  if (declared.length === 0) {
+    checks.push(check('hooks.wired', 'pass', 'adapter declares no hooks carrier'));
+  } else if (carrierProblems.length > 0) {
+    checks.push(check('hooks.wired', 'fail', carrierProblems.slice(0, 2).join('; ')));
   } else {
-    const result = runShim(shim, agentId, { stdin: '{}' });
+    const unwired = declared.filter((entry) => {
+      const document = carriers.get(join(carrierRoot, ...entry.carrier.split('/')))?.document;
+      const commands = eventCommands(document, entry.event);
+      return shim === null || !commands.some((command) => usesShim(command, shim));
+    });
     checks.push(
-      result.status === 0
-        ? check('hooks.smoke', 'pass', 'shim exits 0 with empty stdin payload')
-        : check('hooks.smoke', 'fail', `shim exited ${result.status}: ${(result.stderr || '').trim()}`),
+      unwired.length === 0
+        ? check(
+            'hooks.wired',
+            'pass',
+            `${declared.map((entry) => entry.event).join('/')} wired to ${shim}`,
+          )
+        : check(
+            'hooks.wired',
+            'fail',
+            `settings has no shim command for ${unwired.map((entry) => entry.event).join('/')}`,
+          ),
     );
   }
 
-  if (shim === null || !existsSync(shim)) {
-    checks.push(check('hooks.launch', 'warn', 'payload has no shims/hook.mjs yet'));
+  if (declared.length === 0) {
+    checks.push(check('hooks.smoke', 'warn', 'adapter declares no hooks carrier'));
+  } else if (shim === null || !shimPresent) {
+    checks.push(check('hooks.smoke', 'fail', `payload is missing shims/hook.mjs: ${shim ?? '(no payload)'}`));
+  } else if (carrierProblems.length > 0) {
+    checks.push(check('hooks.smoke', 'fail', carrierProblems.slice(0, 2).join('; ')));
   } else {
-    const result = runShim(shim, agentId, { stdin: '' });
     checks.push(
-      result.error
-        ? check('hooks.launch', 'fail', `shim could not be launched: ${result.error.message}`)
-        : check('hooks.launch', 'pass', `shim launched (exit ${result.status})`),
+      check(
+        'hooks.smoke',
+        'pass',
+        `shim present; ${carriers.size} settings file(s) parse as JSON`,
+      ),
     );
+  }
+
+  if (declared.length === 0) {
+    checks.push(check('hooks.launch', 'warn', 'adapter declares no hooks carrier'));
+  } else if (shim === null || !shimPresent) {
+    checks.push(check('hooks.launch', 'fail', 'payload has no shims/hook.mjs to launch'));
+  } else if (carrierProblems.length > 0) {
+    checks.push(check('hooks.launch', 'fail', carrierProblems.slice(0, 2).join('; ')));
+  } else {
+    const stopDecl = declared.find((entry) => entry.event === 'Stop');
+    const stopCommands = stopDecl === undefined
+      ? []
+      : eventCommands(
+          carriers.get(join(carrierRoot, ...stopDecl.carrier.split('/')))?.document,
+          'Stop',
+        ).filter((command) => usesShim(command, shim));
+    if (stopCommands.length === 0) {
+      checks.push(check('hooks.launch', 'fail', 'settings has no configured Stop command for this shim'));
+    } else {
+      const started = Date.now();
+      const result = spawnSync(stopCommands[0], {
+        shell: true,
+        cwd: ctx.projectRoot,
+        encoding: 'utf8',
+        input: '',
+        timeout: 5_000,
+        windowsHide: true,
+      });
+      const elapsed = Date.now() - started;
+      if (result.error) {
+        checks.push(check('hooks.launch', 'fail', `Stop command could not be launched: ${result.error.message}`));
+      } else if (result.status !== 0) {
+        checks.push(
+          check(
+            'hooks.launch',
+            'fail',
+            `Stop command exited ${result.status} in ${elapsed}ms: ${(result.stderr || '').trim()}`,
+          ),
+        );
+      } else {
+        checks.push(check('hooks.launch', 'pass', `Stop command exited 0 in ${elapsed}ms`));
+      }
+    }
   }
 
   if (['dsh', 'codex'].includes(agentId)) {

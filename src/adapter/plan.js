@@ -106,6 +106,18 @@ export function renderText(text, values) {
   return substitute(text, values).replaceAll('<runner>', values.RUNNER_CMD);
 }
 
+/** Render placeholders inside a parsed JSON value, leaving structure intact. */
+function renderJsonStrings(value, values) {
+  if (typeof value === 'string') return renderText(value, values);
+  if (Array.isArray(value)) return value.map((item) => renderJsonStrings(item, values));
+  if (value !== null && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [key, renderJsonStrings(item, values)]),
+    );
+  }
+  return value;
+}
+
 function expandTarget(template, scopeRoots, extra = {}) {
   let output = template;
   for (const [key, value] of Object.entries(scopeRoots)) {
@@ -384,7 +396,9 @@ function buildMergeEntry({ entry, adapter, target, pointer, mcpAbsolute, warning
     }
     sourceRel = assetEntry.rel;
     try {
-      document = JSON.parse(renderText(readFileSync(assetEntry.abs, 'utf8'), values));
+      // Render inside JSON values, after parsing: a Windows payload path
+      // contains backslashes that must stay escaped in the document bytes.
+      document = renderJsonStrings(JSON.parse(readFileSync(assetEntry.abs, 'utf8')), values);
     } catch (error) {
       throw usageError('MERGE_SOURCE_INVALID_JSON', `cannot parse ${assetEntry.rel}: ${error.message}`, {
         file: assetEntry.rel,
