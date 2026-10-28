@@ -13,6 +13,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { commandNames, loadCommand } from './commands/index.js';
 import { EXIT_CODES, R2cError, isR2cError } from './errors.js';
+import { normalizeHookInput } from './hook.js';
 import { projectRoot as resolveProjectRoot } from './paths.js';
 
 export const EXIT_OK = EXIT_CODES.OK;
@@ -234,16 +235,16 @@ export async function main(argv) {
   }
 
   const command = positionals[0];
-  const hookInput = readHookInput(command);
+  const hookInput = normalizeHookInput(readHookInput(command));
   const sessionId = firstNonEmpty(
     options.sessionId,
     process.env.R2C_SESSION_ID,
-    hookInput?.session_id,
+    hookInput.session_id,
   );
   const rootValue = firstNonEmpty(
     options.projectRoot,
     process.env.R2C_PROJECT_ROOT,
-    hookInput?.cwd,
+    hookInput.cwd,
     process.cwd(),
   );
   const projectRoot = resolveProjectRoot(rootValue);
@@ -272,9 +273,16 @@ export async function main(argv) {
       retry: options.retry,
       version: readVersion(),
       binPath: BIN_PATH,
+      hookInput,
       now: () => new Date(),
     };
     const result = (await module.run(positionals.slice(1), ctx)) ?? {};
+
+    if (result.raw === true) {
+      if (typeof result.stdout === 'string') process.stdout.write(result.stdout);
+      process.exitCode = typeof result.exitCode === 'number' ? result.exitCode : EXIT_OK;
+      return;
+    }
 
     if (json) {
       process.stdout.write(
