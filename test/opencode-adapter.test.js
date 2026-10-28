@@ -187,7 +187,7 @@ test('install writes commands, skills, agents, plugin and merged opencode.json m
   assert.ok(existsSync(join(project, '.opencode', 'agents', 'r2c-bys-designer.md')));
 
   const plugin = readFileSync(join(project, '.opencode', 'plugins', 'r2c.ts'), 'utf8');
-  assert.match(plugin, /"shims", "hook\.mjs"/);
+  assert.match(plugin, /shims[\\/]hook\.mjs/);
   assert.match(plugin, /session\.prompt/);
   assert.ok(!plugin.includes('${PAYLOAD_HOME}'));
   assert.ok(!plugin.includes('${RUNNER_CMD}'));

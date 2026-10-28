@@ -15,7 +15,7 @@ import { spawn } from "node:child_process";
 import { appendFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 
-const PAYLOAD_HOME = String.raw`${PAYLOAD_HOME}`;
+const SHIM_PATH = String.raw`${PAYLOAD_HOME}/shims/hook.mjs`;
 const PROJECT_ROOT = String.raw`${PROJECT_ROOT}`;
 const RUNNER_CMD = String.raw`${RUNNER_CMD}`;
 const NODE_CMD = process.env.R2C_NODE_BIN || "node";
@@ -28,7 +28,7 @@ function quote(value) {
 function defaultRuntime(overrides = {}) {
   const projectRoot = overrides.projectRoot ?? PROJECT_ROOT;
   return {
-    shimPath: join(PAYLOAD_HOME, "shims", "hook.mjs"),
+    shimPath: SHIM_PATH,
     runnerCmd: RUNNER_CMD,
     projectRoot,
     pluginData: join(projectRoot, ".r2c", "plugin-data"),

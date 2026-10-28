@@ -367,7 +367,10 @@ test('--mcp merges only our keys, is idempotent and uninstall restores the forei
   assert.deepEqual(Object.keys(afterFirst.mcpServers).sort(), ['foreign', 'r2c-sr']);
   assert.equal(afterFirst.other, 1);
   const receipt = readReceipt(project);
-  assert.deepEqual(receipt.merged.map((entry) => entry.pointer), ['mcpServers.r2c-sr']);
+  assert.deepEqual(
+    receipt.merged.map((entry) => entry.pointer).sort(),
+    ['hooks.PreToolUse', 'hooks.Stop', 'mcpServers.r2c-sr'],
+  );
 
   const second = cli(
     ['adapter', 'install', 'claude-code', '--from', REPO, '--project-root', project, '--mcp', mcpFile, '--json'],
