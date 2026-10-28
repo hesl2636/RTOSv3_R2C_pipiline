@@ -66,3 +66,11 @@ jobs:
             dist_tag=latest
           fi
           npm publish --access public --tag "$dist_tag"
+      - name: Publish the draft release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          version="${{ steps.version.outputs.version }}"
+          gh release edit "v${version}" --draft=false

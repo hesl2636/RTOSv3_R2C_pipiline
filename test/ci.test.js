@@ -87,6 +87,9 @@ test('ci, acceptance, and live contain no secrets', () => {
 test('ci runs the node matrix, tests, manifest validation, and both release gates', () => {
   const ci = workflow('ci.yml').parsed;
   const include = ci.jobs.test.strategy.matrix.include;
+  // Adjudication: spec §7 says "node 22.19/24 × ubuntu + windows 24" and
+  // ticket #34 says two Node versions on ubuntu plus windows 24, so windows is
+  // not paired with 22.19. Do not "fix" this matrix by adding windows × 22.19.
   assert.deepEqual(include, [
     { os: 'ubuntu-24.04', node: '22.19' },
     { os: 'ubuntu-24.04', node: '24' },
@@ -120,6 +123,25 @@ test('acceptance covers all five adapters on ubuntu and windows', () => {
   assert.match(run, /summary\.fail !== 0/);
   assert.match(run, /warn=\$\{summary\.warn\}/, 'warn must be reported');
   assert.doesNotMatch(run, /summary\.warn\s*!==?\s*0/, 'warn must not gate');
+
+  // The CLIs are installed best-effort and need no login; the gate itself is
+  // still the zero-model acceptance harness, so a missing CLI only skips its
+  // own checks instead of failing the workflow.
+  const install = findStep(acceptance, 'npm install -g')?.run ?? '';
+  for (const pin of [
+    '@anthropic-ai/claude-code@2.1.312',
+    '@openai/codex@0.165.0',
+    '@deepseek-ai/dsh@0.2.1-rc.2',
+    'opencode-ai@1.19.5',
+  ]) {
+    assert.ok(install.includes(pin), `acceptance installs ${pin}`);
+  }
+  const installSteps = acceptance.jobs.acceptance.steps.filter(
+    (step) => /Install agent CLIs|Install omp/.test(step.name ?? ''),
+  );
+  assert.equal(installSteps.length, 2);
+  for (const step of installSteps) assert.equal(step['continue-on-error'], true);
+  assert.match(installSteps[1].run, /omp\.sh\/install/);
 });
 
 test('live is manual, redirects HOME/USERPROFILE/DSH_HOME, and never gates', () => {
@@ -179,6 +201,12 @@ test('release gates tag==version, builds, checksums, drafts two assets, then pub
   assert.match(publish, /dist_tag=next/);
   assert.match(publish, /--tag "\$dist_tag"/);
   assert.doesNotMatch(publish, /--tag (latest|next)/);
+
+  const editIndex = runs.findIndex((run) => run.includes('gh release edit'));
+  assert.ok(editIndex >= 0, 'draft must be published after a successful npm publish');
+  assert.ok(editIndex > publishIndex, 'gh release edit must come after npm publish');
+  assert.match(runs[editIndex], /--draft=false/);
+  assert.equal(runs.filter((run) => run.includes('gh release edit')).length, 1);
 
   const secrets = [...workflow('release.yml').text.matchAll(/secrets\.(\w+)/g)].map((match) => match[1]);
   assert.deepEqual(secrets, ['NPM_TOKEN']);
