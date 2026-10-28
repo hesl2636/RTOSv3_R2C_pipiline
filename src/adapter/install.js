@@ -570,7 +570,15 @@ async function installOnce({ ctx, agentId, options, state, resolved, adapter, ma
         }
         if (entry.action === 'link') {
           if (preexisting) removePath(entry.target);
-          createDirLink(entry.target, entry.linkTarget);
+          try {
+            createDirLink(entry.target, entry.linkTarget);
+          } catch (error) {
+            throw installError(
+              'LINK_UNSUPPORTED',
+              `cannot create directory link ${entry.target} -> ${entry.linkTarget}: ${error.message}; rerun with --copy`,
+              { path: entry.target, target: entry.linkTarget },
+            );
+          }
         } else {
           atomicWriteFile(entry.target, entry.content);
         }
