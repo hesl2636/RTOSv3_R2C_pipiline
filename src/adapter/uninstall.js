@@ -49,13 +49,26 @@ function pointerGet(object, pointer) {
 function pointerDelete(object, pointer) {
   const keys = pointer.split('.');
   let node = object;
+  const trail = [];
   for (const key of keys.slice(0, -1)) {
     if (node === null || typeof node !== 'object') return false;
+    trail.push([node, key]);
     node = node[key];
   }
   const leaf = keys[keys.length - 1];
   if (node === null || typeof node !== 'object' || !(leaf in node)) return false;
   delete node[leaf];
+  // Drop containers this removal emptied, so a file created only for the merge
+  // becomes empty and can be deleted with it.
+  for (let index = trail.length - 1; index >= 0; index -= 1) {
+    const [parent, key] = trail[index];
+    const child = parent[key];
+    if (child !== null && typeof child === 'object' && !Array.isArray(child) && Object.keys(child).length === 0) {
+      delete parent[key];
+    } else {
+      break;
+    }
+  }
   return true;
 }
 

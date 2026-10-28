@@ -61,77 +61,112 @@ function verifyFiles(receipt) {
   return { problems, verified };
 }
 
-function carrierMerged(receipt, carrier) {
-  const suffix = carrier.replaceAll('\\', '/');
-  return (receipt.merged ?? []).filter((entry) =>
-    entry.file.replaceAll('\\', '/').endsWith(suffix),
-  );
-}
-
 function shimPath(receipt) {
   return receipt.payload_home ? join(receipt.payload_home, 'shims', 'hook.mjs') : null;
 }
 
-function runShim(shim, agentId, { stdin } = {}) {
-  return spawnSync(process.execPath, [shim, '--agent', agentId, '--event', 'stop', '--format', 'json'], {
-    encoding: 'utf8',
-    timeout: 30_000,
-    input: stdin ?? '',
-  });
-}
+/** Declaration key → Claude-style settings event key. */
+const HOOK_EVENTS = [
+  ['stop', 'Stop'],
+  ['preToolUse', 'PreToolUse'],
+];
 
-function pathKey(path) {
-  return process.platform === 'win32' ? path.toLowerCase() : path;
-}
-
-function carrierFile(adapter, scope, projectRoot) {
-  const carrier = adapter?.hooks?.stop?.carrier ?? null;
-  if (carrier === null) return null;
-  const root = scope === 'user' ? userHome() : projectRoot;
-  return join(root, ...carrier.split('/'));
-}
-
-function readCarrierHandlers(file) {
-  if (file === null || !existsSync(file)) return { document: null, handlers: [] };
-  let document;
-  try {
-    document = JSON.parse(readFileSync(file, 'utf8'));
-  } catch {
-    return { document: null, handlers: [], invalid: true };
+function declaredHooks(adapter) {
+  const hooks = adapter?.hooks ?? {};
+  const declared = [];
+  for (const [key, event] of HOOK_EVENTS) {
+    const carrier = hooks[key]?.carrier;
+    if (typeof carrier === 'string' && carrier !== '') declared.push({ event, carrier });
   }
-  const handlers = [];
-  for (const event of ['Stop', 'PreToolUse']) {
-    for (const group of document?.hooks?.[event] ?? []) {
-      for (const handler of group?.hooks ?? []) {
-        if (handler !== null && typeof handler === 'object') handlers.push({ event, handler });
-      }
+  return declared;
+}
+
+/** Every command string nested under one settings event array. */
+function hookCommands(node) {
+  const commands = [];
+  const walk = (value) => {
+    if (Array.isArray(value)) {
+      for (const item of value) walk(item);
+      return;
     }
-  }
-  return { document, handlers };
+    if (value === null || typeof value !== 'object') return;
+    for (const field of ['command', 'commandWindows']) {
+      if (typeof value[field] === 'string') commands.push(value[field]);
+    }
+    for (const [key, child] of Object.entries(value)) {
+      if (key !== 'command' && key !== 'commandWindows') walk(child);
+    }
+  };
+  walk(node);
+  return commands;
+}
+
+function eventCommands(document, event) {
+  const node = document?.hooks?.[event];
+  return node === undefined ? [] : hookCommands(node);
+}
+
+function usesShim(command, shim) {
+  const comparable = (value) =>
+    (process.platform === 'win32' ? value.toLowerCase() : value).replaceAll('\\', '/');
+  return comparable(command).includes(comparable(shim));
 }
 
 /**
- * Run one configured hook command the way the agent will. On Windows the
- * adapter renders a `.cmd` launcher and names it in `commandWindows`; the path
- * stays unquoted here because the .cmd quotes node/shim internally and codex
- * must not receive a quoted argument list.
+ * Launch commands for one event, platform-selected and filtered to handlers
+ * that reference this shim. `commandWindows` wins on Windows; a handler whose
+ * `commandWindows` is a rendered `.cmd` still qualifies through its sibling
+ * `command` (the .cmd itself quotes node/shim internally).
  */
-function runConfiguredHook(handler, cwd) {
-  const command = process.platform === 'win32'
-    ? handler.commandWindows ?? handler.command
-    : handler.command ?? handler.commandWindows;
-  if (typeof command !== 'string' || command === '') {
-    return { error: new Error('hook handler has no command'), status: null };
+function eventLaunchCommands(document, event, shim) {
+  const node = document?.hooks?.[event];
+  if (node === undefined) return [];
+  const commands = [];
+  const walk = (value) => {
+    if (Array.isArray(value)) {
+      for (const item of value) walk(item);
+      return;
+    }
+    if (value === null || typeof value !== 'object') return;
+    const fields = [value.command, value.commandWindows].filter((field) => typeof field === 'string');
+    if (fields.some((field) => usesShim(field, shim))) {
+      const chosen = process.platform === 'win32'
+        ? value.commandWindows ?? value.command
+        : value.command ?? value.commandWindows;
+      if (typeof chosen === 'string') commands.push(chosen);
+      return;
+    }
+    for (const [key, child] of Object.entries(value)) {
+      if (key !== 'command' && key !== 'commandWindows') walk(child);
+    }
+  };
+  walk(node);
+  return commands;
+}
+
+function readCarrierFile(file) {
+  if (!existsSync(file)) return { ok: false, detail: `carrier missing: ${file}` };
+  let text;
+  try {
+    text = readFileSync(file, 'utf8');
+  } catch (error) {
+    return { ok: false, detail: `carrier is unreadable: ${file}: ${error.message}` };
   }
-  const isWin = process.platform === 'win32';
-  const shell = isWin ? process.env.ComSpec || 'cmd.exe' : '/bin/sh';
-  return spawnSync(shell, isWin ? ['/d', '/c', command] : ['-c', command], {
-    cwd,
-    encoding: 'utf8',
-    timeout: 30_000,
-    input: '{}',
-    windowsHide: true,
-  });
+  // Some agents load native hook modules instead of settings JSON (omp). The
+  // carrier still has to reference the shim and launch cleanly.
+  if (/\.(?:[cm]?[jt]s)$/i.test(file)) {
+    if (text.trim() === '') return { ok: false, detail: `carrier is empty: ${file}` };
+    return { ok: true, module: true, text, document: null };
+  }
+  try {
+    const document = JSON.parse(text);
+    if (document === null || typeof document !== 'object' || Array.isArray(document)) {
+      return { ok: false, detail: `carrier is not a JSON object: ${file}` };
+    }
+    return { ok: true, document };
+  } catch (error) {
+    return { ok: false, detail: `carrier is not valid JSON: ${file}: ${error.message}` };
+  }
 }
 
 /** Hook-shaped child: same payload/cwd/env a real hook receives. */
@@ -244,72 +279,119 @@ export function doctorAdapter({ ctx, agentId, options }) {
     checks.push(check('receipt.files', 'pass', `${files.verified} file(s) match the receipt`));
   }
 
-  const carrier = adapter?.hooks?.stop?.carrier ?? null;
-  const merged = carrier === null ? [] : carrierMerged(receipt, carrier);
-  const carrierPath = carrierFile(adapter, scope, ctx.projectRoot);
-  const renderedCarrier = carrierPath !== null
-    && (receipt.files ?? []).some((file) => pathKey(file.path) === pathKey(carrierPath));
-  const carrierState = readCarrierHandlers(carrierPath);
-  const wired = carrier !== null && (merged.length > 0 || renderedCarrier);
-  if (carrier === null) {
-    checks.push(check('hooks.wired', 'pass', 'adapter declares no Stop carrier'));
-  } else if (!wired) {
-    checks.push(
-      check('hooks.wired', 'warn', `hooks are declared (${carrier}) but this install does not wire them yet`),
-    );
-  } else if (!existsSync(carrierPath)) {
-    checks.push(check('hooks.wired', 'fail', `carrier missing: ${carrierPath}`));
-  } else if (carrierState.invalid === true) {
-    checks.push(check('hooks.wired', 'fail', `carrier is not valid JSON: ${carrierPath}`));
-  } else if (carrierState.handlers.length === 0) {
-    checks.push(check('hooks.wired', 'fail', `carrier has no Stop/PreToolUse handlers: ${carrierPath}`));
-  } else {
-    checks.push(
-      check(
-        'hooks.wired',
-        'pass',
-        `${carrierState.handlers.length} hook handler(s) in ${carrier}`,
-      ),
-    );
-  }
-
+  const declared = declaredHooks(adapter);
   const shim = shimPath(receipt);
-  if (!wired || shim === null || !existsSync(shim)) {
-    checks.push(check('hooks.smoke', 'warn', 'no wired shim to smoke'));
-  } else {
-    const result = runShim(shim, agentId, { stdin: '{}' });
-    checks.push(
-      result.status === 0
-        ? check('hooks.smoke', 'pass', 'shim exits 0 with empty stdin payload')
-        : check('hooks.smoke', 'fail', `shim exited ${result.status}: ${(result.stderr || '').trim()}`),
-    );
+  const shimPresent = shim !== null && existsSync(shim);
+  const carrierRoot = scope === 'user' ? userHome() : ctx.projectRoot;
+  const carriers = new Map();
+  for (const entry of declared) {
+    const file = join(carrierRoot, ...entry.carrier.split('/'));
+    if (!carriers.has(file)) carriers.set(file, readCarrierFile(file));
   }
+  const carrierProblems = [...carriers.entries()]
+    .filter(([, state]) => !state.ok)
+    .map(([file, state]) => state.detail ?? `invalid carrier: ${file}`);
 
-  if (!wired) {
-    checks.push(check('hooks.launch', 'warn', 'no wired hook carrier to launch'));
-  } else if (carrierState.handlers.length > 0) {
-    const stop = carrierState.handlers.find((entry) => entry.event === 'Stop') ?? carrierState.handlers[0];
-    const result = runConfiguredHook(stop.handler, ctx.projectRoot);
+  if (declared.length === 0) {
+    checks.push(check('hooks.wired', 'pass', 'adapter declares no hooks carrier'));
+  } else if (carrierProblems.length > 0) {
+    checks.push(check('hooks.wired', 'fail', carrierProblems.slice(0, 2).join('; ')));
+  } else {
+    const unwired = declared.filter((entry) => {
+      const state = carriers.get(join(carrierRoot, ...entry.carrier.split('/')));
+      if (state?.module === true) {
+        return shim === null || !usesShim(state.text, shim);
+      }
+      const commands = eventCommands(state?.document, entry.event);
+      return shim === null || !commands.some((command) => usesShim(command, shim));
+    });
     checks.push(
-      result.error
-        ? check('hooks.launch', 'fail', `configured hook could not be launched: ${result.error.message}`)
-        : result.status === 0
-          ? check('hooks.launch', 'pass', `${stop.event} launch command exited 0`)
-          : check(
-            'hooks.launch',
+      unwired.length === 0
+        ? check(
+            'hooks.wired',
+            'pass',
+            `${declared.map((entry) => entry.event).join('/')} wired to ${shim}`,
+          )
+        : check(
+            'hooks.wired',
             'fail',
-            `${stop.event} launch command exited ${result.status ?? 'signal'}: ${(result.stderr || '').trim()}`,
+            `settings has no shim command for ${unwired.map((entry) => entry.event).join('/')}`,
           ),
     );
-  } else if (shim === null || !existsSync(shim)) {
-    checks.push(check('hooks.launch', 'warn', 'payload has no shims/hook.mjs yet'));
+  }
+
+  if (declared.length === 0) {
+    checks.push(check('hooks.smoke', 'warn', 'adapter declares no hooks carrier'));
+  } else if (shim === null || !shimPresent) {
+    checks.push(check('hooks.smoke', 'fail', `payload is missing shims/hook.mjs: ${shim ?? '(no payload)'}`));
+  } else if (carrierProblems.length > 0) {
+    checks.push(check('hooks.smoke', 'fail', carrierProblems.slice(0, 2).join('; ')));
   } else {
-    const result = runShim(shim, agentId, { stdin: '' });
-    checks.push(
-      result.error
-        ? check('hooks.launch', 'fail', `shim could not be launched: ${result.error.message}`)
-        : check('hooks.launch', 'pass', `shim launched (exit ${result.status})`),
-    );
+    const modules = [...carriers.values()].filter((state) => state.module === true).length;
+    const settings = carriers.size - modules;
+    const detail = modules === 0
+      ? `shim present; ${settings} settings file(s) parse as JSON`
+      : `shim present; ${modules} module carrier(s)${settings === 0 ? '' : `, ${settings} settings file(s) parse as JSON`}`;
+    checks.push(check('hooks.smoke', 'pass', detail));
+  }
+
+  if (declared.length === 0) {
+    checks.push(check('hooks.launch', 'warn', 'adapter declares no hooks carrier'));
+  } else if (shim === null || !shimPresent) {
+    checks.push(check('hooks.launch', 'fail', 'payload has no shims/hook.mjs to launch'));
+  } else if (carrierProblems.length > 0) {
+    checks.push(check('hooks.launch', 'fail', carrierProblems.slice(0, 2).join('; ')));
+  } else {
+    const stopDecl = declared.find((entry) => entry.event === 'Stop');
+    const stopState = stopDecl === undefined
+      ? null
+      : carriers.get(join(carrierRoot, ...stopDecl.carrier.split('/')));
+    const stopModule = stopState?.module === true;
+    const stopCommands = stopModule
+      ? []
+      : eventLaunchCommands(stopState?.document, 'Stop', shim);
+    if (stopModule && !usesShim(stopState.text, shim)) {
+      checks.push(check('hooks.launch', 'fail', 'module carrier does not reference this shim'));
+    } else if (!stopModule && stopCommands.length === 0) {
+      checks.push(check('hooks.launch', 'fail', 'settings has no configured Stop command for this shim'));
+    } else {
+      const started = Date.now();
+      const isWin = process.platform === 'win32';
+      const options = {
+        cwd: ctx.projectRoot,
+        encoding: 'utf8',
+        input: '',
+        timeout: 5_000,
+        windowsHide: true,
+      };
+      let result;
+      if (stopModule) {
+        result = spawnSync(
+          process.execPath,
+          [shim, '--agent', agentId, '--event', 'stop', '--format', 'json'],
+          options,
+        );
+      } else if (isWin && /\.(?:cmd|bat)$/i.test(stopCommands[0]) && existsSync(stopCommands[0])) {
+        // A launcher path may contain spaces; cmd finds it as one /c argument.
+        result = spawnSync(process.env.ComSpec || 'cmd.exe', ['/d', '/c', stopCommands[0]], options);
+      } else {
+        result = spawnSync(stopCommands[0], { ...options, shell: true });
+      }
+      const elapsed = Date.now() - started;
+      if (result.error) {
+        checks.push(check('hooks.launch', 'fail', `Stop command could not be launched: ${result.error.message}`));
+      } else if (result.status !== 0) {
+        checks.push(
+          check(
+            'hooks.launch',
+            'fail',
+            `Stop command exited ${result.status} in ${elapsed}ms: ${(result.stderr || '').trim()}`,
+          ),
+        );
+      } else {
+        checks.push(check('hooks.launch', 'pass', `Stop command exited 0 in ${elapsed}ms`));
+      }
+    }
   }
 
   if (['dsh', 'codex'].includes(agentId)) {
