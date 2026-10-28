@@ -112,8 +112,20 @@ function usesShim(command, shim) {
 
 function readCarrierFile(file) {
   if (!existsSync(file)) return { ok: false, detail: `carrier missing: ${file}` };
+  let text;
   try {
-    const document = JSON.parse(readFileSync(file, 'utf8'));
+    text = readFileSync(file, 'utf8');
+  } catch (error) {
+    return { ok: false, detail: `carrier is unreadable: ${file}: ${error.message}` };
+  }
+  // Some agents load native hook modules instead of settings JSON (omp). The
+  // carrier still has to reference the shim and launch cleanly.
+  if (/\.(?:[cm]?[jt]s)$/i.test(file)) {
+    if (text.trim() === '') return { ok: false, detail: `carrier is empty: ${file}` };
+    return { ok: true, module: true, text, document: null };
+  }
+  try {
+    const document = JSON.parse(text);
     if (document === null || typeof document !== 'object' || Array.isArray(document)) {
       return { ok: false, detail: `carrier is not a JSON object: ${file}` };
     }
@@ -207,8 +219,11 @@ export function doctorAdapter({ ctx, agentId, options }) {
     checks.push(check('hooks.wired', 'fail', carrierProblems.slice(0, 2).join('; ')));
   } else {
     const unwired = declared.filter((entry) => {
-      const document = carriers.get(join(carrierRoot, ...entry.carrier.split('/')))?.document;
-      const commands = eventCommands(document, entry.event);
+      const state = carriers.get(join(carrierRoot, ...entry.carrier.split('/')));
+      if (state?.module === true) {
+        return shim === null || !usesShim(state.text, shim);
+      }
+      const commands = eventCommands(state?.document, entry.event);
       return shim === null || !commands.some((command) => usesShim(command, shim));
     });
     checks.push(
@@ -233,13 +248,12 @@ export function doctorAdapter({ ctx, agentId, options }) {
   } else if (carrierProblems.length > 0) {
     checks.push(check('hooks.smoke', 'fail', carrierProblems.slice(0, 2).join('; ')));
   } else {
-    checks.push(
-      check(
-        'hooks.smoke',
-        'pass',
-        `shim present; ${carriers.size} settings file(s) parse as JSON`,
-      ),
-    );
+    const modules = [...carriers.values()].filter((state) => state.module === true).length;
+    const settings = carriers.size - modules;
+    const detail = modules === 0
+      ? `shim present; ${settings} settings file(s) parse as JSON`
+      : `shim present; ${modules} module carrier(s)${settings === 0 ? '' : `, ${settings} settings file(s) parse as JSON`}`;
+    checks.push(check('hooks.smoke', 'pass', detail));
   }
 
   if (declared.length === 0) {
@@ -250,24 +264,35 @@ export function doctorAdapter({ ctx, agentId, options }) {
     checks.push(check('hooks.launch', 'fail', carrierProblems.slice(0, 2).join('; ')));
   } else {
     const stopDecl = declared.find((entry) => entry.event === 'Stop');
-    const stopCommands = stopDecl === undefined
+    const stopState = stopDecl === undefined
+      ? null
+      : carriers.get(join(carrierRoot, ...stopDecl.carrier.split('/')));
+    const stopModule = stopState?.module === true;
+    const stopCommands = stopModule
       ? []
-      : eventCommands(
-          carriers.get(join(carrierRoot, ...stopDecl.carrier.split('/')))?.document,
-          'Stop',
-        ).filter((command) => usesShim(command, shim));
-    if (stopCommands.length === 0) {
+      : eventCommands(stopState?.document, 'Stop').filter((command) => usesShim(command, shim));
+    if (stopModule && !usesShim(stopState.text, shim)) {
+      checks.push(check('hooks.launch', 'fail', 'module carrier does not reference this shim'));
+    } else if (!stopModule && stopCommands.length === 0) {
       checks.push(check('hooks.launch', 'fail', 'settings has no configured Stop command for this shim'));
     } else {
       const started = Date.now();
-      const result = spawnSync(stopCommands[0], {
-        shell: true,
-        cwd: ctx.projectRoot,
-        encoding: 'utf8',
-        input: '',
-        timeout: 5_000,
-        windowsHide: true,
-      });
+      const result = stopModule
+        ? spawnSync(process.execPath, [shim, '--agent', agentId, '--event', 'stop', '--format', 'json'], {
+            cwd: ctx.projectRoot,
+            encoding: 'utf8',
+            input: '',
+            timeout: 5_000,
+            windowsHide: true,
+          })
+        : spawnSync(stopCommands[0], {
+            shell: true,
+            cwd: ctx.projectRoot,
+            encoding: 'utf8',
+            input: '',
+            timeout: 5_000,
+            windowsHide: true,
+          });
       const elapsed = Date.now() - started;
       if (result.error) {
         checks.push(check('hooks.launch', 'fail', `Stop command could not be launched: ${result.error.message}`));
