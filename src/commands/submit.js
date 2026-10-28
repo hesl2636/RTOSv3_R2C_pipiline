@@ -39,7 +39,8 @@ export async function run(_argv, ctx) {
       'RUN_CLAIMED',
       `session id was claimed by another session: ${ctx.sessionId}`,
       { session_id: ctx.sessionId, run_id: claimed.runId, claimed_by: claimed.sessionId },
-      EXIT_CODES.NO_ACTIVE_RUN,
+      // Ticket #24 requires exit 2 for a stale claimed `cli-` sid.
+      EXIT_CODES.USAGE,
     );
   }
 

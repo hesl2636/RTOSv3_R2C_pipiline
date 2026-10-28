@@ -790,13 +790,13 @@ function sb8(h) {
         ['submit', '--project-root', root, '--session-id', cliSession, '--step', 'step-smoke-a', '--json'],
         { cwd: root },
       );
-      if (stale.status !== 4) throw new Error(`SB8: stale submit exited ${stale.status}, expected 4`);
+      if (stale.status !== 2) throw new Error(`SB8: stale submit exited ${stale.status}, expected 2`);
       const json = envelope(stale, 'SB8 stale submit');
       if (json.error?.code !== 'RUN_CLAIMED') throw new Error(`SB8: error ${json.error?.code}`);
       if (!sameJson(readState(root, runId), stateBefore)) throw new Error('SB8: state changed');
       if (readFileSync(eventsPath(root, runId), 'utf8') !== eventsBefore) throw new Error('SB8: events changed');
       if (readFileSync(latestPath(root), 'utf8') !== latestBefore) throw new Error('SB8: latest changed');
-      return { detail: 'stale cli sid exits 4 RUN_CLAIMED without writes' };
+      return { detail: 'stale cli sid exits 2 RUN_CLAIMED without writes' };
     },
   };
 }

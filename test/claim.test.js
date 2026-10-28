@@ -401,7 +401,7 @@ test('SB7 two concurrent stops claim the run exactly once', async (t) => {
   assert.equal(loser.stdout, '');
 });
 
-test('SB8 submit with a claimed cli id exits 4 RUN_CLAIMED and writes nothing', (t) => {
+test('SB8 submit with a claimed cli id exits 2 RUN_CLAIMED and writes nothing', (t) => {
   const project = tempProject(t);
   const started = runJson(project).envelope;
   const cliSid = `cli-${started.run_id}`;
@@ -413,7 +413,7 @@ test('SB8 submit with a claimed cli id exits 4 RUN_CLAIMED and writes nothing', 
   const beforeLatest = readFileSync(join(project.root, '.r2c', 'latest.json'), 'utf8');
 
   const stale = submit(project, cliSid, 'step-a');
-  assert.equal(stale.status, 4, stale.stderr);
+  assert.equal(stale.status, 2, stale.stderr);
   const failed = envelope(stale);
   assert.equal(failed.error.code, 'RUN_CLAIMED');
 
