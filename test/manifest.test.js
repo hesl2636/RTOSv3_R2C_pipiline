@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import {
-  cpSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -13,10 +12,10 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { writeTwoStepProject } from './helpers/two-step.js';
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const BIN = join(REPO, 'bin', 'r2c.js');
-const FIXTURE = join(REPO, 'test', 'fixtures', 'two-step');
 
 function tempProject(t) {
   const root = mkdtempSync(join(tmpdir(), 'r2c-manifest-project-'));
@@ -422,8 +421,7 @@ stages:
 
 test('default discovery rooted at --project-root resolves task files there', (t) => {
   const project = tempProject(t);
-  cpSync(join(FIXTURE, 'two-step.yaml'), join(project.root, 'workflows', 'two-step.yaml'));
-  cpSync(join(FIXTURE, 'tasks', 'a.md'), join(project.root, 'tasks', 'a.md'));
+  writeTwoStepProject(project.root);
 
   const validated = cliJson(['validate', '--project-root', project.root], {
     cwd: project.outside,

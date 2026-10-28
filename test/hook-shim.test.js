@@ -1,9 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import {
-  cpSync,
   existsSync,
-  mkdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
@@ -13,11 +11,11 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { writeTwoStepProject } from './helpers/two-step.js';
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const BIN = join(REPO, 'bin', 'r2c.js');
 const SHIM = join(REPO, 'shims', 'hook.mjs');
-const FIXTURE = join(REPO, 'test', 'fixtures', 'two-step');
 const RUNNER_CMD = `"${process.execPath}" "${BIN}"`;
 
 function tempDir(t, prefix) {
@@ -54,9 +52,7 @@ function envelope(result) {
 function startedRun(t) {
   const root = tempDir(t, 'project');
   const outside = tempDir(t, 'outside');
-  mkdirSync(join(root, 'workflows'), { recursive: true });
-  cpSync(join(FIXTURE, 'two-step.yaml'), join(root, 'workflows', 'two-step.yaml'));
-  cpSync(join(FIXTURE, 'tasks'), join(root, 'tasks'), { recursive: true });
+  writeTwoStepProject(root);
   const run = cli(['run', '--project-root', root, '--json'], { cwd: outside });
   assert.equal(run.status, 0, run.stderr);
   const json = envelope(run);

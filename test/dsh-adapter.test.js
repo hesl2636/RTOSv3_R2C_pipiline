@@ -14,12 +14,12 @@ import { tmpdir } from 'node:os';
 import { delimiter, dirname, join, resolve } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { writeTwoStepProject } from './helpers/two-step.js';
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const BIN = join(REPO, 'bin', 'r2c.js');
 const SHIM = join(REPO, 'shims', 'hook.mjs');
 const ENGINE_VERSION = JSON.parse(readFileSync(join(REPO, 'package.json'), 'utf8')).version;
-const FIXTURE = join(REPO, 'test', 'fixtures', 'two-step');
 
 function tempDir(t, prefix) {
   const dir = mkdtempSync(join(tmpdir(), `r2c-dsh-${prefix}-`));
@@ -146,9 +146,7 @@ function setup(t) {
   const dshHome = tempDir(t, 'dsh-home');
   const bin = fakeDsh(t);
   const project = tempDir(t, 'project');
-  mkdirSync(join(project, 'workflows'), { recursive: true });
-  cpSync(join(FIXTURE, 'two-step.yaml'), join(project, 'workflows', 'two-step.yaml'));
-  cpSync(join(FIXTURE, 'tasks'), join(project, 'tasks'), { recursive: true });
+  writeTwoStepProject(project);
   const env = cleanEnv({ pathDir: bin, home, dshHome });
   return { home, dshHome, bin, project, env };
 }
@@ -201,9 +199,7 @@ function startRun(env, project, sessionId) {
 
 function fixtureProject(t) {
   const project = tempDir(t, 'fixture-project');
-  mkdirSync(join(project, 'workflows'), { recursive: true });
-  cpSync(join(FIXTURE, 'two-step.yaml'), join(project, 'workflows', 'two-step.yaml'));
-  cpSync(join(FIXTURE, 'tasks'), join(project, 'tasks'), { recursive: true });
+  writeTwoStepProject(project);
   return project;
 }
 

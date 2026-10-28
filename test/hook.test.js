@@ -1,9 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import {
-  cpSync,
   existsSync,
-  mkdirSync,
   mkdtempSync,
   readFileSync,
   readdirSync,
@@ -14,10 +12,10 @@ import { tmpdir } from 'node:os';
 import { dirname, join, relative, resolve } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { writeTwoStepProject } from './helpers/two-step.js';
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const BIN = join(REPO, 'bin', 'r2c.js');
-const FIXTURE = join(REPO, 'test', 'fixtures', 'two-step');
 
 function cleanEnv(extra = {}) {
   const env = { ...process.env, ...extra };
@@ -42,9 +40,7 @@ function tempProject(t) {
     rmSync(root, { recursive: true, force: true });
     rmSync(outside, { recursive: true, force: true });
   });
-  mkdirSync(join(root, 'workflows'), { recursive: true });
-  cpSync(join(FIXTURE, 'two-step.yaml'), join(root, 'workflows', 'two-step.yaml'));
-  cpSync(join(FIXTURE, 'tasks'), join(root, 'tasks'), { recursive: true });
+  writeTwoStepProject(root);
   return { root, outside };
 }
 

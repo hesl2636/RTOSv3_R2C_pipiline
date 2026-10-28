@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
 import {
-  cpSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -15,10 +14,10 @@ import { tmpdir } from 'node:os';
 import { dirname, join, relative, resolve } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { TWO_STEP_YAML, writeTwoStepProject } from './helpers/two-step.js';
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const BIN = join(REPO, 'bin', 'r2c.js');
-const FIXTURE = join(REPO, 'test', 'fixtures', 'two-step');
 const CLI_SID = /^cli-R\d{8}T\d{6}Z-[0-9a-f]{6}$/;
 const RUN_ID = /^R\d{8}T\d{6}Z-[0-9a-f]{6}$/;
 const S = '01a181f0-00a9-7606-9db4-7eccaedcc245';
@@ -69,9 +68,7 @@ function tempProject(t) {
   const home = join(root, 'home');
   mkdirSync(join(home, '.dsh'), { recursive: true });
   t.after(() => rmSync(root, { recursive: true, force: true }));
-  mkdirSync(join(root, 'workflows'), { recursive: true });
-  cpSync(join(FIXTURE, 'two-step.yaml'), join(root, 'workflows', 'two-step.yaml'));
-  cpSync(join(FIXTURE, 'tasks'), join(root, 'tasks'), { recursive: true });
+  writeTwoStepProject(root);
   const env = {
     HOME: home,
     USERPROFILE: home,
@@ -288,11 +285,8 @@ test('SB4 multiple candidates are never guessed; --workflow narrows the choice',
   const a = runJson(otherProject).envelope;
   const otherManifest = join(otherProject.root, 'other', 'other.yaml');
   mkdirSync(join(otherProject.root, 'other'), { recursive: true });
-  const fixture = readFileSync(join(FIXTURE, 'two-step.yaml'), 'utf8');
-  writeFileSync(
-    otherManifest,
-    fixture.replace('id: workflow-two-step', 'id: workflow-other'),
-  );
+  const otherManifestYaml = TWO_STEP_YAML.replace('id: workflow-two-step', 'id: workflow-other');
+  writeFileSync(otherManifest, otherManifestYaml);
   const b = runJson(otherProject, ['--manifest', otherManifest]).envelope;
   assert.equal(a.data.workflow_id, 'workflow-two-step');
   assert.equal(b.data.workflow_id, 'workflow-other');

@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
 import {
-  cpSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -14,10 +13,10 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { writeTwoStepProject } from './helpers/two-step.js';
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const BIN = join(REPO, 'bin', 'r2c.js');
-const FIXTURE = join(REPO, 'test', 'fixtures', 'two-step');
 const RUN_ID = /^R\d{8}T\d{6}Z-[0-9a-f]{6}$/;
 
 function tempProject(t) {
@@ -27,9 +26,7 @@ function tempProject(t) {
     rmSync(root, { recursive: true, force: true });
     rmSync(outside, { recursive: true, force: true });
   });
-  mkdirSync(join(root, 'workflows'), { recursive: true });
-  cpSync(join(FIXTURE, 'two-step.yaml'), join(root, 'workflows', 'two-step.yaml'));
-  cpSync(join(FIXTURE, 'tasks'), join(root, 'tasks'), { recursive: true });
+  writeTwoStepProject(root);
   return { root, outside };
 }
 

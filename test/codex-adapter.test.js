@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import {
   chmodSync,
-  cpSync,
   existsSync,
   linkSync,
   mkdirSync,
@@ -17,10 +16,10 @@ import { tmpdir } from 'node:os';
 import { delimiter, dirname, join, relative, resolve } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { writeTwoStepProject } from './helpers/two-step.js';
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const BIN = join(REPO, 'bin', 'r2c.js');
-const FIXTURE = join(REPO, 'test', 'fixtures', 'two-step');
 const ENGINE_VERSION = JSON.parse(readFileSync(join(REPO, 'package.json'), 'utf8')).version;
 const COMMAND_IDS = ['analysis', 'cancel', 'pause', 'resume', 'run', 'status', 'upload'];
 
@@ -352,9 +351,7 @@ test('the installed Stop hook delivers next --format plain and caps at 8', (t) =
   const runnerCmd = `node ${BIN.replaceAll('\\', '/')}`;
   assert.equal(install(env, project, ['--runner-cmd', runnerCmd]).status, 0);
 
-  mkdirSync(join(project, 'workflows'), { recursive: true });
-  cpSync(join(FIXTURE, 'two-step.yaml'), join(project, 'workflows', 'two-step.yaml'));
-  cpSync(join(FIXTURE, 'tasks'), join(project, 'tasks'), { recursive: true });
+  writeTwoStepProject(project);
   const started = cli(
     ['run', '--project-root', project, '--session-id', 'sess-codex-a', '--runner-cmd', runnerCmd],
     { cwd: project, env },
@@ -417,9 +414,7 @@ test('untrusted or absent hooks never block the B-mode run -> submit chain', (t)
   rmSync(join(project, '.codex', 'r2c-hook-stop.cmd'), { force: true });
   rmSync(join(project, '.codex', 'r2c-hook-pre-tool-use.cmd'), { force: true });
 
-  mkdirSync(join(project, 'workflows'), { recursive: true });
-  cpSync(join(FIXTURE, 'two-step.yaml'), join(project, 'workflows', 'two-step.yaml'));
-  cpSync(join(FIXTURE, 'tasks'), join(project, 'tasks'), { recursive: true });
+  writeTwoStepProject(project);
 
   const started = cli(['run', '--project-root', project], { cwd: project, env });
   assert.equal(started.status, 0, started.stderr);
