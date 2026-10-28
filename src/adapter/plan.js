@@ -254,7 +254,7 @@ export function buildPlan({
       const pointers = Array.isArray(entry.pointers) && entry.pointers.length > 0 ? entry.pointers : [null];
       for (const pointer of pointers) {
         mergeEntries.push(
-          buildMergeEntry({ entry, adapter, target, pointer, mcpAbsolute, warnings }),
+          buildMergeEntry({ entry, adapter, target, pointer, mcpAbsolute, warnings, values, resolved }),
         );
       }
       continue;
@@ -356,46 +356,67 @@ export function buildPlan({
   return { entries, warnings };
 }
 
-function buildMergeEntry({ entry, adapter, target, pointer, mcpAbsolute, warnings }) {
-  if (mcpAbsolute === null) {
-    throw usageError('MCP_SOURCE_MISSING', `merge-json entry ${entry.from} needs --mcp <file>`, {
-      adapter: adapter.id,
-    });
-  }
+function buildMergeEntry({ entry, adapter, target, pointer, mcpAbsolute, warnings, values, resolved }) {
   let document;
-  try {
-    document = JSON.parse(readFileSync(mcpAbsolute, 'utf8'));
-  } catch (error) {
-    throw usageError('MCP_INVALID_JSON', `cannot parse --mcp file ${mcpAbsolute}: ${error.message}`, {
-      file: mcpAbsolute,
-    });
-  }
-  let values = {};
-  if (pointer === null) {
-    if (document === null || typeof document !== 'object' || Array.isArray(document)) {
-      throw usageError('MCP_INVALID_SHAPE', '--mcp file must be a JSON object', {
+  let sourceRel;
+  if (entry.from === '--mcp') {
+    if (mcpAbsolute === null) {
+      throw usageError('MCP_SOURCE_MISSING', `merge-json entry ${entry.from} needs --mcp <file>`, {
+        adapter: adapter.id,
+      });
+    }
+    sourceRel = `mcp:${basename(mcpAbsolute)}`;
+    try {
+      document = JSON.parse(readFileSync(mcpAbsolute, 'utf8'));
+    } catch (error) {
+      throw usageError('MCP_INVALID_JSON', `cannot parse --mcp file ${mcpAbsolute}: ${error.message}`, {
         file: mcpAbsolute,
       });
     }
-    values = document;
+  } else {
+    const rel = toPosixName(`adapters/${adapter.id}/${entry.from}`);
+    const assetEntry = entryByRel(resolved, rel) ?? entryByRel(resolved, toPosixName(entry.from));
+    if (assetEntry === null) {
+      throw usageError('MAP_SOURCE_MISSING', `merge-json source not found: ${entry.from}`, {
+        adapter: adapter.id,
+        path: entry.from,
+      });
+    }
+    sourceRel = assetEntry.rel;
+    try {
+      document = JSON.parse(renderText(readFileSync(assetEntry.abs, 'utf8'), values));
+    } catch (error) {
+      throw usageError('MERGE_SOURCE_INVALID_JSON', `cannot parse ${assetEntry.rel}: ${error.message}`, {
+        file: assetEntry.rel,
+      });
+    }
+  }
+  let values2 = {};
+  if (pointer === null) {
+    if (document === null || typeof document !== 'object' || Array.isArray(document)) {
+      throw usageError('MERGE_INVALID_SHAPE', 'merge-json source must be a JSON object', {
+        file: sourceRel,
+      });
+    }
+    values2 = document;
   } else {
     let node = document;
     for (const key of pointer.split('.')) {
       node = node == null ? undefined : node[key];
     }
-    if (node === null || typeof node !== 'object' || Array.isArray(node)) {
-      warnings.push(`mcp-pointer-empty:${pointer}`);
+    if (node === null || typeof node !== 'object') {
+      warnings.push(`merge-pointer-empty:${pointer}`);
       node = {};
     }
-    values = node;
+    values2 = node;
   }
   return {
     action: 'merge-json',
     kind: 'merge-json',
-    sourceRel: `mcp:${basename(mcpAbsolute)}`,
+    sourceRel,
     target,
     pointer,
-    values,
-    sha256: sha256(Buffer.from(JSON.stringify(values))),
+    values: values2,
+    sha256: sha256(Buffer.from(JSON.stringify(values2))),
   };
 }

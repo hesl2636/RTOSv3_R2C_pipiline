@@ -197,6 +197,11 @@ function scanMergeGroup(group) {
     const container = pointerGet(document, entry.pointer);
     for (const [key, value] of Object.entries(entry.values)) {
       const current = container !== undefined && container !== null && typeof container === 'object' ? container[key] : undefined;
+      if (Array.isArray(current) && Array.isArray(value)) {
+        const added = value.filter((item) => !current.some((existing) => isDeepStrictEqual(existing, item)));
+        if (added.length > 0) pending.push({ entry, key, value: [...current, ...added], added });
+        continue;
+      }
       if (!isDeepStrictEqual(current, value)) pending.push({ entry, key, value });
     }
   }
@@ -537,10 +542,12 @@ async function installOnce({ ctx, agentId, options, state, resolved, adapter, ma
           mergedFilesCreated.add(scan.target);
         }
         const document = existed ? scan.document : {};
-        for (const { entry, key, value } of scan.pending) {
-          pointerSet(document, entry.pointer, { ...(pointerGet(document, entry.pointer) ?? {}), [key]: value });
+        for (const { entry, key, value, added } of scan.pending) {
+          const current = pointerGet(document, entry.pointer);
+          const base = current !== null && typeof current === 'object' && !Array.isArray(current) ? current : {};
+          pointerSet(document, entry.pointer, Array.isArray(value) ? value : { ...base, [key]: value });
           const pointer = entry.pointer === null ? key : `${entry.pointer}.${key}`;
-          merged.set(`${scan.target}|${pointer}`, { file: scan.target, pointer, value });
+          merged.set(`${scan.target}|${pointer}`, { file: scan.target, pointer, value, ...(added ? { added } : {}) });
         }
         atomicWriteFile(scan.target, `${JSON.stringify(document, null, 2)}\n`);
       }

@@ -26,14 +26,19 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeF
 import { dirname, join } from 'node:path';
 
 const argv = process.argv.slice(2);
-const mode = argv[0] === 'stop' || argv[0] === 'pre-tool-use' ? argv[0] : null;
+const positional = argv[0] === 'stop' || argv[0] === 'pre-tool-use' ? argv[0] : null;
 
 function option(name, fallback = null) {
+  const prefix = `--${name}=`;
+  const inline = argv.find((value) => value.startsWith(prefix));
+  if (inline !== undefined) return inline.slice(prefix.length);
   const index = argv.indexOf(`--${name}`);
   if (index === -1) return fallback;
   const value = argv[index + 1];
   return value === undefined || value.startsWith('--') ? fallback : value;
 }
+
+const mode = positional ?? (option('event') === 'pre-tool-use' ? 'pre-tool-use' : option('event') === 'stop' ? 'stop' : null);
 
 function numberOption(name, fallback) {
   const raw = option(name);
@@ -254,7 +259,68 @@ async function runStop() {
     }
   }
   if (candidate !== null) incrementGuard(candidate.key);
+  writeUsageSnapshot({
+    runId: candidate?.runId ?? null,
+    transcriptPath: firstString(raw, ['transcript_path', 'transcriptPath']),
+    model: firstString(raw, ['model']),
+  });
   appendTrace({ hook: 'stop', session_id: sessionId, run_id: candidate?.runId ?? null, step_id: candidate?.stepId ?? null, delivered: true, capped: false });
+}
+
+/**
+ * Append a cumulative usage snapshot (spec #7 §9.2). One line per stop event;
+ * `token-usage` only ever reads the last line per (run_id, session_id), so this
+ * must never be summed by anyone. Failures are silent and never change the
+ * hook exit code.
+ */
+function writeUsageSnapshot({ runId, transcriptPath, model }) {
+  if (typeof runId !== 'string' || typeof transcriptPath !== 'string' || transcriptPath === '') return;
+  let usage = null;
+  let detectedModel = model;
+  try {
+    const lines = readFileSync(transcriptPath, 'utf8').split(/\r?\n/).filter((line) => line.trim() !== '');
+    for (let index = lines.length - 1; index >= 0; index -= 1) {
+      let entry;
+      try {
+        entry = JSON.parse(lines[index]);
+      } catch {
+        continue;
+      }
+      const candidate = entry?.message?.usage ?? entry?.usage ?? null;
+      if (candidate !== null && typeof candidate === 'object') {
+        usage = candidate;
+        detectedModel = detectedModel ?? (typeof entry?.message?.model === 'string' ? entry.message.model : null);
+        break;
+      }
+    }
+  } catch {
+    return;
+  }
+  if (usage === null) return;
+  const line = {
+    schema: 'r2c.usage/v1',
+    time: new Date().toISOString(),
+    run_id: runId,
+    session_id: sessionId,
+    adapter: agentId,
+    model: detectedModel ?? null,
+    event: 'stop',
+    cumulative: true,
+    usage: {
+      input_tokens: Number(usage.input_tokens ?? 0),
+      output_tokens: Number(usage.output_tokens ?? 0),
+      cache_read_tokens: Number(usage.cache_read_input_tokens ?? usage.cache_read_tokens ?? 0),
+      cache_creation_tokens: Number(usage.cache_creation_input_tokens ?? usage.cache_creation_tokens ?? 0),
+    },
+    source: 'transcript',
+  };
+  try {
+    const usageDir = join(projectRoot, '.r2c', 'usage');
+    mkdirSync(usageDir, { recursive: true });
+    appendFileSync(join(usageDir, `${runId}.jsonl`), `${JSON.stringify(line)}\n`);
+  } catch {
+    /* usage is best effort */
+  }
 }
 
 async function runPreToolUse() {

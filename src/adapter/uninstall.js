@@ -59,6 +59,16 @@ function pointerDelete(object, pointer) {
   return true;
 }
 
+function pointerSet(object, pointer, value) {
+  const keys = pointer.split('.');
+  let node = object;
+  for (const key of keys.slice(0, -1)) {
+    if (node[key] === null || typeof node[key] !== 'object') node[key] = {};
+    node = node[key];
+  }
+  node[keys[keys.length - 1]] = value;
+}
+
 function readReceipts(state) {
   const dir = installDir(state);
   if (!existsSync(dir)) return [];
@@ -134,6 +144,22 @@ function applyMergedRemovals(receipt, force, leftovers) {
     let changed = false;
     for (const entry of entries) {
       const current = pointerGet(document, entry.pointer);
+      if (Array.isArray(current) && Array.isArray(entry.added)) {
+        const remaining = current.filter((item) => !entry.added.some((added) => isDeepStrictEqual(added, item)));
+        if (remaining.length === current.length) {
+          if (force) {
+            if (pointerDelete(document, entry.pointer)) changed = true;
+          } else {
+            leftovers.push(`modified:${file}#${entry.pointer}`);
+          }
+        } else if (remaining.length === 0) {
+          if (pointerDelete(document, entry.pointer)) changed = true;
+        } else {
+          pointerSet(document, entry.pointer, remaining);
+          changed = true;
+        }
+        continue;
+      }
       if (isDeepStrictEqual(current, entry.value) || force) {
         if (pointerDelete(document, entry.pointer)) changed = true;
       } else {
