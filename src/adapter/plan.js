@@ -83,6 +83,11 @@ export function defaultRunnerCommand(ctx, resolved) {
   return `npx --yes ${pkg}@${resolved.manifest.version}`;
 }
 
+function jsonInline(value) {
+  const quoted = JSON.stringify(value);
+  return quoted.slice(1, -1);
+}
+
 function placeholders({ projectRoot, payloadHome, runnerCmd, version, agentId }) {
   return {
     PAYLOAD_HOME: payloadHome,
@@ -90,6 +95,10 @@ function placeholders({ projectRoot, payloadHome, runnerCmd, version, agentId })
     RUNNER_CMD: runnerCmd,
     VERSION: version,
     AGENT_ID: agentId,
+    // Escaped variants for assets that are JSON or YAML double-quoted strings.
+    PAYLOAD_HOME_JSON: jsonInline(payloadHome),
+    PROJECT_ROOT_JSON: jsonInline(projectRoot),
+    RUNNER_CMD_JSON: jsonInline(runnerCmd),
   };
 }
 
@@ -214,7 +223,7 @@ export function buildPlan({
     version: resolved.manifest.version,
     agentId: adapter.id,
   });
-  const scopeRoots = { project: projectRoot, user: userHome() };
+  const scopeRoots = { project: projectRoot, user: userHome(), payload: payloadHome };
   const linkRoots = [];
   const mcpAbsolute = mcpPath === null ? null : isAbsolute(mcpPath) ? mcpPath : join(process.cwd(), mcpPath);
 
@@ -294,7 +303,10 @@ export function buildPlan({
       });
     }
 
-    const matches = matchingEntries(resolved, entry.from);
+    let matches = matchingEntries(resolved, entry.from);
+    if (matches.length === 0 && !toPosixName(entry.from).startsWith('adapters/')) {
+      matches = matchingEntries(resolved, `adapters/${adapter.id}/${toPosixName(entry.from)}`);
+    }
     if (matches.length === 0) warnings.push(`map-source-empty:${entry.from}`);
     for (const match of matches) {
       const stem = basename(match.rel).replace(/\.[^.]+$/, '');

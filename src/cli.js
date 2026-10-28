@@ -48,6 +48,7 @@ Adapter options:
       --dry-run           Print the plan without writing anything.
       --copy / --link     Install mode; --link requires --from.
       --no-smoke          Skip the post-install discovery probe.
+      --profile NAME      Agent profile (dsh: default "web").
       --purge-state       uninstall: also remove .r2c runtime state.
 `;
 
@@ -70,6 +71,7 @@ const VALUE_OPTIONS = new Set([
   '--mcp',
   '--agent',
   '--workflow',
+  '--profile',
 ]);
 
 const FLAG_OPTIONS = new Set([
@@ -149,6 +151,7 @@ function parseOptions(argv) {
     plugin: null,
     mcp: null,
     agent: null,
+    profile: null,
     force: false,
     dryRun: false,
     noSmoke: false,
@@ -219,6 +222,7 @@ function parseOptions(argv) {
       else if (name === '--plugin') options.plugin = value;
       else if (name === '--mcp') options.mcp = value;
       else if (name === '--agent') options.agent = value;
+      else if (name === '--profile') options.profile = value;
       else if (name === '--workflow') options.workflow = value;
       continue;
     }
@@ -307,6 +311,7 @@ export async function main(argv) {
     '--plugin',
     '--mcp',
     '--agent',
+    '--profile',
     '--force',
     '--dry-run',
     '--no-smoke',
@@ -332,6 +337,7 @@ export async function main(argv) {
   const sessionId = firstNonEmpty(
     options.sessionId,
     process.env.R2C_SESSION_ID,
+    process.env.DSH_SESSION_ID,
     hookInput.session_id,
   );
   const rootValue = firstNonEmpty(

@@ -8,7 +8,7 @@
  * `--force` or `--dry-run` leaves the project untouched.
  */
 import { cpSync, existsSync, readFileSync, rmdirSync, unlinkSync } from 'node:fs';
-import { dirname, join, relative, sep } from 'node:path';
+import { dirname, join, relative, resolve, sep } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { EXIT_CODES, R2cError } from '../errors.js';
 import { isValidRange, satisfies } from '../version.js';
@@ -17,6 +17,7 @@ import { detectAgent } from './detect.js';
 import { buildPlan, defaultRunnerCommand, loadAdapterDeclaration } from './plan.js';
 import { materializePayload, payloadHome, payloadReady, resolvePayload } from './payload.js';
 import { runAdapterSmoke } from './smoke.js';
+import { runAdapterStep, stepsFile, undoAdapterStep } from './steps.js';
 import {
   backupDir,
   installLockPath,
@@ -59,6 +60,13 @@ function effectiveMode(options, adapter) {
       throw installError('LINK_REQUIRES_FROM', '--link is only supported together with --from <dir>', {
         option: '--link',
       });
+    }
+    if (Array.isArray(adapter.modes) && !adapter.modes.includes('link')) {
+      throw installError(
+        'MODE_UNSUPPORTED',
+        `adapter ${adapter.id} does not support --link; use the default --copy`,
+        { adapter: adapter.id, mode: 'link', supported: adapter.modes },
+      );
     }
     return 'link';
   }
@@ -212,6 +220,27 @@ function entryKeys(entry) {
   return Object.entries(entry.values).map(([key, value]) => ({ entry, key, value }));
 }
 
+/**
+ * Context passed to every adapter step. It is deliberately JSON-serialisable:
+ * the pending marker stores it verbatim so crash recovery can call rollback.
+ */
+function stepContext({ ctx, adapter, scope, mode, home, runnerCmd, resolved, options, prior }) {
+  return {
+    adapter: adapter.id,
+    scope,
+    mode,
+    projectRoot: ctx.projectRoot,
+    payloadHome: home,
+    runnerCmd,
+    version: resolved.manifest.version,
+    profile: options.profile ?? adapter.options?.profile?.default ?? null,
+    mcp: options.mcp === undefined || options.mcp === null ? null : resolve(process.cwd(), options.mcp),
+    state: null,
+    receipt: prior ?? null,
+    undo: { files: [], created_files: [], mcp_ids: [] },
+  };
+}
+
 function rollback(pending) {
   for (const file of [...(pending.created_files ?? [])].reverse()) {
     try {
@@ -258,11 +287,12 @@ function rollback(pending) {
 }
 
 /** Crash recovery: a pending marker means the previous install never finished. */
-function recoverPending(state, agentId, warnings) {
+async function recoverPending(state, agentId, warnings) {
   const file = pendingPath(state, agentId);
   if (!existsSync(file)) return;
   const pending = readJsonIfExists(file);
   if (pending !== null) {
+    await undoAdapterStep(pending.steps, warnings);
     rollback(pending);
     warnings.push('recovered incomplete install from pending marker');
   }
@@ -422,7 +452,7 @@ async function installOnce({ ctx, agentId, options, state, resolved, adapter, ma
     warnings.push(...plan.warnings);
 
     const prior = readJsonIfExists(receiptPath(state, adapter.id));
-    recoverPending(state, adapter.id, warnings);
+    await recoverPending(state, adapter.id, warnings);
     const payloadNeeded = !payloadReady(home, resolved);
     const filePlan = plan.entries.filter((entry) => entry.action !== 'merge-json');
     const { conflicts, decisions } = collectFilePlan(filePlan, prior, options);
@@ -444,6 +474,8 @@ async function installOnce({ ctx, agentId, options, state, resolved, adapter, ma
     const writes = decisions.filter((decision) => decision.write);
     const mergeWrites = [...mergeScans.values()].filter((scan) => scan.needsWrite);
     const changed = payloadNeeded || writes.length > 0 || mergeWrites.length > 0;
+    const externalStepFile = stepsFile(resolved, adapter.id, home);
+    const runSteps = externalStepFile !== null && (changed || prior?.steps === null || prior?.steps === undefined);
 
     const manual = [...(adapter.manualSteps ?? [])];
     if (options.dryRun) {
@@ -469,6 +501,7 @@ async function installOnce({ ctx, agentId, options, state, resolved, adapter, ma
             ...(payloadNeeded ? [{ action: 'payload', target: home }] : []),
             ...writes.map(({ entry }) => ({ action: entry.action, target: entry.target })),
             ...mergeWrites.map((scan) => ({ action: 'merge-json', target: scan.target })),
+            ...(runSteps ? [{ action: 'steps', target: externalStepFile }] : []),
           ],
           files: [],
           skipped: decisions.filter((decision) => !decision.write).map(({ entry }) => entry.target),
@@ -479,7 +512,7 @@ async function installOnce({ ctx, agentId, options, state, resolved, adapter, ma
       };
     }
 
-    if (!changed) {
+    if (!changed && !runSteps) {
       return {
         command: 'adapter.install',
         data: {
@@ -593,6 +626,33 @@ async function installOnce({ ctx, agentId, options, state, resolved, adapter, ma
       }
       atomicWriteJson(pendingPath(state, adapter.id), pending);
 
+      let stepsOutcome = null;
+      if (runSteps) {
+        const context = stepContext({
+          ctx,
+          adapter,
+          scope,
+          mode,
+          home,
+          runnerCmd,
+          resolved,
+          options,
+          prior,
+        });
+        context.state = state;
+        pending.steps = {
+          file: externalStepFile,
+          context,
+          undo: context.undo,
+        };
+        atomicWriteJson(pendingPath(state, adapter.id), pending);
+        stepsOutcome = await runAdapterStep(externalStepFile, 'post-install', context)
+          ?? { warnings: [], leftover: [], receipt: null, undo: null };
+        warnings.push(...stepsOutcome.warnings);
+        pending.steps.undo = stepsOutcome.undo ?? context.undo;
+        atomicWriteJson(pendingPath(state, adapter.id), pending);
+      }
+
       if (!options.noSmoke) {
         const smoke = runAdapterSmoke({
           payloadHome: home,
@@ -601,8 +661,6 @@ async function installOnce({ ctx, agentId, options, state, resolved, adapter, ma
           projectRoot: ctx.projectRoot,
         });
         if (!smoke.ok) {
-          rollback(pending);
-          unlinkSync(pendingPath(state, adapter.id));
           throw installError(
             'SMOKE_FAILED',
             `post-install smoke failed: ${smoke.detail ?? 'unknown error'}`,
@@ -635,6 +693,14 @@ async function installOnce({ ctx, agentId, options, state, resolved, adapter, ma
         link_target: backup.linkTarget ?? null,
         at: timestamp,
       }));
+      if (runSteps) {
+        receipt.steps = stepsOutcome.receipt ?? {};
+        receipt.steps_file = externalStepFile;
+      } else {
+        receipt.steps = prior?.steps ?? null;
+        receipt.steps_file = prior?.steps_file ?? null;
+      }
+      receipt.step_leftover = stepsOutcome?.leftover ?? prior?.step_leftover ?? [];
       atomicWriteJson(receiptPath(state, adapter.id), receipt);
       unlinkSync(pendingPath(state, adapter.id));
 
@@ -655,10 +721,11 @@ async function installOnce({ ctx, agentId, options, state, resolved, adapter, ma
           skipped: decisions.filter((decision) => !decision.write).map(({ entry }) => entry.target),
           warnings,
           manual,
-          leftover: [],
+          leftover: [...receipt.step_leftover],
         },
       };
     } catch (error) {
+      await undoAdapterStep(pending.steps, warnings);
       rollback(pending);
       try {
         unlinkSync(pendingPath(state, adapter.id));

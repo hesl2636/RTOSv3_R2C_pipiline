@@ -1,0 +1,29 @@
+{
+  "schema": "r2c.adapter-map/v1",
+  "entries": [
+    {
+      "from": "assets/index.mjs",
+      "to": "{payload}/adapters/dsh/index.mjs",
+      "action": "copy",
+      "scope": "user"
+    },
+    {
+      "from": "assets/package.json",
+      "to": "{payload}/adapters/dsh/package.json",
+      "action": "render",
+      "scope": "user"
+    },
+    {
+      "from": "assets/dsh.patch.yml",
+      "to": "{payload}/adapters/dsh/cordis.patch.yml",
+      "action": "render",
+      "scope": "user"
+    },
+    {
+      "from": "assets/hooks.json",
+      "to": "{payload}/adapters/dsh/hooks.json",
+      "action": "render",
+      "scope": "user"
+    }
+  ]
+}

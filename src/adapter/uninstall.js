@@ -13,6 +13,7 @@ import { isDeepStrictEqual } from 'node:util';
 import { EXIT_CODES, R2cError } from '../errors.js';
 import { withLock } from '../lock.js';
 import { installLockPath, installDir, receiptPath, stateDir } from './state.js';
+import { runAdapterStep, stepsFile } from './steps.js';
 import {
   atomicWriteJson,
   isFile,
@@ -185,7 +186,7 @@ function purgeRuntimeState(state) {
   removePath(join(state, 'latest.json'));
 }
 
-export function uninstallAdapter({ ctx, agentId, options }) {
+export async function uninstallAdapter({ ctx, agentId, options }) {
   const scope = chooseScope(ctx.projectRoot, { ...options, agentId });
   const state = stateDir(scope, ctx.projectRoot);
   const receiptFile = receiptPath(state, agentId);
@@ -201,7 +202,7 @@ export function uninstallAdapter({ ctx, agentId, options }) {
   if (options.dryRun) {
     return {
       command: 'adapter.uninstall',
-      data: buildReport({
+      data: await buildReport({
         receipt,
         scope,
         dryRun: true,
@@ -211,7 +212,7 @@ export function uninstallAdapter({ ctx, agentId, options }) {
       }),
     };
   }
-  return withLock(installLockPath(state), () => {
+  return withLock(installLockPath(state), async () => {
     const fresh = readJsonIfExists(receiptFile);
     if (fresh === null) {
       throw uninstallError('NOT_INSTALLED', `adapter ${agentId} is not installed`, {
@@ -219,7 +220,7 @@ export function uninstallAdapter({ ctx, agentId, options }) {
         scope,
       }, EXIT_CODES.NO_ACTIVE_RUN);
     }
-    const data = buildReport({ receipt: fresh, scope, dryRun: false, options, state, projectRoot: ctx.projectRoot });
+    const data = await buildReport({ receipt: fresh, scope, dryRun: false, options, state, projectRoot: ctx.projectRoot });
     unlinkSync(receiptFile);
     if (options.purgeState) {
       purgeRuntimeState(state);
@@ -229,9 +230,30 @@ export function uninstallAdapter({ ctx, agentId, options }) {
   });
 }
 
-function buildReport({ receipt, scope, dryRun, options, state, projectRoot }) {
+async function buildReport({ receipt, scope, dryRun, options, state, projectRoot }) {
   const warnings = [];
   const leftovers = [];
+
+  if (!dryRun) {
+    const file = receipt.payload_home ? stepsFile(null, receipt.adapter, receipt.payload_home) : null;
+    if (file !== null) {
+      const outcome = await runAdapterStep(file, 'pre-uninstall', {
+        adapter: receipt.adapter,
+        scope,
+        projectRoot,
+        payloadHome: receipt.payload_home,
+        runnerCmd: receipt.runner_cmd ?? null,
+        version: receipt.payload?.version ?? null,
+        profile: receipt.steps?.profile?.name ?? null,
+        receipt,
+      });
+      warnings.push(...(outcome?.warnings ?? []));
+      leftovers.push(...(outcome?.leftover ?? []));
+    } else if (receipt.steps !== null && receipt.steps !== undefined && receipt.steps_file) {
+      warnings.push(`steps-missing:${receipt.steps_file}`);
+    }
+  }
+
   const { deletions, leftovers: modified } = planUninstall({ receipt, force: options.force === true });
   leftovers.push(...modified);
 

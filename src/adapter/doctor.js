@@ -6,7 +6,7 @@
  * one `fail` makes the command exit 3.
  */
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { EXIT_CODES, R2cError } from '../errors.js';
 import { isValidRange, satisfies } from '../version.js';
@@ -80,6 +80,76 @@ function runShim(shim, agentId, { stdin } = {}) {
   });
 }
 
+function runAgentCommand(bin, args) {
+  const extension = bin.slice(bin.lastIndexOf('.')).toLowerCase();
+  const needsShell = process.platform === 'win32' && ['.cmd', '.bat'].includes(extension);
+  const line = [bin, ...args].map((part) => (/\s/.test(part) ? `"${part}"` : part)).join(' ');
+  return spawnSync(needsShell ? line : bin, needsShell ? [] : args, {
+    encoding: 'utf8',
+    timeout: 60_000,
+    shell: needsShell,
+    windowsHide: true,
+  });
+}
+
+const ACTIVATION_WARNING = /warning:\s+\d+\s+entr(?:y|ies)\s+did not activate/i;
+
+function profileOf(receipt) {
+  const profile = receipt.steps?.profile ?? null;
+  if (profile === null || typeof profile !== 'object') return null;
+  return typeof profile.name === 'string' && typeof profile.dir === 'string' ? profile : null;
+}
+
+/** Static fallback: the profile manifest still names our dependency and bundle. */
+function profileManifestCheck(profile) {
+  const manifestFile = join(profile.dir, 'package.json');
+  if (!existsSync(manifestFile)) return `profile manifest missing: ${manifestFile}`;
+  let manifest;
+  try {
+    manifest = JSON.parse(readFileSync(manifestFile, 'utf8'));
+  } catch (error) {
+    return `profile manifest is not JSON: ${error.message}`;
+  }
+  const dependency = manifest?.dependencies?.['r2c-adapter-dsh'];
+  if (typeof dependency !== 'string') return 'profile dependency r2c-adapter-dsh is missing';
+  const bundles = manifest?.dsh?.profile?.bundles ?? [];
+  if (!bundles.includes('r2c-adapter-dsh')) return 'profile bundle r2c-adapter-dsh is missing';
+  return null;
+}
+
+/** Activation is observable only from dsh's composed config or boot diagnostics. */
+function checkPluginActivated({ receipt, detection }) {
+  const profile = profileOf(receipt);
+  if (profile === null) {
+    return check('plugin.activated', 'fail', 'receipt has no dsh profile record; reinstall the adapter');
+  }
+  const staticProblem = profileManifestCheck(profile);
+  if (staticProblem !== null) return check('plugin.activated', 'fail', staticProblem);
+  if (detection.bin === null) {
+    return check('plugin.activated', 'warn', `dsh binary unavailable; profile ${profile.name} names the bundle but activation was not observed`);
+  }
+  const result = runAgentCommand(detection.bin, ['--profile', profile.name, '--dump-config']);
+  const output = `${result.stdout ?? ''}\n${result.stderr ?? ''}`;
+  if (ACTIVATION_WARNING.test(output)) {
+    const line = output.split(/\r?\n/).find((entry) => ACTIVATION_WARNING.test(entry)) ?? 'entry did not activate';
+    return check('plugin.activated', 'fail', line.trim());
+  }
+  if (result.error) {
+    return check('plugin.activated', 'fail', `dsh --dump-config could not run: ${result.error.message}`);
+  }
+  if (result.status !== 0) {
+    return check(
+      'plugin.activated',
+      'fail',
+      `dsh --dump-config exited ${result.status}: ${(result.stderr || '').trim().slice(0, 200)}`,
+    );
+  }
+  if (!/r2c-adapter-dsh|r2c-dsh|adapters[\\/]dsh/.test(output)) {
+    return check('plugin.activated', 'fail', `dsh --dump-config does not mention the r2c bundle (profile ${profile.name})`);
+  }
+  return check('plugin.activated', 'pass', `dsh --profile ${profile.name} --dump-config composed the r2c bundle`);
+}
+
 export function doctorAdapter({ ctx, agentId, options }) {
   const requested = options.scope ?? null;
   let scope = requested;
@@ -147,7 +217,9 @@ export function doctorAdapter({ ctx, agentId, options }) {
 
   const carrier = adapter?.hooks?.stop?.carrier ?? null;
   const merged = carrier === null ? [] : carrierMerged(receipt, carrier);
-  if (carrier === null) {
+  if (carrier === null && agentId === 'dsh') {
+    checks.push(check('hooks.wired', 'pass', 'native Cordis seams (agent/turn-stopping + tools/pre-execute)'));
+  } else if (carrier === null) {
     checks.push(check('hooks.wired', 'pass', 'adapter declares no Stop carrier'));
   } else if (merged.length === 0) {
     checks.push(
@@ -163,7 +235,8 @@ export function doctorAdapter({ ctx, agentId, options }) {
   }
 
   const shim = shimPath(receipt);
-  if (merged.length === 0 || shim === null || !existsSync(shim)) {
+  const shouldSmoke = shim !== null && existsSync(shim) && (merged.length > 0 || agentId === 'dsh');
+  if (!shouldSmoke) {
     checks.push(check('hooks.smoke', 'warn', 'no wired shim to smoke'));
   } else {
     const result = runShim(shim, agentId, { stdin: '{}' });
@@ -186,32 +259,40 @@ export function doctorAdapter({ ctx, agentId, options }) {
   }
 
   if (['dsh', 'codex'].includes(agentId)) {
-    const probeDir = join(ctx.projectRoot, '.r2c', 'usage');
-    let writable = false;
+    const probe = join(ctx.projectRoot, '.r2c', 'usage', `.doctor-probe-${process.pid}`);
+    const script = [
+      "const { mkdirSync, writeFileSync, unlinkSync } = require('node:fs');",
+      `const file = ${JSON.stringify(probe)};`,
+      "mkdirSync(require('node:path').dirname(file), { recursive: true });",
+      "writeFileSync(file, 'probe');",
+      'unlinkSync(file);',
+    ].join(' ');
+    const result = spawnSync(process.execPath, ['-e', script], {
+      cwd: ctx.projectRoot,
+      encoding: 'utf8',
+      timeout: 30_000,
+      windowsHide: true,
+    });
     try {
-      mkdirSync(probeDir, { recursive: true });
-      const probe = join(probeDir, `.doctor-probe-${process.pid}`);
-      writeFileSync(probe, 'probe');
       unlinkSync(probe);
-      writable = true;
     } catch {
-      writable = false;
+      // absent is the normal case
     }
     checks.push(
-      writable
-        ? check('hooks.sandbox_write', 'pass', 'hook runtime can write project .r2c')
-        : check('hooks.sandbox_write', 'fail', 'hook runtime cannot write project .r2c'),
+      result.status === 0
+        ? check('hooks.sandbox_write', 'pass', 'hook child process can write project .r2c')
+        : check(
+          'hooks.sandbox_write',
+          'fail',
+          `hook child process cannot write project .r2c: ${(result.stderr || '').trim().slice(0, 200)}`,
+        ),
     );
   } else {
     checks.push(check('hooks.sandbox_write', 'warn', `not applicable to ${agentId}`));
   }
 
   if (agentId === 'dsh') {
-    checks.push(
-      receipt.plugin_activated === true
-        ? check('plugin.activated', 'pass', 'dsh bundle reported active')
-        : check('plugin.activated', 'fail', 'dsh bundle is not reported active'),
-    );
+    checks.push(checkPluginActivated({ receipt, detection }));
   } else {
     checks.push(check('plugin.activated', 'warn', `not applicable to ${agentId}`));
   }

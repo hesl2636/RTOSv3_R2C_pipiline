@@ -1,0 +1,21 @@
+{
+  "name": "r2c-adapter-dsh",
+  "version": "${VERSION}",
+  "private": true,
+  "type": "module",
+  "description": "r2c native Cordis plugin for DeepSeek Harness: commands, stop continuation and tool guard",
+  "main": "./index.mjs",
+  "exports": {
+    ".": "./index.mjs",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "engines": {
+    "dsh": ">=0.2.1-rc.2 <0.3.0"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}

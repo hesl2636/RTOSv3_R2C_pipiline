@@ -1,0 +1,26 @@
+{
+  "PreToolUse": [
+    {
+      "matcher": "",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "node \"${PAYLOAD_HOME_JSON}/shims/hook.mjs\" --agent dsh --dialect dsh --event pre-tool-use --format json --runner-cmd=\"${RUNNER_CMD_JSON}\" --project-root \"${PROJECT_ROOT_JSON}\"",
+          "timeout": 30
+        }
+      ]
+    }
+  ],
+  "Stop": [
+    {
+      "matcher": "",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "node \"${PAYLOAD_HOME_JSON}/shims/hook.mjs\" --agent dsh --dialect dsh --event stop --format json --runner-cmd=\"${RUNNER_CMD_JSON}\" --project-root \"${PROJECT_ROOT_JSON}\"",
+          "timeout": 30
+        }
+      ]
+    }
+  ]
+}

@@ -15,9 +15,20 @@ import { userHome } from './util.js';
 const VERSION_RE = /(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)/;
 
 export function expandHome(value) {
-  if (value === '~') return userHome();
-  if (value.startsWith('~/') || value.startsWith('~\\')) return join(userHome(), value.slice(2));
-  return value;
+  let expanded = value;
+  if (expanded.startsWith('$')) {
+    const match = /^\$(?:\{([A-Za-z_][A-Za-z0-9_]*)\}|([A-Za-z_][A-Za-z0-9_]*))([\\/].*)?$/.exec(expanded);
+    if (match !== null) {
+      const name = match[1] ?? match[2];
+      const suffix = match[3] ?? '';
+      const fromEnv = process.env[name];
+      if (fromEnv === undefined || fromEnv === '') return null;
+      expanded = `${fromEnv}${suffix}`;
+    }
+  }
+  if (expanded === '~') return userHome();
+  if (expanded.startsWith('~/') || expanded.startsWith('~\\')) return join(userHome(), expanded.slice(2));
+  return expanded;
 }
 
 function pathExtensions() {
@@ -95,6 +106,10 @@ export function detectAgent(detect = {}) {
 
   for (const declared of detect.paths ?? []) {
     const expanded = expandHome(declared);
+    if (expanded === null) {
+      paths.push({ path: declared, present: false });
+      continue;
+    }
     let present = false;
     try {
       present = existsSync(expanded) && statSync(expanded).isDirectory();
