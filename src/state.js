@@ -499,7 +499,7 @@ export function hasRunningRun(root, sessionId) {
 export function deactivateLatestRun(root, sessionId, runId) {
   const latest = readLatest(root);
   const entry = latest.runs?.[sessionId];
-  if (entry) {
+  if (entry && (entry.active_run_id === runId || entry.latest_run_id === runId)) {
     entry.active_run_id = null;
     entry.latest_run_id = runId;
   }
