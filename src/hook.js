@@ -16,7 +16,7 @@ import { isAbsolute, relative, resolve, sep } from 'node:path';
 import { discoverManifest } from './manifest.js';
 
 /** Tool names whose `tool_input` is an opaque command/template body. */
-const SHELL_TOOL = /^(bash|shell|sh|zsh|powershell|pwsh|cmd|exec|exec_command|run_command|local_shell|terminal)$/i;
+const SHELL_TOOL = /bash|shell|powershell|pwsh|exec|command|terminal|(^|_)(sh|cmd|zsh)(_|$)/i;
 
 const PATH_FIELDS = ['file_path', 'path', 'notebook_path', 'filePath', 'notebookPath'];
 const PATCH_FIELDS = ['patch', 'input', 'content', 'diff'];
