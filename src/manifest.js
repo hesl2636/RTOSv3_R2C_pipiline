@@ -470,7 +470,7 @@ export function manifestError(inspected) {
   const { errors, warnings, manifestPath, candidates = [] } = inspected;
   const first = errors[0];
   let code = 'MANIFEST_INVALID';
-  if (errors.length === 1 && ['MANIFEST_AMBIGUOUS', 'MANIFEST_NOT_FOUND', 'MANIFEST_PARSE_ERROR', 'MANIFEST_SCHEMA_UNSUPPORTED'].includes(first.code)) {
+  if (errors.length === 1 && ['MANIFEST_AMBIGUOUS', 'MANIFEST_NOT_FOUND', 'MANIFEST_PARSE_ERROR', 'MANIFEST_SCHEMA_UNSUPPORTED', 'USAGE'].includes(first.code)) {
     code = first.code;
   } else if (errors.some((item) => item.code === MANIFEST_CODES.SCHEMA_UNSUPPORTED)) {
     code = MANIFEST_CODES.SCHEMA_UNSUPPORTED;
@@ -480,7 +480,10 @@ export function manifestError(inspected) {
       ? first.message
       : `${errors.length} manifest error(s), first: ${first.path}: ${first.message}`;
   const message =
-    code === 'MANIFEST_AMBIGUOUS' || code === 'MANIFEST_NOT_FOUND'
+    code === 'MANIFEST_AMBIGUOUS' ||
+    code === 'MANIFEST_NOT_FOUND' ||
+    code === 'MANIFEST_PARSE_ERROR' ||
+    code === 'USAGE'
       ? first.message
       : `manifest invalid: ${summary}`;
   const error = new R2cError(
