@@ -38,7 +38,7 @@ function defaultRuntime(overrides = {}) {
 
 /** Per-plugin-instance injection watermarks: last key + count per run. */
 function createIdleState() {
-  return { lastKey: null, injections: new Map() };
+  return { lastKey: null, pendingKey: null, injections: new Map() };
 }
 
 function sessionIdFromEvent(event) {
@@ -242,7 +242,7 @@ async function handleIdle({
     const before = parseStatus((await queryStatus(runtime, sessionId)).stdout);
     if (isActiveStatus(before)) {
       const key = injectionKey(before.runId, before.stepId);
-      if (state.lastKey === key) {
+      if (state.lastKey === key || state.pendingKey === key) {
         appendTrace(runtime, {
           hook: "idle", session_id: sessionId, run_id: before.runId, step_id: before.stepId,
           delivered: false, reason: "duplicate",
@@ -285,7 +285,7 @@ async function handleIdle({
     }
 
     const key = injectionKey(runId, stepId);
-    if (state.lastKey === key) {
+    if (state.lastKey === key || state.pendingKey === key) {
       appendTrace(runtime, {
         hook: "idle", session_id: sessionId, run_id: runId, step_id: stepId,
         delivered: false, reason: "duplicate",
@@ -301,7 +301,12 @@ async function handleIdle({
       return { injected: false, reason: "capped", runId, stepId, text };
     }
 
-    await inject(client, sessionId, text);
+    state.pendingKey = key;
+    try {
+      await inject(client, sessionId, text);
+    } finally {
+      if (state.pendingKey === key) state.pendingKey = null;
+    }
     state.lastKey = key;
     state.injections.set(runId, count + 1);
     appendTrace(runtime, {
