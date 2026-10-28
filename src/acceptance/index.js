@@ -159,7 +159,7 @@ export async function runAcceptance(_argv, ctx) {
   const sandbox = tempSandbox();
   const explicitProject = (options.provided ?? []).some(
     (option) => option === '--project-root' || option === '--project',
-  );
+  ) || (typeof process.env.R2C_PROJECT_ROOT === 'string' && process.env.R2C_PROJECT_ROOT !== '');
   const installRoot = explicitProject ? ctx.projectRoot : join(sandbox, 'project');
   mkdirSync(installRoot, { recursive: true });
   const fakeBin = join(sandbox, 'bin');
