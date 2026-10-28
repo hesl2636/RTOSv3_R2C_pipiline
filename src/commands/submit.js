@@ -5,11 +5,13 @@
  */
 import { R2cError, EXIT_CODES } from '../errors.js';
 import { checkGates } from '../gate.js';
+import { withRunWriteLock } from '../lock.js';
 import { flattenSteps, loadManifest } from '../manifest.js';
 import { assertRenderableSteps, defaultRunnerCommand, renderCompleted, renderStep } from '../render.js';
 import {
   appendEvent,
   deactivateLatestRun,
+  loadRun,
   nowIso,
   resolveRunForSession,
   writeState,
@@ -97,89 +99,136 @@ export async function run(_argv, ctx) {
     );
   }
 
-  const time = nowIso(ctx.now());
-  const eventStep = { id: current.id, name: current.name };
-  const submitted = { kind: 'step', event: 'submitted', step: eventStep, time };
-  if (typeof ctx.note === 'string' && ctx.note !== '') submitted.note = ctx.note;
-  appendEvent(ctx.projectRoot, runId, submitted);
-
-  current.status = 'completed';
-  state.updated_at = time;
-
-  const currentStage = state.stages.find((stage) => stage.id === current.stage_id);
-  const stageSteps = state.steps.filter((step) => step.stage_id === current.stage_id);
-  if (stageSteps.every((step) => step.status === 'completed' || step.status === 'skipped')) {
-    currentStage.status = 'completed';
-    currentStage.completed_at = time;
-  }
-
-  const nextEntry = flat[currentIndex + 1];
-  const runnerCmd = ctx.runnerCmd ?? defaultRunnerCommand(ctx.binPath);
-
-  if (nextEntry) {
-    const nextStep = state.steps.find((step) => step.id === nextEntry.step.id);
-    if (!nextStep) {
+  // Gate commands may take arbitrary time, so they run outside the lock. Only
+  // the final read → transition → append → write window is locked, and the
+  // preflight step is revalidated inside it (a concurrent submit may have won).
+  const preflightStepId = current.id;
+  const outcome = withRunWriteLock(ctx.projectRoot, runId, () => {
+    const locked = loadRun(ctx.projectRoot, runId, { assumeLocked: true });
+    if (locked === null) {
       throw new R2cError(
-        'STATE_INCONSISTENT',
-        `next step missing from state: ${nextEntry.step.id}`,
-        { step: nextEntry.step.id },
-        EXIT_CODES.INTERNAL,
+        'NO_ACTIVE_RUN',
+        'no active run for this session',
+        { session_id: ctx.sessionId },
+        EXIT_CODES.NO_ACTIVE_RUN,
       );
     }
-    nextStep.status = 'active';
-    state.current_step_id = nextStep.id;
-    state.status = 'running';
-    const nextStage = state.stages.find((stage) => stage.id === nextStep.stage_id);
-    nextStage.status = 'active';
-    if (nextStage.started_at === null) nextStage.started_at = time;
+    const state = locked.state;
+    if (state.status !== 'running') {
+      throw new R2cError(
+        'NO_ACTIVE_RUN',
+        `run is not running: ${state.status}`,
+        { run_id: runId, status: state.status },
+        EXIT_CODES.NO_ACTIVE_RUN,
+      );
+    }
+    if (state.current_step_id !== preflightStepId) {
+      throw new R2cError(
+        'STEP_NOT_ACTIVE',
+        `step is not the current step: ${preflightStepId}`,
+        { step: preflightStepId, current_step_id: state.current_step_id },
+        EXIT_CODES.USAGE,
+      );
+    }
+    const current = state.steps.find((step) => step.id === state.current_step_id);
+    if (!current || current.status !== 'active') {
+      throw new R2cError(
+        'STEP_NOT_ACTIVE',
+        `current step is not active: ${state.current_step_id}`,
+        { step: state.current_step_id, status: current?.status ?? null },
+        EXIT_CODES.USAGE,
+      );
+    }
 
-    appendEvent(ctx.projectRoot, runId, {
-      kind: 'step',
-      event: 'started',
-      step: { id: nextStep.id, name: nextStep.name },
-      time,
-    });
+    const time = nowIso(ctx.now());
+    const eventStep = { id: current.id, name: current.name };
+    const submitted = { kind: 'step', event: 'submitted', step: eventStep, time };
+    if (typeof ctx.note === 'string' && ctx.note !== '') submitted.note = ctx.note;
+    appendEvent(ctx.projectRoot, runId, submitted);
+
+    current.status = 'completed';
+    state.updated_at = time;
+
+    const currentStage = state.stages.find((stage) => stage.id === current.stage_id);
+    const stageSteps = state.steps.filter((step) => step.stage_id === current.stage_id);
+    if (stageSteps.every((step) => step.status === 'completed' || step.status === 'skipped')) {
+      currentStage.status = 'completed';
+      currentStage.completed_at = time;
+    }
+
+    const nextEntry = flat[currentIndex + 1];
+    if (nextEntry) {
+      const nextStep = state.steps.find((step) => step.id === nextEntry.step.id);
+      if (!nextStep) {
+        throw new R2cError(
+          'STATE_INCONSISTENT',
+          `next step missing from state: ${nextEntry.step.id}`,
+          { step: nextEntry.step.id },
+          EXIT_CODES.INTERNAL,
+        );
+      }
+      nextStep.status = 'active';
+      state.current_step_id = nextStep.id;
+      state.status = 'running';
+      const nextStage = state.stages.find((stage) => stage.id === nextStep.stage_id);
+      nextStage.status = 'active';
+      if (nextStage.started_at === null) nextStage.started_at = time;
+
+      appendEvent(ctx.projectRoot, runId, {
+        kind: 'step',
+        event: 'started',
+        step: { id: nextStep.id, name: nextStep.name },
+        time,
+      });
+      writeState(ctx.projectRoot, runId, state);
+      return { kind: 'next', state, step: nextStep };
+    }
+
+    state.status = 'completed';
+    state.current_step_id = null;
+    state.completed_at = time;
+    currentStage.status = 'completed';
+    if (currentStage.started_at === null) currentStage.started_at = time;
+    currentStage.completed_at = time;
+    appendEvent(ctx.projectRoot, runId, { kind: 'run', event: 'completed', time });
     writeState(ctx.projectRoot, runId, state);
+    deactivateLatestRun(ctx.projectRoot, state.session_id, runId);
+    return { kind: 'completed', state };
+  });
 
+  const runnerCmd = ctx.runnerCmd ?? defaultRunnerCommand(ctx.binPath);
+
+  if (outcome.kind === 'next') {
+    const nextStep = outcome.step;
     const text = renderStep({
       manifest,
       root: loadedManifest.root,
       stepId: nextStep.id,
       runnerCmd,
-      sessionId: state.session_id,
+      sessionId: outcome.state.session_id,
     });
     return {
       runId,
-      sessionId: state.session_id,
+      sessionId: outcome.state.session_id,
       step: { id: nextStep.id, name: nextStep.name, status: nextStep.status },
       text,
       data: {
-        status: state.status,
-        current_step_id: state.current_step_id,
+        status: outcome.state.status,
+        current_step_id: outcome.state.current_step_id,
         next_step: { id: nextStep.id, name: nextStep.name },
         text,
       },
     };
   }
 
-  state.status = 'completed';
-  state.current_step_id = null;
-  state.completed_at = time;
-  currentStage.status = 'completed';
-  if (currentStage.started_at === null) currentStage.started_at = time;
-  currentStage.completed_at = time;
-  appendEvent(ctx.projectRoot, runId, { kind: 'run', event: 'completed', time });
-  writeState(ctx.projectRoot, runId, state);
-  deactivateLatestRun(ctx.projectRoot, state.session_id, runId);
-
   const text = renderCompleted(runId);
   return {
     runId,
-    sessionId: state.session_id,
+    sessionId: outcome.state.session_id,
     step: null,
     text,
     data: {
-      status: state.status,
+      status: outcome.state.status,
       current_step_id: null,
       text,
     },
