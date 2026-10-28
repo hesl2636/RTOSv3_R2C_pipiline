@@ -93,6 +93,7 @@ function placeholders({ projectRoot, payloadHome, runnerCmd, version, agentId })
     PAYLOAD_HOME: payloadHome,
     PROJECT_ROOT: projectRoot,
     RUNNER_CMD: runnerCmd,
+    NODE_BIN: process.execPath,
     VERSION: version,
     AGENT_ID: agentId,
     // Escaped variants for assets that are JSON or YAML double-quoted strings.
@@ -113,6 +114,31 @@ function substitute(text, values) {
 /** Render an agent-facing file: `${PLACEHOLDER}` plus the command `<runner>`. */
 export function renderText(text, values) {
   return substitute(text, values).replaceAll('<runner>', values.RUNNER_CMD);
+}
+
+/**
+ * Render a JSON template. Placeholder values are JSON-escaped (without the
+ * surrounding quotes the template owns), so a Windows path never becomes an
+ * invalid escape sequence.
+ */
+export function renderJsonText(text, values) {
+  let output = text;
+  for (const [key, value] of Object.entries(values)) {
+    output = output.split(`\${${key}}`).join(JSON.stringify(String(value)).slice(1, -1));
+  }
+  return output.replaceAll('<runner>', JSON.stringify(values.RUNNER_CMD).slice(1, -1));
+}
+
+/** Render placeholders inside a parsed JSON value, leaving structure intact. */
+function renderJsonStrings(value, values) {
+  if (typeof value === 'string') return renderText(value, values);
+  if (Array.isArray(value)) return value.map((item) => renderJsonStrings(item, values));
+  if (value !== null && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [key, renderJsonStrings(item, values)]),
+    );
+  }
+  return value;
 }
 
 function expandTarget(template, scopeRoots, extra = {}) {
@@ -316,7 +342,8 @@ export function buildPlan({
       let content;
       let kind = entry.action;
       if (entry.action === 'render') {
-        content = Buffer.from(renderText(source.toString('utf8'), values), 'utf8');
+        const render = /\.json$/i.test(target) ? renderJsonText : renderText;
+        content = Buffer.from(render(source.toString('utf8'), values), 'utf8');
       } else if (entry.action === 'wrap-skill') {
         const { attributes, body } = splitFrontmatter(source.toString('utf8'));
         const description = attributes.description ?? `${stem} (workflow command)`;
@@ -396,7 +423,9 @@ function buildMergeEntry({ entry, adapter, target, pointer, mcpAbsolute, warning
     }
     sourceRel = assetEntry.rel;
     try {
-      document = JSON.parse(renderText(readFileSync(assetEntry.abs, 'utf8'), values));
+      // Render inside JSON values, after parsing: a Windows payload path
+      // contains backslashes that must stay escaped in the document bytes.
+      document = renderJsonStrings(JSON.parse(readFileSync(assetEntry.abs, 'utf8')), values);
     } catch (error) {
       throw usageError('MERGE_SOURCE_INVALID_JSON', `cannot parse ${assetEntry.rel}: ${error.message}`, {
         file: assetEntry.rel,

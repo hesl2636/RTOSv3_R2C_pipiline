@@ -187,37 +187,34 @@ function groupMerges(entries) {
 
 function scanMergeGroup(group) {
   const target = group[0].target;
-  if (!existsSync(target)) {
-    return { target, exists: false, document: {}, needsWrite: true, pending: group.flatMap(entryKeys) };
-  }
-  let document;
-  try {
-    document = JSON.parse(readFileSync(target, 'utf8'));
-  } catch (error) {
-    throw installError(
-      'TARGET_INVALID_JSON',
-      `cannot merge into ${target}: ${error.message}`,
-      { path: target },
-    );
+  const exists = existsSync(target);
+  let document = {};
+  if (exists) {
+    try {
+      document = JSON.parse(readFileSync(target, 'utf8'));
+    } catch (error) {
+      throw installError(
+        'TARGET_INVALID_JSON',
+        `cannot merge into ${target}: ${error.message}`,
+        { path: target },
+      );
+    }
   }
   const pending = [];
   for (const entry of group) {
     const container = pointerGet(document, entry.pointer);
     for (const [key, value] of Object.entries(entry.values)) {
       const current = container !== undefined && container !== null && typeof container === 'object' ? container[key] : undefined;
-      if (Array.isArray(current) && Array.isArray(value)) {
-        const added = value.filter((item) => !current.some((existing) => isDeepStrictEqual(existing, item)));
-        if (added.length > 0) pending.push({ entry, key, value: [...current, ...added], added });
+      if (Array.isArray(value)) {
+        const currentItems = Array.isArray(current) ? current : [];
+        const added = value.filter((item) => !currentItems.some((existing) => isDeepStrictEqual(existing, item)));
+        if (added.length > 0) pending.push({ entry, key, value: [...currentItems, ...added], added });
         continue;
       }
       if (!isDeepStrictEqual(current, value)) pending.push({ entry, key, value });
     }
   }
-  return { target, exists: true, document, needsWrite: pending.length > 0, pending };
-}
-
-function entryKeys(entry) {
-  return Object.entries(entry.values).map(([key, value]) => ({ entry, key, value }));
+  return { target, exists, document, needsWrite: !exists || pending.length > 0, pending };
 }
 
 /**
@@ -578,7 +575,7 @@ async function installOnce({ ctx, agentId, options, state, resolved, adapter, ma
         for (const { entry, key, value, added } of scan.pending) {
           const current = pointerGet(document, entry.pointer);
           const base = current !== null && typeof current === 'object' && !Array.isArray(current) ? current : {};
-          pointerSet(document, entry.pointer, Array.isArray(value) ? value : { ...base, [key]: value });
+          pointerSet(document, entry.pointer, { ...base, [key]: value });
           const pointer = entry.pointer === null ? key : `${entry.pointer}.${key}`;
           merged.set(`${scan.target}|${pointer}`, { file: scan.target, pointer, value, ...(added ? { added } : {}) });
         }

@@ -61,23 +61,148 @@ function verifyFiles(receipt) {
   return { problems, verified };
 }
 
-function carrierMerged(receipt, carrier) {
-  const suffix = carrier.replaceAll('\\', '/');
-  return (receipt.merged ?? []).filter((entry) =>
-    entry.file.replaceAll('\\', '/').endsWith(suffix),
-  );
-}
-
 function shimPath(receipt) {
   return receipt.payload_home ? join(receipt.payload_home, 'shims', 'hook.mjs') : null;
 }
 
-function runShim(shim, agentId, { stdin } = {}) {
-  return spawnSync(process.execPath, [shim, '--agent', agentId, '--event', 'stop', '--format', 'json'], {
+/** Declaration key → Claude-style settings event key. */
+const HOOK_EVENTS = [
+  ['stop', 'Stop'],
+  ['preToolUse', 'PreToolUse'],
+];
+
+function declaredHooks(adapter) {
+  const hooks = adapter?.hooks ?? {};
+  const declared = [];
+  for (const [key, event] of HOOK_EVENTS) {
+    const carrier = hooks[key]?.carrier;
+    if (typeof carrier === 'string' && carrier !== '') declared.push({ event, carrier });
+  }
+  return declared;
+}
+
+/** Every command string nested under one settings event array. */
+function hookCommands(node) {
+  const commands = [];
+  const walk = (value) => {
+    if (Array.isArray(value)) {
+      for (const item of value) walk(item);
+      return;
+    }
+    if (value === null || typeof value !== 'object') return;
+    for (const field of ['command', 'commandWindows']) {
+      if (typeof value[field] === 'string') commands.push(value[field]);
+    }
+    for (const [key, child] of Object.entries(value)) {
+      if (key !== 'command' && key !== 'commandWindows') walk(child);
+    }
+  };
+  walk(node);
+  return commands;
+}
+
+function eventCommands(document, event) {
+  const node = document?.hooks?.[event];
+  return node === undefined ? [] : hookCommands(node);
+}
+
+function usesShim(command, shim) {
+  const comparable = (value) =>
+    (process.platform === 'win32' ? value.toLowerCase() : value).replaceAll('\\', '/');
+  return comparable(command).includes(comparable(shim));
+}
+
+/**
+ * Launch commands for one event, platform-selected and filtered to handlers
+ * that reference this shim. `commandWindows` wins on Windows; a handler whose
+ * `commandWindows` is a rendered `.cmd` still qualifies through its sibling
+ * `command` (the .cmd itself quotes node/shim internally).
+ */
+function eventLaunchCommands(document, event, shim) {
+  const node = document?.hooks?.[event];
+  if (node === undefined) return [];
+  const commands = [];
+  const walk = (value) => {
+    if (Array.isArray(value)) {
+      for (const item of value) walk(item);
+      return;
+    }
+    if (value === null || typeof value !== 'object') return;
+    const fields = [value.command, value.commandWindows].filter((field) => typeof field === 'string');
+    if (fields.some((field) => usesShim(field, shim))) {
+      const chosen = process.platform === 'win32'
+        ? value.commandWindows ?? value.command
+        : value.command ?? value.commandWindows;
+      if (typeof chosen === 'string') commands.push(chosen);
+      return;
+    }
+    for (const [key, child] of Object.entries(value)) {
+      if (key !== 'command' && key !== 'commandWindows') walk(child);
+    }
+  };
+  walk(node);
+  return commands;
+}
+
+function readCarrierFile(file) {
+  if (!existsSync(file)) return { ok: false, detail: `carrier missing: ${file}` };
+  let text;
+  try {
+    text = readFileSync(file, 'utf8');
+  } catch (error) {
+    return { ok: false, detail: `carrier is unreadable: ${file}: ${error.message}` };
+  }
+  // Some agents load native hook modules instead of settings JSON (omp). The
+  // carrier still has to reference the shim and launch cleanly.
+  if (/\.(?:[cm]?[jt]s)$/i.test(file)) {
+    if (text.trim() === '') return { ok: false, detail: `carrier is empty: ${file}` };
+    return { ok: true, module: true, text, document: null };
+  }
+  try {
+    const document = JSON.parse(text);
+    if (document === null || typeof document !== 'object' || Array.isArray(document)) {
+      return { ok: false, detail: `carrier is not a JSON object: ${file}` };
+    }
+    return { ok: true, document };
+  } catch (error) {
+    return { ok: false, detail: `carrier is not valid JSON: ${file}: ${error.message}` };
+  }
+}
+
+/** Hook-shaped child: same payload/cwd/env a real hook receives. */
+function probeHookSandboxWrite(projectRoot) {
+  const probe = join(projectRoot, '.r2c', `.doctor-probe-${process.pid}-${Date.now()}`);
+  const script = [
+    "const { mkdirSync, readFileSync, writeFileSync } = require('node:fs');",
+    "const { dirname } = require('node:path');",
+    "const input = JSON.parse(readFileSync(0, 'utf8') || '{}');",
+    "const target = input.tool_input && input.tool_input.file_path;",
+    'if (typeof target !== "string" || target === "") process.exit(3);',
+    'mkdirSync(dirname(target), { recursive: true });',
+    "writeFileSync(target, 'probe');",
+  ].join('\n');
+  const payload = {
+    session_id: `doctor-${process.pid}`,
+    cwd: projectRoot,
+    hook_event_name: 'PreToolUse',
+    tool_name: 'write',
+    tool_input: { file_path: probe },
+  };
+  const result = spawnSync(process.execPath, ['-e', script], {
+    cwd: projectRoot,
     encoding: 'utf8',
-    timeout: 30_000,
-    input: stdin ?? '',
+    timeout: 15_000,
+    input: JSON.stringify(payload),
+    windowsHide: true,
   });
+  let written = false;
+  try {
+    written = readFileSync(probe, 'utf8') === 'probe';
+    unlinkSync(probe);
+  } catch {
+    written = false;
+  }
+  return { ok: result.status === 0 && written, result, probe };
 }
 
 function runAgentCommand(bin, args) {
@@ -183,12 +308,37 @@ export function doctorAdapter({ ctx, agentId, options }) {
   }
 
   const agentRange = receipt.requires?.agent ?? adapter?.requires?.agent ?? null;
+  const warnPrefix = adapter?.options?.warnVersionPrefix;
   if (detection.version === null || detection.version === undefined) {
     checks.push(check('agent.version', 'warn', 'agent version could not be determined'));
+  } else if (typeof warnPrefix === 'string' && warnPrefix !== '' && detection.version.startsWith(warnPrefix)) {
+    checks.push(
+      check(
+        'agent.version',
+        'warn',
+        `${detection.version}: ${adapter?.options?.warnVersionDetail ?? 'this build is not an acceptance baseline'}`,
+      ),
+    );
   } else if (agentRange !== null && isValidRange(agentRange) && !satisfies(detection.version, agentRange)) {
     checks.push(check('agent.version', 'warn', `${detection.version} is outside ${agentRange}`));
   } else {
     checks.push(check('agent.version', 'pass', detection.version));
+  }
+
+  if (adapter?.capabilities?.stop === 'idle' && agentRange !== null) {
+    const pinned = detection.version !== null
+      && detection.version !== undefined
+      && isValidRange(agentRange)
+      && satisfies(detection.version, agentRange);
+    checks.push(
+      check(
+        'platform.pin',
+        pinned ? 'pass' : 'warn',
+        pinned
+          ? `${agentId} ${detection.version} satisfies the V1 pin ${agentRange}`
+          : `${agentId} ${detection.version ?? '(unknown)'} is outside the V1 pin ${agentRange}; A′ is unavailable, use B: r2c next --format plain`,
+      ),
+    );
   }
 
   const engineRange = receipt.engine?.requires ?? receipt.requires?.engine ?? adapter?.requires?.engine ?? null;
@@ -215,76 +365,150 @@ export function doctorAdapter({ ctx, agentId, options }) {
     checks.push(check('receipt.files', 'pass', `${files.verified} file(s) match the receipt`));
   }
 
-  const carrier = adapter?.hooks?.stop?.carrier ?? null;
-  const merged = carrier === null ? [] : carrierMerged(receipt, carrier);
-  if (carrier === null && agentId === 'dsh') {
-    checks.push(check('hooks.wired', 'pass', 'native Cordis seams (agent/turn-stopping + tools/pre-execute)'));
-  } else if (carrier === null) {
-    checks.push(check('hooks.wired', 'pass', 'adapter declares no Stop carrier'));
-  } else if (merged.length === 0) {
-    checks.push(
-      check('hooks.wired', 'warn', `hooks are declared (${carrier}) but this install does not wire them yet`),
-    );
-  } else {
-    const carrierFile = join(scope === 'user' ? userHome() : ctx.projectRoot, ...carrier.split('/'));
-    checks.push(
-      existsSync(carrierFile)
-        ? check('hooks.wired', 'pass', `${merged.length} merged entr(ies) in ${carrier}`)
-        : check('hooks.wired', 'fail', `carrier missing: ${carrierFile}`),
-    );
-  }
-
+  const declared = declaredHooks(adapter);
   const shim = shimPath(receipt);
-  const shouldSmoke = shim !== null && existsSync(shim) && (merged.length > 0 || agentId === 'dsh');
-  if (!shouldSmoke) {
-    checks.push(check('hooks.smoke', 'warn', 'no wired shim to smoke'));
-  } else {
-    const result = runShim(shim, agentId, { stdin: '{}' });
+  const shimPresent = shim !== null && existsSync(shim);
+  const carrierRoot = scope === 'user' ? userHome() : ctx.projectRoot;
+  const carriers = new Map();
+  for (const entry of declared) {
+    const file = join(carrierRoot, ...entry.carrier.split('/'));
+    if (!carriers.has(file)) carriers.set(file, readCarrierFile(file));
+  }
+  const carrierProblems = [...carriers.entries()]
+    .filter(([, state]) => !state.ok)
+    .map(([file, state]) => state.detail ?? `invalid carrier: ${file}`);
+  const idlePlugin = adapter?.capabilities?.stop === 'idle'
+    ? (receipt.files ?? []).find((file) => /[\\/]plugins[\\/]r2c\.ts$/i.test(file.path)) ?? null
+    : null;
+
+  if (idlePlugin !== null) {
     checks.push(
-      result.status === 0
-        ? check('hooks.smoke', 'pass', 'shim exits 0 with empty stdin payload')
-        : check('hooks.smoke', 'fail', `shim exited ${result.status}: ${(result.stderr || '').trim()}`),
+      existsSync(idlePlugin.path)
+        ? check('hooks.wired', 'pass', `plugin carrier installed: ${idlePlugin.path}`)
+        : check('hooks.wired', 'fail', `plugin carrier missing: ${idlePlugin.path}`),
+    );
+  } else if (adapter?.capabilities?.stop === 'idle') {
+    checks.push(
+      check(
+        'hooks.wired',
+        'fail',
+        `adapter requires the plugin carrier ${adapter?.hooks?.stop?.carrier ?? '(none)'} but the receipt records no plugin file`,
+      ),
+    );
+  } else if (agentId === 'dsh' && declared.length === 0) {
+    checks.push(check('hooks.wired', 'pass', 'native Cordis seams (agent/turn-stopping + tools/pre-execute)'));
+  } else if (declared.length === 0) {
+    checks.push(check('hooks.wired', 'pass', 'adapter declares no hooks carrier'));
+  } else if (carrierProblems.length > 0) {
+    checks.push(check('hooks.wired', 'fail', carrierProblems.slice(0, 2).join('; ')));
+  } else {
+    const unwired = declared.filter((entry) => {
+      const state = carriers.get(join(carrierRoot, ...entry.carrier.split('/')));
+      if (state?.module === true) {
+        return shim === null || !usesShim(state.text, shim);
+      }
+      const commands = eventCommands(state?.document, entry.event);
+      return shim === null || !commands.some((command) => usesShim(command, shim));
+    });
+    checks.push(
+      unwired.length === 0
+        ? check(
+            'hooks.wired',
+            'pass',
+            `${declared.map((entry) => entry.event).join('/')} wired to ${shim}`,
+          )
+        : check(
+            'hooks.wired',
+            'fail',
+            `settings has no shim command for ${unwired.map((entry) => entry.event).join('/')}`,
+          ),
     );
   }
 
-  if (shim === null || !existsSync(shim)) {
-    checks.push(check('hooks.launch', 'warn', 'payload has no shims/hook.mjs yet'));
+  if (declared.length === 0 && agentId !== 'dsh') {
+    checks.push(check('hooks.smoke', 'warn', 'adapter declares no hooks carrier'));
+  } else if (shim === null || !shimPresent) {
+    checks.push(check('hooks.smoke', 'fail', `payload is missing shims/hook.mjs: ${shim ?? '(no payload)'}`));
+  } else if (carrierProblems.length > 0) {
+    checks.push(check('hooks.smoke', 'fail', carrierProblems.slice(0, 2).join('; ')));
   } else {
-    const result = runShim(shim, agentId, { stdin: '' });
-    checks.push(
-      result.error
-        ? check('hooks.launch', 'fail', `shim could not be launched: ${result.error.message}`)
-        : check('hooks.launch', 'pass', `shim launched (exit ${result.status})`),
-    );
+    const modules = [...carriers.values()].filter((state) => state.module === true).length;
+    const settings = carriers.size - modules;
+    const detail = modules === 0
+      ? `shim present; ${settings} settings file(s) parse as JSON`
+      : `shim present; ${modules} module carrier(s)${settings === 0 ? '' : `, ${settings} settings file(s) parse as JSON`}`;
+    checks.push(check('hooks.smoke', 'pass', detail));
+  }
+
+  if (declared.length === 0 && agentId !== 'dsh') {
+    checks.push(check('hooks.launch', 'warn', 'adapter declares no hooks carrier'));
+  } else if (shim === null || !shimPresent) {
+    checks.push(check('hooks.launch', 'fail', 'payload has no shims/hook.mjs to launch'));
+  } else if (carrierProblems.length > 0) {
+    checks.push(check('hooks.launch', 'fail', carrierProblems.slice(0, 2).join('; ')));
+  } else {
+    const stopDecl = declared.find((entry) => entry.event === 'Stop');
+    const stopState = stopDecl === undefined
+      ? null
+      : carriers.get(join(carrierRoot, ...stopDecl.carrier.split('/')));
+    const stopModule = stopState?.module === true;
+    const nativeSeam = agentId === 'dsh' && stopDecl === undefined;
+    const stopCommands = stopModule || nativeSeam
+      ? []
+      : eventLaunchCommands(stopState?.document, 'Stop', shim);
+    if (stopModule && !usesShim(stopState.text, shim)) {
+      checks.push(check('hooks.launch', 'fail', 'module carrier does not reference this shim'));
+    } else if (!stopModule && !nativeSeam && stopCommands.length === 0) {
+      checks.push(check('hooks.launch', 'fail', 'settings has no configured Stop command for this shim'));
+    } else {
+      const started = Date.now();
+      const isWin = process.platform === 'win32';
+      const options = {
+        cwd: ctx.projectRoot,
+        encoding: 'utf8',
+        input: '',
+        timeout: 5_000,
+        windowsHide: true,
+      };
+      let result;
+      if (stopModule || nativeSeam) {
+        result = spawnSync(
+          process.execPath,
+          [shim, '--agent', agentId, '--event', 'stop', '--format', 'json'],
+          options,
+        );
+      } else if (isWin && /\.(?:cmd|bat)$/i.test(stopCommands[0]) && existsSync(stopCommands[0])) {
+        // A launcher path may contain spaces; cmd finds it as one /c argument.
+        result = spawnSync(process.env.ComSpec || 'cmd.exe', ['/d', '/c', stopCommands[0]], options);
+      } else {
+        result = spawnSync(stopCommands[0], { ...options, shell: true });
+      }
+      const elapsed = Date.now() - started;
+      if (result.error) {
+        checks.push(check('hooks.launch', 'fail', `Stop command could not be launched: ${result.error.message}`));
+      } else if (result.status !== 0) {
+        checks.push(
+          check(
+            'hooks.launch',
+            'fail',
+            `Stop command exited ${result.status} in ${elapsed}ms: ${(result.stderr || '').trim()}`,
+          ),
+        );
+      } else {
+        checks.push(check('hooks.launch', 'pass', `Stop command exited 0 in ${elapsed}ms`));
+      }
+    }
   }
 
   if (['dsh', 'codex'].includes(agentId)) {
-    const probe = join(ctx.projectRoot, '.r2c', 'usage', `.doctor-probe-${process.pid}`);
-    const script = [
-      "const { mkdirSync, writeFileSync, unlinkSync } = require('node:fs');",
-      `const file = ${JSON.stringify(probe)};`,
-      "mkdirSync(require('node:path').dirname(file), { recursive: true });",
-      "writeFileSync(file, 'probe');",
-      'unlinkSync(file);',
-    ].join(' ');
-    const result = spawnSync(process.execPath, ['-e', script], {
-      cwd: ctx.projectRoot,
-      encoding: 'utf8',
-      timeout: 30_000,
-      windowsHide: true,
-    });
-    try {
-      unlinkSync(probe);
-    } catch {
-      // absent is the normal case
-    }
+    const probe = probeHookSandboxWrite(ctx.projectRoot);
     checks.push(
-      result.status === 0
-        ? check('hooks.sandbox_write', 'pass', 'hook child process can write project .r2c')
+      probe.ok
+        ? check('hooks.sandbox_write', 'pass', 'hook-shaped subprocess wrote project .r2c')
         : check(
           'hooks.sandbox_write',
           'fail',
-          `hook child process cannot write project .r2c: ${(result.stderr || '').trim().slice(0, 200)}`,
+          `hook-shaped subprocess could not write project .r2c: exit ${probe.result.status ?? 'signal'} ${(probe.result.stderr || '').trim()}`.trim(),
         ),
     );
   } else {
@@ -293,6 +517,14 @@ export function doctorAdapter({ ctx, agentId, options }) {
 
   if (agentId === 'dsh') {
     checks.push(checkPluginActivated({ receipt, detection }));
+  } else if (adapter?.capabilities?.stop === 'idle') {
+    checks.push(
+      check(
+        'plugin.loaded',
+        'warn',
+        `plugin load cannot be probed without a live ${agentId} session; installed file: ${idlePlugin?.path ?? '(none)'}. If it is not loaded, use B: r2c next --format plain`,
+      ),
+    );
   } else {
     checks.push(check('plugin.activated', 'warn', `not applicable to ${agentId}`));
   }

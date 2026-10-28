@@ -1,0 +1,60 @@
+{
+  "schema": "r2c.adapter/v1",
+  "id": "codex",
+  "title": "Codex",
+  "requires": {
+    "engine": "^0.1.0",
+    "agent": ">=0.165.0 <1"
+  },
+  "detect": {
+    "commands": [
+      ["codex", "--version"]
+    ],
+    "envBins": [
+      "R2C_CODEX_BIN"
+    ],
+    "globBins": [
+      "%LOCALAPPDATA%/OpenAI/Codex/bin/*/codex.exe"
+    ],
+    "versionArgs": ["--version"],
+    "paths": [
+      "~/.codex"
+    ]
+  },
+  "scopes": ["project"],
+  "defaults": {
+    "scope": "project",
+    "mode": "copy"
+  },
+  "hooks": {
+    "stop": {
+      "carrier": ".codex/hooks.json",
+      "format": "json"
+    },
+    "preToolUse": {
+      "carrier": ".codex/hooks.json"
+    },
+    "usage": {
+      "source": "none"
+    }
+  },
+  "capabilities": {
+    "stop": "block",
+    "preToolUse": "block",
+    "commands": "wrap-skill",
+    "skills": "md",
+    "agents": "toml",
+    "mcp": "none"
+  },
+  "sharedRoots": [
+    ".agents/skills",
+    ".codex/agents"
+  ],
+  "options": {
+    "warnVersionPrefix": "0.163.",
+    "warnVersionDetail": "desktop build, not an acceptance baseline"
+  },
+  "manualSteps": [
+    "run /hooks in codex and trust the r2c Stop and PreToolUse hooks (non-interactive bypass: --dangerously-bypass-hook-trust)"
+  ]
+}

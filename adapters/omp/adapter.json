@@ -1,0 +1,49 @@
+{
+  "schema": "r2c.adapter/v1",
+  "id": "omp",
+  "title": "Oh My Pi (omp)",
+  "requires": {
+    "engine": "^0.1.0",
+    "agent": ">=18.13.2 <19"
+  },
+  "detect": {
+    "commands": [
+      ["omp", "--version"]
+    ],
+    "paths": [
+      "~/.omp/agent"
+    ]
+  },
+  "scopes": ["project", "user"],
+  "defaults": {
+    "scope": "project",
+    "mode": "copy"
+  },
+  "hooks": {
+    "stop": {
+      "carrier": ".omp/hooks/post/r2c-stop.ts",
+      "format": "json"
+    },
+    "preToolUse": {
+      "carrier": ".omp/hooks/pre/r2c-guard.ts"
+    },
+    "usage": {
+      "source": "transcript"
+    }
+  },
+  "capabilities": {
+    "stop": "block",
+    "preToolUse": "block",
+    "commands": "md",
+    "skills": "md",
+    "agents": "md",
+    "mcp": "json"
+  },
+  "sharedRoots": [
+    ".omp/commands",
+    ".omp/skills",
+    ".omp/agents"
+  ],
+  "options": {},
+  "manualSteps": []
+}
