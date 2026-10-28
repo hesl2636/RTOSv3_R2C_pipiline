@@ -59,7 +59,14 @@ function cleanEnv({ pathDir, home, localAppData } = {}) {
   ]) {
     delete env[key];
   }
-  if (pathDir !== undefined) env.PATH = pathDir;
+  if (pathDir !== undefined) {
+    // Windows environment keys are case-insensitive; drop any existing casing
+    // so the child really sees only the directories the test names.
+    for (const key of Object.keys(env)) {
+      if (key.toLowerCase() === 'path') delete env[key];
+    }
+    env.PATH = pathDir;
+  }
   if (home !== undefined) {
     env.R2C_HOME = home;
     env.HOME = home;
@@ -92,7 +99,10 @@ function setup(t, { version = '0.165.0', projectName = 'project' } = {}) {
   const base = tempDir(t, 'root');
   const project = join(base, projectName);
   mkdirSync(project, { recursive: true });
-  const env = cleanEnv({ pathDir: codex.dir, home });
+  const env = cleanEnv({
+    pathDir: `${codex.dir}${delimiter}${dirname(process.execPath)}`,
+    home,
+  });
   return { home, codex, project, env };
 }
 
