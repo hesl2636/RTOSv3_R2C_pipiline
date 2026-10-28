@@ -8,7 +8,6 @@
  */
 import { createHash } from 'node:crypto';
 import {
-  copyFileSync,
   existsSync,
   lstatSync,
   mkdirSync,
@@ -147,7 +146,7 @@ export function isLink(target) {
 
 export function linkTarget(target) {
   try {
-    return lstatSync(target).isSymbolicLink() ? readlinkSyncSafe(target) : null;
+    return lstatSync(target).isSymbolicLink() ? readlinkSync(target) : null;
   } catch {
     return null;
   }

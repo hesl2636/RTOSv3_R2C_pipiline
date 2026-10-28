@@ -16,6 +16,7 @@ import { tmpdir } from 'node:os';
 import { delimiter, dirname, join, relative, resolve } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { createDirLink, linkTarget } from '../src/adapter/util.js';
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const BIN = join(REPO, 'bin', 'r2c.js');
@@ -252,6 +253,7 @@ test('engine range failure exits 2 for --copy and only warns for --link', (t) =>
   assert.equal(receipt.requires.engine, '^9.0.0');
   const skillLink = receipt.files.find((file) => file.kind === 'link');
   assert.ok(skillLink, 'skills directory is linked');
+  assert.equal(skillLink.target, join(payload, 'skills'), 'receipt records the real link target');
   assert.equal(receipt.files.some((file) => file.path.endsWith('r2c-run.md')), true);
 });
 
@@ -386,4 +388,17 @@ test('--mcp merges only our keys, is idempotent and uninstall restores the forei
   assert.equal(removed.status, 0, removed.stderr);
   const afterRemove = JSON.parse(readFileSync(join(project, '.mcp.json'), 'utf8'));
   assert.deepEqual(afterRemove, { mcpServers: { foreign: { command: 'x' } }, other: 1 });
+});
+
+test('linkTarget resolves a real directory link and returns null for plain files', (t) => {
+  const dir = tempDir(t, 'link-probe');
+  const source = join(dir, 'source');
+  mkdirSync(source, { recursive: true });
+  const link = join(dir, 'linked');
+  createDirLink(link, source);
+  assert.equal(linkTarget(link), source);
+  const plain = join(dir, 'plain.txt');
+  writeFileSync(plain, 'x');
+  assert.equal(linkTarget(plain), null);
+  assert.equal(linkTarget(join(dir, 'missing')), null);
 });
