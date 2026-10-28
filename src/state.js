@@ -20,7 +20,8 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
-import { R2cError, EXIT_CODES } from './errors.js';
+import { R2cError, EXIT_CODES, isR2cError } from './errors.js';
+import { withLatestLock, withRunLock } from './lock.js';
 import {
   eventsPath,
   latestPath,
@@ -212,58 +213,79 @@ export function createRun({
   const startedAt = nowIso(now);
   mkdirSync(runsDir(root), { recursive: true });
 
-  const prefix = `R${timestamp(now)}-`;
-  let after = null;
-  for (const name of readdirSync(runsDir(root))) {
-    if (!name.startsWith(prefix)) continue;
-    const suffix = name.slice(prefix.length);
-    if (/^[0-9a-f]{6}$/.test(suffix) && (after === null || suffix > after)) after = suffix;
-  }
-
-  let runId;
-  for (let attempt = 0; attempt < 10; attempt += 1) {
-    const candidate = mintRunId(now, after);
-    try {
-      mkdirSync(runDir(root, candidate));
-      runId = candidate;
-      break;
-    } catch (error) {
-      if (error?.code !== 'EEXIST') throw error;
-      after = candidate.slice(prefix.length);
+  // The id mint reads run directory names and the routing write updates
+  // latest.json; holding the latest lock across both keeps run ids ordered and
+  // the `latest.json` merge atomic.
+  return withLatestLock(root, () => {
+    if (sessionId !== null && sessionId !== undefined) {
+      const active = liveRunForSession(root, sessionId);
+      if (active !== null) {
+        throw new R2cError(
+          'RUN_ALREADY_ACTIVE',
+          `session already has a running run: ${sessionId}`,
+          { session_id: sessionId, run_id: active },
+          EXIT_CODES.USAGE,
+        );
+      }
     }
-  }
-  if (!runId) {
-    throw new R2cError('RUN_ID_MINT_FAILED', 'could not mint a unique run id', null, EXIT_CODES.INTERNAL);
-  }
 
-  const finalSessionId = sessionId ?? `cli-${runId}`;
-  copyFileSync(manifestPath, workflowSnapshotPath(root, runId));
-  const state = buildState({
-    runId,
-    sessionId: finalSessionId,
-    manifest,
-    engineVersion,
-    startedAt,
-    userInput,
+    const prefix = `R${timestamp(now)}-`;
+    let after = null;
+    for (const name of readdirSync(runsDir(root))) {
+      if (!name.startsWith(prefix)) continue;
+      const suffix = name.slice(prefix.length);
+      if (/^[0-9a-f]{6}$/.test(suffix) && (after === null || suffix > after)) after = suffix;
+    }
+
+    let runId;
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      const candidate = mintRunId(now, after);
+      try {
+        mkdirSync(runDir(root, candidate));
+        runId = candidate;
+        break;
+      } catch (error) {
+        if (error?.code !== 'EEXIST') throw error;
+        after = candidate.slice(prefix.length);
+      }
+    }
+    if (!runId) {
+      throw new R2cError('RUN_ID_MINT_FAILED', 'could not mint a unique run id', null, EXIT_CODES.INTERNAL);
+    }
+
+    const finalSessionId = sessionId ?? `cli-${runId}`;
+    // Locks are always acquired latest → run (see src/lock.js).
+    const state = withRunLock(root, runId, () => {
+      copyFileSync(manifestPath, workflowSnapshotPath(root, runId));
+      const built = buildState({
+        runId,
+        sessionId: finalSessionId,
+        manifest,
+        engineVersion,
+        startedAt,
+        userInput,
+      });
+
+      const firstStep = built.steps[0];
+      appendEvent(root, runId, { kind: 'run', event: 'started', time: startedAt });
+      appendEvent(root, runId, {
+        kind: 'step',
+        event: 'started',
+        step: { id: firstStep.id, name: firstStep.name },
+        time: startedAt,
+      });
+      writeState(root, runId, built);
+      return built;
+    });
+
+    const latest = readLatest(root);
+    latest.runs[finalSessionId] = { active_run_id: runId, latest_run_id: runId };
+    latest.active_run_id = runId;
+    latest.latest_run_id = runId;
+    writeLatest(root, latest);
+
+    return { runId, sessionId: finalSessionId, state, latest };
   });
-  writeState(root, runId, state);
-
-  const firstStep = state.steps[0];
-  appendEvent(root, runId, { kind: 'run', event: 'started', time: startedAt });
-  appendEvent(root, runId, {
-    kind: 'step',
-    event: 'started',
-    step: { id: firstStep.id, name: firstStep.name },
-    time: startedAt,
-  });
-
-  const latest = readLatest(root);
-  latest.runs[finalSessionId] = { active_run_id: runId, latest_run_id: runId };
-  latest.active_run_id = runId;
-  latest.latest_run_id = runId;
-  writeLatest(root, latest);
-
-  return { runId, sessionId: finalSessionId, state, latest };
 }
 
 /**
@@ -368,22 +390,60 @@ export function replayDerived(state, events) {
   return repaired;
 }
 
+function repairLocked(root, runId, state, events) {
+  const repaired = replayDerived(state, events);
+  if (JSON.stringify(repaired) === JSON.stringify(state)) {
+    return { state, repaired: false };
+  }
+  writeState(root, runId, repaired);
+  return { state: repaired, repaired: true };
+}
+
+function warnRepair(runId) {
+  process.stderr.write(`[r2c] state.json for ${runId} repaired from events\n`);
+}
+
 /**
  * Read a run and repair derived fields from events when they disagree.
- * The repair is a derived write: events are never appended here.
+ *
+ * `events.jsonl` is the authority; `state.json` is a derived cache. A repair
+ * therefore writes only `state.json` and never appends an event. The write is
+ * performed under the run lock so a concurrent writer cannot interleave; the
+ * `assumeLocked` option is used by callers that already hold that lock.
  */
-export function loadRun(root, runId, { repair = true } = {}) {
+export function loadRun(root, runId, { repair = true, assumeLocked = false } = {}) {
   const state = readState(root, runId);
   if (!state) return null;
   const events = readEvents(root, runId);
   if (!repair || events === null) return { runId, state, events: events ?? [] };
 
-  const repaired = replayDerived(state, events);
-  if (JSON.stringify(repaired) !== JSON.stringify(state)) {
-    writeState(root, runId, repaired);
-    return { runId, state: repaired, events, repaired: true };
+  const derived = replayDerived(state, events);
+  if (JSON.stringify(derived) === JSON.stringify(state)) {
+    return { runId, state, events, repaired: false };
   }
-  return { runId, state, events, repaired: false };
+
+  if (assumeLocked) {
+    const result = repairLocked(root, runId, state, events);
+    if (result.repaired) warnRepair(runId);
+    return { runId, state: result.state, events, repaired: result.repaired };
+  }
+
+  try {
+    const result = withRunLock(root, runId, () => {
+      const freshState = readState(root, runId) ?? state;
+      const freshEvents = readEvents(root, runId) ?? events;
+      return { ...repairLocked(root, runId, freshState, freshEvents), events: freshEvents };
+    });
+    if (result.repaired) warnRepair(runId);
+    return { runId, state: result.state, events: result.events, repaired: result.repaired };
+  } catch (error) {
+    if (isR2cError(error) && error.code === 'LOCK_CONFLICT') {
+      // Another writer owns the run and will persist the same derivation; do
+      // not turn a read-only command into an exit 5 just to repair the cache.
+      return { runId, state: derived, events, repaired: false, repairSkipped: true };
+    }
+    throw error;
+  }
 }
 
 /**
@@ -414,25 +474,32 @@ export function resolveRunForSession({ root, sessionId = undefined, fallbackToLa
   return { ...loaded, latest, activeRunId, latestRunId };
 }
 
-/** True when latest.json already routes this session to a running run. */
-export function hasRunningRun(root, sessionId) {
+/** Return the session's routed run id when that run is still running. */
+function liveRunForSession(root, sessionId) {
   const latest = readLatest(root);
   const entry = latest.runs?.[sessionId];
-  if (!entry) return false;
-  const runId = entry.active_run_id ?? entry.latest_run_id;
-  if (!runId) return false;
+  const runId = entry?.active_run_id ?? entry?.latest_run_id;
+  if (!runId) return null;
   const state = readState(root, runId);
-  return state?.status === 'running';
+  return state?.status === 'running' ? runId : null;
+}
+
+/** True when latest.json already routes this session to a running run. */
+export function hasRunningRun(root, sessionId) {
+  return liveRunForSession(root, sessionId) !== null;
 }
 
 /**
  * Mark the session's run as no longer active in latest.json. Latest fields are
  * route data, not state: the run's own status lives in state.json.
+ *
+ * The caller must hold `withLatestLock` (normally through
+ * `withRunWriteLock`); this function intentionally does not re-acquire it.
  */
 export function deactivateLatestRun(root, sessionId, runId) {
   const latest = readLatest(root);
   const entry = latest.runs?.[sessionId];
-  if (entry) {
+  if (entry && (entry.active_run_id === runId || entry.latest_run_id === runId)) {
     entry.active_run_id = null;
     entry.latest_run_id = runId;
   }

@@ -189,51 +189,81 @@ function shellFailure(step, result, timeoutMs) {
  * Move the cursor from `startIndex` (manifest order) to the next deliverable
  * prompt step, executing any consecutive shell steps on the way.
  *
- * Returns `{ step }` where `step` is the active prompt step or `null` when the
- * workflow completed. Writes state/events; throws exit-3 R2cError on shell
- * failure after marking the step `failed` and the run `paused`.
+ * State transitions run through `transaction(fn)`, which must call `fn(state)`
+ * inside the caller's write lock (submit). Without a transaction the passed
+ * `state` object is mutated directly (run owns its fresh run exclusively).
+ * Shell commands always run *outside* the transaction so a slow or timed-out
+ * step never holds the run lock; the outcome is revalidated when the next
+ * transaction loads the state.
+ *
+ * Returns `{ step, state }` where `step` is the active prompt step or `null`
+ * when the workflow completed. Throws exit-3 R2cError on shell failure after
+ * marking the step `failed` and the run `paused`.
  */
-export async function executeShellSteps({ manifest, projectRoot, state, runId, startIndex, now = () => new Date() }) {
+export async function executeShellSteps({
+  manifest,
+  projectRoot,
+  runId,
+  startIndex,
+  now = () => new Date(),
+  state = null,
+  transaction = null,
+}) {
   const flat = flattenSteps(manifest);
-  let index = startIndex;
+  let latest = state;
+  const mutate = typeof transaction === 'function'
+    ? (fn) => transaction((current) => {
+        latest = current;
+        return fn(current);
+      })
+    : (fn) => fn(latest);
 
-  for (;;) {
-    const entry = flat[index];
+  const prepare = (current, entry, entryIndex) => {
+    if (current.status !== 'running') {
+      throw new R2cError(
+        'NO_ACTIVE_RUN',
+        `run is not running: ${current.status}`,
+        { run_id: runId, status: current.status },
+        EXIT_CODES.NO_ACTIVE_RUN,
+      );
+    }
 
     if (entry === undefined) {
       const time = nowIso(now());
-      state.status = 'completed';
-      state.current_step_id = null;
-      state.completed_at = time;
-      state.updated_at = time;
-      completeFinishedStages(state, time);
+      current.status = 'completed';
+      current.current_step_id = null;
+      current.completed_at = time;
+      current.updated_at = time;
+      completeFinishedStages(current, time);
       appendEvent(projectRoot, runId, { kind: 'run', event: 'completed', time });
-      writeState(projectRoot, runId, state);
-      deactivateLatestRun(projectRoot, state.session_id, runId);
-      return { step: null };
+      writeState(projectRoot, runId, current);
+      deactivateLatestRun(projectRoot, current.session_id, runId);
+      return { kind: 'complete' };
     }
 
     const step = entry.step;
-    const stateStep = stateStepOf(state, step);
+    const stateStep = stateStepOf(current, step);
 
     if (step.type !== 'shell') {
-      if (stateStep.status !== 'active' || state.current_step_id !== stateStep.id) {
+      if (stateStep.status !== 'active' || current.current_step_id !== stateStep.id) {
         const time = nowIso(now());
-        completeFinishedStages(state, time);
+        completeFinishedStages(current, time);
         stateStep.status = 'active';
-        state.current_step_id = stateStep.id;
-        state.status = 'running';
-        state.updated_at = time;
-        activateStage(state, stateStep.stage_id, time);
+        current.current_step_id = stateStep.id;
+        current.updated_at = time;
+        activateStage(current, stateStep.stage_id, time);
         appendEvent(projectRoot, runId, {
           kind: 'step',
           event: 'started',
           step: { id: stateStep.id, name: stateStep.name },
           time,
         });
-        writeState(projectRoot, runId, state);
+        writeState(projectRoot, runId, current);
       }
-      return { step: stateStep };
+      return {
+        kind: 'deliver',
+        step: { id: stateStep.id, name: stateStep.name, status: stateStep.status },
+      };
     }
 
     if (typeof step.shell !== 'string' || step.shell.trim() === '') {
@@ -245,48 +275,74 @@ export async function executeShellSteps({ manifest, projectRoot, state, runId, s
       );
     }
 
-    if (stateStep.status !== 'active' || state.current_step_id !== stateStep.id) {
+    if (stateStep.status !== 'active' || current.current_step_id !== stateStep.id) {
       const time = nowIso(now());
-      completeFinishedStages(state, time);
+      completeFinishedStages(current, time);
       stateStep.status = 'active';
-      state.current_step_id = stateStep.id;
-      state.status = 'running';
-      state.updated_at = time;
-      activateStage(state, stateStep.stage_id, time);
+      current.current_step_id = stateStep.id;
+      current.updated_at = time;
+      activateStage(current, stateStep.stage_id, time);
       appendEvent(projectRoot, runId, {
         kind: 'step',
         event: 'started',
         step: { id: stateStep.id, name: stateStep.name },
         time,
       });
-      writeState(projectRoot, runId, state);
+      writeState(projectRoot, runId, current);
     }
 
-    const timeoutMs = commandTimeoutMs(step.timeout);
-    const result = await runShellCommand({ command: step.shell, cwd: projectRoot, timeoutMs });
+    return {
+      kind: 'execute',
+      index: entryIndex,
+      step,
+      command: step.shell,
+      timeoutMs: commandTimeoutMs(step.timeout),
+    };
+  };
+
+  const record = (current, action, result) => {
+    const stateStep = stateStepOf(current, action.step);
+    if (
+      current.status !== 'running'
+      || current.current_step_id !== stateStep.id
+      || stateStep.status !== 'active'
+    ) {
+      throw new R2cError(
+        'STEP_NOT_ACTIVE',
+        `run changed while shell step was executing: ${action.step.id}`,
+        {
+          step: action.step.id,
+          status: current.status,
+          current_step_id: current.current_step_id,
+          step_status: stateStep.status,
+        },
+        EXIT_CODES.USAGE,
+      );
+    }
+
     const time = nowIso(now());
 
     if (!result.ok) {
       stateStep.status = 'failed';
-      state.status = 'paused';
-      state.updated_at = time;
+      current.status = 'paused';
+      current.updated_at = time;
       appendEvent(projectRoot, runId, {
         kind: 'step',
         event: 'failed',
         step: { id: stateStep.id, name: stateStep.name },
-        command: step.shell,
+        command: action.command,
         exit_code: result.exitCode,
         timed_out: result.timedOut,
         time,
       });
       appendEvent(projectRoot, runId, { kind: 'run', event: 'paused', time });
-      writeState(projectRoot, runId, state);
-      throw shellFailure(step, result, timeoutMs);
+      writeState(projectRoot, runId, current);
+      return { error: shellFailure(action.step, result, action.timeoutMs) };
     }
 
     stateStep.status = 'completed';
-    if (state.current_step_id === stateStep.id) state.current_step_id = null;
-    state.updated_at = time;
+    if (current.current_step_id === stateStep.id) current.current_step_id = null;
+    current.updated_at = time;
     appendEvent(projectRoot, runId, {
       kind: 'step',
       event: 'completed',
@@ -294,8 +350,24 @@ export async function executeShellSteps({ manifest, projectRoot, state, runId, s
       exit_code: result.exitCode,
       time,
     });
-    completeFinishedStages(state, time);
-    writeState(projectRoot, runId, state);
-    index += 1;
+    completeFinishedStages(current, time);
+    writeState(projectRoot, runId, current);
+    return { nextIndex: action.index + 1 };
+  };
+
+  let index = startIndex;
+  for (;;) {
+    const action = mutate((current) => prepare(current, flat[index], index));
+    if (action.kind === 'complete') return { step: null, state: latest };
+    if (action.kind === 'deliver') return { step: action.step, state: latest };
+
+    const result = await runShellCommand({
+      command: action.command,
+      cwd: projectRoot,
+      timeoutMs: action.timeoutMs,
+    });
+    const outcome = mutate((current) => record(current, action, result));
+    if (outcome.error) throw outcome.error;
+    index = outcome.nextIndex;
   }
 }

@@ -35,6 +35,7 @@ Global options:
       --session-id ID     Session routing key.
       --manifest FILE     Absolute workflow manifest path.
       --runner-cmd CMD    Prefix used in rendered Submit lines.
+      --retry             resume: re-activate the current failed step.
 `;
 
 const PACKAGE_JSON = new URL('../package.json', import.meta.url);
@@ -98,6 +99,7 @@ function parseOptions(argv) {
     json: false,
     help: false,
     version: false,
+    retry: false,
     projectRoot: null,
     sessionId: null,
     manifest: null,
@@ -121,6 +123,10 @@ function parseOptions(argv) {
     }
     if (arg === '--version' || arg === '-v') {
       options.version = true;
+      continue;
+    }
+    if (arg === '--retry') {
+      options.retry = true;
       continue;
     }
     if (arg.startsWith('--')) {
@@ -263,6 +269,7 @@ export async function main(argv) {
       note: options.note,
       json,
       format: options.format,
+      retry: options.retry,
       version: readVersion(),
       binPath: BIN_PATH,
       now: () => new Date(),
