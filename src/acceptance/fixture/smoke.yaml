@@ -1,0 +1,33 @@
+schema: r2c.workflow/v1
+id: workflow-smoke
+name: smoke
+version: 0.1.0
+description: Zero-model acceptance fixture (2 stages, 3 steps).
+stages:
+  - id: stage-smoke-1
+    name: 阶段一
+    steps:
+      - id: step-smoke-a
+        name: 冒烟第一步
+        type: prompt
+        agent: smoke
+        taskFile: tasks/a.md
+        expect:
+          outputs:
+            - artifacts/a.txt
+  - id: stage-smoke-2
+    name: 阶段二
+    steps:
+      - id: step-smoke-b
+        name: 冒烟第二步
+        type: prompt
+        agent: smoke
+        taskFile: tasks/b.md
+        expect:
+          outputs:
+            - artifacts/b.txt
+      - id: step-smoke-c
+        name: 冒烟门禁
+        type: shell
+        shell: node gates/ok.mjs
+        timeout: 30

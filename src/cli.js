@@ -50,6 +50,10 @@ Adapter options:
       --no-smoke          Skip the post-install discovery probe.
       --profile NAME      Agent profile (dsh: default "web").
       --purge-state       uninstall: also remove .r2c runtime state.
+
+Acceptance options:
+      --keep              Keep the temporary sandbox and print its path.
+      --only ID[,ID]      Run only the named checks (P1 is reachable here).
 `;
 
 const PACKAGE_JSON = new URL('../package.json', import.meta.url);
@@ -72,6 +76,7 @@ const VALUE_OPTIONS = new Set([
   '--agent',
   '--workflow',
   '--profile',
+  '--only',
 ]);
 
 const FLAG_OPTIONS = new Set([
@@ -81,6 +86,7 @@ const FLAG_OPTIONS = new Set([
   '--purge-state',
   '--copy',
   '--link',
+  '--keep',
 ]);
 
 function readPackage() {
@@ -158,6 +164,8 @@ function parseOptions(argv) {
     purgeState: false,
     copy: false,
     link: false,
+    keep: false,
+    only: null,
     provided: [],
     workflow: null,
   };
@@ -189,6 +197,7 @@ function parseOptions(argv) {
       else if (arg === '--purge-state') options.purgeState = true;
       else if (arg === '--copy') options.copy = true;
       else if (arg === '--link') options.link = true;
+      else if (arg === '--keep') options.keep = true;
       continue;
     }
     if (arg.startsWith('--')) {
@@ -224,6 +233,7 @@ function parseOptions(argv) {
       else if (name === '--agent') options.agent = value;
       else if (name === '--profile') options.profile = value;
       else if (name === '--workflow') options.workflow = value;
+      else if (name === '--only') options.only = value;
       continue;
     }
     if (arg.startsWith('-') && arg !== '-') {
@@ -319,19 +329,28 @@ export async function main(argv) {
     '--copy',
     '--link',
   ]);
-  if (command !== 'adapter') {
-    const foreign = (options.provided ?? []).find((option) => ADAPTER_ONLY.has(option));
-    if (foreign !== undefined) {
-      writeFailure({
-        json,
-        command,
-        code: EXIT_USAGE,
-        errorCode: 'USAGE',
-        message: `unknown option: ${foreign}`,
-        details: { option: foreign },
-      });
-      return;
-    }
+  const ACCEPTANCE_ONLY = new Set(['--keep', '--only']);
+  let foreign = null;
+  if (command !== 'adapter' && command !== 'acceptance') {
+    foreign = (options.provided ?? []).find((option) => ADAPTER_ONLY.has(option));
+  } else if (command === 'acceptance') {
+    foreign = (options.provided ?? []).find(
+      (option) => ADAPTER_ONLY.has(option) && option !== '--agent' && option !== '--project',
+    );
+  }
+  if (foreign === null && command !== 'acceptance') {
+    foreign = (options.provided ?? []).find((option) => ACCEPTANCE_ONLY.has(option));
+  }
+  if (foreign !== null && foreign !== undefined) {
+    writeFailure({
+      json,
+      command,
+      code: EXIT_USAGE,
+      errorCode: 'USAGE',
+      message: `unknown option: ${foreign}`,
+      details: { option: foreign },
+    });
+    return;
   }
   const hookInput = normalizeHookInput(readHookInput(command));
   const sessionId = firstNonEmpty(
