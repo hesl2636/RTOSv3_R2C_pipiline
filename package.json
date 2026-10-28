@@ -1,9 +1,23 @@
 {
-  "name": "RTOSv3_R2C_pipiline",
-  "version": "0.1.1",
+  "name": "r2c-runner",
+  "version": "0.1.0",
+  "description": "Declarative workflow runner for the RTOSv3 R2C pipeline",
+  "license": "MIT",
   "type": "module",
-  "private": true,
+  "bin": {
+    "r2c": "bin/r2c.js"
+  },
+  "engines": {
+    "node": ">=22.19.0 <23 || >=24.0.0"
+  },
+  "files": [
+    "bin/",
+    "src/",
+    "schema/",
+    "README.md",
+    "LICENSE"
+  ],
   "dependencies": {
-    "yazl": "^3.3.1"
+    "yaml": "^2.4.0"
   }
 }
