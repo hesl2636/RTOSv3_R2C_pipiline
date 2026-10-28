@@ -37,6 +37,17 @@ Global options:
       --manifest FILE     Absolute workflow manifest path.
       --runner-cmd CMD    Prefix used in rendered Submit lines.
       --retry             resume: re-activate the current failed step.
+
+Adapter options:
+      --from DIR          Payload directory (unpacked payload or source checkout).
+      --scope SCOPE       project | user (default from adapter.json).
+      --plugin VERSION    Payload version for cache lookup (default: engine).
+      --mcp FILE          Merge mcpServers from FILE into the agent config.
+      --force             Back up and replace conflicting files.
+      --dry-run           Print the plan without writing anything.
+      --copy / --link     Install mode; --link requires --from.
+      --no-smoke          Skip the post-install discovery probe.
+      --purge-state       uninstall: also remove .r2c runtime state.
 `;
 
 const PACKAGE_JSON = new URL('../package.json', import.meta.url);
@@ -44,6 +55,7 @@ const BIN_PATH = fileURLToPath(new URL('../bin/r2c.js', import.meta.url));
 
 const VALUE_OPTIONS = new Set([
   '--project-root',
+  '--project',
   '--session-id',
   '--manifest',
   '--runner-cmd',
@@ -51,11 +63,32 @@ const VALUE_OPTIONS = new Set([
   '--step',
   '--note',
   '--format',
+  '--from',
+  '--scope',
+  '--plugin',
+  '--mcp',
+  '--agent',
 ]);
 
+const FLAG_OPTIONS = new Set([
+  '--force',
+  '--dry-run',
+  '--no-smoke',
+  '--purge-state',
+  '--copy',
+  '--link',
+]);
+
+function readPackage() {
+  return JSON.parse(readFileSync(PACKAGE_JSON, 'utf8'));
+}
+
 function readVersion() {
-  const { version } = JSON.parse(readFileSync(PACKAGE_JSON, 'utf8'));
-  return version;
+  return readPackage().version;
+}
+
+function readPackageName() {
+  return readPackage().name;
 }
 
 /** True when `version` (as reported by process.versions.node) is in NODE_RANGE. */
@@ -109,6 +142,18 @@ function parseOptions(argv) {
     step: null,
     note: null,
     format: null,
+    from: null,
+    scope: null,
+    plugin: null,
+    mcp: null,
+    agent: null,
+    force: false,
+    dryRun: false,
+    noSmoke: false,
+    purgeState: false,
+    copy: false,
+    link: false,
+    provided: [],
   };
   const positionals = [];
 
@@ -130,9 +175,20 @@ function parseOptions(argv) {
       options.retry = true;
       continue;
     }
+    if (FLAG_OPTIONS.has(arg)) {
+      options.provided.push(arg);
+      if (arg === '--force') options.force = true;
+      else if (arg === '--dry-run') options.dryRun = true;
+      else if (arg === '--no-smoke') options.noSmoke = true;
+      else if (arg === '--purge-state') options.purgeState = true;
+      else if (arg === '--copy') options.copy = true;
+      else if (arg === '--link') options.link = true;
+      continue;
+    }
     if (arg.startsWith('--')) {
       const equals = arg.indexOf('=');
       const name = equals === -1 ? arg : arg.slice(0, equals);
+      options.provided.push(name);
       if (!VALUE_OPTIONS.has(name)) {
         return { error: { kind: 'USAGE', message: `unknown option: ${arg}`, details: { option: name } } };
       }
@@ -147,7 +203,7 @@ function parseOptions(argv) {
         }
         index += 1;
       }
-      if (name === '--project-root') options.projectRoot = value;
+      if (name === '--project-root' || name === '--project') options.projectRoot = value;
       else if (name === '--session-id') options.sessionId = value;
       else if (name === '--manifest') options.manifest = value;
       else if (name === '--runner-cmd') options.runnerCmd = value;
@@ -155,6 +211,11 @@ function parseOptions(argv) {
       else if (name === '--step') options.step = value;
       else if (name === '--note') options.note = value;
       else if (name === '--format') options.format = value;
+      else if (name === '--from') options.from = value;
+      else if (name === '--scope') options.scope = value;
+      else if (name === '--plugin') options.plugin = value;
+      else if (name === '--mcp') options.mcp = value;
+      else if (name === '--agent') options.agent = value;
       continue;
     }
     if (arg.startsWith('-') && arg !== '-') {
@@ -235,6 +296,34 @@ export async function main(argv) {
   }
 
   const command = positionals[0];
+  const ADAPTER_ONLY = new Set([
+    '--project',
+    '--from',
+    '--scope',
+    '--plugin',
+    '--mcp',
+    '--agent',
+    '--force',
+    '--dry-run',
+    '--no-smoke',
+    '--purge-state',
+    '--copy',
+    '--link',
+  ]);
+  if (command !== 'adapter') {
+    const foreign = (options.provided ?? []).find((option) => ADAPTER_ONLY.has(option));
+    if (foreign !== undefined) {
+      writeFailure({
+        json,
+        command,
+        code: EXIT_USAGE,
+        errorCode: 'USAGE',
+        message: `unknown option: ${foreign}`,
+        details: { option: foreign },
+      });
+      return;
+    }
+  }
   const hookInput = normalizeHookInput(readHookInput(command));
   const sessionId = firstNonEmpty(
     options.sessionId,
@@ -272,7 +361,9 @@ export async function main(argv) {
       format: options.format,
       retry: options.retry,
       version: readVersion(),
+      packageName: readPackageName(),
       binPath: BIN_PATH,
+      options,
       hookInput,
       now: () => new Date(),
     };
@@ -288,7 +379,7 @@ export async function main(argv) {
       process.stdout.write(
         `${JSON.stringify(
           envelope({
-            command,
+            command: result.command ?? command,
             code: EXIT_OK,
             data: result.data ?? null,
             runId: result.runId ?? null,
