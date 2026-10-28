@@ -1,0 +1,81 @@
+name: live
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  live:
+    name: ${{ matrix.agent }} live probe
+    runs-on: ubuntu-24.04
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        agent:
+          - claude-code
+          - codex
+          - dsh
+          - omp
+          - opencode
+    env:
+      HOME: ${{ runner.temp }}/live/home
+      USERPROFILE: ${{ runner.temp }}/live/home
+      DSH_HOME: ${{ runner.temp }}/live/dsh
+    steps:
+      - name: Prepare redirected home
+        run: mkdir -p "$HOME" "$DSH_HOME"
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Probe claude-code
+        if: matrix.agent == 'claude-code'
+        continue-on-error: true
+        run: |
+          if command -v claude >/dev/null 2>&1; then
+            claude -p "/r2c-next" --output-format stream-json --verbose --permission-mode bypassPermissions
+          else
+            echo "claude not installed; live probe skipped"
+          fi
+      - name: Probe codex
+        if: matrix.agent == 'codex'
+        continue-on-error: true
+        run: |
+          if command -v codex >/dev/null 2>&1; then
+            codex exec --json --skip-git-repo-check '调用 $r2c-next 并原样输出其输出'
+          else
+            echo "codex not installed; live probe skipped"
+          fi
+      - name: Probe dsh
+        if: matrix.agent == 'dsh'
+        continue-on-error: true
+        run: |
+          if command -v dsh >/dev/null 2>&1; then
+            dsh --profile headless --json '调用 /r2c-next 并原样输出其输出'
+          else
+            echo "dsh not installed; live probe skipped"
+          fi
+      - name: Probe omp
+        if: matrix.agent == 'omp'
+        continue-on-error: true
+        run: |
+          if command -v omp >/dev/null 2>&1; then
+            omp -p "/r2c-next" --mode json
+          else
+            echo "omp not installed; live probe skipped"
+          fi
+      - name: Probe opencode
+        if: matrix.agent == 'opencode'
+        continue-on-error: true
+        run: |
+          if command -v opencode >/dev/null 2>&1; then
+            opencode run --command r2c-next --format json || opencode run "/r2c-next" --format json
+          else
+            echo "opencode not installed; live probe skipped"
+          fi
