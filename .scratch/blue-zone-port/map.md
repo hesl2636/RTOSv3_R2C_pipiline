@@ -3,6 +3,7 @@
 Status: open
 Labels: wayfinder:map
 Effort: blue-zone-port
+Remote: https://github.com/hesl2636/RTOSv3_R2C_pipiline/issues/1 （GitHub Issues 为准；本目录为建图时的本地快照）
 
 ## Destination
 
