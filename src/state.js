@@ -21,7 +21,7 @@ import {
 } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import { R2cError, EXIT_CODES, isR2cError } from './errors.js';
-import { withLatestLock, withRunLock } from './lock.js';
+import { withLatestLock, withRunLock, withRunWriteLock } from './lock.js';
 import {
   eventsPath,
   latestPath,
@@ -301,6 +301,7 @@ export function replayDerived(state, events) {
   const stageById = new Map(repaired.stages.map((stage) => [stage.id, stage]));
   let runStatus = 'pending';
   let currentStepId = null;
+  let sessionId = repaired.session_id;
   let startedAt = repaired.started_at ?? null;
   let completedAt = repaired.completed_at ?? null;
 
@@ -325,6 +326,9 @@ export function replayDerived(state, events) {
         runStatus = 'cancelled';
         completedAt ??= time;
         currentStepId = null;
+      } else if (event.event === 'claimed') {
+        const to = event.session?.to;
+        if (typeof to === 'string' && to !== '') sessionId = to;
       }
     } else if (event?.kind === 'step') {
       const id = event.step?.id;
@@ -385,56 +389,124 @@ export function replayDerived(state, events) {
 
   repaired.status = runStatus;
   repaired.current_step_id = currentStepId;
+  repaired.session_id = sessionId;
   repaired.started_at = startedAt;
   repaired.completed_at = completedAt;
   return repaired;
 }
 
-function repairLocked(root, runId, state, events) {
-  const repaired = replayDerived(state, events);
-  if (JSON.stringify(repaired) === JSON.stringify(state)) {
-    return { state, repaired: false };
+function claimedRoutes(events) {
+  const routes = [];
+  for (const event of events) {
+    if (event?.kind !== 'run' || event.event !== 'claimed') continue;
+    const from = event.session?.from;
+    const to = event.session?.to;
+    if (typeof from === 'string' && typeof to === 'string' && from !== '' && to !== '') {
+      routes.push({ from, to });
+    }
   }
-  writeState(root, runId, repaired);
-  return { state: repaired, repaired: true };
+  return routes;
+}
+
+/**
+ * A claimed run expects `latest.json` to route `to` at the run and to hold no
+ * `from` (synthetic) key. Only a missing `to` key is restored; an existing
+ * entry is left alone because a later run may legitimately own that session.
+ */
+function latestClaimDrift(latest, runId, routes) {
+  return routes.some(({ from, to }) => latest.runs?.[from] !== undefined
+    || latest.runs?.[to] === undefined);
+}
+
+function repairLatestClaims(latest, runId, routes) {
+  for (const { from, to } of routes) {
+    delete latest.runs[from];
+    if (latest.runs[to] === undefined) {
+      latest.runs[to] = { active_run_id: runId, latest_run_id: runId };
+    }
+  }
+  return latest;
+}
+
+function sameJson(left, right) {
+  return JSON.stringify(left) === JSON.stringify(right);
 }
 
 function warnRepair(runId) {
   process.stderr.write(`[r2c] state.json for ${runId} repaired from events\n`);
 }
 
+function warnRouteRepair(runId) {
+  process.stderr.write(`[r2c] latest.json route for ${runId} repaired from events\n`);
+}
+
 /**
  * Read a run and repair derived fields from events when they disagree.
  *
  * `events.jsonl` is the authority; `state.json` is a derived cache. A repair
- * therefore writes only `state.json` and never appends an event. The write is
- * performed under the run lock so a concurrent writer cannot interleave; the
- * `assumeLocked` option is used by callers that already hold that lock.
+ * therefore writes only `state.json`/`latest.json` and never appends an event.
+ * The write is performed under the latest → run lock order so a concurrent
+ * writer cannot interleave; `assumeLocked` is used by callers that already
+ * hold the run lock, and `assumeLatestLocked` by those that also hold the
+ * latest lock.
  */
-export function loadRun(root, runId, { repair = true, assumeLocked = false } = {}) {
+export function loadRun(
+  root,
+  runId,
+  { repair = true, assumeLocked = false, assumeLatestLocked = false } = {},
+) {
   const state = readState(root, runId);
   if (!state) return null;
   const events = readEvents(root, runId);
   if (!repair || events === null) return { runId, state, events: events ?? [] };
 
   const derived = replayDerived(state, events);
-  if (JSON.stringify(derived) === JSON.stringify(state)) {
+  const routes = claimedRoutes(events);
+  const stateDrift = !sameJson(derived, state);
+  const latestDrift = routes.length > 0 && latestClaimDrift(readLatest(root), runId, routes);
+  if (!stateDrift && !latestDrift) {
     return { runId, state, events, repaired: false };
   }
 
   if (assumeLocked) {
-    const result = repairLocked(root, runId, state, events);
-    if (result.repaired) warnRepair(runId);
-    return { runId, state: result.state, events, repaired: result.repaired };
+    let nextState = state;
+    if (stateDrift) {
+      writeState(root, runId, derived);
+      nextState = derived;
+    }
+    if (latestDrift && assumeLatestLocked) {
+      writeLatest(root, repairLatestClaims(readLatest(root), runId, routes));
+    }
+    if (stateDrift) warnRepair(runId);
+    else if (latestDrift && assumeLatestLocked) warnRouteRepair(runId);
+    return { runId, state: nextState, events, repaired: stateDrift };
   }
 
   try {
-    const result = withRunLock(root, runId, () => {
+    const result = withRunWriteLock(root, runId, () => {
       const freshState = readState(root, runId) ?? state;
       const freshEvents = readEvents(root, runId) ?? events;
-      return { ...repairLocked(root, runId, freshState, freshEvents), events: freshEvents };
+      const freshDerived = replayDerived(freshState, freshEvents);
+      const freshRoutes = claimedRoutes(freshEvents);
+      const freshStateDrift = !sameJson(freshDerived, freshState);
+      const freshLatestDrift = freshRoutes.length > 0
+        && latestClaimDrift(readLatest(root), runId, freshRoutes);
+
+      if (freshStateDrift) writeState(root, runId, freshDerived);
+      if (freshLatestDrift) {
+        writeLatest(root, repairLatestClaims(readLatest(root), runId, freshRoutes));
+      }
+      return {
+        state: freshStateDrift ? freshDerived : freshState,
+        events: freshEvents,
+        stateRepaired: freshStateDrift,
+        repaired: freshStateDrift || freshLatestDrift,
+      };
     });
-    if (result.repaired) warnRepair(runId);
+    if (result.repaired) {
+      if (result.stateRepaired) warnRepair(runId);
+      else warnRouteRepair(runId);
+    }
     return { runId, state: result.state, events: result.events, repaired: result.repaired };
   } catch (error) {
     if (isR2cError(error) && error.code === 'LOCK_CONFLICT') {

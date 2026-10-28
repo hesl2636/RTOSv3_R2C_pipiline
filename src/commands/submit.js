@@ -9,6 +9,7 @@
  * revalidates the preflight step (a concurrent writer may have won).
  */
 import { R2cError, EXIT_CODES } from '../errors.js';
+import { claimedBindingForSession } from '../claim.js';
 import { checkGates } from '../gate.js';
 import { withRunWriteLock } from '../lock.js';
 import { flattenSteps, loadManifest } from '../manifest.js';
@@ -29,6 +30,16 @@ export async function run(_argv, ctx) {
       'submit requires --session-id (or R2C_SESSION_ID)',
       { option: '--session-id' },
       EXIT_CODES.USAGE,
+    );
+  }
+
+  const claimed = claimedBindingForSession(ctx.projectRoot, ctx.sessionId);
+  if (claimed !== null) {
+    throw new R2cError(
+      'RUN_CLAIMED',
+      `session id was claimed by another session: ${ctx.sessionId}`,
+      { session_id: ctx.sessionId, run_id: claimed.runId, claimed_by: claimed.sessionId },
+      EXIT_CODES.NO_ACTIVE_RUN,
     );
   }
 
@@ -93,7 +104,10 @@ export async function run(_argv, ctx) {
    * the lock is authoritative; `fn` returns the value to the caller.
    */
   const writeTransaction = (fn) => withRunWriteLock(ctx.projectRoot, runId, () => {
-    const locked = loadRun(ctx.projectRoot, runId, { assumeLocked: true });
+    const locked = loadRun(ctx.projectRoot, runId, {
+      assumeLocked: true,
+      assumeLatestLocked: true,
+    });
     if (locked === null) {
       throw new R2cError(
         'NO_ACTIVE_RUN',

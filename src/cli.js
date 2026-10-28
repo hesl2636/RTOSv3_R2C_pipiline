@@ -37,6 +37,7 @@ Global options:
       --manifest FILE     Absolute workflow manifest path.
       --runner-cmd CMD    Prefix used in rendered Submit lines.
       --retry             resume: re-activate the current failed step.
+      --workflow ID       hook stop: only consider this workflow's runs.
 `;
 
 const PACKAGE_JSON = new URL('../package.json', import.meta.url);
@@ -51,6 +52,7 @@ const VALUE_OPTIONS = new Set([
   '--step',
   '--note',
   '--format',
+  '--workflow',
 ]);
 
 function readVersion() {
@@ -109,6 +111,7 @@ function parseOptions(argv) {
     step: null,
     note: null,
     format: null,
+    workflow: null,
   };
   const positionals = [];
 
@@ -155,6 +158,7 @@ function parseOptions(argv) {
       else if (name === '--step') options.step = value;
       else if (name === '--note') options.note = value;
       else if (name === '--format') options.format = value;
+      else if (name === '--workflow') options.workflow = value;
       continue;
     }
     if (arg.startsWith('-') && arg !== '-') {
@@ -270,6 +274,7 @@ export async function main(argv) {
       note: options.note,
       json,
       format: options.format,
+      workflow: options.workflow,
       retry: options.retry,
       version: readVersion(),
       binPath: BIN_PATH,
