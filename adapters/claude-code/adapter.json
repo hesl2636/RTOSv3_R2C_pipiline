@@ -44,7 +44,5 @@
     ".claude/skills"
   ],
   "options": {},
-  "manualSteps": [
-    "Optional: native marketplace installs are documented in adapters/claude-code/README.md; r2c adapter install is the supported path."
-  ]
+  "manualSteps": []
 }
