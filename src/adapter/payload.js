@@ -33,6 +33,7 @@ import {
   verifyPluginFiles,
 } from '../plugin.js';
 import { isValidRange, isValidVersion } from '../version.js';
+import { stateDir } from './state.js';
 import {
   atomicWriteFile,
   createDirLink,
@@ -453,10 +454,6 @@ function cacheDir(version) {
   return join(userHome(), '.r2c', 'cache', `plugin-${version}`);
 }
 
-function pluginStateDir(scope, projectRoot) {
-  return scope === 'user' ? join(userHome(), '.r2c') : join(projectRoot, '.r2c');
-}
-
 /**
  * Resolve the payload for `version`, verify it, and return an inspection that
  * is safe to plan from. No file is written under the project at this point.
@@ -507,7 +504,7 @@ export async function resolvePayload({ from = null, pluginVersion = null, projec
 }
 
 export function payloadHome(scope, projectRoot, version) {
-  return join(pluginStateDir(scope, projectRoot), 'plugin', version);
+  return join(stateDir(scope, projectRoot), 'plugin', version);
 }
 
 export function payloadReady(home, resolved) {

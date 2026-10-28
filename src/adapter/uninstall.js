@@ -13,6 +13,7 @@ import { isDeepStrictEqual } from 'node:util';
 import { EXIT_CODES, R2cError } from '../errors.js';
 import { withLock } from '../lock.js';
 import { installLockPath, installDir, receiptPath, stateDir } from './state.js';
+import { pointerGet, pointerSet } from './pointer.js';
 import { runAdapterStep, stepsFile } from './steps.js';
 import {
   atomicWriteJson,
@@ -36,15 +37,6 @@ function chooseScope(projectRoot, options) {
     return 'user';
   }
   return 'project';
-}
-
-function pointerGet(object, pointer) {
-  let node = object;
-  for (const key of pointer.split('.')) {
-    if (node === null || typeof node !== 'object') return undefined;
-    node = node[key];
-  }
-  return node;
 }
 
 function pointerDelete(object, pointer) {
@@ -71,16 +63,6 @@ function pointerDelete(object, pointer) {
     }
   }
   return true;
-}
-
-function pointerSet(object, pointer, value) {
-  const keys = pointer.split('.');
-  let node = object;
-  for (const key of keys.slice(0, -1)) {
-    if (node[key] === null || typeof node[key] !== 'object') node[key] = {};
-    node = node[key];
-  }
-  node[keys[keys.length - 1]] = value;
 }
 
 function readReceipts(state) {

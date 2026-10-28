@@ -16,6 +16,7 @@ import { withLock } from '../lock.js';
 import { detectAgent } from './detect.js';
 import { buildPlan, defaultRunnerCommand, loadAdapterDeclaration } from './plan.js';
 import { materializePayload, payloadHome, payloadReady, resolvePayload } from './payload.js';
+import { pointerGet, pointerSet } from './pointer.js';
 import { runAdapterSmoke } from './smoke.js';
 import { runAdapterStep, stepsFile, undoAdapterStep } from './steps.js';
 import {
@@ -160,28 +161,6 @@ function recordBackup(pending, entry) {
 
 function pushDirs(created, dirs) {
   for (const dir of dirs) if (!created.includes(dir)) created.push(dir);
-}
-
-function pointerGet(object, pointer) {
-  if (pointer === null) return object;
-  let node = object;
-  for (const key of pointer.split('.')) {
-    if (node === null || typeof node !== 'object') return undefined;
-    node = node[key];
-  }
-  return node;
-}
-
-function pointerSet(object, pointer, value) {
-  if (pointer === null) return value;
-  const keys = pointer.split('.');
-  let node = object;
-  for (const key of keys.slice(0, -1)) {
-    if (node[key] === null || typeof node[key] !== 'object' || Array.isArray(node[key])) node[key] = {};
-    node = node[key];
-  }
-  node[keys[keys.length - 1]] = value;
-  return object;
 }
 
 function groupMerges(entries) {
