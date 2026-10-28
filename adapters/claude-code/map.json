@@ -38,6 +38,20 @@
       "scope": "user"
     },
     {
+      "from": "assets/hooks.json",
+      "to": "{project}/.claude/settings.json",
+      "action": "merge-json",
+      "pointers": ["hooks"],
+      "scope": "project"
+    },
+    {
+      "from": "assets/hooks.json",
+      "to": "{user}/.claude/settings.json",
+      "action": "merge-json",
+      "pointers": ["hooks"],
+      "scope": "user"
+    },
+    {
       "from": "--mcp",
       "to": "{project}/.mcp.json",
       "action": "merge-json",
