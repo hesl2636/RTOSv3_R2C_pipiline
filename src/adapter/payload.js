@@ -12,11 +12,26 @@
  * mismatching `r2c-plugin.json.files` entry aborts with exit 2 and zero
  * installed bytes.
  */
-import { existsSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, statSync } from 'node:fs';
+import {
+  existsSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  statSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, relative, resolve } from 'node:path';
-import { gunzipSync } from 'node:zlib';
 import { EXIT_CODES, R2cError } from '../errors.js';
+import {
+  PLUGIN_MANIFEST,
+  PLUGIN_SCHEMA,
+  comparePayloadPaths,
+  manifestBuffer,
+  readTarGz,
+  verifyPluginFiles,
+} from '../plugin.js';
 import { isValidRange, isValidVersion } from '../version.js';
 import {
   atomicWriteFile,
@@ -31,7 +46,7 @@ import {
   userHome,
 } from './util.js';
 
-export const PLUGIN_SCHEMA = 'r2c.plugin/v1';
+export { PLUGIN_SCHEMA };
 const RELEASE_BASE = 'https://github.com/hesl2636/RTOSv3_R2C_pipiline/releases/download';
 
 function payloadError(code, message, details = null, exitCode = EXIT_CODES.USAGE) {
@@ -39,15 +54,13 @@ function payloadError(code, message, details = null, exitCode = EXIT_CODES.USAGE
 }
 
 function hintFrom() {
-  return 'pass --from <payload-dir> or set R2C_PLUGIN_SOURCE to an unpacked payload (a checkout containing package.json, pack/ and adapters/ works too)';
+  return 'pass --from <payload-dir|payload.tgz> or set R2C_PLUGIN_SOURCE to an unpacked payload (a checkout containing package.json, pack/ and adapters/ works too)';
 }
 
-function readPayloadManifest(dir) {
-  const file = join(dir, 'r2c-plugin.json');
-  if (!existsSync(file)) return null;
+function parsePayloadManifest(text, file) {
   let manifest;
   try {
-    manifest = JSON.parse(readFileSync(file, 'utf8'));
+    manifest = JSON.parse(text);
   } catch (error) {
     throw payloadError('PAYLOAD_INVALID_JSON', `cannot parse ${file}: ${error.message}`, { file });
   }
@@ -68,7 +81,16 @@ function readPayloadManifest(dir) {
       file,
     });
   }
+  if (manifest.files === null || typeof manifest.files !== 'object' || Array.isArray(manifest.files)) {
+    throw payloadError('PAYLOAD_INVALID_MANIFEST', `${file} has no files map`, { file });
+  }
   return manifest;
+}
+
+function readPayloadManifest(dir) {
+  const file = join(dir, PLUGIN_MANIFEST);
+  if (!existsSync(file)) return null;
+  return parsePayloadManifest(readFileSync(file, 'utf8'), file);
 }
 
 function isSourceTree(dir) {
@@ -93,7 +115,7 @@ function collectPayloadDir(dir) {
     }
   };
   walk(dir);
-  entries.sort((left, right) => left.rel.localeCompare(right.rel));
+  entries.sort((left, right) => comparePayloadPaths(left.rel, right.rel));
   const topDirs = {};
   for (const entry of entries) {
     const [first, ...rest] = entry.rel.split('/');
@@ -129,7 +151,7 @@ function collectSourceTree(dir) {
       entries.push({ rel: name, abs: absolute });
     }
   }
-  entries.sort((left, right) => left.rel.localeCompare(right.rel));
+  entries.sort((left, right) => comparePayloadPaths(left.rel, right.rel));
   return { entries, topDirs };
 }
 
@@ -201,14 +223,8 @@ function resolveInspection(dir, sourceLabel) {
     for (const entry of entries) files[entry.rel] = sha256File(entry.abs);
   }
 
-  const normalized = {
-    schema: PLUGIN_SCHEMA,
-    version: manifest.version,
-    engine: manifest.engine,
-    ...Object.fromEntries(Object.entries(manifest).filter(([key]) => !['schema', 'version', 'engine', 'files'].includes(key))),
-    files: Object.fromEntries(Object.entries(files).sort(([left], [right]) => left.localeCompare(right))),
-  };
-  const manifestBytes = Buffer.from(`${JSON.stringify(normalized, null, 2)}\n`, 'utf8');
+  const normalized = normalizedManifest(manifest, files);
+  const manifestBytes = manifestBuffer(normalized);
   return {
     kind: 'dir',
     root: dir,
@@ -221,101 +237,146 @@ function resolveInspection(dir, sourceLabel) {
   };
 }
 
-function parseSums(text, version) {
-  const asset = `r2c-plugin-${version}.tgz`;
+function parseSums(text, assetName) {
   for (const line of text.split(/\r?\n/)) {
     const match = /^([0-9a-f]{64})\s+\*?(.+)$/.exec(line.trim());
-    if (match !== null && basename(match[2]) === asset) return match[1];
+    if (match !== null && basename(match[2]) === assetName) return match[1];
   }
   return null;
 }
 
-function readTarString(block, start, length) {
-  const slice = block.subarray(start, start + length);
-  const end = slice.indexOf(0);
-  return (end === -1 ? slice : slice.subarray(0, end)).toString('utf8');
+function normalizedManifest(manifest, files) {
+  const sortedFiles = Object.fromEntries(
+    Object.entries(files).sort(([left], [right]) => comparePayloadPaths(left, right)),
+  );
+  return {
+    schema: PLUGIN_SCHEMA,
+    version: manifest.version,
+    engine: manifest.engine,
+    ...Object.fromEntries(
+      Object.entries(manifest).filter(
+        ([key]) => !['schema', 'version', 'engine', 'files'].includes(key),
+      ),
+    ),
+    files: sortedFiles,
+  };
 }
 
 /** Extract the ustar+gzip payload contract (no symlinks, no PAX). */
 export function extractTarGz(buffer, destination) {
-  const tar = gunzipSync(buffer);
-  let offset = 0;
-  let longName = null;
-  while (offset + 512 <= tar.length) {
-    const header = tar.subarray(offset, offset + 512);
-    if (header.every((byte) => byte === 0)) break;
-    let name = readTarString(header, 0, 100);
-    const prefix = readTarString(header, 345, 155);
-    if (prefix !== '') name = `${prefix}/${name}`;
-    const size = Number.parseInt(readTarString(header, 124, 12).trim() || '0', 8);
-    const type = header[156] === 0 ? '0' : String.fromCharCode(header[156]);
-    offset += 512;
-    const data = tar.subarray(offset, offset + size);
-    offset += Math.ceil(size / 512) * 512;
-    if (type === 'L') {
-      longName = data.toString('utf8').replace(/\0+$/, '');
-      continue;
-    }
-    if (longName !== null) {
-      name = longName;
-      longName = null;
-    }
-    if (name === '') continue;
-    const normalized = toPosix(name);
-    if (normalized.startsWith('/') || normalized.split('/').includes('..')) {
-      throw payloadError('PAYLOAD_INVALID_TAR', `unsafe path in payload archive: ${name}`, { name });
-    }
-    const target = join(destination, ...normalized.split('/'));
+  const { entries, problems } = readTarGz(buffer);
+  if (problems.length > 0) {
+    throw payloadError('PAYLOAD_INVALID_TAR', `invalid payload archive: ${problems[0]}`, {
+      problems,
+    });
+  }
+  for (const entry of entries) {
+    const target = join(destination, ...entry.path.split('/'));
     if (!isInside(destination, target)) {
-      throw payloadError('PAYLOAD_INVALID_TAR', `payload path escapes its root: ${name}`, { name });
-    }
-    if (type === '5') {
-      ensureDir(target);
-    } else if (type === '0') {
-      ensureDir(dirname(target));
-      atomicWriteBuffer(target, data);
-    } else if (type === 'x' || type === 'g') {
-      continue;
-    } else {
-      throw payloadError('PAYLOAD_INVALID_TAR', `unsupported tar entry type "${type}": ${name}`, {
-        name,
-        type,
+      throw payloadError('PAYLOAD_INVALID_TAR', `payload path escapes its root: ${entry.path}`, {
+        name: entry.path,
       });
     }
+    ensureDir(dirname(target));
+    atomicWriteFile(target, entry.data);
   }
   return destination;
 }
 
-function atomicWriteBuffer(file, data) {
-  ensureDir(dirname(file));
-  const temp = join(dirname(file), `.${basename(file)}.r2c-tmp-${process.pid}`);
-  readFileSyncWrite(temp, data);
+/**
+ * Verify a `--from <tgz>` payload, then materialise it under
+ * `~/.r2c/cache/plugin-<V>` as a sibling directory renamed into place.
+ *
+ * Order is fail-closed and project-free: the sidecar checksum (when the
+ * release's `SHA256SUMS.txt` sits next to the archive) covers the container,
+ * and every `r2c-plugin.json.files` hash covers the contents. Nothing is
+ * extracted until both pass.
+ */
+function resolveTgzPayload(file, sourceLabel) {
+  const asset = basename(file);
+  const buffer = readFileSync(file);
+  const sumsFile = join(dirname(file), 'SHA256SUMS.txt');
+  if (existsSync(sumsFile)) {
+    const actual = sha256(buffer);
+    const expected = parseSums(readFileSync(sumsFile, 'utf8'), asset);
+    if (expected === null || expected !== actual) {
+      throw payloadError(
+        'PAYLOAD_CHECKSUM_MISMATCH',
+        expected === null
+          ? `${sumsFile} has no entry for ${asset}`
+          : `SHA256SUMS.txt mismatch for ${asset}`,
+        { asset, expected, actual, sums: sumsFile },
+      );
+    }
+  }
+
+  const { entries, problems } = readTarGz(buffer);
+  if (problems.length > 0) {
+    throw payloadError('PAYLOAD_INVALID_TAR', `invalid payload archive: ${problems[0]}`, {
+      file,
+      problems,
+    });
+  }
+  const manifestEntry = entries.find((entry) => entry.path === PLUGIN_MANIFEST);
+  if (manifestEntry === undefined) {
+    throw payloadError('PAYLOAD_MANIFEST_MISSING', `${asset} does not contain ${PLUGIN_MANIFEST}`, {
+      file,
+    });
+  }
+  const manifest = parsePayloadManifest(
+    manifestEntry.data.toString('utf8'),
+    `${asset}:${PLUGIN_MANIFEST}`,
+  );
+  const failures = verifyPluginFiles(manifest, entries, { strict: true });
+  if (failures.length > 0) {
+    const first = failures[0];
+    throw payloadError(first.code, first.message, { file: asset, failures });
+  }
+
+  const normalized = normalizedManifest(manifest, manifest.files);
+  const manifestBytes = manifestBuffer(normalized);
+  const home = cacheDir(normalized.version);
+  const cached = join(home, PLUGIN_MANIFEST);
+  const cacheValid = existsSync(cached) && readFileSync(cached).equals(manifestBytes);
+  if (!cacheValid) extractPayloadArchive(home, entries, manifestBytes);
+  return resolveInspection(home, sourceLabel);
+}
+
+function extractPayloadArchive(home, entries, manifestBytes) {
+  const temp = `${home}.tmp-${process.pid}-${Date.now().toString(36)}`;
+  removePath(temp);
+  ensureDir(temp);
   try {
-    // Reuse the atomic rename helper without exporting another primitive.
-    const { atomicWriteFile } = requireUtil();
-    atomicWriteFile(file, data);
-    rmSync(temp, { force: true });
+    for (const entry of entries) {
+      if (entry.path === PLUGIN_MANIFEST) continue;
+      const target = join(temp, ...entry.path.split('/'));
+      if (!isInside(temp, target)) {
+        throw payloadError('PAYLOAD_INVALID_TAR', `payload path escapes its root: ${entry.path}`, {
+          name: entry.path,
+        });
+      }
+      ensureDir(dirname(target));
+      atomicWriteFile(target, entry.data);
+    }
+    atomicWriteFile(join(temp, PLUGIN_MANIFEST), manifestBytes);
+    ensureDir(dirname(home));
+    if (existsSync(home)) {
+      const backup = `${home}.old-${process.pid}-${Date.now().toString(36)}`;
+      renameSync(home, backup);
+      try {
+        renameSync(temp, home);
+      } catch (error) {
+        renameSync(backup, home);
+        throw error;
+      }
+      removePath(backup);
+    } else {
+      renameSync(temp, home);
+    }
   } catch (error) {
-    rmSync(temp, { force: true });
+    removePath(temp);
     throw error;
   }
-}
-
-function readFileSyncWrite(file, data) {
-  // Kept separate so the temp write is always followed by an atomic rename.
-  const { writeFileSync } = requireFs();
-  writeFileSync(file, data);
-}
-
-import { writeFileSync } from 'node:fs';
-import * as utilModule from './util.js';
-
-function requireUtil() {
-  return utilModule;
-}
-
-function requireFs() {
-  return { writeFileSync };
 }
 
 async function downloadRelease(version) {
@@ -355,7 +416,7 @@ async function downloadRelease(version) {
       { version, status: sumsResponse.status },
     );
   }
-  const expected = parseSums(await sumsResponse.text(), version);
+  const expected = parseSums(await sumsResponse.text(), asset);
   if (expected === null) {
     throw payloadError('PAYLOAD_CHECKSUM_MISMATCH', `SHA256SUMS.txt has no entry for ${asset}`, {
       asset,
@@ -422,11 +483,14 @@ export async function resolvePayload({ from = null, pluginVersion = null, projec
       continue;
     }
     if (statSync(candidate.dir).isFile()) {
-      throw payloadError(
-        'PAYLOAD_FORMAT_UNSUPPORTED',
-        `tgz payloads are installed by the release packager; pass an unpacked directory: ${candidate.dir}`,
-        { dir: candidate.dir },
-      );
+      if (!/\.(tgz|tar\.gz)$/i.test(candidate.dir)) {
+        throw payloadError(
+          'PAYLOAD_FORMAT_UNSUPPORTED',
+          `unsupported payload file (expected a .tgz archive): ${candidate.dir}`,
+          { dir: candidate.dir },
+        );
+      }
+      return resolveTgzPayload(candidate.dir, candidate.source);
     }
     return resolveInspection(candidate.dir, candidate.source);
   }

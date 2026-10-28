@@ -7,7 +7,7 @@
  * read-only, so a bad payload, a version mismatch, a conflict without
  * `--force` or `--dry-run` leaves the project untouched.
  */
-import { cpSync, existsSync, readFileSync, rmdirSync, unlinkSync } from 'node:fs';
+import { cpSync, existsSync, readFileSync, rmdirSync, statSync, unlinkSync } from 'node:fs';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { EXIT_CODES, R2cError } from '../errors.js';
@@ -60,6 +60,14 @@ function effectiveMode(options, adapter) {
       throw installError('LINK_REQUIRES_FROM', '--link is only supported together with --from <dir>', {
         option: '--link',
       });
+    }
+    const fromPath = resolve(process.cwd(), options.from);
+    if (existsSync(fromPath) && statSync(fromPath).isFile()) {
+      throw installError(
+        'LINK_REQUIRES_DIR',
+        '--link is only supported with an unpacked --from <dir>; a .tgz payload installs with --copy',
+        { option: '--link', from: options.from },
+      );
     }
     if (Array.isArray(adapter.modes) && !adapter.modes.includes('link')) {
       throw installError(

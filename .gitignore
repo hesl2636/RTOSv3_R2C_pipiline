@@ -4,3 +4,4 @@
 .r2c/install/
 .r2c/plugin/
 node_modules/
+dist/
