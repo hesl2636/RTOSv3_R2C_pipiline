@@ -51,7 +51,7 @@ jobs:
             --draft \
             --title "v${version}" \
             --generate-notes \
-            "dist/r2c-plugin-${version}.tgz" \
+            "dist/r2c-payload-${version}.tgz" \
             "dist/SHA256SUMS.txt"
       - name: Publish to npm
         shell: bash

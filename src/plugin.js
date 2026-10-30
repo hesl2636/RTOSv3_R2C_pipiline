@@ -17,7 +17,12 @@ import { gunzipSync, gzipSync } from 'node:zlib';
 import { EXIT_CODES, R2cError } from './errors.js';
 
 export const PLUGIN_SCHEMA = 'r2c.plugin/v1';
-export const PLUGIN_MANIFEST = 'r2c-plugin.json';
+export const PAYLOAD_MANIFEST = 'r2c-payload.json';
+
+/** The one release asset name the packager writes and the installer downloads. */
+export function payloadAssetName(version) {
+  return `r2c-payload-${version}.tgz`;
+}
 
 /** Directories copied verbatim from the repository root. */
 export const PAYLOAD_DIRS = Object.freeze(['adapters', 'schema', 'shims']);
@@ -138,7 +143,7 @@ export function collectPayload(root) {
   return { files, problems };
 }
 
-/** `{ rel: sha256 }` in codepoint order, exactly what `r2c-plugin.json.files` holds. */
+/** `{ rel: sha256 }` in codepoint order, exactly what `r2c-payload.json.files` holds. */
 export function hashPayloadFiles(files) {
   const hashes = {};
   for (const file of [...files].sort((left, right) => comparePayloadPaths(left.rel, right.rel))) {
@@ -331,12 +336,12 @@ export function verifyPluginFiles(manifest, entries, { strict = false } = {}) {
     }
   }
   if (strict) {
-    const declared = new Set([...Object.keys(manifest.files), PLUGIN_MANIFEST]);
+    const declared = new Set([...Object.keys(manifest.files), PAYLOAD_MANIFEST]);
     for (const entry of entries) {
       if (declared.has(entry.path)) continue;
       failures.push({
         code: 'PAYLOAD_UNLISTED_FILE',
-        message: `payload file is not declared in ${PLUGIN_MANIFEST}: ${entry.path}`,
+        message: `payload file is not declared in ${PAYLOAD_MANIFEST}: ${entry.path}`,
         file: entry.path,
       });
     }

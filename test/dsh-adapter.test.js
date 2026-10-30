@@ -183,7 +183,7 @@ function writePayload(t, { smoke } = {}) {
   cpSync(join(REPO, 'shims'), join(payload, 'shims'), { recursive: true });
   if (smoke !== undefined) writeFileSync(join(payload, 'adapters', 'dsh', 'smoke.mjs'), smoke);
   writeFileSync(
-    join(payload, 'r2c-plugin.json'),
+    join(payload, 'r2c-payload.json'),
     `${JSON.stringify({ schema: 'r2c.plugin/v1', version: ENGINE_VERSION, engine: '^0.1.0', files: {} }, null, 2)}\n`,
   );
   return payload;
@@ -213,7 +213,7 @@ test('user-scope install renders the plugin, patch, hooks and profile entry', (t
   assert.equal(json.data.action, 'installed');
   assert.equal(json.data.runner_cmd, `npx --yes r2c-runner@${ENGINE_VERSION}`);
 
-  const payloadHome = join(home, '.r2c', 'plugin', ENGINE_VERSION);
+  const payloadHome = join(home, '.r2c', 'payload', ENGINE_VERSION);
   for (const file of ['index.mjs', 'package.json', 'cordis.patch.yml', 'hooks.json']) {
     assert.ok(existsSync(join(payloadHome, 'adapters', 'dsh', file)), file);
   }
@@ -345,7 +345,7 @@ test('mcp servers are appended to the rendered bundle patch and removed with the
   }));
   const result = install(env, project, ['--mcp', mcpFile]);
   assert.equal(result.status, 0, result.stderr);
-  const payloadHome = join(home, '.r2c', 'plugin', ENGINE_VERSION);
+  const payloadHome = join(home, '.r2c', 'payload', ENGINE_VERSION);
   const bundlePatch = join(payloadHome, 'adapters', 'dsh', 'cordis.patch.yml');
   const patch = readFileSync(bundlePatch, 'utf8');
   assert.match(patch, /r2c-mcp-r2c-sr/);
@@ -390,7 +390,7 @@ test('pre-tool-use denial is exit 0 + hookSpecificOutput.permissionDecision=deny
 test('the native plugin registers commands, steers on stop and denies guarded tools', async (t) => {
   const { home, project, env } = setup(t);
   assert.equal(install(env, project).status, 0);
-  const payloadHome = join(home, '.r2c', 'plugin', ENGINE_VERSION);
+  const payloadHome = join(home, '.r2c', 'payload', ENGINE_VERSION);
   const plugin = await import(`${pathToFileURL(join(payloadHome, 'adapters', 'dsh', 'index.mjs')).href}?t=${Date.now()}`);
   const listeners = new Map();
   const commands = [];
@@ -449,7 +449,7 @@ test('the native plugin registers commands, steers on stop and denies guarded to
 test('DSH_SESSION_ID covers a stop when the event has no session id', async (t) => {
   const { home, project, env } = setup(t);
   assert.equal(install(env, project).status, 0);
-  const payloadHome = join(home, '.r2c', 'plugin', ENGINE_VERSION);
+  const payloadHome = join(home, '.r2c', 'payload', ENGINE_VERSION);
   const plugin = await import(`${pathToFileURL(join(payloadHome, 'adapters', 'dsh', 'index.mjs')).href}?t=${Date.now()}-env`);
   let stop;
   plugin.apply({
@@ -480,7 +480,7 @@ test('DSH_SESSION_ID covers a stop when the event has no session id', async (t) 
 test('plugin errors are warnings and never reject the turn', async (t) => {
   const { home, project, env } = setup(t);
   assert.equal(install(env, project).status, 0);
-  const payloadHome = join(home, '.r2c', 'plugin', ENGINE_VERSION);
+  const payloadHome = join(home, '.r2c', 'payload', ENGINE_VERSION);
   const plugin = await import(`${pathToFileURL(join(payloadHome, 'adapters', 'dsh', 'index.mjs')).href}?t=${Date.now()}-err`);
   let stop;
   plugin.apply({

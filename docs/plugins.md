@@ -23,7 +23,7 @@ path.
   are zero-model and zero-secret and run without intranet reachability.
 - **Distribution.** Plugins travel as the intranet-only
   `r2c-intranet-plugins` archive; they are never a GitHub Release asset for the
-  public `r2c-plugin-V.tgz` payload.
+  public `r2c-payload-V.tgz` payload.
 
 ## Sanitization
 

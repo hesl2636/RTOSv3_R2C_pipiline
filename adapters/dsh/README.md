@@ -2,7 +2,7 @@
 
 Installs at user scope only: it adds the `r2c-adapter-dsh` bundle to a dsh
 profile (`$DSH_HOME/profiles/<profile>`, default `web`) and renders the payload
-plugin assets into `<state>/plugin/<V>/adapters/dsh/`.
+plugin assets into `<state>/payload/<V>/adapters/dsh/`.
 
 ## Landing paths
 
@@ -18,7 +18,7 @@ plugin assets into `<state>/plugin/<V>/adapters/dsh/`.
 ## Install
 
 ```bash
-npx r2c-runner adapter install dsh --from r2c-plugin-0.1.0.tgz --profile web
+npx r2c-runner adapter install dsh --from r2c-payload-0.1.0.tgz --profile web
 npx r2c-runner adapter doctor  dsh
 npx r2c-runner adapter uninstall dsh
 ```

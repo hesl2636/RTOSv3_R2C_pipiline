@@ -6,8 +6,8 @@ Generated from `package.json` and `adapters/*/adapter.json` by
 
 | Dimension | Object | Range |
 | --- | --- | --- |
-| Version | `r2c-runner`, `r2c-plugin-0.1.0.tgz`, adapters | `0.1.0` |
-| Engine ↔ payload | `r2c-plugin.json.engine` | `^0.1.0` |
+| Version | `r2c-runner`, `r2c-payload-0.1.0.tgz`, adapters | `0.1.0` |
+| Engine ↔ payload | `r2c-payload.json.engine` | `^0.1.0` |
 | Engine ↔ adapter | `adapters/claude-code/adapter.json` | `^0.1.0` |
 | Engine ↔ adapter | `adapters/codex/adapter.json` | `^0.1.0` |
 | Engine ↔ adapter | `adapters/dsh/adapter.json` | `^0.1.0` |

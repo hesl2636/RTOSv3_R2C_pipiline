@@ -264,7 +264,7 @@ test('uninstall removes adapter files and keeps .r2c runtime state', (t) => {
   assert.ok(!existsSync(join(project, '.omp', 'hooks', 'post', 'r2c-stop.ts')));
   assert.ok(!existsSync(join(project, '.omp', 'agents', 'r2c-bys-architect.md')));
   assert.ok(existsSync(join(project, '.r2c', 'ir.md')), '.r2c business state survives');
-  assert.ok(!existsSync(join(project, '.r2c', 'plugin', ENGINE_VERSION)));
+  assert.ok(!existsSync(join(project, '.r2c', 'payload', ENGINE_VERSION)));
 
   const again = cli(['adapter', 'uninstall', 'omp', '--project-root', project, '--json'], { env });
   assert.equal(again.status, 4, again.stderr);

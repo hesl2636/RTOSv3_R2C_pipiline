@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://r2c.runner/schema/plugin.schema.json",
+  "$id": "https://r2c.runner/schema/payload.schema.json",
   "title": "r2c.plugin/v1",
-  "description": "Payload manifest (`r2c-plugin.json` inside r2c-plugin-<V>.tgz). `version` is the lock-step package version, `engine` is ^V and must equal every adapter.json requires.engine, and `files` maps every payload path to its sha256. The container is ustar+gzip with no links, no PAX and paths <= 100 bytes.",
+  "description": "Payload manifest (`r2c-payload.json` inside r2c-payload-<V>.tgz). `version` is the lock-step package version, `engine` is ^V and must equal every adapter.json requires.engine, and `files` maps every payload path to its sha256. The container is ustar+gzip with no links, no PAX and paths <= 100 bytes.",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema", "version", "engine", "files"],

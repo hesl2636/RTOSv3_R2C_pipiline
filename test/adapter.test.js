@@ -137,7 +137,7 @@ function writeFakePayload(t, { engine, version }) {
   adapter.requires.agent = '>=2.1.312 <3';
   writeFileSync(adapterFile, `${JSON.stringify(adapter, null, 2)}\n`);
   writeFileSync(
-    join(payload, 'r2c-plugin.json'),
+    join(payload, 'r2c-payload.json'),
     `${JSON.stringify({ schema: 'r2c.plugin/v1', version, engine, files: {} }, null, 2)}\n`,
   );
   return payload;
@@ -183,7 +183,7 @@ test('install --from a source tree writes commands, skills and a receipt', (t) =
     assert.equal(file.kind, expectedKind);
   }
   assert.equal(readdirSync(join(project, '.claude', 'agents')).length, 4);
-  assert.ok(existsSync(join(receipt.payload_home, 'r2c-plugin.json')));
+  assert.ok(existsSync(join(receipt.payload_home, 'r2c-payload.json')));
   assert.ok(existsSync(join(receipt.payload_home, 'adapters', 'claude-code', 'map.json')));
 });
 
@@ -290,7 +290,7 @@ test('doctor fails on a tampered file, uninstall removes the receipt and keeps .
   assert.equal(envelope(removed).data.action, 'removed');
   assert.ok(!existsSync(receiptPath(project)));
   assert.ok(existsSync(join(project, '.r2c', 'ir.md')), '.r2c runtime/business state is kept');
-  assert.ok(!existsSync(join(project, '.r2c', 'plugin', ENGINE_VERSION)));
+  assert.ok(!existsSync(join(project, '.r2c', 'payload', ENGINE_VERSION)));
   assert.ok(existsSync(target), 'edited file is left for --force');
 
   const again = cli(
@@ -345,7 +345,7 @@ test('a payload hash mismatch aborts before any project write', (t) => {
   const { project, env } = setup(t);
   const payload = writeFakePayload(t, { engine: '^0.1.0', version: ENGINE_VERSION });
   writeFileSync(
-    join(payload, 'r2c-plugin.json'),
+    join(payload, 'r2c-payload.json'),
     `${JSON.stringify({
       schema: 'r2c.plugin/v1',
       version: ENGINE_VERSION,

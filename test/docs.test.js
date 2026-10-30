@@ -59,7 +59,7 @@ function section(text, heading) {
 
 test('install doc covers install, detection, --from payload and doctor', () => {
   const install = read('docs/install.md');
-  assert.match(install, /adapter install <agent> --from <payload-dir\|r2c-plugin-0\.1\.0\.tgz>/);
+  assert.match(install, /adapter install <agent> --from <payload-dir\|r2c-payload-0\.1\.0\.tgz>/);
   assert.match(install, /## Payload: `--from <dir\|tgz>`/);
   assert.match(install, /AGENT_NOT_DETECTED/);
   assert.match(install, /## Doctor/);
@@ -79,7 +79,7 @@ test('install doc covers upgrade with payload version = engine version', () => {
 
 test('install doc defines rollback as old engine + old payload, not PATH', () => {
   const rollback = section(read('docs/install.md'), '## Rollback');
-  assert.match(rollback, /--from <old-payload-dir\|r2c-plugin-<old-V>\.tgz> --force/);
+  assert.match(rollback, /--from <old-payload-dir\|r2c-payload-<old-V>\.tgz> --force/);
   assert.match(rollback, /--plugin <old-V>/);
   assert.match(rollback, /Pointing `PATH` back at an older engine is not a rollback/);
   assert.match(rollback, /doctor/);
@@ -135,7 +135,7 @@ test('compat matrix matches every adapter.json engine and agent range', () => {
   assert.match(compat, /node scripts\/release\.mjs --compat/);
   const pkg = JSON.parse(read('package.json'));
   assert.ok(
-    compat.includes(`| Version | \`r2c-runner\`, \`r2c-plugin-${pkg.version}.tgz\`, adapters | \`${pkg.version}\` |`),
+    compat.includes(`| Version | \`r2c-runner\`, \`r2c-payload-${pkg.version}.tgz\`, adapters | \`${pkg.version}\` |`),
     'compat matrix version row drifted from package.json',
   );
   for (const id of ADAPTER_IDS) {
