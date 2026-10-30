@@ -97,6 +97,19 @@ function resolveScope(options, adapter) {
   return scope;
 }
 
+/**
+ * Where this install's engine lives (C9). `--engine` wins, then
+ * `R2C_ENGINE_HOME`, then the parent of the running engine's `bin/`, so a
+ * checkout install still records a true path.
+ */
+function resolveEngineHome(ctx, options) {
+  const declared = options.engine ?? process.env.R2C_ENGINE_HOME ?? null;
+  const home = declared !== null && declared !== ''
+    ? resolve(process.cwd(), declared)
+    : dirname(dirname(ctx.binPath));
+  return { home, entry: join(home, 'bin', 'r2c.js') };
+}
+
 function gateVersions({ ctx, resolved, adapter, mode }) {
   const warnings = [];
   const ranges = [
@@ -335,7 +348,7 @@ function collectFilePlan(planEntries, prior, options, projectRoot) {
   return { conflicts, decisions };
 }
 
-function buildReceipt({ ctx, resolved, adapter, scope, mode, runnerCmd, detection, decisions, merged, mergedFilesCreated, prior, state, home }) {
+function buildReceipt({ ctx, resolved, adapter, scope, mode, runnerCmd, engine, detection, decisions, merged, mergedFilesCreated, prior, state, home }) {
   const now = ctx.now().toISOString();
   const files = [];
   for (const decision of decisions) {
@@ -368,7 +381,12 @@ function buildReceipt({ ctx, resolved, adapter, scope, mode, runnerCmd, detectio
       sha256: resolved.sha256,
       source: resolved.source,
     },
-    engine: { version: ctx.version, requires: adapter.requires?.engine ?? null },
+    engine: {
+      version: ctx.version,
+      requires: adapter.requires?.engine ?? null,
+      home: engine.home,
+      entry: engine.entry,
+    },
     runner_cmd: runnerCmd,
     requires: {
       engine: adapter.requires?.engine ?? null,
@@ -430,6 +448,7 @@ async function installOnce({ ctx, agentId, options, state, resolved, adapter, ma
 
     const home = payloadHome(scope, ctx.projectRoot, resolved.manifest.version);
     const runnerCmd = defaultRunnerCommand(ctx, resolved);
+    const engine = resolveEngineHome(ctx, options);
     const plan = buildPlan({
       resolved,
       adapter,
@@ -670,6 +689,7 @@ async function installOnce({ ctx, agentId, options, state, resolved, adapter, ma
         scope,
         mode,
         runnerCmd,
+        engine,
         detection,
         decisions,
         merged: [...merged.values()],

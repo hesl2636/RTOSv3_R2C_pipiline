@@ -13,6 +13,11 @@ step-by-step across the engine, the payload, and all five agent adapters; see
 - Payload builder (`node scripts/release.mjs`) producing the deterministic
   `r2c-payload-0.1.0.tgz` archive, its `r2c-payload.json` manifest, and
   `SHA256SUMS.txt`.
+- Engine release asset `r2c-engine-0.1.0.tgz` (CLI entry, sources, schema,
+  `package.json`, the vendored `yaml` dependency and LICENSE) plus the
+  self-contained `scripts/install.mjs` bootstrap that downloads the engine,
+  verifies it against `SHA256SUMS.txt`, extracts it to `.r2c/engine/<V>/`
+  (or `~/.r2c/engine/<V>/`) and runs the engine's `adapter install`.
 - Adapters for `claude-code`, `codex`, `dsh`, `omp`, and `opencode`, each with
   install, doctor, smoke, and uninstall steps plus a shared command/skill source.
 - Every install copies the payload layout (`workflows/`, `tasks/`, `skills/`)
