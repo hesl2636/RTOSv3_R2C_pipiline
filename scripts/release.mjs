@@ -2,10 +2,12 @@
 /**
  * The only release packager (#17 §7).
  *
- * `node scripts/release.mjs` writes `dist/r2c-payload-<V>.tgz` plus
- * `dist/SHA256SUMS.txt`. The container is deterministic (sorted ustar entries,
- * fixed metadata, gzip mtime 0), so repeated builds of the same tree are
- * byte-identical.
+ * `node scripts/release.mjs` writes `dist/r2c-engine-<V>.tgz`,
+ * `dist/r2c-payload-<V>.tgz` plus `dist/SHA256SUMS.txt`. The engine asset is
+ * the runnable CLI (sources, schema, `package.json`, the vendored `yaml` and
+ * LICENSE); the payload asset is the adapter/workflow file set. Both use the
+ * same container: deterministic (sorted ustar entries, fixed metadata, gzip
+ * mtime 0), so repeated builds of the same tree are byte-identical.
  *
  * `--check` asserts the contract before anything is published: one locked-step
  * version (`package.json.version`), the same `^V` engine range in the payload
@@ -29,6 +31,7 @@ import {
   payloadAssetName,
   sha256,
 } from '../src/plugin.js';
+import { collectEngine, engineAssetName } from '../src/engine.js';
 import { isValidRange, isValidVersion } from '../src/version.js';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -87,11 +90,12 @@ function load(ctx) {
     if (adapter !== null) adapters.push(adapter);
   }
   const payload = collectPayload(ctx.root);
+  const engine = collectEngine(ctx.root);
   const manifest =
     typeof pkg.version === 'string'
       ? buildPluginManifest({ version: pkg.version, files: hashPayloadFiles(payload.files) })
       : null;
-  return { ...ctx, pkg, adapters, payload, manifest };
+  return { ...ctx, pkg, adapters, payload, engine, manifest };
 }
 
 function workflowFiles(root) {
@@ -162,6 +166,16 @@ function checkPayloadProblems(ctx, failures) {
     }
     if (file.rel === 'package.json' || file.rel === 'package-lock.json') {
       failures.push(`payload must not ship ${file.rel}`);
+    }
+  }
+}
+
+function checkEngine(ctx, failures) {
+  for (const problem of ctx.engine.problems) failures.push(problem);
+  if (ctx.engine.files.length === 0) failures.push('engine file set is empty');
+  for (const file of ctx.engine.files) {
+    if (/^(test|docs|scripts|pack|adapters|plugins|dist)\//.test(file.rel)) {
+      failures.push(`engine must not ship ${file.rel}`);
     }
   }
 }
@@ -282,6 +296,7 @@ function check(ctx) {
   const failures = [];
   const notes = [];
   checkPayloadProblems(ctx, failures);
+  checkEngine(ctx, failures);
   checkVersion(ctx, failures);
   checkFiles(ctx, failures);
   checkDocs(ctx, failures);
@@ -295,7 +310,7 @@ function check(ctx) {
     process.exit(1);
   }
   process.stdout.write(
-    `release --check ok: r2c ${ctx.pkg.version}, engine ^${ctx.pkg.version}, ${ctx.payload.files.length} payload files\n`,
+    `release --check ok: r2c ${ctx.pkg.version}, engine ^${ctx.pkg.version}, ${ctx.payload.files.length} payload files, ${ctx.engine.files.length} engine files\n`,
   );
   for (const note of notes) process.stdout.write(`note: ${note}\n`);
 }
@@ -304,6 +319,11 @@ function build(ctx, outDir) {
   if (ctx.payload.problems.length > 0) {
     process.stderr.write('release: refusing to build an invalid payload:\n');
     for (const problem of ctx.payload.problems) process.stderr.write(`- ${problem}\n`);
+    process.exit(1);
+  }
+  if (ctx.engine.problems.length > 0) {
+    process.stderr.write('release: refusing to build an invalid engine archive:\n');
+    for (const problem of ctx.engine.problems) process.stderr.write(`- ${problem}\n`);
     process.exit(1);
   }
   if (ctx.manifest === null || Object.keys(ctx.manifest.files).length !== ctx.payload.files.length) {
@@ -318,17 +338,30 @@ function build(ctx, outDir) {
   entries.push({ path: PAYLOAD_MANIFEST, data: manifestBuffer(ctx.manifest) });
   const archive = createTarGz(entries);
 
-  mkdirSync(outDir, { recursive: true });
-  const asset = payloadAssetName(ctx.pkg.version);
-  const archivePath = join(outDir, asset);
-  writeFileSync(archivePath, archive);
-  const digest = sha256(archive);
-  const sumsPath = join(outDir, 'SHA256SUMS.txt');
-  writeFileSync(sumsPath, `${digest}  ${asset}\n`);
+  const engineArchive = createTarGz(
+    ctx.engine.files.map((file) => ({ path: file.rel, data: readFileSync(file.absolute) })),
+  );
 
+  const assets = [
+    { name: engineAssetName(ctx.pkg.version), archive: engineArchive },
+    { name: payloadAssetName(ctx.pkg.version), archive },
+  ].sort((left, right) => (left.name < right.name ? -1 : 1));
+
+  mkdirSync(outDir, { recursive: true });
+  const sums = [];
+  for (const asset of assets) {
+    writeFileSync(join(outDir, asset.name), asset.archive);
+    sums.push(`${sha256(asset.archive)}  ${asset.name}\n`);
+  }
+  const sumsPath = join(outDir, 'SHA256SUMS.txt');
+  writeFileSync(sumsPath, sums.join(''));
+
+  process.stdout.write(`engine ${ctx.pkg.version}: ${ctx.engine.files.length} files\n`);
   process.stdout.write(`payload ${ctx.pkg.version}: ${ctx.payload.files.length + 1} files\n`);
-  process.stdout.write(`archive ${archivePath}\n`);
-  process.stdout.write(`sha256 ${digest}\n`);
+  for (const asset of assets) {
+    process.stdout.write(`archive ${join(outDir, asset.name)}\n`);
+    process.stdout.write(`sha256 ${sha256(asset.archive)}\n`);
+  }
   process.stdout.write(`sums ${sumsPath}\n`);
 }
 

@@ -52,6 +52,8 @@ Adapter options:
       --copy / --link     Install mode; --link requires --from.
       --no-smoke          Skip the post-install discovery probe.
       --profile NAME      Agent profile (dsh: default "web").
+      --engine DIR        Engine home recorded in the receipt (default:
+                          R2C_ENGINE_HOME, else the running engine's root).
       --purge-state       uninstall: also remove .r2c runtime state.
 
 Acceptance options:
@@ -80,6 +82,7 @@ const VALUE_OPTIONS = new Set([
   '--workflow',
   '--profile',
   '--only',
+  '--engine',
 ]);
 
 const FLAG_OPTIONS = new Set([
@@ -249,6 +252,7 @@ function parseOptions(argv) {
       else if (name === '--mcp') options.mcp = value;
       else if (name === '--agent') options.agent = value;
       else if (name === '--profile') options.profile = value;
+      else if (name === '--engine') options.engine = value;
       else if (name === '--workflow') options.workflow = value;
       else if (name === '--only') options.only = value;
       continue;
@@ -348,6 +352,7 @@ export async function main(argv) {
     '--purge-state',
     '--copy',
     '--link',
+    '--engine',
   ]);
   const ACCEPTANCE_ONLY = new Set(['--keep', '--only']);
   let foreign = null;

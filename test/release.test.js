@@ -3,6 +3,7 @@ import { spawnSync } from 'node:child_process';
 import {
   cpSync,
   existsSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   readdirSync,
@@ -13,7 +14,7 @@ import {
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve, sep } from 'node:path';
 import { test } from 'node:test';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { gunzipSync, gzipSync } from 'node:zlib';
 import { sha256, sha256File, createTarGz } from '../src/plugin.js';
 import { isR2cError } from '../src/errors.js';
@@ -21,8 +22,10 @@ import { isR2cError } from '../src/errors.js';
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const BIN = join(REPO, 'bin', 'r2c.js');
 const RELEASE = join(REPO, 'scripts', 'release.mjs');
+const BOOTSTRAP = join(REPO, 'scripts', 'install.mjs');
 const VERSION = JSON.parse(readFileSync(join(REPO, 'package.json'), 'utf8')).version;
 const ASSET = `r2c-payload-${VERSION}.tgz`;
+const ENGINE_ASSET = `r2c-engine-${VERSION}.tgz`;
 const ADAPTERS = ['claude-code', 'codex', 'dsh', 'omp', 'opencode'];
 
 function tempDir(t, prefix) {
@@ -43,7 +46,10 @@ function build(t, prefix = 'build') {
   return out;
 }
 
-/** Copy the checkout without VCS/build artefacts so the copy is self-contained. */
+/**
+ * Copy the checkout without VCS/build artefacts so the copy is self-contained;
+ * the vendored `yaml` dependency is what a release build needs, so it comes along.
+ */
 function copyRepo(t, prefix = 'repo') {
   const copy = tempDir(t, prefix);
   cpSync(REPO, copy, {
@@ -56,6 +62,7 @@ function copyRepo(t, prefix = 'repo') {
       return !['dist', '.tmpbuild', '.r2c'].includes(name);
     },
   });
+  cpSync(join(REPO, 'node_modules', 'yaml'), join(copy, 'node_modules', 'yaml'), { recursive: true });
   return copy;
 }
 
@@ -131,6 +138,39 @@ function files(target, prefix, dir) {
   for (const rel of walkFiles(dir, prefix)) target.add(rel);
 }
 
+function extractArchive(file, destination) {
+  for (const entry of listArchive(file)) {
+    assert.equal(entry.type, '0', `only regular files: ${entry.path}`);
+    const target = join(destination, ...entry.path.split('/'));
+    mkdirSync(dirname(target), { recursive: true });
+    writeFileSync(target, entry.data);
+  }
+  return destination;
+}
+
+function bootstrap(args, { env, cwd } = {}) {
+  return spawnSync(process.execPath, [BOOTSTRAP, ...args], {
+    cwd: cwd ?? REPO,
+    encoding: 'utf8',
+    env,
+    timeout: 240_000,
+  });
+}
+
+/** A release directory with the engine asset removed or replaced. */
+function releaseWith(t, mutate) {
+  const out = build(t, 'release');
+  mutate(out);
+  return out;
+}
+
+function expectedEngine() {
+  const paths = new Set(['package.json', 'LICENSE']);
+  for (const dir of ['bin', 'src', 'schema']) files(paths, dir, join(REPO, dir));
+  files(paths, 'node_modules/yaml', join(REPO, 'node_modules', 'yaml'));
+  return paths;
+}
+
 /** Flip one byte of a member's payload while keeping the tar structure valid. */
 function tamperArchive(file, targetPath) {
   const tar = Buffer.from(gunzipSync(readFileSync(file)));
@@ -159,12 +199,17 @@ test('two consecutive builds are byte-identical and list identical per-file hash
 
   assert.equal(sha256File(archiveA), sha256File(archiveB));
   assert.equal(
+    sha256File(join(first, ENGINE_ASSET)),
+    sha256File(join(second, ENGINE_ASSET)),
+    'engine archive is byte-identical across builds',
+  );
+  assert.equal(
     readFileSync(join(first, 'SHA256SUMS.txt'), 'utf8'),
     readFileSync(join(second, 'SHA256SUMS.txt'), 'utf8'),
   );
   assert.equal(
     readFileSync(join(first, 'SHA256SUMS.txt'), 'utf8'),
-    `${sha256File(archiveA)}  ${ASSET}\n`,
+    `${sha256File(join(first, ENGINE_ASSET))}  ${ENGINE_ASSET}\n${sha256File(archiveA)}  ${ASSET}\n`,
   );
   assert.deepEqual(manifestOf(archiveA).files, manifestOf(archiveB).files);
 });
@@ -362,4 +407,275 @@ test('createTarGz rejects invalid entries with a coded runner error', () => {
       return true;
     },
   );
+});
+
+test('the engine archive ships the CLI, sources, schema, manifest, yaml and LICENSE only', (t) => {
+  const out = build(t);
+  const archive = join(out, ENGINE_ASSET);
+  const entries = listArchive(archive);
+  const paths = entries.map((entry) => entry.path);
+
+  assert.ok(entries.every((entry) => entry.type === '0'), 'only regular files');
+  assert.deepEqual(paths, [...expectedEngine()].sort());
+  for (const path of paths) {
+    assert.ok(Buffer.byteLength(path) <= 100, `path is longer than 100 bytes: ${path}`);
+    assert.ok(!path.startsWith('/') && !path.includes('\\'), path);
+  }
+  for (const required of [
+    'bin/r2c.js',
+    'src/cli.js',
+    'schema/payload.schema.json',
+    'package.json',
+    'LICENSE',
+    'node_modules/yaml/package.json',
+    'node_modules/yaml/dist/index.js',
+  ]) {
+    assert.ok(paths.includes(required), `engine ships ${required}`);
+  }
+  for (const forbidden of [/^r2c-payload\.json$/, /^test\//, /^docs\//, /^scripts\//, /^pack\//, /^adapters\//, /^package-lock\.json$/, /^node_modules\/\.bin\//]) {
+    assert.ok(!paths.some((path) => forbidden.test(path)), `unexpected engine path ${forbidden}`);
+  }
+  const manifest = JSON.parse(entries.find((entry) => entry.path === 'package.json').data.toString('utf8'));
+  assert.equal(manifest.version, VERSION);
+  assert.equal(manifest.type, 'module');
+});
+
+test('the extracted engine runs offline with the vendored yaml and no repository', (t) => {
+  const out = build(t);
+  const engine = tempDir(t, 'engine');
+  extractArchive(join(out, ENGINE_ASSET), engine);
+  const entry = join(engine, 'bin', 'r2c.js');
+  const home = tempDir(t, 'home');
+  const env = cleanEnv(home);
+  delete env.NODE_PATH;
+  env.NODE_OPTIONS = '';
+
+  const version = spawnSync(process.execPath, [entry, '--version'], { cwd: home, env, encoding: 'utf8' });
+  assert.equal(version.status, 0, version.stderr);
+  assert.equal(version.stdout.trim(), VERSION);
+
+  const yaml = spawnSync(
+    process.execPath,
+    ['--input-type=module', '-e', "import('yaml').then((m) => process.stdout.write(typeof m.parse));"],
+    { cwd: engine, env, encoding: 'utf8' },
+  );
+  assert.equal(yaml.status, 0, yaml.stderr);
+  assert.equal(yaml.stdout, 'function', 'yaml resolves from the vendored copy');
+
+  const planUrl = pathToFileURL(join(engine, 'src', 'adapter', 'plan.js')).href;
+  const chain = spawnSync(
+    process.execPath,
+    ['--input-type=module', '-e', `import(${JSON.stringify(planUrl)}).then((m) => process.stdout.write(typeof m.buildPlan));`],
+    { cwd: home, env, encoding: 'utf8' },
+  );
+  assert.equal(chain.status, 0, chain.stderr);
+  assert.equal(chain.stdout, 'function', 'the installer module loads yaml from the vendored copy');
+});
+
+test('the bootstrap downloads, verifies, extracts and installs with no npm and no network', (t) => {
+  const out = build(t);
+  const project = tempDir(t, 'project');
+  const home = tempDir(t, 'home');
+  mkdirSync(join(home, '.claude'), { recursive: true });
+  const env = cleanEnv(home);
+  delete env.R2C_RELEASE_BASE;
+  // Only node is on PATH: no npm, no global engine, nothing but the archive.
+  for (const key of Object.keys(env)) {
+    if (key.toLowerCase() === 'path') delete env[key];
+  }
+  env.PATH = dirname(process.execPath);
+  assert.equal(spawnSync('npm', ['--version'], { env, encoding: 'utf8' }).status === 0, false, 'npm is off PATH');
+
+  const result = bootstrap(
+    ['--agent', 'claude-code', '--version', VERSION, '--project', project, '--release-base', out],
+    { env, cwd: tempDir(t, 'cwd') },
+  );
+  assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+
+  const engineHome = join(project, '.r2c', 'engine', VERSION);
+  assert.ok(existsSync(join(engineHome, 'bin', 'r2c.js')));
+  assert.ok(existsSync(join(engineHome, 'node_modules', 'yaml', 'package.json')));
+  assert.ok(existsSync(join(project, '.r2c', 'payload', VERSION, 'r2c-payload.json')));
+  assert.ok(existsSync(join(project, 'workflows', 'RTOSv3_R2C_pipiline.yaml')), 'layout landed in the project root');
+  assert.ok(existsSync(join(project, 'skills')), 'skills landed in the project root');
+  assert.ok(existsSync(join(project, '.claude', 'settings.json')), 'agent config written');
+
+  const receipt = JSON.parse(readFileSync(join(project, '.r2c', 'install', 'claude-code.json'), 'utf8'));
+  assert.equal(receipt.payload.version, VERSION);
+  assert.equal(receipt.payload.source, `release:v${VERSION}`, 'payload came from the local release dir');
+  assert.equal(receipt.engine.version, VERSION);
+  assert.equal(receipt.engine.home, engineHome);
+  assert.equal(receipt.engine.entry, join(engineHome, 'bin', 'r2c.js'));
+  assert.match(result.stdout, /next: node "/);
+
+  const rerun = bootstrap(
+    ['--agent', 'claude-code', '--version', VERSION, '--project', project, '--release-base', out],
+    { env, cwd: tempDir(t, 'cwd2') },
+  );
+  assert.equal(rerun.status, 0, `${rerun.stdout}\n${rerun.stderr}`);
+  assert.match(rerun.stdout, new RegExp(`engine ${VERSION.replaceAll('.', '\\.')} already at`));
+});
+
+test('--scope user puts the engine under the user home and a dsh user-scope install works', (t) => {
+  const out = build(t);
+  const project = tempDir(t, 'project');
+  const home = tempDir(t, 'home');
+  const dshHome = tempDir(t, 'dsh-home');
+  const env = cleanEnv(home);
+  delete env.R2C_RELEASE_BASE;
+  env.DSH_HOME = dshHome;
+
+  const result = bootstrap(
+    ['--agent', 'dsh', '--version', VERSION, '--scope', 'user', '--project', project, '--release-base', out],
+    { env, cwd: tempDir(t, 'cwd') },
+  );
+  assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+
+  assert.ok(existsSync(join(home, '.r2c', 'engine', VERSION, 'bin', 'r2c.js')));
+  assert.ok(!existsSync(join(project, '.r2c', 'engine')), 'user scope keeps the engine out of the project');
+  assert.ok(existsSync(join(home, '.r2c', 'payload', VERSION, 'r2c-payload.json')));
+  assert.ok(existsSync(join(home, '.r2c', 'install', 'dsh.json')));
+  const profile = JSON.parse(readFileSync(join(dshHome, 'profiles', 'web', 'package.json'), 'utf8'));
+  assert.ok(profile.dsh.profile.bundles.includes('r2c-adapter-dsh'));
+  const receipt = JSON.parse(readFileSync(join(home, '.r2c', 'install', 'dsh.json'), 'utf8'));
+  assert.equal(receipt.scope, 'user');
+  assert.equal(receipt.engine.home, join(home, '.r2c', 'engine', VERSION));
+});
+
+test('a truncated or tampered engine archive fails verification and writes nothing', (t) => {
+  const rerunWith = (label, mutate) => {
+    const out = releaseWith(t, (dir) => {
+      const file = join(dir, ENGINE_ASSET);
+      writeFileSync(file, mutate(readFileSync(file)));
+    });
+    const project = tempDir(t, `${label}-project`);
+    const home = tempDir(t, `${label}-home`);
+    mkdirSync(join(home, '.claude'), { recursive: true });
+    const result = bootstrap(
+      ['--agent', 'claude-code', '--version', VERSION, '--project', project, '--release-base', out],
+      { env: cleanEnv(home), cwd: tempDir(t, `${label}-cwd`) },
+    );
+    assert.notEqual(result.status, 0, `${label}: ${result.stdout}`);
+    assert.match(result.stderr, /sha256 mismatch|SHA256SUMS\.txt/i);
+    assert.deepEqual(readdirSync(project), [], `${label}: nothing written into the project`);
+    assert.ok(!existsSync(join(home, '.r2c')), `${label}: no state dir`);
+    assert.ok(!existsSync(join(home, '.claude', 'settings.json')), `${label}: no agent config`);
+  };
+
+  rerunWith('truncated', (buffer) => buffer.subarray(0, 1024));
+  rerunWith('tampered', (buffer) => {
+    const copy = Buffer.from(buffer);
+    copy[copy.length - 64] = (copy[copy.length - 64] + 1) % 256;
+    return copy;
+  });
+});
+
+test('an unknown version names the missing asset, the version and the authentication methods', (t) => {
+  const out = build(t);
+  const project = tempDir(t, 'project');
+  const home = tempDir(t, 'home');
+  mkdirSync(join(home, '.claude'), { recursive: true });
+  const result = bootstrap(
+    ['--agent', 'claude-code', '--version', '9.9.9', '--project', project, '--release-base', out],
+    { env: cleanEnv(home), cwd: tempDir(t, 'cwd') },
+  );
+  assert.equal(result.status, 1, result.stdout);
+  assert.match(result.stderr, /r2c-engine-9\.9\.9\.tgz/);
+  assert.match(result.stderr, /9\.9\.9/);
+  assert.match(result.stderr, /GH_TOKEN/);
+  assert.match(result.stderr, /GITHUB_TOKEN/);
+  assert.match(result.stderr, /git credential fill/);
+  assert.deepEqual(readdirSync(project), []);
+  assert.ok(!existsSync(join(home, '.r2c')));
+});
+
+test('the bootstrap rejects bad arguments before touching anything', (t) => {
+  const project = tempDir(t, 'project');
+  const missingAgent = bootstrap(['--version', VERSION, '--project', project], {});
+  assert.equal(missingAgent.status, 2, missingAgent.stdout);
+  assert.match(missingAgent.stderr, /--agent/);
+
+  const badScope = bootstrap(['--agent', 'claude-code', '--scope', 'global', '--project', project], {});
+  assert.equal(badScope.status, 2, badScope.stdout);
+  assert.match(badScope.stderr, /--scope/);
+
+  const badVersion = bootstrap(['--agent', 'claude-code', '--version', 'latest-ish', '--project', project], {});
+  assert.equal(badVersion.status, 2, badVersion.stdout);
+  assert.match(badVersion.stderr, /--version/);
+
+  const noVersionLocal = bootstrap(
+    ['--agent', 'claude-code', '--project', project, '--release-base', tempDir(t, 'empty')],
+    {},
+  );
+  assert.equal(noVersionLocal.status, 2, noVersionLocal.stdout);
+  assert.match(noVersionLocal.stderr, /--version/);
+  assert.deepEqual(readdirSync(project), []);
+});
+
+test('R2C_RELEASE_BASE=<dir> lets the payload downloader work offline from a local dist', (t) => {
+  const out = build(t);
+  const project = tempDir(t, 'project');
+  const home = tempDir(t, 'home');
+  const env = cleanEnv(home);
+  env.R2C_RELEASE_BASE = out;
+
+  const result = cli(
+    ['adapter', 'install', '--agent', 'claude-code', '--project-root', project, '--no-smoke', '--json'],
+    { env },
+  );
+  assert.equal(result.status, 0, result.stderr);
+  const json = envelope(result);
+  assert.equal(json.data.payload.source, `release:v${VERSION}`);
+  assert.ok(existsSync(join(project, '.r2c', 'payload', VERSION, 'r2c-payload.json')));
+
+  const empty = tempDir(t, 'empty');
+  const missing = cli(
+    ['adapter', 'install', '--agent', 'claude-code', '--project-root', tempDir(t, 'project2'), '--no-smoke', '--json'],
+    { env: { ...cleanEnv(tempDir(t, 'home2')), R2C_RELEASE_BASE: empty } },
+  );
+  assert.equal(missing.status, 2, missing.stdout);
+  const error = envelope(missing).error;
+  assert.equal(error.code, 'PAYLOAD_UNAVAILABLE');
+  assert.match(error.message, new RegExp(`r2c-payload-${VERSION.replaceAll('.', '\\.')}\\.tgz`));
+  assert.match(error.message, new RegExp(VERSION.replaceAll('.', '\\.')));
+});
+
+test('adapter install records where the engine lives, from --engine, the env, or the running checkout', (t) => {
+  const out = build(t);
+  const project = tempDir(t, 'project');
+  const home = tempDir(t, 'home');
+  const explicitHome = tempDir(t, 'engine-home');
+
+  const explicit = cli(
+    ['adapter', 'install', '--agent', 'claude-code', '--from', join(out, ASSET), '--project-root', project, '--engine', explicitHome, '--no-smoke', '--json'],
+    { env: cleanEnv(home) },
+  );
+  assert.equal(explicit.status, 0, explicit.stderr);
+  const receipt = JSON.parse(readFileSync(join(project, '.r2c', 'install', 'claude-code.json'), 'utf8'));
+  assert.deepEqual(receipt.engine, {
+    version: VERSION,
+    requires: `^${VERSION}`,
+    home: explicitHome,
+    entry: join(explicitHome, 'bin', 'r2c.js'),
+  });
+
+  const fromEnv = tempDir(t, 'engine-env');
+  const envProject = tempDir(t, 'project-env');
+  const envResult = cli(
+    ['adapter', 'install', '--agent', 'claude-code', '--from', join(out, ASSET), '--project-root', envProject, '--no-smoke', '--json'],
+    { env: { ...cleanEnv(tempDir(t, 'home-env')), R2C_ENGINE_HOME: fromEnv } },
+  );
+  assert.equal(envResult.status, 0, envResult.stderr);
+  const envReceipt = JSON.parse(readFileSync(join(envProject, '.r2c', 'install', 'claude-code.json'), 'utf8'));
+  assert.equal(envReceipt.engine.home, fromEnv);
+
+  const checkoutProject = tempDir(t, 'project-checkout');
+  const checkout = cli(
+    ['adapter', 'install', '--agent', 'claude-code', '--from', join(out, ASSET), '--project-root', checkoutProject, '--no-smoke', '--json'],
+    { env: cleanEnv(tempDir(t, 'home-checkout')) },
+  );
+  assert.equal(checkout.status, 0, checkout.stderr);
+  const checkoutReceipt = JSON.parse(readFileSync(join(checkoutProject, '.r2c', 'install', 'claude-code.json'), 'utf8'));
+  assert.equal(checkoutReceipt.engine.home, REPO);
+  assert.equal(checkoutReceipt.engine.entry, BIN);
 });

@@ -3,5 +3,6 @@
 .r2c/usage/
 .r2c/install/
 .r2c/payload/
+.r2c/engine/
 node_modules/
 dist/

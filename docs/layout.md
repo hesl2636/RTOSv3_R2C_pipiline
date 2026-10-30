@@ -41,7 +41,8 @@ the engine is published.
 │   ├── analysis/                  # frozen intranet attribution analysis plugin
 │   └── intranet-mcp/              # frozen intranet MCP server definitions
 ├── scripts/
-│   ├── release.mjs                # the only packager (r2c-payload-V.tgz)
+│   ├── release.mjs                # the only packager (r2c-engine-V.tgz + r2c-payload-V.tgz)
+│   ├── install.mjs                # the bootstrap, published verbatim as the install.mjs asset
 │   ├── check-pack.mjs             # npm files whitelist gate
 │   └── verify-sums.mjs            # SHA256SUMS verification
 ├── docs/
@@ -70,7 +71,8 @@ the engine is published.
 | `pack/` | workflow authors | The only place workflow content exists: manifests, task files, skills, command sources. Adapters must not keep copies of these files. `pack/` is the manifest root (`workflows/` sits directly inside it). |
 | `adapters/<agent>/` | agent adapters | Declarations (`adapter.json`, `map.json`), agent-specific assets, optional `steps.mjs` / `smoke.mjs`. Copies of `pack/` content are forbidden; install-time generation only. |
 | `plugins/{upload,analysis,intranet-mcp}/` | intranet maintainers | Frozen. Not published to npm and never installed by default. See `docs/plugins.md`. |
-| `scripts/release.mjs` | release maintainer | The single packager; produces `r2c-payload-V.tgz` + `SHA256SUMS.txt`. |
+| `scripts/release.mjs` | release maintainer | The single packager; produces `r2c-engine-V.tgz`, `r2c-payload-V.tgz` + `SHA256SUMS.txt`. |
+| `scripts/install.mjs` | release maintainer | The bootstrap; one copy, published unchanged as the `install.mjs` asset. Node built-ins only — no imports from `src/`. |
 | `docs/` | maintainers | `docs/agents/issue-tracker.md` is preserved unchanged; the remaining docs describe this layout, installation, legacy recovery, plugins, compatibility and blue-zone preflight. |
 | `.github/workflows/` | CI maintainers | Zero-secret gates; live agent probes stay manual and `continue-on-error`. |
 
@@ -79,7 +81,8 @@ the engine is published.
 The npm package contains exactly `package.json` plus the `files` whitelist:
 `bin/`, `src/`, `schema/`, `README.md`, `LICENSE`. `pack/`, `adapters/`,
 `plugins/`, `test/`, `docs/`, `scripts/` and `.github/` are never published —
-adapters ship as the separate `r2c-payload-V.tgz` release asset.
+the engine ships as `r2c-engine-V.tgz`, adapters as the separate
+`r2c-payload-V.tgz` release asset.
 
 ## Runtime state
 
@@ -88,9 +91,9 @@ All run state lands inside the project under `.r2c/`:
 | Path | Committed? |
 | --- | --- |
 | `.r2c/runs/`, `.r2c/latest.json`, `.r2c/usage/` | No — runtime only |
-| `.r2c/install/`, `.r2c/payload/` | No — install receipts and payloads |
+| `.r2c/install/`, `.r2c/payload/`, `.r2c/engine/` | No — install receipts, payloads and installed engines |
 | `.r2c/ir.md`, `.r2c/sr-map.md`, `.r2c/artifacts/**` | Yes — business artifacts |
 
-`.gitignore` lists those five runtime paths, `node_modules/`, and `dist/`
+`.gitignore` lists those runtime paths, `node_modules/`, and `dist/`
 (local release output). Local-only patterns belong in `.git/info/exclude`,
 never in the committed file.

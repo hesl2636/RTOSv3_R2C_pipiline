@@ -54,14 +54,38 @@ const RELEASE_BASE = `https://github.com/${RELEASE_REPO}/releases/download`;
 const RELEASE_API = `https://api.github.com/repos/${RELEASE_REPO}`;
 
 /**
+ * `R2C_RELEASE_BASE` overrides where assets come from (C1): a directory is a
+ * flat local release (no fetch at all), an http(s) URL is a mirror shaped
+ * `<base>/v<V>/<asset>` exactly like GitHub's `/releases/download/v<V>/`.
+ */
+function releaseBaseOverride() {
+  const raw = process.env.R2C_RELEASE_BASE;
+  if (typeof raw !== 'string' || raw.trim() === '') return null;
+  return raw.trim();
+}
+
+function isHttpBase(base) {
+  return /^https?:\/\//i.test(base);
+}
+
+/**
  * Anonymous downloads use the public web URL. Token downloads must go through
  * the REST API: GitHub answers the web download URL with `404` when the
  * repository is private and the request carries a bearer token, while the
  * asset endpoint (`Accept: application/octet-stream`) streams it. Both paths
- * name the same `r2c-payload-<V>.tgz` asset.
+ * name the same `r2c-payload-<V>.tgz` asset. A custom base is always direct.
  */
-export function releaseEndpoints({ version, token = null }) {
+export function releaseEndpoints({ version, token = null, base = null }) {
   const name = payloadAssetName(version);
+  if (typeof base === 'string' && base !== '') {
+    const trimmed = base.replace(/\/+$/, '');
+    return {
+      kind: 'direct',
+      name,
+      archive: `${trimmed}/v${version}/${name}`,
+      sums: `${trimmed}/v${version}/SHA256SUMS.txt`,
+    };
+  }
   if (token) {
     return {
       kind: 'api',
@@ -408,11 +432,74 @@ function extractPayloadArchive(home, entries, manifestBytes) {
   }
 }
 
+/**
+ * Read the payload from a local release directory (`R2C_RELEASE_BASE=<dir>`),
+ * verifying it against the same `SHA256SUMS.txt` the release publishes. This
+ * is the offline path: nothing is fetched and nothing is extracted before the
+ * container digest matches.
+ */
+function downloadReleaseDir(version, base) {
+  const dir = resolve(process.cwd(), base);
+  const asset = payloadAssetName(version);
+  const archivePath = join(dir, asset);
+  const sumsPath = join(dir, 'SHA256SUMS.txt');
+  const unavailable = (name, file) =>
+    payloadError(
+      'PAYLOAD_UNAVAILABLE',
+      `release v${version} does not carry ${name}: ${file}; ${hintFrom()}`,
+      { version, asset: name, base: dir },
+    );
+  if (!existsSync(archivePath)) throw unavailable(asset, archivePath);
+  if (!existsSync(sumsPath)) throw unavailable('SHA256SUMS.txt', sumsPath);
+  const archive = readFileSync(archivePath);
+  const expected = parseSums(readFileSync(sumsPath, 'utf8'), asset);
+  if (expected === null) {
+    throw payloadError('PAYLOAD_CHECKSUM_MISMATCH', `${sumsPath} has no entry for ${asset}`, {
+      asset,
+      sums: sumsPath,
+    });
+  }
+  const actual = sha256(archive);
+  if (actual !== expected) {
+    throw payloadError(
+      'PAYLOAD_CHECKSUM_MISMATCH',
+      `SHA256SUMS.txt mismatch for ${asset}`,
+      { asset, expected, actual, sums: sumsPath },
+      EXIT_CODES.GATE,
+    );
+  }
+  return stageArchive(archive);
+}
+
+/** Extract a verified payload archive into a temp dir; the caller owns cleanup. */
+function stageArchive(archive) {
+  const temp = mkdtempSync(join(tmpdir(), 'r2c-payload-download-'));
+  try {
+    extractTarGz(archive, temp);
+  } catch (error) {
+    rmSync(temp, { recursive: true, force: true });
+    throw error;
+  }
+  // The archive may wrap everything in `r2c-payload-<V>/`.
+  const children = readdirSync(temp).filter((name) => !name.startsWith('.'));
+  if (children.length === 1) {
+    const nested = join(temp, children[0]);
+    if (statSync(nested).isDirectory() && existsSync(join(nested, PAYLOAD_MANIFEST))) {
+      return { dir: nested, cleanup: () => rmSync(temp, { recursive: true, force: true }) };
+    }
+  }
+  return { dir: temp, cleanup: () => rmSync(temp, { recursive: true, force: true }) };
+}
+
 async function downloadRelease(version) {
+  const declared = releaseBaseOverride();
+  // Spelling out the default base must not degrade the API path a token needs.
+  const base = declared === RELEASE_BASE ? null : declared;
+  if (base !== null && !isHttpBase(base)) return downloadReleaseDir(version, base);
   const token = process.env.GITHUB_TOKEN || process.env.GH_TOKEN || null;
   const headers = { 'user-agent': 'r2c-runner' };
   if (token) headers.authorization = `Bearer ${token}`;
-  const endpoints = releaseEndpoints({ version, token });
+  const endpoints = releaseEndpoints({ version, token, base });
   const asset = endpoints.name;
 
   const request = async (url, timeout, extra = null) => {
@@ -499,22 +586,7 @@ async function downloadRelease(version) {
       EXIT_CODES.GATE,
     );
   }
-  const temp = mkdtempSync(join(tmpdir(), 'r2c-payload-download-'));
-  try {
-    extractTarGz(archive, temp);
-  } catch (error) {
-    rmSync(temp, { recursive: true, force: true });
-    throw error;
-  }
-  // The archive may wrap everything in `r2c-payload-<V>/`.
-  const children = readdirSync(temp).filter((name) => !name.startsWith('.'));
-  if (children.length === 1) {
-    const nested = join(temp, children[0]);
-    if (statSync(nested).isDirectory() && existsSync(join(nested, PAYLOAD_MANIFEST))) {
-      return { dir: nested, cleanup: () => rmSync(temp, { recursive: true, force: true }) };
-    }
-  }
-  return { dir: temp, cleanup: () => rmSync(temp, { recursive: true, force: true }) };
+  return stageArchive(archive);
 }
 
 function cacheDir(version) {
