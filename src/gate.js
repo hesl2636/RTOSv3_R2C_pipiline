@@ -7,7 +7,7 @@
  * Both are exit 3 at the command layer, never a model self-report.
  */
 import { globSync } from 'node:fs';
-import { DEFAULT_COMMAND_TIMEOUT_MS, runShellCommand } from './shell.js';
+import { DEFAULT_COMMAND_TIMEOUT_MS, commandTimeoutMs, runShellCommand } from './shell.js';
 
 function expectedPatterns(step) {
   const outputs = step?.expect?.outputs;
@@ -62,7 +62,12 @@ export async function checkGates({ step, projectRoot, timeoutMs = DEFAULT_COMMAN
   for (const gate of gates) {
     const command = gateCommand(gate);
     if (command === null) continue;
-    const result = await runShellCommand({ command, cwd: projectRoot, timeoutMs });
+    const effectiveTimeoutMs = commandTimeoutMs(gate?.timeout, timeoutMs);
+    const result = await runShellCommand({
+      command,
+      cwd: projectRoot,
+      timeoutMs: effectiveTimeoutMs,
+    });
     if (result.ok) continue;
 
     const details = {
@@ -74,7 +79,7 @@ export async function checkGates({ step, projectRoot, timeoutMs = DEFAULT_COMMAN
     if (result.stderr.trim() !== '') details.stderr = result.stderr.trim();
     if (result.error !== null) details.error = result.error;
     const reason = result.timedOut
-      ? `gate command timed out after ${Math.round(timeoutMs / 1000)}s`
+      ? `gate command timed out after ${Math.round(effectiveTimeoutMs / 1000)}s`
       : `gate command exited ${result.exitCode === null ? 'without a status' : result.exitCode}`;
     return {
       ok: false,

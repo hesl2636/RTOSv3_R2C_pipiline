@@ -74,7 +74,7 @@ export function assertRenderableSteps(manifest, root) {
 }
 
 /** Render one step block (used identically for `run`, `submit` and `next`). */
-export function renderStep({ manifest, root, stepId, runnerCmd, sessionId }) {
+export function renderStep({ manifest, root, stepId, runnerCmd, sessionId, manifestPath = null }) {
   const found = findStep(manifest, stepId);
   if (!found) {
     throw new R2cError(
@@ -88,9 +88,12 @@ export function renderStep({ manifest, root, stepId, runnerCmd, sessionId }) {
   const meta = metaLines(root, step);
   const header = `## 下一步：${step.name}（阶段：${stage.name}）`;
   const body = bodyOf(root, step);
+  // An explicit `--manifest` must survive into the Submit line, otherwise the
+  // printed command cannot rediscover the same manifest from the project root.
+  const manifestArg = manifestPath === null ? '' : ` --manifest "${manifestPath}"`;
   const submit = [
     '提交命令（完成后执行；不要手改 .r2c）：',
-    `${runnerCmd} submit --session-id ${sessionId} --step ${step.id}`,
+    `${runnerCmd} submit --session-id ${sessionId} --step ${step.id}${manifestArg}`,
   ].join('\n');
   return [header, meta.length > 0 ? meta.join('\n') : null, body, submit]
     .filter((part) => part !== null)

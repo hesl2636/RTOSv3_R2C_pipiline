@@ -13,6 +13,7 @@
  * by prefix, and `latest.json` is never used as a fallback for a missing sid.
  */
 import { readdirSync } from 'node:fs';
+import { R2cError, EXIT_CODES } from './errors.js';
 import { runsDir } from './paths.js';
 import { withRunWriteLock } from './lock.js';
 import {
@@ -167,4 +168,16 @@ export function claimedBindingForSession(root, sessionId) {
     return { runId, sessionId: state.session_id };
   }
   return null;
+}
+
+/** Every state writer refuses a `cli-` id that another session has claimed. */
+export function refuseClaimedSession(root, sessionId) {
+  const claimed = claimedBindingForSession(root, sessionId);
+  if (claimed === null) return;
+  throw new R2cError(
+    'RUN_CLAIMED',
+    `session id was claimed by another session: ${sessionId}`,
+    { session_id: sessionId, run_id: claimed.runId, claimed_by: claimed.sessionId },
+    EXIT_CODES.USAGE,
+  );
 }

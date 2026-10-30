@@ -42,6 +42,7 @@ export async function run(_argv, ctx) {
     stepId: state.current_step_id,
     runnerCmd,
     sessionId,
+    manifestPath: ctx.manifest ?? null,
   });
   return {
     runId: state.run_id,

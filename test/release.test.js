@@ -120,7 +120,8 @@ function walkFiles(dir, prefix) {
 }
 
 function expectedPayload() {
-  const paths = new Set(['LICENSE', 'shims/hook.mjs']);
+  const paths = new Set(['LICENSE']);
+  files(paths, 'shims', join(REPO, 'shims'));
   for (const dir of ['adapters', 'schema']) files(paths, dir, join(REPO, dir));
   for (const dir of ['commands', 'skills', 'tasks', 'workflows']) files(paths, dir, join(REPO, 'pack', dir));
   return paths;

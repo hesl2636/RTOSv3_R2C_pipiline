@@ -436,7 +436,7 @@ async function installOnce({ ctx, agentId, options, state, resolved, adapter, ma
     warnings.push(...plan.warnings);
 
     const prior = readJsonIfExists(receiptPath(state, adapter.id));
-    await recoverPending(state, adapter.id, warnings);
+    if (!options.dryRun) await recoverPending(state, adapter.id, warnings);
     const payloadNeeded = !payloadReady(home, resolved);
     const filePlan = plan.entries.filter((entry) => entry.action !== 'merge-json');
     const { conflicts, decisions } = collectFilePlan(filePlan, prior, options);

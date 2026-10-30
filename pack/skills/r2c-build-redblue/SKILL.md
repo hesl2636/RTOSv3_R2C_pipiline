@@ -19,7 +19,7 @@ description: 编排红蓝双方构建与用例执行，比对失败集合。占�
 | 源码树、构建目标、用例列表 | 双方构建日志、失败用例清单与差异结论 |
 
 ## 占位期行为
-按调用方任务书内联执行子步骤；产物首行写 `> 占位：r2c-build-redblue 未实现`，提交时 `--note placeholder:r2c-build-redblue`。
+按调用方任务书内联执行子步骤；产物首行写 `> 占位：r2c-build-redblue 未实现（<date>）`，提交时 `--note placeholder:r2c-build-redblue`。
 
 ## 实现归属
 - 未建票；实现后删除顶部占位横幅与本行。

@@ -19,7 +19,7 @@ description: 编排 R2C 详细设计阶段，拆分模块与接口并收口设�
 | `design_doc_ver{NN}/`、`.r2c/ir.md`、用户请求 | 详细设计文档、模块接口清单、`docs/superpowers/plans/**` 计划骨架 |
 
 ## 占位期行为
-按调用方任务书内联执行子步骤；产物首行写 `> 占位：r2c-imdesign 未实现`，提交时 `--note placeholder:r2c-imdesign`。
+按调用方任务书内联执行子步骤；产物首行写 `> 占位：r2c-imdesign 未实现（<date>）`，提交时 `--note placeholder:r2c-imdesign`。
 
 ## 实现归属
 - 未建票；实现后删除顶部占位横幅与本行。

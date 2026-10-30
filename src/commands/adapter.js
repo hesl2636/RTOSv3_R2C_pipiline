@@ -5,6 +5,7 @@
  * result into the human form when `--json` is absent. The JSON envelope is
  * written by the CLI from `data`.
  */
+import { join } from 'node:path';
 import { runAdapter } from '../adapter/index.js';
 
 function listText(data) {
@@ -26,6 +27,10 @@ function listText(data) {
 function installText(data) {
   const lines = [`adapter ${data.adapter}: ${data.action} (${data.scope}${data.dry_run ? ', dry-run' : ''})`];
   lines.push(`payload ${data.payload.version} from ${data.payload.source}`);
+  lines.push(
+    `default workflow: ${join(data.payload_home, 'workflows')}`
+    + ' (copy workflows/tasks/skills/commands into the project, or use --manifest with an absolute path)',
+  );
   if (data.dry_run) {
     for (const step of data.plan) lines.push(`  plan ${step.action} ${step.target}`);
   } else {

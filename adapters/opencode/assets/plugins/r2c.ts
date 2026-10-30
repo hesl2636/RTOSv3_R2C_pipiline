@@ -31,7 +31,7 @@ function defaultRuntime(overrides = {}) {
     shimPath: SHIM_PATH,
     runnerCmd: RUNNER_CMD,
     projectRoot,
-    pluginData: join(projectRoot, ".r2c", "plugin-data"),
+    pluginData: join(projectRoot, ".r2c", "runs", ".hooks"),
     ...overrides,
   };
 }

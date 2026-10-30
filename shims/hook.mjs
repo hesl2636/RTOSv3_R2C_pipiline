@@ -49,13 +49,16 @@ function numberOption(name, fallback) {
 
 const runnerCmd = option('runner-cmd') ?? process.env.R2C_RUNNER_CMD ?? 'r2c';
 const agentId = option('agent-id') ?? option('agent') ?? 'unknown';
+/** Usage snapshots may only carry a declared adapter id (schema/usage.schema.json). */
+const AGENT_IDS = new Set(['claude-code', 'codex', 'dsh', 'omp', 'opencode']);
 const projectRoot = option('project-root') ?? process.env.R2C_PROJECT_ROOT ?? process.cwd();
 const explicitSession = option('session-id') ?? process.env.R2C_SESSION_ID ?? null;
 const workflow = option('workflow');
 const format = option('format') ?? 'json';
 const dialect = option('dialect') ?? agentId;
 const cap = numberOption('cap', 8);
-const pluginData = option('plugin-data') ?? join(projectRoot, '.r2c', 'plugin-data');
+// Diagnostics live under `.r2c/runs/` so the five-path runtime closure stays true.
+const pluginData = option('plugin-data') ?? join(projectRoot, '.r2c', 'runs', '.hooks');
 const tracePath = option('trace') ?? join(pluginData, 'trace', `${agentId}.jsonl`);
 const guardPath = join(pluginData, 'stop-guard.json');
 
@@ -218,7 +221,7 @@ async function runStop() {
   }
 
   if (candidate !== null && cap > 0 && (readGuard()[candidate.key] ?? 0) >= cap) {
-    process.stderr.write(`[r2c] stop guard capped at ${cap} for ${candidate.runId}/${candidate.stepId}; run "r2c next --session-id ${sessionId}" or /r2c-next manually.\n`);
+    process.stderr.write(`[r2c] stop guard capped at ${cap} for ${candidate.runId}/${candidate.stepId}; run "r2c next --session-id ${sessionId}" manually.\n`);
     appendTrace({ hook: 'stop', session_id: sessionId, run_id: candidate.runId, step_id: candidate.stepId, delivered: false, capped: true });
     return;
   }
@@ -297,6 +300,7 @@ function writeUsageSnapshot({ runId, transcriptPath, model }) {
     return;
   }
   if (usage === null) return;
+  if (!AGENT_IDS.has(agentId)) return;
   const line = {
     schema: 'r2c.usage/v1',
     time: new Date().toISOString(),

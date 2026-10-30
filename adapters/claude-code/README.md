@@ -10,7 +10,7 @@ write; this directory holds no install logic.
 |---|---|
 | Commands (7 × `r2c-*`) | `<P>/.claude/commands/r2c-<id>.md` |
 | Skills (35 placeholder skills) | `<P>/.claude/skills/<id>/SKILL.md` |
-| Child agents | not installed in v1 (`capabilities.agents = "none"`) |
+| Child agents | derived from manifest `steps[].agent` into `.claude/agents/r2c-*.md` |
 | Hooks | `<P>/.claude/settings.json` `hooks.Stop` + `hooks.PreToolUse` |
 | MCP servers | `<P>/.mcp.json` `mcpServers.<id>`, only with `--mcp <file>` |
 
@@ -48,7 +48,7 @@ Install merges two entries into `.claude/settings.json` (project or user):
 `node "<payload>/shims/hook.mjs" --agent claude-code --event ... --runner-cmd="<runner>"`.
 Existing Stop/PreToolUse entries are appended to, never overwritten; uninstall
 removes only the items this install added. The shared shim enforces eight
-blocks per (run_id, step_id), then exits 0 and points the user at `/r2c-next`.
+blocks per (run_id, step_id), then exits 0 and points the user at `r2c next`.
 
 `r2c adapter doctor` verifies `hooks.wired` (settings contains this payload's
 shim path), `hooks.smoke` (shim present, carrier parses as JSON) and

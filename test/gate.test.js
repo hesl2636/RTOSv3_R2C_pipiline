@@ -598,3 +598,51 @@ test('submit has no --force bypass', (t) => {
   assert.equal(readFileSync(join(root, '.r2c', 'runs', runId, 'state.json'), 'utf8'), before);
   assert.equal(readEvents(root, runId).some((event) => event.kind === 'gate'), false);
 });
+
+test('a quoted gate command is executed verbatim, not silently passed', (t) => {
+  const project = tempProject(
+    t,
+    manifest([
+      {
+        id: 'stg-one',
+        name: '阶段一',
+        steps: [
+          promptStep('step-a', '第一步', {
+            gate: [{ command: 'node -e "process.exit(1)"' }],
+          }),
+        ],
+      },
+    ]),
+  );
+  const { runId, sessionId } = startRun(t, project);
+
+  const rejected = submit(project, sessionId, 'step-a');
+  assert.equal(rejected.result.status, 3, rejected.result.stderr);
+  assert.equal(rejected.envelope.error.code, 'GATE_FAILED');
+  assert.equal(readState(project.root, runId).steps[0].status, 'active');
+});
+
+test('gate[].timeout overrides the default 120s', (t) => {
+  const project = tempProject(
+    t,
+    manifest([
+      {
+        id: 'stg-one',
+        name: '阶段一',
+        steps: [
+          promptStep('step-a', '第一步', {
+            gate: [{ command: 'node -e "setTimeout(() => {}, 5000)"', timeout: 1 }],
+          }),
+        ],
+      },
+    ]),
+  );
+  const { sessionId } = startRun(t, project);
+
+  const startedAt = Date.now();
+  const rejected = submit(project, sessionId, 'step-a');
+  const elapsed = Date.now() - startedAt;
+  assert.equal(rejected.result.status, 3, rejected.result.stderr);
+  assert.equal(rejected.envelope.error.code, 'GATE_TIMEOUT');
+  assert.ok(elapsed < 4500, `gate timeout was not honoured (${elapsed}ms)`);
+});

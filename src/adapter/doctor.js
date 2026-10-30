@@ -551,9 +551,11 @@ export function doctorAdapter({ ctx, agentId, options }) {
 
   const manualSteps = adapter?.manualSteps ?? receipt.manual ?? [];
   checks.push(
-    manualSteps.length === 0
-      ? check('manual', 'pass', 'no manual steps declared')
-      : check('manual', 'warn', manualSteps.join('; ')),
+    check(
+      'manual',
+      'warn',
+      manualSteps.length === 0 ? 'no manual steps declared' : manualSteps.join('; '),
+    ),
   );
 
   const otherScope = scope === 'project' ? 'user' : 'project';

@@ -13,9 +13,9 @@ const MANIFEST = join(PACK, 'workflows', 'RTOSv3_R2C_pipiline.yaml');
 const SKILLS = join(PACK, 'skills');
 
 const H2 = ['## Agent 角色设定', '## 任务', '## 约束条件'];
-const STAGE_NAMES = ['分析设计', '详细设计', '编码实施', '验证检视'];
+const STAGE_NAMES = ['分析设计', '详细设计', '编码实现', '验证检视'];
 const PLACEHOLDER_LINE =
-  '- 占位技能不得臆测执行：按本文件步骤降级，产物首行写「> 占位：<id> 未实现」，提交时 --note placeholder:<id>';
+  '- 占位技能不得臆测执行：按本文件步骤降级，产物首行写「> 占位：<id> 未实现（<date>）」并填入当天日期，提交时 --note placeholder:<id>';
 
 /** `/<name>` entry forms, but never a slash inside a relative path. */
 const SLASH_ENTRY = /(?:^|[\s`'“（(])\/[A-Za-z0-9_.-]+/gm;

@@ -39,7 +39,7 @@ jobs:
         continue-on-error: true
         run: |
           if command -v claude >/dev/null 2>&1; then
-            claude -p "/r2c-next" --output-format stream-json --verbose --permission-mode bypassPermissions
+            claude -p "/r2c-run" --output-format stream-json --verbose --permission-mode bypassPermissions
           else
             echo "claude not installed; live probe skipped"
           fi
@@ -48,7 +48,7 @@ jobs:
         continue-on-error: true
         run: |
           if command -v codex >/dev/null 2>&1; then
-            codex exec --json --skip-git-repo-check '调用 $r2c-next 并原样输出其输出'
+            codex exec --json --skip-git-repo-check '调用 $r2c-run 并原样输出其输出'
           else
             echo "codex not installed; live probe skipped"
           fi
@@ -57,7 +57,7 @@ jobs:
         continue-on-error: true
         run: |
           if command -v dsh >/dev/null 2>&1; then
-            dsh --profile headless --json '调用 /r2c-next 并原样输出其输出'
+            dsh --profile headless --json '调用 /r2c-run 并原样输出其输出'
           else
             echo "dsh not installed; live probe skipped"
           fi
@@ -66,7 +66,7 @@ jobs:
         continue-on-error: true
         run: |
           if command -v omp >/dev/null 2>&1; then
-            omp -p "/r2c-next" --mode json
+            omp -p "/r2c-run" --mode json
           else
             echo "omp not installed; live probe skipped"
           fi
@@ -75,7 +75,7 @@ jobs:
         continue-on-error: true
         run: |
           if command -v opencode >/dev/null 2>&1; then
-            opencode run --command r2c-next --format json || opencode run "/r2c-next" --format json
+            opencode run --command r2c-run --format json || opencode run "/r2c-run" --format json
           else
             echo "opencode not installed; live probe skipped"
           fi

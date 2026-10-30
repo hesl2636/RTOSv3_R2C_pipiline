@@ -36,7 +36,7 @@
     "preToolUse": "block",
     "commands": "md",
     "skills": "md",
-    "agents": "none",
+    "agents": "md",
     "mcp": "json"
   },
   "sharedRoots": [

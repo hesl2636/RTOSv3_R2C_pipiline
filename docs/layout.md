@@ -18,11 +18,12 @@ the engine is published.
 │   ├── gate.js                    # expect.outputs + gate[] execution
 │   ├── hook.js                    # hook stop / hook pre-tool-use dialects
 │   ├── version.js                 # restricted semver evaluator (requires.engine)
-│   ├── schema/                    # manifest/schema helpers
+│   ├── schema.js                  # schema revision table + error mapping
 │   ├── adapter/                   # the single installer (install/doctor/...)
 │   └── acceptance/                # fixture + zero-model aggregator
 ├── schema/                        # r2c.{workflow,state,latest,usage,adapter,
 │                                  #   adapter-map,plugin}/v1 JSON Schemas
+├── shims/                         # hook.mjs + shared smoke-discovery.mjs
 ├── test/                          # node --test suites (not published)
 ├── pack/                          # workflow package = manifest root
 │   ├── workflows/<name>.yaml
@@ -40,7 +41,9 @@ the engine is published.
 │   ├── analysis/                  # frozen intranet attribution analysis plugin
 │   └── intranet-mcp/              # frozen intranet MCP server definitions
 ├── scripts/
-│   └── release.mjs                # the only packager (r2c-plugin-V.tgz)
+│   ├── release.mjs                # the only packager (r2c-plugin-V.tgz)
+│   ├── check-pack.mjs             # npm files whitelist gate
+│   └── verify-sums.mjs            # SHA256SUMS verification
 ├── docs/
 │   ├── layout.md                  # this file
 │   ├── install.md
@@ -88,5 +91,6 @@ All run state lands inside the project under `.r2c/`:
 | `.r2c/install/`, `.r2c/plugin/` | No — install receipts and payloads |
 | `.r2c/ir.md`, `.r2c/sr-map.md`, `.r2c/artifacts/**` | Yes — business artifacts |
 
-`.gitignore` lists exactly those five runtime paths (plus `node_modules/`).
-Local-only patterns belong in `.git/info/exclude`, never in the committed file.
+`.gitignore` lists those five runtime paths, `node_modules/`, and `dist/`
+(local release output). Local-only patterns belong in `.git/info/exclude`,
+never in the committed file.

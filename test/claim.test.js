@@ -411,6 +411,15 @@ test('SB8 submit with a claimed cli id exits 2 RUN_CLAIMED and writes nothing', 
   const failed = envelope(stale);
   assert.equal(failed.error.code, 'RUN_CLAIMED');
 
+  for (const command of ['pause', 'resume', 'cancel']) {
+    const result = cli(
+      [command, '--session-id', cliSid, '--project-root', project.root, '--json'],
+      { cwd: project.root, env: project.env },
+    );
+    assert.equal(result.status, 2, `${command}: ${result.stderr}`);
+    assert.equal(envelope(result).error.code, 'RUN_CLAIMED', command);
+  }
+
   assert.deepEqual(readState(project.root, started.run_id), beforeState);
   assert.equal(readFileSync(eventsFile(project.root, started.run_id), 'utf8'), beforeEvents);
   assert.equal(readFileSync(join(project.root, '.r2c', 'latest.json'), 'utf8'), beforeLatest);

@@ -7,7 +7,7 @@
  * bytes; it never touches the target file system.
  */
 import { existsSync, readFileSync } from 'node:fs';
-import { basename, dirname, isAbsolute, join, normalize } from 'node:path';
+import { basename, dirname, isAbsolute, join, normalize, relative as relativePath } from 'node:path';
 import { parse as parseYaml } from 'yaml';
 import { EXIT_CODES, R2cError } from '../errors.js';
 import { sha256, userHome } from './util.js';
@@ -17,6 +17,12 @@ export const ADAPTER_MAP_SCHEMA = 'r2c.adapter-map/v1';
 
 function usageError(code, message, details = null) {
   return new R2cError(code, message, details, EXIT_CODES.USAGE);
+}
+
+/** True when `target` is `root` itself or lives beneath it, on every platform. */
+function isInside(root, target) {
+  const rel = relativePath(normalize(root), normalize(target));
+  return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel));
 }
 
 function entryByRel(resolved, rel) {
@@ -362,7 +368,7 @@ export function buildPlan({
         content: content ?? source,
         sha256: content === undefined ? sha256(source) : sha256(content),
         linkWarning:
-          mode === 'link' && !linkRoots.some((root) => target.startsWith(`${root}/`) || target === root)
+          mode === 'link' && !linkRoots.some((root) => isInside(root, target))
             ? `link-unsupported:${target}`
             : null,
       });
@@ -371,7 +377,7 @@ export function buildPlan({
 
   for (const entry of linkEntries) entries.push(entry);
   for (const entry of fileEntries) {
-    const covered = linkRoots.some((root) => entry.target.startsWith(`${root}/`) || entry.target === root);
+    const covered = linkRoots.some((root) => isInside(root, entry.target));
     if (covered) continue;
     if (entry.linkWarning !== null) warnings.push(entry.linkWarning);
     delete entry.linkWarning;

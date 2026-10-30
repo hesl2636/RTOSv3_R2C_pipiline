@@ -317,7 +317,7 @@ test('hooks.json and the .cmd launcher survive a project path with a space', (t)
     windowsHide: true,
   });
   assert.equal(launch.status, 0, launch.stderr);
-  const trace = join(project, '.r2c', 'plugin-data', 'trace', 'codex.jsonl');
+  const trace = join(project, '.r2c', 'runs', '.hooks', 'trace', 'codex.jsonl');
   assert.ok(existsSync(trace));
   assert.match(readFileSync(trace, 'utf8'), /"hook":"stop".*"no-session"/);
 });
@@ -431,7 +431,7 @@ test('untrusted or absent hooks never block the B-mode run -> submit chain', (t)
   );
   assert.equal(submitted.status, 0, submitted.stderr);
   assert.match(submitted.stdout, /^## 下一步：第二步（阶段：阶段二）$/m);
-  assert.ok(!existsSync(join(project, '.r2c', 'plugin-data', 'trace', 'codex.jsonl')));
+  assert.ok(!existsSync(join(project, '.r2c', 'runs', '.hooks', 'trace', 'codex.jsonl')));
 });
 
 test('doctor passes launch/sandbox write, warns manual trust and the desktop build', (t) => {

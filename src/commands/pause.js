@@ -3,6 +3,7 @@
  * happens until a matching `resume`. The lock covers only the read-modify-write.
  */
 import { R2cError, EXIT_CODES } from '../errors.js';
+import { refuseClaimedSession } from '../claim.js';
 import { withRunLock } from '../lock.js';
 import {
   appendEvent,
@@ -25,6 +26,7 @@ function requireSession(ctx, command) {
 
 export async function run(_argv, ctx) {
   requireSession(ctx, 'pause');
+  refuseClaimedSession(ctx.projectRoot, ctx.sessionId);
   const loaded = resolveRunForSession({
     root: ctx.projectRoot,
     sessionId: ctx.sessionId,

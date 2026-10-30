@@ -9,7 +9,7 @@
  * revalidates the preflight step (a concurrent writer may have won).
  */
 import { R2cError, EXIT_CODES } from '../errors.js';
-import { claimedBindingForSession } from '../claim.js';
+import { refuseClaimedSession } from '../claim.js';
 import { checkGates } from '../gate.js';
 import { withRunWriteLock } from '../lock.js';
 import { flattenSteps, loadManifest } from '../manifest.js';
@@ -34,16 +34,7 @@ export async function run(_argv, ctx) {
     );
   }
 
-  const claimed = claimedBindingForSession(ctx.projectRoot, ctx.sessionId);
-  if (claimed !== null) {
-    throw new R2cError(
-      'RUN_CLAIMED',
-      `session id was claimed by another session: ${ctx.sessionId}`,
-      { session_id: ctx.sessionId, run_id: claimed.runId, claimed_by: claimed.sessionId },
-      // Ticket #24 requires exit 2 for a stale claimed `cli-` sid.
-      EXIT_CODES.USAGE,
-    );
-  }
+  refuseClaimedSession(ctx.projectRoot, ctx.sessionId);
 
   const loadedRun = resolveRunForSession({
     root: ctx.projectRoot,
@@ -223,6 +214,7 @@ export async function run(_argv, ctx) {
         stepId: nextStep.id,
         runnerCmd,
         sessionId: finalState.session_id,
+        manifestPath: ctx.manifest ?? null,
       });
   return {
     runId,

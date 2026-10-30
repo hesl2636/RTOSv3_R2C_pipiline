@@ -235,6 +235,18 @@ function checkDocs(ctx, failures) {
   }
 }
 
+function checkChangelog(ctx, failures) {
+  const file = join(ctx.root, 'CHANGELOG.md');
+  if (!existsSync(file)) {
+    failures.push('CHANGELOG.md is missing');
+    return;
+  }
+  const heading = `## [${ctx.pkg.version}]`;
+  if (!readFileSync(file, 'utf8').split(/\r?\n/).some((line) => line.startsWith(heading))) {
+    failures.push(`CHANGELOG.md has no "${heading}" section`);
+  }
+}
+
 function checkLockfile(ctx, failures) {
   const file = join(ctx.root, 'package-lock.json');
   if (!existsSync(file)) {
@@ -272,6 +284,7 @@ function check(ctx) {
   checkVersion(ctx, failures);
   checkFiles(ctx, failures);
   checkDocs(ctx, failures);
+  checkChangelog(ctx, failures);
   checkLockfile(ctx, failures);
   checkCounts(ctx, failures, notes);
 

@@ -1,5 +1,5 @@
 schema: r2c.workflow/v1
-id: workflow-RTOSv3_R2C_pipiline-frnz-new.yaml
+id: rtosv3-r2c-pipeline
 name: RTOSv3_R2C_pipiline
 version: 0.1.1
 description: ''
@@ -26,9 +26,6 @@ stages:
           - workflow-core
           - using-workflow
           - code-research
-        mcp:
-          - sr-fetcher-mcp
-          - ar-fetcher-mcp
   - id: stg-22483f60-0ea8-4d1a-8dc3-3502b61b527f
     name: 详细设计
     steps:
@@ -46,13 +43,11 @@ stages:
           - writing-plans
           - workflow-core
           - using-workflow
-        mcp:
-          - codebase-mcp-server
   - id: stg-ae37726a-00f8-44b6-94f5-e34073939f7d
-    name: 编码实施
+    name: 编码实现
     steps:
       - id: step-eb5bed2f-b911-473b-b111-46d4a3a963de
-        name: 编码实施编排
+        name: 编码实现编排
         type: prompt
         agent: bys-impl-lead
         taskFile: tasks/step-eb5bed2f-b911-473b-b111-46d4a3a963de.md

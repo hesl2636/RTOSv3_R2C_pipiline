@@ -261,6 +261,7 @@ test('user-scope install renders the plugin, patch, hooks and profile entry', (t
   assert.ok(!after.dsh.profile.bundles.includes('r2c-adapter-dsh'));
   assert.ok(removal.leftover.some((entry) => entry.startsWith('node_modules:')), JSON.stringify(removal.leftover));
   assert.ok(removal.leftover.includes('manual:restart dsh'));
+  assert.ok(!existsSync(join(profileDir(dshHome), 'cordis.patch.yml')));
 });
 
 test('--profile selects the dsh profile directory', (t) => {
@@ -355,9 +356,7 @@ test('mcp servers are appended to the rendered bundle patch and removed with the
   assert.equal(removed.status, 0, removed.stderr);
   assert.ok(!existsSync(bundlePatch));
   assert.ok(!existsSync(payloadHome));
-  const profilePatch = readFileSync(join(profileDir(dshHome), 'cordis.patch.yml'), 'utf8')
-    .trim().split(/\r?\n/).filter((line) => !line.trim().startsWith('#')).join('\n');
-  assert.equal(profilePatch, '[]');
+  assert.ok(!existsSync(join(profileDir(dshHome), 'cordis.patch.yml')));
 });
 
 test('pre-tool-use denial is exit 0 + hookSpecificOutput.permissionDecision=deny', (t) => {

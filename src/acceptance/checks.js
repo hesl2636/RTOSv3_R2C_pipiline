@@ -972,7 +972,38 @@ function doctorCheck(h, agentId) {
       for (const required of ['engine.version', 'receipt.files', 'hooks.wired', 'discovery']) {
         if (!names.has(required)) throw new Error(`I3: missing doctor check ${required}`);
       }
-      return { detail: `${checks.length} doctor checks, no fail` };
+      // Ticket #35: a modified installed file must flip the corresponding check.
+      const receipt = readJsonIfExists(join(h.installRoot, '.r2c', 'install', `${agentId}.json`));
+      const target = (receipt?.files ?? []).find(
+        (file) => file.kind === 'copy' || file.kind === 'render' || file.kind === 'derive-agent',
+      );
+      if (target === undefined || target.path === undefined) {
+        throw new Error('I3: receipt has no file to tamper with');
+      }
+      const original = readFileSync(target.path);
+      writeFileSync(target.path, Buffer.concat([original, Buffer.from('\n/* tamper */\n')]));
+      let tampered;
+      try {
+        tampered = h.run(
+          ['adapter', 'doctor', agentId, '--project-root', h.installRoot, '--json'],
+          { cwd: h.installRoot },
+        );
+      } finally {
+        writeFileSync(target.path, original);
+      }
+      if (tampered.status === 0) {
+        throw new Error('I3: doctor passed after an installed file was modified');
+      }
+      const tamperedChecks = envelope(tampered, 'I3 tampered doctor').data.checks;
+      const receiptFail = tamperedChecks.find(
+        (check) => check.name === 'receipt.files' && check.status === 'fail',
+      );
+      if (receiptFail === undefined) {
+        throw new Error('I3: tampering did not fail receipt.files');
+      }
+      return {
+        detail: `${checks.length} doctor checks, no fail; tampered install fails receipt.files`,
+      };
     },
   };
 }

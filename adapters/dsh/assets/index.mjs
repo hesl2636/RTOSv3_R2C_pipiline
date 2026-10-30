@@ -147,7 +147,7 @@ function shimArgs(settings, event, sessionId) {
     '--format', 'json',
     `--runner-cmd=${settings.runnerCmd}`,
     '--project-root', settings.projectRoot,
-    '--plugin-data', join(settings.projectRoot, '.r2c', 'plugin-data'),
+    '--plugin-data', join(settings.projectRoot, '.r2c', 'runs', '.hooks'),
     '--cap', String(settings.cap),
   ];
   if (sessionId !== null) args.push('--session-id', sessionId);

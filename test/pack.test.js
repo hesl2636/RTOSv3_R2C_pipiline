@@ -49,7 +49,7 @@ const GROUPS = {
       'workflow-core',
     ],
     line: (id) =>
-      `按调用方任务书内联执行子步骤；产物首行写 \`> 占位：${id} 未实现\`，提交时 \`--note placeholder:${id}\`。`,
+      `按调用方任务书内联执行子步骤；产物首行写 \`> 占位：${id} 未实现（<date>）\`，提交时 \`--note placeholder:${id}\`。`,
   },
   B: {
     members: [
@@ -107,8 +107,6 @@ const EXPECTED_RUNNERS = {
   'r2c-pause': '<runner> pause',
   'r2c-resume': '<runner> resume',
   'r2c-cancel': '<runner> cancel',
-  'r2c-upload': '<runner> upload',
-  'r2c-analysis': '<runner> analysis',
 };
 
 const FORBIDDEN_COMMAND_TEXT = [
@@ -255,7 +253,12 @@ test('pack/commands holds exactly the seven canonical r2c ids with minimal front
     }
 
     const runnerLines = body.split('\n').filter((line) => line.startsWith('<runner>'));
-    assert.deepEqual(runnerLines, [EXPECTED_RUNNERS[id]], `${id}: must invoke exactly one engine subcommand`);
+    if (id === 'r2c-upload' || id === 'r2c-analysis') {
+      assert.deepEqual(runnerLines, [], `${id}: must not invoke a nonexistent engine subcommand`);
+      assert.match(body, /plugins\/(upload|analysis)\//, `${id}: must point at its frozen plugin`);
+    } else {
+      assert.deepEqual(runnerLines, [EXPECTED_RUNNERS[id]], `${id}: must invoke exactly one engine subcommand`);
+    }
     if (id === 'r2c-run') {
       assert.ok(body.includes('$ARGUMENTS'), 'r2c-run: body must pass $ARGUMENTS');
     }

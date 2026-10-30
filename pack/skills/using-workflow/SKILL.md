@@ -19,7 +19,7 @@ description: 约束 agent 按清单工作流与任务书推进步骤。占位：
 | 当前 run 的步骤、清单 `skills:` 白名单 | 按任务书完成的步骤产物 |
 
 ## 占位期行为
-按调用方任务书内联执行子步骤；产物首行写 `> 占位：using-workflow 未实现`，提交时 `--note placeholder:using-workflow`。
+按调用方任务书内联执行子步骤；产物首行写 `> 占位：using-workflow 未实现（<date>）`，提交时 `--note placeholder:using-workflow`。
 
 ## 实现归属
 - 未建票；实现后删除顶部占位横幅与本行。

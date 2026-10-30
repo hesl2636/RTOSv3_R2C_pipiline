@@ -57,6 +57,7 @@ jobs:
         shell: bash
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          R2C_PROVENANCE: ${{ vars.R2C_PROVENANCE }}
         run: |
           set -euo pipefail
           version="${{ steps.version.outputs.version }}"
@@ -65,7 +66,13 @@ jobs:
           else
             dist_tag=latest
           fi
-          npm publish --access public --tag "$dist_tag"
+          # Private/non-public repos cannot mint provenance; set the repository
+          # variable R2C_PROVENANCE=1 once the repository is public.
+          if [ "${R2C_PROVENANCE:-0}" = "1" ]; then
+            npm publish --access public --tag "$dist_tag" --provenance
+          else
+            npm publish --access public --tag "$dist_tag"
+          fi
       - name: Publish the draft release
         shell: bash
         env:

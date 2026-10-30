@@ -11,11 +11,11 @@ import { EXIT_CODES, R2cError } from '../errors.js';
 import { inspectManifest, manifestError } from '../manifest.js';
 import { assertRenderableSteps, defaultRunnerCommand, renderCompleted, renderStep } from '../render.js';
 import { executeShellSteps } from '../shell.js';
-import { createRun, hasRunningRun, isCliSessionId } from '../state.js';
+import { createRun, hasRunningRun, isReservedSessionId } from '../state.js';
 
 export async function run(_argv, ctx) {
   const explicit = ctx.sessionId ?? null;
-  if (explicit !== null && isCliSessionId(explicit)) {
+  if (explicit !== null && isReservedSessionId(explicit)) {
     throw new R2cError(
       'SESSION_ID_RESERVED',
       `session id is reserved for minted runs: ${explicit}`,
@@ -79,6 +79,7 @@ export async function run(_argv, ctx) {
         stepId: step.id,
         runnerCmd,
         sessionId: created.sessionId,
+        manifestPath: ctx.manifest ?? null,
       });
   return {
     runId: created.runId,

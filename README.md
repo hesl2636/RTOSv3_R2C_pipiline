@@ -29,13 +29,26 @@ test/ scripts/ docs/ .github/   测试、打包、文档、CI
 
 引擎为 `r2c-runner@0.1.0`，载荷为 `r2c-plugin-0.1.0.tgz`。以下命令在目标项目根目录执行。
 
-### 使用（所有 agent 相同）
+### 首次使用（所有 agent 相同）
+
+安装器把载荷（含默认清单、任务书、技能）放在 `.r2c/plugin/0.1.0/`，不会把它们
+复制到项目根。默认发现只读项目根的 `workflows/`，而 `taskFile` 又相对该根解析，
+所以推荐把载荷的 `workflows/`、`tasks/`、`skills/` 整套复制到项目根
+（hook 续跑也依赖项目根的默认发现）；只用终端推进时也可以 `--manifest` 直接指向载荷清单：
 
 ```bash
+# (a) 推荐：复制整套载荷内容到项目根
+cp -r .r2c/plugin/0.1.0/{workflows,tasks,skills} .
 npx r2c-runner@0.1.0 run --project .
-# 完成当前步骤后，执行打印的 submit 行
-npx r2c-runner@0.1.0 status --project .
+
+# (b) 仅终端/手工推进：直接指向载荷清单（--manifest 需要绝对路径，打印的 Submit 行会带上它）
+npx r2c-runner@0.1.0 run --project . \
+  --manifest "$PWD/.r2c/plugin/0.1.0/workflows/RTOSv3_R2C_pipiline.yaml"
 ```
+
+Windows PowerShell 用 `Copy-Item .r2c\plugin\0.1.0\{workflows,tasks,skills} . -Recurse`
+或把 (a) 的 `$PWD` 换成 `$((Get-Location).Path)`。
+`--project` 与 `--project-root` 同义，所有命令都接受。
 
 ### claude-code
 

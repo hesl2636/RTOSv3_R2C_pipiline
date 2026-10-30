@@ -66,6 +66,11 @@ export function isCliSessionId(sessionId) {
   return typeof sessionId === 'string' && CLI_SESSION_ID.test(sessionId);
 }
 
+/** Any `cli-R…` id is reserved, including malformed ones the hook will never claim. */
+export function isReservedSessionId(sessionId) {
+  return typeof sessionId === 'string' && /^cli-R/.test(sessionId);
+}
+
 function tempName(file) {
   return join(dirname(file), `.${basename(file)}.${process.pid}.${randomBytes(4).toString('hex')}.tmp`);
 }

@@ -33,9 +33,15 @@ export function commandTimeoutMs(seconds, fallback = DEFAULT_COMMAND_TIMEOUT_MS)
 
 function invocation(command) {
   if (process.platform === 'win32') {
-    return { file: process.env.ComSpec || 'cmd.exe', args: ['/d', '/s', '/c', command] };
+    // `cmd /s /c "…"` keeps the inner quotes that argv quoting would otherwise
+    // eat; without the outer pair `node -e "…"` silently exits 0.
+    return {
+      file: process.env.ComSpec || 'cmd.exe',
+      args: ['/d', '/s', '/c', `"${command}"`],
+      windowsVerbatimArguments: true,
+    };
   }
-  return { file: '/bin/sh', args: ['-c', command] };
+  return { file: '/bin/sh', args: ['-c', command], windowsVerbatimArguments: false };
 }
 
 /**
@@ -65,7 +71,7 @@ function capture(current, chunk) {
  * The caller decides whether a failure is a gate rejection or a shell failure.
  */
 export function runShellCommand({ command, cwd, timeoutMs = DEFAULT_COMMAND_TIMEOUT_MS }) {
-  const { file, args } = invocation(command);
+  const { file, args, windowsVerbatimArguments } = invocation(command);
 
   return new Promise((resolvePromise) => {
     let child;
@@ -73,6 +79,7 @@ export function runShellCommand({ command, cwd, timeoutMs = DEFAULT_COMMAND_TIME
       child = spawn(file, args, {
         cwd,
         windowsHide: true,
+        windowsVerbatimArguments,
         detached: process.platform !== 'win32',
         stdio: ['ignore', 'pipe', 'pipe'],
       });

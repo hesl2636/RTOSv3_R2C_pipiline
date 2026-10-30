@@ -128,6 +128,8 @@ function writeFakePayload(t, { engine, version }) {
   const payload = tempDir(t, 'payload');
   cpSync(join(REPO, 'pack', 'commands'), join(payload, 'commands'), { recursive: true });
   cpSync(join(REPO, 'pack', 'skills'), join(payload, 'skills'), { recursive: true });
+  cpSync(join(REPO, 'pack', 'workflows'), join(payload, 'workflows'), { recursive: true });
+  cpSync(join(REPO, 'shims'), join(payload, 'shims'), { recursive: true });
   cpSync(join(REPO, 'adapters'), join(payload, 'adapters'), { recursive: true });
   const adapterFile = join(payload, 'adapters', 'claude-code', 'adapter.json');
   const adapter = JSON.parse(readFileSync(adapterFile, 'utf8'));
@@ -169,12 +171,18 @@ test('install --from a source tree writes commands, skills and a receipt', (t) =
   assert.equal(receipt.engine.version, ENGINE_VERSION);
   assert.equal(receipt.engine.requires, '^0.1.0');
   assert.equal(receipt.requires.agent, '>=2.1.312 <3');
-  assert.equal(receipt.files.length, 42);
+  assert.equal(receipt.files.length, 46);
   for (const file of receipt.files) {
     assert.ok(existsSync(file.path), file.path);
     assert.match(file.sha256, /^[0-9a-f]{64}$/);
-    assert.equal(file.kind, file.path.includes(`${join('.claude', 'commands')}`) ? 'render' : 'copy');
+    const expectedKind = file.path.includes(`${join('.claude', 'commands')}`)
+      ? 'render'
+      : file.path.includes(`${join('.claude', 'agents')}`)
+        ? 'derive-agent'
+        : 'copy';
+    assert.equal(file.kind, expectedKind);
   }
+  assert.equal(readdirSync(join(project, '.claude', 'agents')).length, 4);
   assert.ok(existsSync(join(receipt.payload_home, 'r2c-plugin.json')));
   assert.ok(existsSync(join(receipt.payload_home, 'adapters', 'claude-code', 'map.json')));
 });

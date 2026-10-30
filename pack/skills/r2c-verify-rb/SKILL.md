@@ -19,7 +19,7 @@ description: 编排 R2C 验证检视阶段，聚合构建、扫描与红蓝结�
 | 实施产物、`design_doc_ver{NN}/` 验收条件 | `.r2c/artifacts/final-verification.log`、检视报告与遗留问题清单 |
 
 ## 占位期行为
-按调用方任务书内联执行子步骤；产物首行写 `> 占位：r2c-verify-rb 未实现`，提交时 `--note placeholder:r2c-verify-rb`。
+按调用方任务书内联执行子步骤；产物首行写 `> 占位：r2c-verify-rb 未实现（<date>）`，提交时 `--note placeholder:r2c-verify-rb`。
 
 ## 实现归属
 - 未建票；实现后删除顶部占位横幅与本行。

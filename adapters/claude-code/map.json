@@ -26,6 +26,18 @@
       "scope": "user"
     },
     {
+      "from": "assets/agent.md",
+      "to": "{project}/.claude/agents/r2c-{name}.md",
+      "action": "derive-agent",
+      "scope": "project"
+    },
+    {
+      "from": "assets/agent.md",
+      "to": "{user}/.claude/agents/r2c-{name}.md",
+      "action": "derive-agent",
+      "scope": "user"
+    },
+    {
       "from": "skills/*/SKILL.md",
       "to": "{project}/.claude/skills/{dir}/SKILL.md",
       "action": "copy",

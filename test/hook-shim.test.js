@@ -84,7 +84,7 @@ function runShim(project, { event = 'stop', sessionId = null, input = {}, dialec
 }
 
 function trace(root, agent = 'claude-code') {
-  const file = join(root, '.r2c', 'plugin-data', 'trace', `${agent}.jsonl`);
+  const file = join(root, '.r2c', 'runs', '.hooks', 'trace', `${agent}.jsonl`);
   if (!existsSync(file)) return [];
   return readFileSync(file, 'utf8')
     .split(/\r?\n/)
@@ -112,7 +112,7 @@ test('nine stops on one step block eight times, then cap with a manual hint', (t
   const ninth = runShim(root, { sessionId: sid, input: payload });
   assert.equal(ninth.status, 0, ninth.stderr);
   assert.equal(ninth.stdout.trim(), '');
-  assert.match(ninth.stderr, /\/r2c-next/);
+  assert.match(ninth.stderr, /r2c next/);
 
   const entries = trace(root).filter((entry) => entry.hook === 'stop');
   assert.equal(entries.length, 9);
@@ -121,7 +121,7 @@ test('nine stops on one step block eight times, then cap with a manual hint', (t
   assert.equal(entries.at(-1).reason, undefined);
   assert.equal(entries.at(-1).delivered, false);
 
-  const guard = JSON.parse(readFileSync(join(root, '.r2c', 'plugin-data', 'stop-guard.json'), 'utf8'));
+  const guard = JSON.parse(readFileSync(join(root, '.r2c', 'runs', '.hooks', 'stop-guard.json'), 'utf8'));
   assert.deepEqual(Object.values(guard), [8]);
 });
 
@@ -135,7 +135,7 @@ test('stop_hook_active passes without blocking or counting', (t) => {
 
   assert.equal(result.status, 0, result.stderr);
   assert.equal(result.stdout, '');
-  assert.ok(!existsSync(join(root, '.r2c', 'plugin-data', 'stop-guard.json')));
+  assert.ok(!existsSync(join(root, '.r2c', 'runs', '.hooks', 'stop-guard.json')));
 
   const entries = trace(root).filter((entry) => entry.hook === 'stop');
   assert.equal(entries.length, 1);
@@ -224,7 +224,7 @@ test('a stop without a session exits 0 silently and records no delivery', (t) =>
 
   assert.equal(result.status, 0, result.stderr);
   assert.equal(result.stdout, '');
-  assert.ok(!existsSync(join(root, '.r2c', 'plugin-data', 'stop-guard.json')));
+  assert.ok(!existsSync(join(root, '.r2c', 'runs', '.hooks', 'stop-guard.json')));
   const entries = trace(root).filter((entry) => entry.hook === 'stop');
   assert.equal(entries.length, 1);
   assert.equal(entries[0].session_id, null);

@@ -82,6 +82,7 @@ function deliver(ctx, state) {
     stepId: state.current_step_id,
     runnerCmd: ctx.runnerCmd ?? defaultRunnerCommand(ctx.binPath),
     sessionId: state.session_id,
+    manifestPath: ctx.manifest ?? null,
   });
 
   if (ctx.format === 'json') {

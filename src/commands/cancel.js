@@ -6,6 +6,7 @@
  * cancellable again.
  */
 import { R2cError, EXIT_CODES } from '../errors.js';
+import { refuseClaimedSession } from '../claim.js';
 import { withRunWriteLock } from '../lock.js';
 import {
   appendEvent,
@@ -31,6 +32,7 @@ function requireSession(ctx) {
 
 export async function run(_argv, ctx) {
   requireSession(ctx);
+  refuseClaimedSession(ctx.projectRoot, ctx.sessionId);
   const loaded = resolveRunForSession({
     root: ctx.projectRoot,
     sessionId: ctx.sessionId,

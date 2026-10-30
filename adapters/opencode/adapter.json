@@ -45,6 +45,6 @@
   ],
   "options": {},
   "manualSteps": [
-    "opencode V1 only: >=1.19.5 <2. If the plugin directory is not loaded (V1 plugin absent or version outside the pin), the install falls back to B mode: run \"r2c next --format plain\" or /r2c-next manually."
+    "opencode V1 only: >=1.19.5 <2. If the plugin directory is not loaded (V1 plugin absent or version outside the pin), the install falls back to B mode: run \"r2c next --format plain\" manually."
   ]
 }

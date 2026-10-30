@@ -16,9 +16,10 @@ import { EXIT_CODES, R2cError, isR2cError } from './errors.js';
 import { normalizeHookInput } from './hook.js';
 import { projectRoot as resolveProjectRoot } from './paths.js';
 
-export const EXIT_OK = EXIT_CODES.OK;
-export const EXIT_INTERNAL = EXIT_CODES.INTERNAL;
-export const EXIT_USAGE = EXIT_CODES.USAGE;
+/** Local aliases for the exit-code contract; only `errors.js` owns the values. */
+const EXIT_OK = EXIT_CODES.OK;
+const EXIT_INTERNAL = EXIT_CODES.INTERNAL;
+const EXIT_USAGE = EXIT_CODES.USAGE;
 
 /** engines.node, kept as one string so package.json and the self-check agree. */
 const NODE_RANGE = '>=22.19.0 <23 || >=24.0.0';
@@ -33,6 +34,7 @@ Global options:
   -v, --version           Print the runner version and exit.
       --json              Print a single-line JSON envelope on stdout.
       --project-root DIR  Project whose .r2c state is used (default: cwd).
+      --project DIR       Alias of --project-root on every command.
       --session-id ID     Session routing key.
       --manifest FILE     Absolute workflow manifest path.
       --runner-cmd CMD    Prefix used in rendered Submit lines.
@@ -333,7 +335,6 @@ export async function main(argv) {
 
   const command = positionals[0];
   const ADAPTER_ONLY = new Set([
-    '--project',
     '--from',
     '--scope',
     '--plugin',
@@ -353,7 +354,7 @@ export async function main(argv) {
     foreign = (options.provided ?? []).find((option) => ADAPTER_ONLY.has(option));
   } else if (command === 'acceptance') {
     foreign = (options.provided ?? []).find(
-      (option) => ADAPTER_ONLY.has(option) && option !== '--agent' && option !== '--project',
+      (option) => ADAPTER_ONLY.has(option) && option !== '--agent',
     );
   }
   if (foreign === null && command !== 'acceptance') {

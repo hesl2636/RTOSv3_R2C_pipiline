@@ -236,6 +236,7 @@ export async function postInstall(context) {
         dir: profileDir,
         package: packageFile,
         patch: patchFile,
+        patch_created: undo.created_files.includes(patchFile),
         dependency: recordedDependency,
         bundle: PACKAGE_NAME,
       },
@@ -271,8 +272,41 @@ export async function preUninstall(context) {
     warnings.push(`profile-manifest-missing:${packageFile}`);
   }
   const patchFile = join(profile.dir, 'cordis.patch.yml');
-  if (!existsSync(patchFile)) warnings.push(`profile-patch-missing:${patchFile}`);
+  if (!existsSync(patchFile)) {
+    warnings.push(`profile-patch-missing:${patchFile}`);
+  } else {
+    try {
+      if (profile.patch_created === true) {
+        unlinkSync(patchFile);
+      } else {
+        const ids = Array.isArray(context.receipt?.steps?.mcp) ? context.receipt.steps.mcp : [];
+        let text = readFileSync(patchFile, 'utf8');
+        for (const id of ids) text = removePatchRow(text, id);
+        const remaining = text.split(/\r?\n/).filter((line) => {
+          const trimmed = line.trim();
+          return trimmed !== '' && trimmed !== '[]' && !trimmed.startsWith('#');
+        });
+        if (remaining.length === 0) unlinkSync(patchFile);
+        else writeFileSync(patchFile, text);
+      }
+    } catch (error) {
+      warnings.push(`profile-patch-unremovable:${error.message}`);
+    }
+  }
   return { warnings, leftover: nodeModulesLeftover(profile.dir) };
+}
+
+/** Drop one `- id: <id>` block (its `  key:` continuation lines) from the patch. */
+function removePatchRow(text, id) {
+  const lines = text.split(/\r?\n/);
+  const kept = [];
+  let skipping = false;
+  for (const line of lines) {
+    if (line.startsWith('- id: ')) skipping = line === `- id: ${id}`;
+    else if (skipping && !/^\s/.test(line)) skipping = false;
+    if (!skipping) kept.push(line);
+  }
+  return kept.join('\n');
 }
 
 /**

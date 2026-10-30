@@ -379,6 +379,17 @@ test('run rejects reserved cli sessions and duplicate live sessions', (t) => {
   assert.equal(reserved.result.status, 2);
   assert.equal(reserved.envelope.error.code, 'SESSION_ID_RESERVED');
 
+  const malformed = cliJson(
+    ['run', '--project-root', project.root, '--session-id', 'cli-R123'],
+    { cwd: project.outside },
+  );
+  assert.equal(malformed.result.status, 2);
+  assert.equal(malformed.envelope.error.code, 'SESSION_ID_RESERVED');
+
+  const viaAlias = cliJson(['run', '--project', project.root], { cwd: project.outside });
+  assert.equal(viaAlias.result.status, 0, viaAlias.result.stderr);
+  assert.match(viaAlias.envelope.session_id, /^cli-R/);
+
   const session = 'session-01';
   const first = cliJson(
     ['run', '--project-root', project.root, '--session-id', session],
@@ -435,6 +446,11 @@ test('explicit --manifest resolves task files relative to its manifest root', (t
   );
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /执行第一步，产出可以提交的结果。/);
+  const manifestPath = join(root, 'workflows', 'two-step.yaml');
+  assert.ok(
+    result.stdout.includes(`--manifest "${manifestPath}"`),
+    'the printed Submit line must repeat --manifest so it stays executable',
+  );
 });
 
 test('--version prints exactly one line', () => {

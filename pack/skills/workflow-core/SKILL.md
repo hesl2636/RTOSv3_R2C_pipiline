@@ -19,7 +19,7 @@ description: 声明工作流核心推进规则与交付物约定。占位：本�
 | 清单 `workflows/*.yaml` | 步骤推进与门禁判定所需的通用约定 |
 
 ## 占位期行为
-按调用方任务书内联执行子步骤；产物首行写 `> 占位：workflow-core 未实现`，提交时 `--note placeholder:workflow-core`。
+按调用方任务书内联执行子步骤；产物首行写 `> 占位：workflow-core 未实现（<date>）`，提交时 `--note placeholder:workflow-core`。
 
 ## 实现归属
 - 未建票；实现后删除顶部占位横幅与本行。

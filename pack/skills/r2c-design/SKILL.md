@@ -19,7 +19,7 @@ description: 编排 R2C 分析设计阶段，按拓扑收口需求与设计门�
 | `.r2c/ir.md`、`.r2c/sr-map.md`、用户请求 | `design_doc_ver{NN}/` 下 SPEC、骨架、AC、formal-verif 报告与刷新后的 `artifact-manifest.md` |
 
 ## 占位期行为
-按调用方任务书内联执行子步骤；产物首行写 `> 占位：r2c-design 未实现`，提交时 `--note placeholder:r2c-design`。
+按调用方任务书内联执行子步骤；产物首行写 `> 占位：r2c-design 未实现（<date>）`，提交时 `--note placeholder:r2c-design`。
 
 ## 实现归属
 - 未建票；实现后删除顶部占位横幅与本行。

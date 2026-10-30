@@ -70,8 +70,8 @@ lists it. `<P>` is the project root, `~` the user home.
 
 | Agent | Scope | Paths |
 | --- | --- | --- |
-| `claude-code` | project | `<P>/.claude/commands/r2c-*.md`, `<P>/.claude/skills/`, `<P>/.claude/settings.json` (Stop + PreToolUse), `<P>/.mcp.json` with `--mcp <file>` |
-| | user | `~/.claude/commands/`, `~/.claude/skills/`, `~/.claude/settings.json` (no MCP) |
+| `claude-code` | project | `<P>/.claude/commands/r2c-*.md`, `<P>/.claude/skills/`, `<P>/.claude/agents/r2c-*.md`, `<P>/.claude/settings.json` (Stop + PreToolUse), `<P>/.mcp.json` with `--mcp <file>` |
+| | user | `~/.claude/commands/`, `~/.claude/skills/`, `~/.claude/agents/`, `~/.claude/settings.json` (no MCP) |
 | `codex` | project | `<P>/.agents/skills/r2c-*/SKILL.md` (commands are skills), `<P>/.codex/agents/r2c-*.toml`, `<P>/.codex/hooks.json`, `<P>/.codex/r2c-hook-*.cmd` |
 | `dsh` | user | `~/.dsh/profiles/<profile>/package.json` (`r2c-adapter-dsh` dependency + `dsh.profile.bundles`), `~/.dsh/profiles/<profile>/cordis.patch.yml`, payload `adapters/dsh/{index.mjs,package.json,cordis.patch.yml,hooks.json}` |
 | `omp` | project | `<P>/.omp/commands/`, `<P>/.omp/skills/`, `<P>/.omp/agents/r2c-*.md`, `<P>/.omp/hooks/{pre,post}/`, `<P>/.omp/mcp.json` |
@@ -89,6 +89,30 @@ read that receipt; nothing is deleted by guesswork.
 restart after install/uninstall for the bundle and patch to load. Codex command
 discovery is via `.agents/skills`; its Stop/PreToolUse hooks only run after you
 trust them in `/hooks`, which is a manual step (see below).
+
+## First run
+
+The installer materialises the payload (workflow, tasks, skills) at
+`<state>/plugin/<V>/`; it does not copy that tree into the project. `r2c run`
+discovers a manifest only under the project's `workflows/`, and `taskFile`
+resolves relative to that same root, so do one of these once per project:
+
+```bash
+# (a) recommended: copy the whole payload layout into the project root
+cp -r .r2c/plugin/0.1.0/{workflows,tasks,skills} .
+npx r2c-runner run --project .
+
+# (b) terminal-only: point at the payload manifest (absolute path required)
+npx r2c-runner run --project . \
+  --manifest "$PWD/.r2c/plugin/0.1.0/workflows/RTOSv3_R2C_pipiline.yaml"
+```
+
+Copying only the YAML is not enough: its `taskFile` entries resolve against the
+manifest root, which is the project root for default discovery. Hook delivery
+also rediscovers the project manifest, so the layout copy is the only shape
+where Stop/idle delivery works without extra flags.
+
+`--project` and `--project-root` are aliases on every command.
 
 ## Doctor
 
