@@ -19,10 +19,13 @@ MCP is not supported (`capabilities.mcp = "none"`).
 ## Install
 
 ```bash
-npx r2c-runner adapter install codex --from r2c-payload-0.1.0.tgz --project .
-npx r2c-runner adapter doctor  codex --project .
-npx r2c-runner adapter uninstall codex --project .
+node .r2c/engine/<V>/bin/r2c.js adapter install codex --project .
+node .r2c/engine/<V>/bin/r2c.js adapter doctor codex --project .
+node .r2c/engine/<V>/bin/r2c.js adapter uninstall codex --project .
 ```
+
+The engine resolves `r2c-payload-<V>.tgz` from the GitHub Release at its own
+version; add `--from <payload-dir|r2c-payload-<V>.tgz>` for an offline install.
 
 ## Hooks
 

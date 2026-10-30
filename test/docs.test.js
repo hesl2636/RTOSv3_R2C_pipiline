@@ -1,13 +1,18 @@
 /**
- * Documentation contract (#17 §1, §7, §8; ticket #36).
+ * Documentation contract (#17 §1, §7, §8; tickets #36, #45).
  *
- * Three docs are user-facing contracts, so they are tested like code:
- * `docs/install.md` (install → doctor → upgrade → rollback → uninstall),
- * `docs/compat.md` (generated from `adapter.json`, never hand-edited) and
- * `docs/blue-zone/preflight.md` (exactly 47 rows, each with five fields).
- * `README.md` is deliberately free-form and is not pinned by wording tests.
+ * Four docs are user-facing contracts, so they are tested like code:
+ * `docs/install.md` (install → upgrade → rollback → uninstall → offline),
+ * `docs/compat.md` (generated from `adapter.json`, never hand-edited),
+ * `docs/blue-zone/preflight.md` (exactly 47 rows, each with five fields) and
+ * the install sections of `README.md` plus `adapters/<agent>/README.md`.
+ *
+ * Since #45 there is exactly one distribution channel — the GitHub Release
+ * assets driven by `scripts/install.mjs` — so every documented command is
+ * checked against the real CLI help and the npm-era entry points are forbidden.
  */
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { test } from 'node:test';
@@ -22,6 +27,10 @@ const PREFLIGHT_IDS = [
   ...Array.from({ length: 6 }, (_, index) => `D${index + 1}`),
 ];
 const VERDICTS = ['pass', 'fail', 'risk', 'HITL', 'unverified'];
+
+/** The four install sections and the next command each one must end with. */
+const INSTALL_SECTIONS = ['## Install', '## Upgrade', '## Rollback', '## Uninstall'];
+const README_SECTIONS = ['### 首次安装', '### 升级', '### 回滚', '### 卸载'];
 
 /**
  * Yellow-zone coordinates and non-public registry names must never reach a
@@ -40,6 +49,22 @@ const FORBIDDEN = [
   ['plain-http URL', /http:\/\//],
 ];
 
+/**
+ * The npm era is over (#44): one install channel, and it is the release
+ * bootstrap. Each entry is [label, pattern]; a doc that reinstates a package
+ * manager, the retired runner spec or the manual layout copy fails here.
+ */
+const SECOND_CHANNEL = [
+  ['npx', /\bnpx\b/],
+  ['npm install', /\bnpm\s+(?:install|i|add|exec|pack|publish|ci)\b/],
+  ['pnpm', /\bpnpm\b/],
+  ['yarn', /\byarn\b/],
+  ['retired runner spec', /\br2c-runner@/],
+  ['retired payload asset', /\br2c-plugin-(?:\d|<)/],
+  ['manual layout copy', /\bcp\s+-r\b[^\n]*payload/],
+  ['manual layout copy (zh)', /手动复制/],
+];
+
 function read(rel) {
   return readFileSync(join(REPO, rel), 'utf8');
 }
@@ -55,67 +80,309 @@ function section(text, heading) {
   return next === -1 ? text.slice(start) : text.slice(start, next);
 }
 
-// --- docs/install.md ------------------------------------------------------
+/** Heading slice for a `###` block, stopping at the next `##` or `###`. */
+function subsection(text, heading) {
+  const start = text.indexOf(`${heading}\n`);
+  assert.notEqual(start, -1, `missing section ${heading}`);
+  const rest = text.slice(start + heading.length + 1);
+  const next = /\n#{2,3} /.exec(rest);
+  return next === null ? rest : rest.slice(0, next.index);
+}
 
-test('install doc covers install, detection, --from payload and doctor', () => {
+function lastLine(text) {
+  const lines = text.split('\n').map((line) => line.trim()).filter((line) => line !== '');
+  return lines.at(-1);
+}
+
+/** Every fenced code block, with its language tag. */
+function fencedBlocks(text) {
+  const blocks = [];
+  const pattern = /```(\w*)\r?\n([\s\S]*?)```/g;
+  let match;
+  while ((match = pattern.exec(text)) !== null) blocks.push({ lang: match[1], body: match[2] });
+  return blocks;
+}
+
+/** Command lines inside the blocks: [language, line]. */
+function commandLines(text) {
+  const commands = [];
+  for (const { lang, body } of fencedBlocks(text)) {
+    for (const raw of body.split('\n')) {
+      const line = raw.trim();
+      if (line === '' || line.startsWith('#')) continue;
+      commands.push({ lang, line });
+    }
+  }
+  return commands;
+}
+
+function helpOutput(script, args = ['--help']) {
+  const result = spawnSync(process.execPath, [join(REPO, script), ...args], {
+    encoding: 'utf8',
+    timeout: 120_000,
+  });
+  assert.equal(result.status, 0, `${script} --help exited ${result.status}: ${result.stderr}`);
+  return result.stdout;
+}
+
+/**
+ * The flag vocabulary the documents may use: whatever `r2c --help` and
+ * `install.mjs --help` really print today.
+ */
+function documentedFlagSources() {
+  const cli = helpOutput('bin/r2c.js');
+  const bootstrap = helpOutput('scripts/install.mjs');
+  const flags = new Set();
+  for (const text of [cli, bootstrap]) {
+    for (const match of text.matchAll(/--[a-z][a-z-]*/g)) flags.add(match[0]);
+  }
+  flags.add('--help');
+  flags.add('-h');
+  const topLevel = sectionText(cli, 'Commands:', 'Global options:')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line !== '');
+  return { flags, topLevel, bootstrap };
+}
+
+function sectionText(text, startMarker, endMarker) {
+  const start = text.indexOf(startMarker);
+  assert.notEqual(start, -1, `help output has no ${startMarker}`);
+  const end = text.indexOf(endMarker, start);
+  assert.notEqual(end, -1, `help output has no ${endMarker}`);
+  return text.slice(start + startMarker.length, end);
+}
+
+const HELP = documentedFlagSources();
+const ADAPTER_SUBCOMMANDS = ['install', 'uninstall', 'doctor', 'smoke', 'list', 'prune'];
+const GH_FLAGS = new Set(['-R', '--repo', '-p', '--pattern', '-D', '--dir']);
+
+/** The docs that describe how to install r2c. */
+function installDocs() {
+  return ['README.md', 'docs/install.md', ...ADAPTER_IDS.map((id) => `adapters/${id}/README.md`)];
+}
+
+// --- single channel -------------------------------------------------------
+
+test('no install doc offers a second channel or the retired npx runner', () => {
+  for (const rel of installDocs()) {
+    const text = read(rel);
+    for (const [label, pattern] of SECOND_CHANNEL) {
+      assert.doesNotMatch(text, pattern, `${rel} reinstates ${label}`);
+    }
+  }
+});
+
+test('every markdown doc except the dated preflight log avoids npx', () => {
+  const files = ['README.md', 'CHANGELOG.md'];
+  const walk = (dir) => {
+    for (const entry of readdirSync(join(REPO, dir), { withFileTypes: true })) {
+      const rel = `${dir}/${entry.name}`;
+      if (entry.isDirectory()) walk(rel);
+      else if (entry.name.endsWith('.md')) files.push(rel);
+    }
+  };
+  walk('docs');
+  walk('adapters');
+  for (const rel of files) {
+    if (rel === 'docs/blue-zone/preflight.md') continue;
+    assert.doesNotMatch(read(rel), /\bnpx\b/, `${rel} still names npx`);
+  }
+});
+
+test('install doc names the four release assets and the bootstrap, not a package', () => {
   const install = read('docs/install.md');
-  assert.match(install, /adapter install <agent> --from <payload-dir\|r2c-payload-0\.1\.0\.tgz>/);
-  assert.match(install, /## Payload: `--from <dir\|tgz>`/);
+  for (const asset of [
+    'r2c-engine-<V>.tgz',
+    'r2c-payload-<V>.tgz',
+    'install.mjs',
+    'SHA256SUMS.txt',
+  ]) {
+    assert.ok(install.includes(asset), `install doc does not name ${asset}`);
+  }
+  assert.match(install, /There is no npm channel and no manual\s+payload copy/);
+});
+
+// --- install.md: the four sections ----------------------------------------
+
+test('install doc covers the bootstrap, detection, payload and doctor', () => {
+  const install = read('docs/install.md');
+  assert.match(install, /gh release download v0\.1\.0 -R hesl2636\/RTOSv3_R2C_pipiline -p install\.mjs/);
+  assert.match(install, /node \.r2c\/bootstrap\/install\.mjs --agent claude-code --version 0\.1\.0 --project \./);
+  assert.match(install, /node ".r2c\\bootstrap\\install\.mjs"/);
+  assert.match(install, /node scripts\/install\.mjs --agent claude-code --version 0\.1\.0/);
   assert.match(install, /AGENT_NOT_DETECTED/);
   assert.match(install, /## Doctor/);
   for (const id of ADAPTER_IDS) {
-    assert.ok(install.includes(`adapter install <agent>`), 'install doc must install adapters');
     assert.ok(install.includes(`\`${id}\``), `install doc is missing adapter ${id}`);
   }
 });
 
-test('install doc covers upgrade with payload version = engine version', () => {
-  const upgrade = section(read('docs/install.md'), '## Upgrade');
-  assert.match(upgrade, /Re-run `adapter install <agent>`/);
-  assert.match(upgrade, /payload version defaults to\s+the engine version/);
-  assert.match(upgrade, /adapter doctor/);
-  assert.match(upgrade, /no-op/);
-});
-
-test('install doc defines rollback as old engine + old payload, not PATH', () => {
-  const rollback = section(read('docs/install.md'), '## Rollback');
-  assert.match(rollback, /--from <old-payload-dir\|r2c-payload-<old-V>\.tgz> --force/);
-  assert.match(rollback, /--plugin <old-V>/);
-  assert.match(rollback, /Pointing `PATH` back at an older engine is not a rollback/);
-  assert.match(rollback, /doctor/);
-});
-
-test('install doc covers uninstall and --purge-state semantics', () => {
-  const uninstall = section(read('docs/install.md'), '## Uninstall');
-  assert.match(uninstall, /adapter uninstall <agent>/);
+test('install, upgrade, rollback and uninstall each end with the next command', () => {
+  const install = read('docs/install.md');
+  for (const heading of INSTALL_SECTIONS) {
+    const body = section(install, heading);
+    const tail = lastLine(body);
+    assert.match(tail, new RegExp(`^Next: \`(?:node|git) .+\``), `${heading} does not end with a next command: ${tail}`);
+    assert.match(tail, /bin\/r2c\.js|git status/, `${heading} next command names no engine: ${tail}`);
+  }
+  const upgrade = section(install, '## Upgrade');
+  assert.match(upgrade, /--version <new-V>/);
+  assert.match(upgrade, /engine, payload and adapters move\s+together/);
+  assert.match(upgrade, /no-op|writes nothing/, 'upgrade must name the idempotent re-run');
+  const rollback = section(install, '## Rollback');
+  assert.match(rollback, /--version <old-V>/);
+  assert.match(rollback, /not pointing `PATH` at an older engine/);
+  assert.match(rollback, /--force/);
+  assert.match(rollback, /cache\/payload-<old-V>/);
+  const uninstall = section(install, '## Uninstall');
+  assert.match(uninstall, /adapter uninstall claude-code/);
   assert.match(uninstall, /--purge-state/);
   assert.match(uninstall, /is \*\*kept\*\* by default/);
   assert.match(uninstall, /receipt/);
 });
 
-test('install doc states that B and C have no runtime guard', () => {
-  const install = read('docs/install.md');
-  assert.match(install, /## B and C have no runtime guard/);
-  assert.match(install, /cannot intercept tool calls/);
-  assert.match(install, /`hooks` trust|`\/hooks` trust/);
+test('README has the four install sections, each ending with the next command', () => {
+  const readme = read('README.md');
+  for (const heading of README_SECTIONS) {
+    const body = subsection(readme, heading);
+    const tail = lastLine(body);
+    assert.match(tail, /^下一步：`/, `${heading} does not end with 下一步: ${tail}`);
+  }
+  assert.match(subsection(readme, '### 首次安装'), /gh release download v0\.1\.0 -R hesl2636\/RTOSv3_R2C_pipiline/);
+  assert.match(subsection(readme, '### 首次安装'), /node scripts\/install\.mjs --agent claude-code/);
+  assert.match(subsection(readme, '### 升级'), /--version <new-V>/);
+  assert.match(subsection(readme, '### 回滚'), /--version <old-V>/);
+  assert.match(subsection(readme, '### 卸载'), /adapter uninstall claude-code/);
 });
 
-test('install doc lists per-scope landing paths for every adapter', () => {
+// --- command contract -----------------------------------------------------
+
+test('every documented node command uses flags and subcommands the CLI prints', () => {
+  const docs = [...installDocs(), 'docs/plugins.md'];
+  const seen = { node: 0, gh: 0, engine: 0 };
+  for (const rel of docs) {
+    for (const { line } of commandLines(read(rel))) {
+      const [program, second, third] = line.split(/\s+/);
+      if (program === 'gh') {
+        seen.gh += 1;
+        for (const token of line.split(/\s+/).filter((part) => part.startsWith('-'))) {
+          assert.ok(GH_FLAGS.has(token), `${rel}: gh flag ${token} is not documented gh usage`);
+        }
+        continue;
+      }
+      if (program !== 'node') continue;
+      // A shim invocation (`shims/hook.mjs`) has its own flag vocabulary.
+      if (line.includes('hook.mjs')) continue;
+      seen.node += 1;
+      for (const flag of line.matchAll(/--[a-z][a-z-]*/g)) {
+        assert.ok(HELP.flags.has(flag[0]), `${rel}: ${flag[0]} is not in r2c --help or install.mjs --help`);
+      }
+      if (second === undefined) continue;
+      if (second.endsWith('install.mjs')) {
+        assert.match(line, /--agent [a-z-]+/, `${rel}: the bootstrap requires --agent`);
+        seen.engine += 1;
+        continue;
+      }
+      if (!second.endsWith('r2c.js')) continue;
+      seen.engine += 1;
+      if (third === undefined) continue;
+      if (third === 'adapter') {
+        const sub = line.split(/\s+/)[3];
+        assert.ok(
+          ADAPTER_SUBCOMMANDS.includes(sub),
+          `${rel}: adapter subcommand ${sub} is not one of ${ADAPTER_SUBCOMMANDS.join('/')}`,
+        );
+      } else if (third !== '--version') {
+        assert.ok(HELP.topLevel.includes(third), `${rel}: ${third} is not a top-level r2c command`);
+      }
+    }
+  }
+  assert.ok(seen.node >= 10, `expected the docs to carry the real commands, saw ${seen.node}`);
+  assert.ok(seen.gh >= 2, `expected gh download commands for both platforms, saw ${seen.gh}`);
+  assert.ok(seen.engine >= 6, `expected engine entry commands, saw ${seen.engine}`);
+});
+
+test('both platform variants are separately copy-pasteable and quoting is stated', () => {
+  for (const rel of ['README.md', 'docs/install.md']) {
+    const text = read(rel);
+    const blocks = fencedBlocks(text);
+    assert.ok(blocks.some((block) => block.lang === 'bash'), `${rel} has no POSIX block`);
+    assert.ok(blocks.some((block) => block.lang === 'bat'), `${rel} has no Windows block`);
+    const posix = blocks.filter((block) => block.lang === 'bash').map((block) => block.body).join('\n');
+    const windows = blocks.filter((block) => block.lang === 'bat').map((block) => block.body).join('\n');
+    assert.match(posix, /mkdir -p \.r2c\/bootstrap/, `${rel} POSIX block does not create the bootstrap dir`);
+    assert.match(windows, /mkdir \.r2c\\bootstrap/, `${rel} Windows block does not create the bootstrap dir`);
+    assert.match(windows, /node "\.r2c\\bootstrap\\install\.mjs"/, `${rel} Windows block is not quoted`);
+    assert.match(text, /quote|quoted|引号/i, `${rel} does not state the quoting rule`);
+    assert.match(text, /--scope/, `${rel} does not state the scope switch`);
+  }
+});
+
+test('scopes and landing paths still match every adapter declaration', () => {
   const install = read('docs/install.md');
   for (const id of ADAPTER_IDS) {
     assert.ok(install.includes(`\`${id}\``), `install doc is missing adapter ${id}`);
+    const declaration = adapter(id);
+    const row = install.split('\n').find((line) => line.startsWith(`| \`${id}\``));
+    assert.ok(row, `install doc has no landing-path row for ${id}`);
+    for (const scope of declaration.scopes) {
+      assert.ok(
+        install.includes(scope === 'user' ? '`~/' : '`<P>/'),
+        `install doc has no ${scope} landing path`,
+      );
+    }
   }
   assert.match(install, /--scope user/);
+  assert.match(install, /\.r2c\/engine\/<V>\//);
+  assert.match(install, /~\/\.r2c\/engine\/<V>\//);
   assert.match(install, /~\/\.claude\//);
   assert.match(install, /~\/\.dsh\//);
   assert.match(install, /~\/\.omp\//);
   assert.match(install, /~\/\.config\/opencode\//);
 });
 
+// --- offline and private --------------------------------------------------
+
+test('offline section matches the credential chain, cache and bases in code', () => {
+  const install = read('docs/install.md');
+  const offline = section(install, '## Offline and private downloads');
+  const ghToken = offline.indexOf('GH_TOKEN');
+  const gitHubToken = offline.indexOf('GITHUB_TOKEN');
+  const gitFill = offline.indexOf('git credential fill');
+  assert.ok(ghToken !== -1 && gitHubToken !== -1 && gitFill !== -1, 'credential chain is incomplete');
+  assert.ok(ghToken < gitHubToken && gitHubToken < gitFill, 'credential order must be GH_TOKEN → GITHUB_TOKEN → git credential fill');
+  assert.match(offline, /gh auth login/);
+  assert.match(offline, /~\/\.r2c\/cache\/payload-<V>/);
+  assert.match(offline, /--from <dir\|tgz>/);
+  assert.match(offline, /R2C_RELEASE_BASE/);
+  assert.match(offline, /--release-base <dir>/);
+  assert.match(offline, /<base>\/v<V>\/<asset>/);
+  assert.match(offline, /nothing is fetched/);
+
+  // The code really walks that chain, keeps the cache there and takes the same flag.
+  for (const rel of ['scripts/install.mjs', 'src/adapter/payload.js']) {
+    const source = read(rel);
+    assert.match(source, /\['GH_TOKEN', 'GITHUB_TOKEN'\]/, `${rel} no longer walks GH_TOKEN then GITHUB_TOKEN`);
+    assert.match(source, /git credential fill|credential', 'fill'/, `${rel} lost the git credential fallback`);
+  }
+  assert.match(read('scripts/install.mjs'), /--release-base <dir\|url>/);
+  assert.match(read('scripts/install.mjs'), /'\.r2c', 'engine'/);
+  assert.match(read('src/adapter/payload.js'), /'\.r2c', 'cache', `payload-\$\{version\}`/);
+  assert.match(read('src/adapter/payload.js'), /'payload', version/);
+});
+
+test('install doc still defines the B and C limitation', () => {
+  const install = read('docs/install.md');
+  assert.match(install, /## B and C have no runtime guard/);
+  assert.match(install, /cannot intercept tool calls/);
+  assert.match(install, /`\/hooks` trust/);
+});
+
 // --- forbidden literals ---------------------------------------------------
 
-test('README and install doc contain no yellow-zone or internal-registry literals', () => {
-  for (const rel of ['README.md', 'docs/install.md']) {
+test('install docs contain no yellow-zone or internal-registry literals', () => {
+  for (const rel of installDocs()) {
     const text = read(rel);
     for (const [label, pattern] of FORBIDDEN) {
       assert.doesNotMatch(text, pattern, `${rel} contains ${label}`);

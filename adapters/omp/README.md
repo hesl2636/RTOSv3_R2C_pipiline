@@ -18,10 +18,14 @@ and leaks across projects.
 ## Install
 
 ```bash
-npx r2c-runner adapter install omp --from r2c-payload-0.1.0.tgz --project .
-npx r2c-runner adapter doctor  omp --project .
-npx r2c-runner adapter uninstall omp --project .
+node .r2c/engine/<V>/bin/r2c.js adapter install omp --project .
+node .r2c/engine/<V>/bin/r2c.js adapter doctor omp --project .
+node .r2c/engine/<V>/bin/r2c.js adapter uninstall omp --project .
 ```
+
+The engine resolves `r2c-payload-<V>.tgz` from the GitHub Release at its own
+version; add `--from <payload-dir|r2c-payload-<V>.tgz>` for an offline install.
+A user-scope install uses `~/.r2c/engine/<V>/bin/r2c.js` and `--scope user`.
 
 ## Hooks
 
