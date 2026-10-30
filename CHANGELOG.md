@@ -13,6 +13,12 @@ step-by-step across the engine, the payload, and all five agent adapters; see
 - Payload builder (`node scripts/release.mjs`) producing the deterministic
   `r2c-payload-0.1.0.tgz` archive, its `r2c-payload.json` manifest, and
   `SHA256SUMS.txt`.
+- One release path: a tag builds exactly four assets (`r2c-engine-0.1.0.tgz`,
+  `r2c-payload-0.1.0.tgz`, `install.mjs`, `SHA256SUMS.txt`) from one
+  reproducible build. `release.mjs --check` is the pre-publish gate (asset
+  whitelist, locked engine ranges, payload manifest coverage, `docs/compat.md`,
+  CHANGELOG section, lockfile), and npm publishing is gone along with its
+  token and provenance permissions.
 - Engine release asset `r2c-engine-0.1.0.tgz` (CLI entry, sources, schema,
   `package.json`, the vendored `yaml` dependency and LICENSE) plus the
   self-contained `scripts/install.mjs` bootstrap that downloads the engine,
@@ -35,6 +41,5 @@ step-by-step across the engine, the payload, and all five agent adapters; see
   reports hand-edited copies and uninstall reverts them.
 - Hook shims for stop, claim, and pre-tool-use events in each agent's native
   stdin/stdout dialect.
-- CI gates for tests, manifest validation, release contract checks, the npm pack
-  whitelist, and the acceptance matrix, plus manual live probes and a tag-gated
-  release workflow.
+- CI gates for tests, manifest validation, the release asset contract, and the
+  acceptance matrix, plus manual live probes and a tag-gated release workflow.
