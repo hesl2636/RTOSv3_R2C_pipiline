@@ -17,7 +17,7 @@ import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { withPath } from './support/env.js';
-import { releaseAuthHint, releaseCredential } from '../src/adapter/payload.js';
+import { releaseAuthHint, releaseCredential, releaseEndpoints } from '../src/adapter/payload.js';
 import { assetUnavailable, authCredential } from '../scripts/install.mjs';
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -163,6 +163,12 @@ test('with no credential at all the chain reports nothing and names gh auth logi
   withFakeGit(t, fakeGit(t), { password: null });
   assert.deepEqual(releaseCredential(), { token: null, source: null });
 
+  // No credential still installs from a public release: the anonymous download
+  // uses the plain web URL instead of the API.
+  const anonymous = releaseEndpoints({ version: VERSION, token: null });
+  assert.equal(anonymous.kind, 'direct');
+  assert.match(anonymous.archive, /^https:\/\/github\.com\/hesl2636\/RTOSv3_R2C_pipiline\/releases\/download\//);
+
   const hint = releaseAuthHint(404, { token: null, source: null });
   assert.match(hint, /404/);
   assert.match(hint, /private/i);
@@ -192,6 +198,7 @@ test('the bootstrap walks the same credential chain and its 404 names gh auth lo
     status: 404,
     credential: { token: null, source: null },
   });
+  assert.equal(missing.code, 'ENGINE_AUTH_REQUIRED');
   assert.equal(missing.exitCode, 1);
   assert.match(missing.message, /404/);
   assert.match(missing.message, /token is required/i);
