@@ -96,6 +96,10 @@ export function toPosix(value) {
   return value.split(sep).join('/');
 }
 
+/**
+ * True when `child` is `parent` itself or lives beneath it, on every platform.
+ * The one definition of "inside the project root" in the engine.
+ */
 export function isInside(parent, child) {
   const rel = relative(parent, child);
   return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel));
@@ -159,10 +163,77 @@ export function createDirLink(linkPath, targetPath) {
 }
 
 /**
- * Absolute path of a receipt entry. Agent config is recorded absolute, layout
- * copies project-relative (so a moved or renamed project still resolves them).
+ * Resolve a path the receipt recorded at install time against the project that
+ * is being read now.
+ *
+ * A renamed or moved project keeps every file, but not the absolute paths the
+ * receipt recorded: a path that no longer exists but lived under the recorded
+ * root is re-rooted at the live project root. Anything outside that root — the
+ * user home of a `user` scope install, an engine on another drive — is returned
+ * untouched, so a move never redirects a deletion elsewhere.
  */
-export function receiptFilePath(entry, projectRoot) {
-  if (entry.kind !== 'layout' || isAbsolute(entry.path)) return entry.path;
-  return join(projectRoot, entry.path);
+export function resolveRecordedPath(path, { projectRoot, recordedRoot = null }) {
+  if (typeof path !== 'string' || path === '') return path;
+  if (existsSync(path) || recordedRoot === null || recordedRoot === projectRoot) return path;
+  if (!isInside(recordedRoot, path)) return path;
+  return join(projectRoot, relative(recordedRoot, path));
+}
+
+/**
+ * Absolute path of one receipt entry.
+ *
+ * Agent config is recorded absolute, layout copies project-relative. Both are
+ * resolved live-first and only fall back to `recordedRoot` (the receipt's
+ * `project_root`) when the file is absent there, so install, doctor and
+ * uninstall read one receipt with one rule.
+ */
+export function receiptEntryPath(entry, options) {
+  const { projectRoot, recordedRoot = null } = options;
+  if (entry.kind === 'layout' && !isAbsolute(entry.path)) {
+    const live = join(projectRoot, entry.path);
+    if (existsSync(live) || recordedRoot === null) return live;
+    return resolveRecordedPath(join(recordedRoot, entry.path), options);
+  }
+  return resolveRecordedPath(entry.path, options);
+}
+
+/**
+ * A receipt read for a project that may have moved since the install.
+ *
+ * Every recorded absolute path — payload home, engine home and entry, merged
+ * files, created directories — is re-rooted at the live project root when the
+ * old location is gone. `files` is left as recorded (`layout` entries are
+ * project-relative by contract) and resolved per entry with
+ * `receiptEntryPath`, so a receipt is never rewritten just to read it.
+ */
+export function liveReceipt(receipt, projectRoot) {
+  const recordedRoot = receipt.project_root ?? null;
+  const resolve = (path) => resolveRecordedPath(path, { projectRoot, recordedRoot });
+  const engine = receipt.engine ?? null;
+  return {
+    ...receipt,
+    payload_home: typeof receipt.payload_home === 'string' ? resolve(receipt.payload_home) : null,
+    engine: engine === null ? null : {
+      ...engine,
+      home: typeof engine.home === 'string' ? resolve(engine.home) : engine.home,
+      entry: typeof engine.entry === 'string' ? resolve(engine.entry) : engine.entry,
+    },
+    merged: Array.isArray(receipt.merged)
+      ? receipt.merged.map((entry) => (
+        typeof entry?.file === 'string' ? { ...entry, file: resolve(entry.file) } : entry
+      ))
+      : receipt.merged,
+    merged_files_created: Array.isArray(receipt.merged_files_created)
+      ? receipt.merged_files_created.map(resolve)
+      : receipt.merged_files_created,
+    backups: Array.isArray(receipt.backups)
+      ? receipt.backups.map((entry) => ({
+        ...entry,
+        path: typeof entry?.path === 'string' ? resolve(entry.path) : entry?.path,
+        backup: typeof entry?.backup === 'string' ? resolve(entry.backup) : entry?.backup,
+      }))
+      : receipt.backups,
+    dirs_created: Array.isArray(receipt.dirs_created) ? receipt.dirs_created.map(resolve) : receipt.dirs_created,
+    steps_file: typeof receipt.steps_file === 'string' ? resolve(receipt.steps_file) : receipt.steps_file,
+  };
 }

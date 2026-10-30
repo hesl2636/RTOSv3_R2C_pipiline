@@ -15,9 +15,14 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import { PAYLOAD_MANIFEST } from '../plugin.js';
 import { installDir, stateDir } from './state.js';
-import { removePath } from './util.js';
+import { removePath, resolveRecordedPath } from './util.js';
 
-function readJson(file) {
+/**
+ * Tolerant receipt/manifest reader: a corrupt file answers `null` instead of
+ * throwing, which is what ownership checks want (doctor reports corruption).
+ * Named apart from `util.js`'s strict `readJson` on purpose.
+ */
+function readJsonOrNull(file) {
   try {
     return JSON.parse(readFileSync(file, 'utf8'));
   } catch {
@@ -33,7 +38,7 @@ export function receiptsAcrossScopes(projectRoot) {
     if (!existsSync(dir)) continue;
     for (const name of readdirSync(dir)) {
       if (!name.endsWith('.json') || name.endsWith('.pending.json')) continue;
-      const receipt = readJson(join(dir, name));
+      const receipt = readJsonOrNull(join(dir, name));
       // A corrupt receipt is doctor's problem, not ownership's.
       if (receipt !== null && typeof receipt === 'object') found.push({ state, receipt });
     }
@@ -43,13 +48,20 @@ export function receiptsAcrossScopes(projectRoot) {
 
 /**
  * The adapter that still references `home`, ignoring the receipt that is being
- * written (`exclude` = `{state, adapter}`), or `null`.
+ * written (`exclude` = `{state, adapter}`), or `null`. Receipts recorded in a
+ * project that has since moved are re-rooted first, so a shared engine is not
+ * mistaken for an orphan.
  */
 function referencedBy(home, projectRoot, exclude, homeOf) {
   if (typeof home !== 'string' || home === '') return null;
   for (const entry of receiptsAcrossScopes(projectRoot)) {
     if (exclude !== null && entry.state === exclude.state && entry.receipt.adapter === exclude.adapter) continue;
-    if (homeOf(entry.receipt) === home) return entry.receipt.adapter;
+    const recorded = homeOf(entry.receipt);
+    const resolved = resolveRecordedPath(recorded, {
+      projectRoot,
+      recordedRoot: entry.receipt.project_root ?? null,
+    });
+    if (resolved === home) return entry.receipt.adapter;
   }
   return null;
 }
@@ -62,23 +74,30 @@ export function engineReferenced(home, projectRoot, exclude = null) {
   return referencedBy(home, projectRoot, exclude, (receipt) => receipt.engine?.home);
 }
 
-/** `<…>/.r2c/engine/<V>` whose `package.json` says the same version. */
-export function isEngineHome(home, version) {
+/**
+ * `<…>/.r2c/<kind>/<V>` — the shape every engine and payload home has — that
+ * also passes `probe`. Anything recursive is deleted only after this matches,
+ * so a receipt is a record, not permission to delete an arbitrary path.
+ */
+function isVersionHome(home, version, kind, probe) {
   if (typeof home !== 'string' || home === '' || typeof version !== 'string') return false;
-  if (basename(dirname(home)) !== 'engine') return false;
+  if (basename(dirname(home)) !== kind) return false;
   if (basename(dirname(dirname(home))) !== '.r2c') return false;
   if (basename(home) !== version) return false;
-  if (!existsSync(join(home, 'bin', 'r2c.js'))) return false;
-  return readJson(join(home, 'package.json'))?.version === version;
+  return probe(home);
+}
+
+/** `<…>/.r2c/engine/<V>` whose `package.json` says the same version. */
+export function isEngineHome(home, version) {
+  return isVersionHome(home, version, 'engine', (dir) => (
+    existsSync(join(dir, 'bin', 'r2c.js'))
+    && readJsonOrNull(join(dir, 'package.json'))?.version === version
+  ));
 }
 
 /** `<…>/.r2c/payload/<V>` carrying a payload manifest. */
 export function isPayloadHome(home, version) {
-  if (typeof home !== 'string' || home === '' || typeof version !== 'string') return false;
-  if (basename(dirname(home)) !== 'payload') return false;
-  if (basename(dirname(dirname(home))) !== '.r2c') return false;
-  if (basename(home) !== version) return false;
-  return existsSync(join(home, PAYLOAD_MANIFEST));
+  return isVersionHome(home, version, 'payload', (dir) => existsSync(join(dir, PAYLOAD_MANIFEST)));
 }
 
 /**
@@ -90,23 +109,28 @@ export function isPayloadHome(home, version) {
 export function supersededVersionSet({ prior, current, projectRoot }) {
   if (prior === null || prior === undefined) return [];
   const exclude = { state: current.state_dir, adapter: current.adapter };
+  // A receipt written before the project moved names the old absolute homes;
+  // resolve them against the live root before comparing or deleting.
+  const options = { projectRoot, recordedRoot: prior.project_root ?? null };
   const plan = [];
   const engine = prior.engine ?? null;
+  const engineHome = engine === null ? null : resolveRecordedPath(engine.home, options);
   if (
     engine !== null &&
-    engine.home !== current.engine?.home &&
-    isEngineHome(engine.home, engine.version) &&
-    engineReferenced(engine.home, projectRoot, exclude) === null
+    engineHome !== current.engine?.home &&
+    isEngineHome(engineHome, engine.version) &&
+    engineReferenced(engineHome, projectRoot, exclude) === null
   ) {
-    plan.push({ path: engine.home, kind: 'engine' });
+    plan.push({ path: engineHome, kind: 'engine' });
   }
   const version = prior.payload?.version;
+  const payloadHome = resolveRecordedPath(prior.payload_home, options);
   if (
-    prior.payload_home !== current.payload_home &&
-    isPayloadHome(prior.payload_home, version) &&
-    payloadReferenced(prior.payload_home, projectRoot, exclude) === null
+    payloadHome !== current.payload_home &&
+    isPayloadHome(payloadHome, version) &&
+    payloadReferenced(payloadHome, projectRoot, exclude) === null
   ) {
-    plan.push({ path: prior.payload_home, kind: 'payload' });
+    plan.push({ path: payloadHome, kind: 'payload' });
   }
   return plan;
 }

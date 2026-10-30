@@ -2,7 +2,8 @@
  * Payload resolution, verification and materialisation.
  *
  * Resolution order (#7 §1): `--from <dir>` > `R2C_PLUGIN_SOURCE` >
- * `~/.r2c/cache/payload-<V>` > GitHub Release download. A `--from` directory is
+ * `~/.r2c/cache/payload-<V>` > the release (see `release.js` for the
+ * transport). A `--from` directory is
  * either an unpacked payload (it contains `r2c-payload.json`) or a source-tree
  * root (it contains `package.json`, `pack/` and `adapters/`); for a source tree
  * the payload version comes from `package.json` and the per-file hashes are
@@ -12,7 +13,6 @@
  * mismatching `r2c-payload.json.files` entry aborts with exit 2 and zero
  * installed bytes.
  */
-import { spawnSync } from 'node:child_process';
 import {
   existsSync,
   mkdtempSync,
@@ -23,19 +23,18 @@ import {
   statSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { basename, dirname, extname, join, relative, resolve } from 'node:path';
+import { basename, dirname, join, relative, resolve } from 'node:path';
 import { EXIT_CODES, R2cError } from '../errors.js';
 import {
   PAYLOAD_MANIFEST,
   PLUGIN_SCHEMA,
   comparePayloadPaths,
   manifestBuffer,
-  payloadAssetName,
   readTarGz,
   verifyPluginFiles,
 } from '../plugin.js';
 import { isValidRange, isValidVersion } from '../version.js';
-import { which } from './detect.js';
+import { fetchPayloadArchive, hintFrom, sumsDigest } from './release.js';
 import { stateDir } from './state.js';
 import {
   atomicWriteFile,
@@ -51,128 +50,12 @@ import {
 } from './util.js';
 
 export { PLUGIN_SCHEMA };
-const RELEASE_REPO = 'hesl2636/RTOSv3_R2C_pipiline';
-const RELEASE_BASE = `https://github.com/${RELEASE_REPO}/releases/download`;
-const RELEASE_API = `https://api.github.com/repos/${RELEASE_REPO}`;
-
-/**
- * `R2C_RELEASE_BASE` overrides where assets come from (C1): a directory is a
- * flat local release (no fetch at all), an http(s) URL is a mirror shaped
- * `<base>/v<V>/<asset>` exactly like GitHub's `/releases/download/v<V>/`.
- */
-function releaseBaseOverride() {
-  const raw = process.env.R2C_RELEASE_BASE;
-  if (typeof raw !== 'string' || raw.trim() === '') return null;
-  return raw.trim();
-}
-
-function isHttpBase(base) {
-  return /^https?:\/\//i.test(base);
-}
-
-/**
- * Anonymous downloads use the public web URL. Token downloads must go through
- * the REST API: GitHub answers the web download URL with `404` when the
- * repository is private and the request carries a bearer token, while the
- * asset endpoint (`Accept: application/octet-stream`) streams it. Both paths
- * name the same `r2c-payload-<V>.tgz` asset. A custom base is always direct.
- */
-export function releaseEndpoints({ version, token = null, base = null }) {
-  const name = payloadAssetName(version);
-  if (typeof base === 'string' && base !== '') {
-    const trimmed = base.replace(/\/+$/, '');
-    return {
-      kind: 'direct',
-      name,
-      archive: `${trimmed}/v${version}/${name}`,
-      sums: `${trimmed}/v${version}/SHA256SUMS.txt`,
-    };
-  }
-  if (token) {
-    return {
-      kind: 'api',
-      name,
-      release: `${RELEASE_API}/releases/tags/v${version}`,
-      asset: (id) => `${RELEASE_API}/releases/assets/${id}`,
-    };
-  }
-  return {
-    kind: 'direct',
-    name,
-    archive: `${RELEASE_BASE}/v${version}/${name}`,
-    sums: `${RELEASE_BASE}/v${version}/SHA256SUMS.txt`,
-  };
-}
+// The release transport and credentials live in './release.js'; these
+// re-exports keep the resolver's public surface (and its tests) unchanged.
+export { releaseAuthHint, releaseCredential, releaseEndpoints } from './release.js';
 
 function payloadError(code, message, details = null, exitCode = EXIT_CODES.USAGE) {
   return new R2cError(code, message, details, exitCode);
-}
-
-/**
- * `git credential fill` for github.com, never prompting: GIT_TERMINAL_PROMPT=0
- * plus a short timeout means an unattended download cannot hang on a password
- * prompt, it just finds no credential. `git` is resolved through PATH because
- * a Windows git may be a `.cmd` shim, which needs a shell to start.
- */
-function gitCredentialToken() {
-  const bin = which('git');
-  if (bin === null) return null;
-  const needsShell = process.platform === 'win32' && ['.cmd', '.bat'].includes(extname(bin).toLowerCase());
-  const result = spawnSync(
-    needsShell ? `"${bin}" credential fill` : bin,
-    needsShell ? [] : ['credential', 'fill'],
-    {
-      input: 'protocol=https\nhost=github.com\n\n',
-      encoding: 'utf8',
-      timeout: 5000,
-      windowsHide: true,
-      shell: needsShell,
-      env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
-    },
-  );
-  if (result.error || result.status !== 0 || typeof result.stdout !== 'string') return null;
-  const match = /^password=(.*)$/m.exec(result.stdout);
-  return match === null || match[1] === '' ? null : match[1];
-}
-
-/**
- * Credential chain (C4): `GH_TOKEN` → `GITHUB_TOKEN` → `git credential fill`.
- * `source` names the winning entry so an authorization failure can point at the
- * credential the user has to fix; `null` means "anonymous".
- */
-export function releaseCredential() {
-  for (const name of ['GH_TOKEN', 'GITHUB_TOKEN']) {
-    const value = process.env[name];
-    if (typeof value === 'string' && value !== '') return { token: value, source: name };
-  }
-  const fromGit = gitCredentialToken();
-  return fromGit === null ? { token: null, source: null } : { token: fromGit, source: 'git-credential' };
-}
-
-/**
- * Why an HTTP status means the credential is the problem. A private repository
- * answers `404` (not `401`) to an anonymous request, so "no token" plus `404`
- * is the one case that must ask for a token instead of reporting a missing
- * release.
- */
-export function releaseAuthHint(status, credential) {
-  const anonymous = credential.token === null;
-  if (status === 401 || status === 403) {
-    return `: ${anonymous ? 'the anonymous request' : credential.source} is not authorized for ${RELEASE_REPO}; run \`gh auth login\` or set GH_TOKEN with release read access`;
-  }
-  if (status === 404) {
-    return anonymous
-      ? `: HTTP 404 on a private repository means a token is required — set GH_TOKEN, set GITHUB_TOKEN, or store a github.com credential for \`git credential fill\` (run \`gh auth login\` where it is installed)`
-      : `: HTTP 404 — the release tag or asset is absent, or ${credential.source} cannot see ${RELEASE_REPO}; run \`gh auth login\` or set a GH_TOKEN with contents:read`;
-  }
-  if (status === null && anonymous) {
-    return `: no credential found — set GH_TOKEN, set GITHUB_TOKEN, or store a github.com credential for \`git credential fill\` (run \`gh auth login\` where it is installed)`;
-  }
-  return '';
-}
-
-function hintFrom() {
-  return 'pass --from <payload-dir|payload.tgz> or set R2C_PLUGIN_SOURCE to an unpacked payload (a checkout containing package.json, pack/ and adapters/ works too)';
 }
 
 function parsePayloadManifest(text, file) {
@@ -355,14 +238,6 @@ function resolveInspection(dir, sourceLabel) {
   };
 }
 
-function parseSums(text, assetName) {
-  for (const line of text.split(/\r?\n/)) {
-    const match = /^([0-9a-f]{64})\s+\*?(.+)$/.exec(line.trim());
-    if (match !== null && basename(match[2]) === assetName) return match[1];
-  }
-  return null;
-}
-
 function normalizedManifest(manifest, files) {
   const sortedFiles = Object.fromEntries(
     Object.entries(files).sort(([left], [right]) => comparePayloadPaths(left, right)),
@@ -416,7 +291,7 @@ function resolveTgzPayload(file, sourceLabel) {
   const sumsFile = join(dirname(file), 'SHA256SUMS.txt');
   if (existsSync(sumsFile)) {
     const actual = sha256(buffer);
-    const expected = parseSums(readFileSync(sumsFile, 'utf8'), asset);
+    const expected = sumsDigest(readFileSync(sumsFile, 'utf8'), asset);
     if (expected === null || expected !== actual) {
       throw payloadError(
         'PAYLOAD_CHECKSUM_MISMATCH',
@@ -497,43 +372,9 @@ function extractPayloadArchive(home, entries, manifestBytes) {
   }
 }
 
-/**
- * Read the payload from a local release directory (`R2C_RELEASE_BASE=<dir>`),
- * verifying it against the same `SHA256SUMS.txt` the release publishes. This
- * is the offline path: nothing is fetched and nothing is extracted before the
- * container digest matches.
- */
-function downloadReleaseDir(version, base) {
-  const dir = resolve(process.cwd(), base);
-  const asset = payloadAssetName(version);
-  const archivePath = join(dir, asset);
-  const sumsPath = join(dir, 'SHA256SUMS.txt');
-  const unavailable = (name, file) =>
-    payloadError(
-      'PAYLOAD_UNAVAILABLE',
-      `release v${version} does not carry ${name}: ${file}; ${hintFrom()}`,
-      { version, asset: name, base: dir },
-    );
-  if (!existsSync(archivePath)) throw unavailable(asset, archivePath);
-  if (!existsSync(sumsPath)) throw unavailable('SHA256SUMS.txt', sumsPath);
-  const archive = readFileSync(archivePath);
-  const expected = parseSums(readFileSync(sumsPath, 'utf8'), asset);
-  if (expected === null) {
-    throw payloadError('PAYLOAD_CHECKSUM_MISMATCH', `${sumsPath} has no entry for ${asset}`, {
-      asset,
-      sums: sumsPath,
-    });
-  }
-  const actual = sha256(archive);
-  if (actual !== expected) {
-    throw payloadError(
-      'PAYLOAD_CHECKSUM_MISMATCH',
-      `SHA256SUMS.txt mismatch for ${asset}`,
-      { asset, expected, actual, sums: sumsPath },
-      EXIT_CODES.GATE,
-    );
-  }
-  return stageArchive(archive);
+/** Download the release payload, verify it, and unpack it into a temp dir. */
+async function downloadRelease(version) {
+  return stageArchive(await fetchPayloadArchive(version));
 }
 
 /** Extract a verified payload archive into a temp dir; the caller owns cleanup. */
@@ -554,111 +395,6 @@ function stageArchive(archive) {
     }
   }
   return { dir: temp, cleanup: () => rmSync(temp, { recursive: true, force: true }) };
-}
-
-async function downloadRelease(version) {
-  const declared = releaseBaseOverride();
-  // Spelling out the default base must not degrade the API path a token needs.
-  const base = declared === RELEASE_BASE ? null : declared;
-  if (base !== null && !isHttpBase(base)) return downloadReleaseDir(version, base);
-  // The GitHub credential (env or `git credential fill`) is only for GitHub: a
-  // custom mirror authenticates its own way and must not receive it.
-  const credential = base === null ? releaseCredential() : { token: null, source: null };
-  const token = credential.token;
-  const authHint = (status) => (base === null ? releaseAuthHint(status, credential) : '');
-  const headers = { 'user-agent': 'r2c-runner' };
-  if (token) headers.authorization = `Bearer ${token}`;
-  const endpoints = releaseEndpoints({ version, token, base });
-  const asset = endpoints.name;
-
-  const request = async (url, timeout, extra = null) => {
-    try {
-      return await fetch(url, {
-        headers: extra === null ? headers : { ...headers, ...extra },
-        signal: AbortSignal.timeout(timeout),
-      });
-    } catch (error) {
-      throw payloadError(
-        'PAYLOAD_UNAVAILABLE',
-        `cannot reach the payload release v${version}: ${error.message}${authHint(null)}; ${hintFrom()}`,
-        { version, url, token_source: credential.source },
-      );
-    }
-  };
-
-  let archiveUrl;
-  let response;
-  let sumsResponse;
-  if (endpoints.kind === 'api') {
-    const releaseResponse = await request(endpoints.release, 30_000, {
-      accept: 'application/vnd.github+json',
-    });
-    if (!releaseResponse.ok) {
-      throw payloadError(
-        'PAYLOAD_UNAVAILABLE',
-        `cannot read release v${version}: HTTP ${releaseResponse.status}${authHint(releaseResponse.status)}; ${hintFrom()}`,
-        {
-          version,
-          url: endpoints.release,
-          status: releaseResponse.status,
-          token_source: credential.source,
-        },
-      );
-    }
-    const release = await releaseResponse.json().catch(() => null);
-    const assets = Array.isArray(release?.assets) ? release.assets : [];
-    const archiveAsset = assets.find((entry) => entry?.name === asset);
-    const sumsAsset = assets.find((entry) => entry?.name === 'SHA256SUMS.txt');
-    if (archiveAsset === undefined || sumsAsset === undefined) {
-      const missing = archiveAsset === undefined ? asset : 'SHA256SUMS.txt';
-      throw payloadError(
-        'PAYLOAD_UNAVAILABLE',
-        `release v${version} does not carry ${missing}; ${hintFrom()}`,
-        { version, url: endpoints.release },
-      );
-    }
-    archiveUrl = endpoints.asset(archiveAsset.id);
-    response = await request(archiveUrl, 60_000, { accept: 'application/octet-stream' });
-    sumsResponse = await request(endpoints.asset(sumsAsset.id), 30_000, {
-      accept: 'application/octet-stream',
-    });
-  } else {
-    archiveUrl = endpoints.archive;
-    response = await request(archiveUrl, 60_000);
-    sumsResponse = await request(endpoints.sums, 30_000);
-  }
-
-  if (!response.ok) {
-    throw payloadError(
-      'PAYLOAD_UNAVAILABLE',
-      `cannot download ${asset}: HTTP ${response.status}${authHint(response.status)}; ${hintFrom()}`,
-      { version, url: archiveUrl, status: response.status, token_source: credential.source },
-    );
-  }
-  const archive = Buffer.from(await response.arrayBuffer());
-  if (!sumsResponse.ok) {
-    throw payloadError(
-      'PAYLOAD_UNAVAILABLE',
-      `cannot download SHA256SUMS.txt: HTTP ${sumsResponse.status}; ${hintFrom()}`,
-      { version, status: sumsResponse.status },
-    );
-  }
-  const expected = parseSums(await sumsResponse.text(), asset);
-  if (expected === null) {
-    throw payloadError('PAYLOAD_CHECKSUM_MISMATCH', `SHA256SUMS.txt has no entry for ${asset}`, {
-      asset,
-    });
-  }
-  const actual = sha256(archive);
-  if (actual !== expected) {
-    throw payloadError(
-      'PAYLOAD_CHECKSUM_MISMATCH',
-      `SHA256SUMS.txt mismatch for ${asset}`,
-      { asset, expected, actual },
-      EXIT_CODES.GATE,
-    );
-  }
-  return stageArchive(archive);
 }
 
 function cacheDir(version) {

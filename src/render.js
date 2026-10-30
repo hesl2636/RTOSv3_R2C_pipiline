@@ -3,9 +3,10 @@
  * visible text and of `next --format plain` (spec §4); adapters must not wrap
  * or alter the returned body.
  */
-import { isAbsolute, relative, resolve } from 'node:path';
+import { relative, resolve } from 'node:path';
 import { R2cError, EXIT_CODES } from './errors.js';
 import { findStep, flattenSteps, hasSkillFile, readTaskFile, skillFilePath } from './manifest.js';
+import { isInside } from './adapter/util.js';
 
 function quotePath(file) {
   // Forward slashes are accepted by cmd, PowerShell and POSIX shells on
@@ -28,9 +29,7 @@ export function runnerCommand(entry, { projectRoot = null } = {}) {
   const absolute = resolve(entry);
   if (projectRoot !== null) {
     const inside = relative(projectRoot, absolute);
-    if (inside !== '' && !inside.startsWith('..') && !isAbsolute(inside)) {
-      return `node ${quotePath(inside)}`;
-    }
+    if (inside !== '' && isInside(projectRoot, absolute)) return `node ${quotePath(inside)}`;
   }
   return `node ${quotePath(absolute)}`;
 }

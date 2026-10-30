@@ -78,8 +78,11 @@ is impossible with a local `--release-base` directory, which therefore requires
 
 What the command writes and prints: the engine home, the adapter line, the
 payload source, the layout line, the number of files written, and the next
-command. Re-running the same version with the same parameters fetches nothing,
-writes nothing and exits `0`.
+command. Re-running the same version with the same parameters writes nothing
+and exits `0`: the engine is found in place and is not downloaded again, while
+the payload is still resolved from its source and verified against
+`SHA256SUMS.txt` and `r2c-payload.json` before the no-op is reported (a
+release download is staged in a temporary directory, never cached).
 
 Scope and quoting:
 
@@ -99,6 +102,17 @@ Scope and quoting:
   POSIX shells only; use `%USERPROFILE%` in cmd and `$env:USERPROFILE` in
   PowerShell. `--runner-cmd "node \"C:/tools/r2c/bin/r2c.js\""` is the only
   supported manual override of the installed command.
+
+Two flags are forwarded to the engine's `adapter install`:
+
+- `--force` backs up and replaces files another install owns. That is what a
+  second adapter in the same project needs: the layout (`workflows/`,
+  `tasks/`, `skills/`) already belongs to the first adapter's receipt, so the
+  conflict rule refuses to overwrite it silently. Each replaced file is copied
+  under `.r2c/install/backup/<agent>/` first. Without it the bootstrap exits
+  with the engine's `2` and a `CONFLICT` error.
+- `--profile <name>` selects the dsh profile (default `web`; pass
+  `--scope user` too, dsh is user-scoped) and is ignored by the other adapters.
 
 After the install the layout is already in the project root: `r2c run`
 discovers `workflows/RTOSv3_R2C_pipiline.yaml` with no further step, and
@@ -325,7 +339,9 @@ trust them in `/hooks`, which is a manual step (see below).
 `--from <dir|tgz>` → `R2C_PLUGIN_SOURCE` → `~/.r2c/cache/payload-<V>` → the
 release (a flat `--release-base` directory or an http(s) base). `--plugin <V>`
 selects a cached payload version instead of the engine version; `--from` takes
-precedence over it.
+precedence over it. `R2C_PLUGIN_SOURCE`, `--plugin` and the `r2c.plugin/v1`
+manifest id keep their historical name on purpose; [GLOSSARY.md](../GLOSSARY.md)
+records them as the documented exceptions to the payload vocabulary.
 
 Before anything is written the installer runs: detection → payload
 resolution/verification → engine and agent version gates → plan (`--dry-run`
@@ -367,9 +383,10 @@ Engine: `0` success and idempotent no-op · `1` internal error · `2` usage,
 manifest or conflict error · `3` gate, smoke or validation failure · `4` agent
 not detected or adapter not installed · `5` lock conflict.
 
-Bootstrap: `0` success · `1` download, asset or child failure · `2` usage ·
-`3` checksum or archive failure. A failing `adapter install` keeps its own exit
-code.
+Bootstrap: `0` success · `1` download, asset or spawn failure · `2` usage
+(including an unsupported Node, refused before anything is downloaded) · `3`
+engine-archive checksum or extraction failure. A failing `adapter install`
+keeps its own exit code (`2`–`5`) instead of `1`.
 
 ## B and C have no runtime guard
 

@@ -14,7 +14,7 @@ import { EXIT_CODES, R2cError } from '../errors.js';
 import { isValidRange, satisfies } from '../version.js';
 import { withLock } from '../lock.js';
 import { detectAgent } from './detect.js';
-import { buildPlan, defaultRunnerCommand, loadAdapterDeclaration } from './plan.js';
+import { buildPlan, installedRunnerCommand, loadAdapterDeclaration } from './plan.js';
 import { materializePayload, payloadHome, payloadReady, resolvePayload } from './payload.js';
 import { pointerGet, pointerSet } from './pointer.js';
 import { runAdapterSmoke } from './smoke.js';
@@ -36,8 +36,9 @@ import {
   isInside,
   isLink,
   linkTarget,
+  liveReceipt,
   readJsonIfExists,
-  receiptFilePath,
+  receiptEntryPath,
   removePath,
   sha256File,
   userHome,
@@ -158,7 +159,7 @@ function gateAgent({ detection, adapter }) {
 function backupTarget(state, agentId, timestamp, target, scope, projectRoot) {
   const root = scope === 'user' ? userHome() : projectRoot;
   let rel = relative(root, target);
-  if (rel === '' || rel.startsWith('..') || !isInside(root, target)) {
+  if (rel === '' || !isInside(root, target)) {
     rel = target.replace(/[^a-zA-Z0-9._-]+/g, '_');
   }
   const destination = join(
@@ -303,8 +304,12 @@ async function recoverPending(state, agentId, warnings) {
 }
 
 function collectFilePlan(planEntries, prior, options, projectRoot) {
+  const recordedRoot = prior?.project_root ?? null;
   const priorByPath = new Map(
-    (prior?.files ?? []).map((file) => [pathKey(receiptFilePath(file, projectRoot)), file]),
+    (prior?.files ?? []).map((file) => [
+      pathKey(receiptEntryPath(file, { projectRoot, recordedRoot })),
+      file,
+    ]),
   );
   const conflicts = [];
   const decisions = [];
@@ -349,7 +354,7 @@ function collectFilePlan(planEntries, prior, options, projectRoot) {
   return { conflicts, decisions };
 }
 
-function buildReceipt({ ctx, resolved, adapter, scope, mode, runnerCmd, engine, detection, decisions, merged, mergedFilesCreated, prior, state, home }) {
+function buildReceipt({ ctx, adapter, scope, mode, runnerCmd, report, decisions, merged, mergedFilesCreated, prior, state, home }) {
   const now = ctx.now().toISOString();
   const files = [];
   for (const decision of decisions) {
@@ -377,23 +382,11 @@ function buildReceipt({ ctx, resolved, adapter, scope, mode, runnerCmd, engine, 
     project_root: hasLayout || scope !== 'user' ? ctx.projectRoot : null,
     payload_home: home,
     mode,
-    payload: {
-      version: resolved.manifest.version,
-      sha256: resolved.sha256,
-      source: resolved.source,
-    },
-    engine: {
-      version: ctx.version,
-      requires: adapter.requires?.engine ?? null,
-      home: engine.home,
-      entry: engine.entry,
-    },
+    payload: report.payload,
+    engine: report.engine,
     runner_cmd: runnerCmd,
-    requires: {
-      engine: adapter.requires?.engine ?? null,
-      agent: adapter.requires?.agent ?? null,
-    },
-    agent: { bin: detection.bin, version: detection.version },
+    requires: report.requires,
+    agent: report.agent,
     files,
     merged,
     merged_files_created: mergedFilesCreated,
@@ -449,7 +442,24 @@ async function installOnce({ ctx, agentId, options, state, resolved, adapter, ma
 
     const home = payloadHome(scope, ctx.projectRoot, resolved.manifest.version);
     const engine = resolveEngineHome(ctx, options);
-    const runnerCmd = defaultRunnerCommand(ctx, engine, { scope, projectRoot: ctx.projectRoot });
+    const runnerCmd = installedRunnerCommand(ctx, engine, scope);
+    // One set of report fragments for the dry-run, noop and installed results,
+    // so a payload or engine field can only be described one way.
+    const report = {
+      payload: {
+        version: resolved.manifest.version,
+        sha256: resolved.sha256,
+        source: resolved.source,
+      },
+      engine: {
+        version: ctx.version,
+        requires: adapter.requires?.engine ?? null,
+        home: engine.home,
+        entry: engine.entry,
+      },
+      requires: { engine: adapter.requires?.engine ?? null, agent: adapter.requires?.agent ?? null },
+      agent: { bin: detection.bin, version: detection.version },
+    };
     const plan = buildPlan({
       resolved,
       adapter,
@@ -463,7 +473,10 @@ async function installOnce({ ctx, agentId, options, state, resolved, adapter, ma
     });
     warnings.push(...plan.warnings);
 
-    const prior = readJsonIfExists(receiptPath(state, adapter.id));
+    const stored = readJsonIfExists(receiptPath(state, adapter.id));
+    // Re-root the receipt's absolute records (payload/engine homes, created
+    // dirs) at this project, so a moved project upgrades in place.
+    const prior = stored === null ? null : liveReceipt(stored, ctx.projectRoot);
     if (!options.dryRun) await recoverPending(state, adapter.id, warnings);
     const payloadNeeded = !payloadReady(home, resolved);
     const filePlan = plan.entries.filter((entry) => entry.action !== 'merge-json');
@@ -509,20 +522,11 @@ async function installOnce({ ctx, agentId, options, state, resolved, adapter, ma
           changed,
           dry_run: true,
           payload_home: home,
-          payload: {
-            version: resolved.manifest.version,
-            sha256: resolved.sha256,
-            source: resolved.source,
-          },
-          engine: {
-            version: ctx.version,
-            requires: adapter.requires?.engine ?? null,
-            home: engine.home,
-            entry: engine.entry,
-          },
+          payload: report.payload,
+          engine: report.engine,
           runner_cmd: runnerCmd,
-          requires: { engine: adapter.requires?.engine ?? null, agent: adapter.requires?.agent ?? null },
-          agent: { bin: detection.bin, version: detection.version },
+          requires: report.requires,
+          agent: report.agent,
           plan: [
             ...(payloadNeeded ? [{ action: 'payload', target: home }] : []),
             ...writes.map(({ entry }) => ({ action: entry.action, target: entry.target })),
@@ -548,20 +552,11 @@ async function installOnce({ ctx, agentId, options, state, resolved, adapter, ma
           action: 'noop',
           changed: false,
           payload_home: home,
-          payload: {
-            version: resolved.manifest.version,
-            sha256: resolved.sha256,
-            source: resolved.source,
-          },
-          engine: {
-            version: ctx.version,
-            requires: adapter.requires?.engine ?? null,
-            home: engine.home,
-            entry: engine.entry,
-          },
+          payload: report.payload,
+          engine: report.engine,
           runner_cmd: runnerCmd,
-          requires: { engine: adapter.requires?.engine ?? null, agent: adapter.requires?.agent ?? null },
-          agent: { bin: detection.bin, version: detection.version },
+          requires: report.requires,
+          agent: report.agent,
           files: [],
           skipped: decisions.filter((decision) => !decision.write).map(({ entry }) => entry.target),
           warnings,
@@ -705,13 +700,11 @@ async function installOnce({ ctx, agentId, options, state, resolved, adapter, ma
 
       const receipt = buildReceipt({
         ctx,
-        resolved,
         adapter,
         scope,
         mode,
         runnerCmd,
-        engine,
-        detection,
+        report,
         decisions,
         merged: [...merged.values()],
         mergedFilesCreated: [...mergedFilesCreated],
@@ -756,7 +749,10 @@ async function installOnce({ ctx, agentId, options, state, resolved, adapter, ma
           requires: receipt.requires,
           agent: receipt.agent,
           files: receipt.files.filter((file) => writes.some(
-            ({ entry }) => pathKey(entry.target) === pathKey(receiptFilePath(file, ctx.projectRoot)),
+            ({ entry }) => pathKey(entry.target) === pathKey(receiptEntryPath(file, {
+              projectRoot: ctx.projectRoot,
+              recordedRoot: receipt.project_root ?? null,
+            })),
           )),
           skipped: decisions.filter((decision) => !decision.write).map(({ entry }) => entry.target),
           warnings,

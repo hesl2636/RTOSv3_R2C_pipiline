@@ -361,11 +361,14 @@ test('offline section matches the credential chain, cache and bases in code', ()
   assert.match(offline, /nothing is fetched/);
 
   // The code really walks that chain, keeps the cache there and takes the same flag.
-  for (const rel of ['scripts/install.mjs', 'src/adapter/payload.js']) {
+  // The credential chain lives in the release transport; the resolver only
+  // re-exports it.
+  for (const rel of ['scripts/install.mjs', 'src/adapter/release.js']) {
     const source = read(rel);
     assert.match(source, /\['GH_TOKEN', 'GITHUB_TOKEN'\]/, `${rel} no longer walks GH_TOKEN then GITHUB_TOKEN`);
     assert.match(source, /git credential fill|credential', 'fill'/, `${rel} lost the git credential fallback`);
   }
+  assert.match(read('src/adapter/payload.js'), /export \{ releaseAuthHint, releaseCredential, releaseEndpoints \} from '.\/release.js'/);
   assert.match(read('scripts/install.mjs'), /--release-base <dir\|url>/);
   assert.match(read('scripts/install.mjs'), /'\.r2c', 'engine'/);
   assert.match(read('src/adapter/payload.js'), /'\.r2c', 'cache', `payload-\$\{version\}`/);

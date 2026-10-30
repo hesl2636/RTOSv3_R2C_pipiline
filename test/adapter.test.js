@@ -8,6 +8,7 @@ import {
   mkdtempSync,
   readFileSync,
   readdirSync,
+  renameSync,
   rmSync,
   statSync,
   writeFileSync,
@@ -487,4 +488,53 @@ test('linkTarget resolves a real directory link and returns null for plain files
   writeFileSync(plain, 'x');
   assert.equal(linkTarget(plain), null);
   assert.equal(linkTarget(join(dir, 'missing')), null);
+});
+
+test('a renamed project still resolves its own receipt: doctor passes, uninstall reverts it', (t) => {
+  const { project, env } = setup(t);
+  assert.equal(install(env, project).status, 0);
+  const receipt = readReceipt(project);
+  const original = receipt.project_root;
+  assert.equal(original, project);
+
+  const moved = `${project}-moved`;
+  renameSync(project, moved);
+
+  // Doctor reads the same receipt with the live root: nothing is "missing".
+  const doctor = cli(['adapter', 'doctor', 'claude-code', '--project-root', moved, '--json'], { env, cwd: moved });
+  assert.equal(doctor.status, 0, `${doctor.stdout}\n${doctor.stderr}`);
+  const checks = envelope(doctor).data.checks;
+  assert.equal(checks.find((entry) => entry.name === 'receipt.files').status, 'pass');
+
+  // A re-install in the moved project reads the same receipt and finds every
+  // file it owns; it must not resurrect the conflict it used to report.
+  const again = install(env, moved);
+  assert.equal(again.status, 0, `${again.stdout}
+${again.stderr}`);
+  assert.equal(envelope(again).data.action, 'noop');
+
+  const removed = cli(['adapter', 'uninstall', 'claude-code', '--project-root', moved, '--json'], { env, cwd: moved });
+  assert.equal(removed.status, 0, `${removed.stdout}\n${removed.stderr}`);
+  const data = envelope(removed).data;
+
+  // Every file the receipt owns is reported and really gone from the moved
+  // project, not from the stale install-time root.
+  const reported = new Set(data.files.map((entry) => entry.path));
+  const livePath = (file) => (
+    file.kind === 'layout' ? join(moved, file.path) : join(moved, relative(original, file.path))
+  );
+  for (const file of receipt.files) {
+    const absolute = livePath(file);
+    assert.ok(reported.has(absolute), `uninstall reports ${absolute}`);
+    assert.equal(existsSync(absolute), false, `${absolute} is gone`);
+  }
+  assert.equal(existsSync(join(moved, '.claude')), false, 'agent config is gone');
+  assert.equal(existsSync(join(moved, 'workflows')), false, 'layout dirs are gone');
+  assert.equal(existsSync(join(moved, '.r2c', 'install', 'claude-code.json')), false);
+  assert.equal(data.payload_removed, true, 'the payload recorded at the old root is removed');
+  assert.ok(!existsSync(join(moved, '.r2c', 'payload', ENGINE_VERSION)));
+  assert.ok(
+    data.leftover.every((entry) => !entry.startsWith('modified:')),
+    `nothing diverged from the receipt: ${JSON.stringify(data.leftover)}`,
+  );
 });

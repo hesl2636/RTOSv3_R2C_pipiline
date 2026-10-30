@@ -18,7 +18,7 @@ import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { withPath } from './support/env.js';
 import { releaseAuthHint, releaseCredential, releaseEndpoints } from '../src/adapter/payload.js';
-import { assetUnavailable, authCredential } from '../scripts/install.mjs';
+import { archivePathProblem, assetUnavailable, authCredential, nodeSupported } from '../scripts/install.mjs';
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const BOOTSTRAP = join(REPO, 'scripts', 'install.mjs');
@@ -368,17 +368,15 @@ test('--version installs engine, payload and adapters at one version and removes
 });
 
 /**
- * A second adapter cannot go through the bootstrap alone: the payload layout
- * (`workflows/`, `tasks/`, `skills/`) already exists and is owned by the first
- * adapter's receipt, so the conflict rule demands `--force`. The receipt it
+ * A second adapter in one project goes through the documented path once
+ * `--force` is accepted: the payload layout (`workflows/`, `tasks/`, `skills/`)
+ * already exists and is owned by the first adapter's receipt. The receipt it
  * writes is what matters here — it shares the same engine and payload homes.
  */
 function installSecondAdapter(project, agent, release, version, env) {
-  const engine = join(project, '.r2c', 'engine', version);
-  const result = spawnSync(
-    process.execPath,
-    [join(engine, 'bin', 'r2c.js'), 'adapter', 'install', '--agent', agent, '--project-root', project, '--engine', engine, '--force', '--no-smoke', '--json'],
-    { cwd: project, encoding: 'utf8', env: { ...env, R2C_RELEASE_BASE: release } },
+  const result = bootstrap(
+    ['--agent', agent, '--version', version, '--project', project, '--release-base', release, '--force'],
+    { env, cwd: project },
   );
   assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
   return result;
@@ -473,4 +471,107 @@ test('prune removes an engine directory no receipt references', (t) => {
   assert.ok(!existsSync(stale));
   assert.ok(existsSync(join(project, '.r2c', 'engine', VERSION)), 'the referenced engine is kept');
   assert.ok(data.referenced_engines.includes(join(project, '.r2c', 'engine', VERSION)));
+});
+
+test('a second adapter installs in the same project through the bootstrap with --force', (t) => {
+  const release = buildRelease(t);
+  const project = tempDir(t, 'project');
+  const home = tempDir(t, 'home');
+  mkdirSync(join(home, '.claude'), { recursive: true });
+  mkdirSync(join(home, '.codex'), { recursive: true });
+  const env = cleanEnv(home);
+  const views = viewsOf(t);
+
+  assert.equal(install(project, 'claude-code', release, VERSION, env, views).status, 0);
+
+  // Without --force the second adapter hits the layout the first receipt owns;
+  // the bootstrap must surface the engine's own CONFLICT status instead of
+  // dying on an unknown argument.
+  const blocked = bootstrap(
+    ['--agent', 'codex', '--version', VERSION, '--project', project, '--release-base', release],
+    { env, cwd: views.claim() },
+  );
+  assert.equal(blocked.status, 2, `${blocked.stdout}\n${blocked.stderr}`);
+  assert.match(blocked.stderr, /ADAPTER_INSTALL_FAILED: adapter install codex failed with exit 2/);
+  assert.equal(receiptOf(project, 'claude-code').adapter, 'claude-code');
+  assert.ok(!existsSync(join(project, '.r2c', 'install', 'codex.json')), 'the refused run writes no receipt');
+
+  const forced = bootstrap(
+    ['--agent', 'codex', '--version', VERSION, '--project', project, '--release-base', release, '--force'],
+    { env, cwd: views.claim() },
+  );
+  assert.equal(forced.status, 0, `${forced.stdout}\n${forced.stderr}`);
+  assert.match(forced.stdout, /already at/, 'the shared engine is not re-downloaded');
+  const codex = receiptOf(project, 'codex');
+  const claude = receiptOf(project, 'claude-code');
+  assert.equal(codex.adapter, 'codex');
+  assert.equal(codex.payload_home, claude.payload_home, 'both adapters share one payload');
+  assert.equal(codex.engine.home, claude.engine.home, 'both adapters share one engine');
+  assert.ok(existsSync(join(project, '.codex')), 'the second adapter wrote its own config');
+  assert.ok(existsSync(join(project, 'workflows', 'RTOSv3_R2C_pipiline.yaml')), 'the layout survives');
+});
+
+test('the bootstrap refuses an unsupported node before it downloads anything', (t) => {
+  // Mirror of src/cli.js NODE_RANGE: the boundary values, not the range string.
+  assert.equal(nodeSupported('22.18.9'), false);
+  assert.equal(nodeSupported('22.19.0'), true);
+  assert.equal(nodeSupported('23.1.0'), false);
+  assert.equal(nodeSupported('24.0.0'), true);
+  assert.equal(nodeSupported('25.0.0'), true);
+  assert.equal(nodeSupported('not-a-version'), false);
+
+  const project = tempDir(t, 'project');
+  const home = tempDir(t, 'home');
+  const patch = join(tempDir(t, 'node-patch'), 'patch.cjs');
+  writeFileSync(patch, 'Object.defineProperty(process.versions, "node", { value: "20.9.0" });\n');
+  const env = cleanEnv(home);
+
+  // The release base does not even exist: the floor must fire first, which is
+  // the fix — an unsupported Node used to download, extract, then roll back.
+  const result = spawnSync(
+    process.execPath,
+    [
+      '--require', patch, BOOTSTRAP,
+      '--agent', 'claude-code', '--version', VERSION,
+      '--project', project, '--release-base', join(tempDir(t, 'empty'), 'missing'),
+    ],
+    { cwd: tempDir(t, 'cwd'), env, encoding: 'utf8', timeout: 120_000 },
+  );
+  assert.equal(result.status, 2, `${result.stdout}\n${result.stderr}`);
+  assert.match(result.stderr, /NODE_UNSUPPORTED/);
+  assert.match(result.stderr, />=22\.19\.0 <23 \|\| >=24\.0\.0/);
+  assert.match(result.stderr, /20\.9\.0/);
+  assert.deepEqual(readdirSync(project), [], 'nothing was written into the project');
+  assert.equal(existsSync(join(home, '.r2c')), false, 'nothing was extracted');
+});
+
+test('the bootstrap archive path check enforces the same 100-byte bound as the engine', () => {
+  assert.equal(archivePathProblem('bin/r2c.js'), null);
+  assert.equal(archivePathProblem('a'.repeat(100)), null);
+  const tooLong = archivePathProblem(`${'a'.repeat(100)}b`);
+  assert.match(tooLong, /101 bytes \(max 100\)/);
+  assert.match(archivePathProblem('/abs'), /relative and POSIX/);
+  assert.match(archivePathProblem('a\\b'), /relative and POSIX/);
+  assert.match(archivePathProblem('../x'), /not canonical/);
+  assert.match(archivePathProblem(''), /empty path/);
+});
+
+test('--profile reaches the engine: the bootstrap installs into the named dsh profile', (t) => {
+  const release = buildRelease(t);
+  const project = tempDir(t, 'project');
+  const home = tempDir(t, 'home');
+  const dshHome = tempDir(t, 'dsh-home');
+  const env = cleanEnv(home);
+  delete env.R2C_RELEASE_BASE;
+  env.DSH_HOME = dshHome;
+
+  const result = bootstrap(
+    ['--agent', 'dsh', '--version', VERSION, '--scope', 'user', '--profile', 'headless', '--project', project, '--release-base', release],
+    { env, cwd: tempDir(t, 'cwd') },
+  );
+  assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+  const receipt = JSON.parse(readFileSync(join(home, '.r2c', 'install', 'dsh.json'), 'utf8'));
+  assert.equal(receipt.steps.profile.name, 'headless');
+  assert.ok(existsSync(join(dshHome, 'profiles', 'headless', 'package.json')));
+  assert.equal(existsSync(join(dshHome, 'profiles', 'web')), false, 'the default profile is not touched');
 });

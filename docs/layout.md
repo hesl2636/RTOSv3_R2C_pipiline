@@ -1,8 +1,11 @@
 # Repository layout
 
-One npm package (`r2c-runner`) at the repository root. No workspaces: the
-engine, the workflow content and the agent adapters live in one tree but only
-the engine is published.
+One repository root and one release channel: the engine, the workflow content
+and the agent adapters live in one tree and ship as the four assets of a GitHub
+Release ([What is published](#what-is-published)). Nothing goes to npm; the
+single `package.json` pins the build/test dependencies and the `engines.node`
+floor, and it is shipped inside the engine archive so an extracted engine can
+report its own version.
 
 ## Target tree
 
@@ -19,10 +22,20 @@ the engine is published.
 │   ├── hook.js                    # hook stop / hook pre-tool-use dialects
 │   ├── version.js                 # restricted semver evaluator (requires.engine)
 │   ├── schema.js                  # schema revision table + error mapping
+│   ├── plugin.js                  # payload file set, r2c.plugin/v1 manifest, ustar container
+│   ├── engine.js                  # engine file set (same container and path rules)
 │   ├── adapter/                   # the single installer (install/doctor/...)
+│   │   ├── install.js             # detect → verify → plan → conflicts → receipt
+│   │   ├── plan.js                # declarations → concrete paths and rendered bytes
+│   │   ├── payload.js             # payload resolution, verification, materialisation
+│   │   ├── release.js             # release transport, credentials, SHA256SUMS
+│   │   ├── uninstall.js           # receipt-driven removal
+│   │   ├── doctor.js              # zero-model health checks
+│   │   ├── versions.js            # engine/payload version-set ownership (C7)
+│   │   └── util.js                # path, hash and atomic-write primitives
 │   └── acceptance/                # fixture + zero-model aggregator
 ├── schema/                        # r2c.{workflow,state,latest,usage,adapter,
-│                                  #   adapter-map,plugin}/v1 JSON Schemas
+│                                  #   adapter-map,payload}/v1 JSON Schemas
 ├── shims/                         # hook.mjs + shared smoke-discovery.mjs
 ├── test/                          # node --test suites (not published)
 ├── pack/                          # workflow package = manifest root

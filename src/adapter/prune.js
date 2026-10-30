@@ -5,7 +5,7 @@
  */
 import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { removePath, userHome } from './util.js';
+import { removePath, resolveRecordedPath, userHome } from './util.js';
 import { stateDir } from './state.js';
 import { receiptsAcrossScopes } from './versions.js';
 
@@ -19,9 +19,15 @@ function subdirectories(dir) {
 
 export function pruneAdapter({ ctx, options }) {
   const states = [...new Set([stateDir('project', ctx.projectRoot), stateDir('user', ctx.projectRoot)])];
-  const receipts = receiptsAcrossScopes(ctx.projectRoot).map((entry) => entry.receipt);
-  const referencedHomes = new Set(receipts.map((receipt) => receipt.payload_home).filter(Boolean));
-  const referencedEngines = new Set(receipts.map((receipt) => receipt.engine?.home).filter(Boolean));
+  const records = receiptsAcrossScopes(ctx.projectRoot);
+  const receipts = records.map((entry) => entry.receipt);
+  // A receipt written before the project moved names the old absolute homes;
+  // re-root them so a live engine of a moved project is not pruned.
+  const liveHome = (receipt, home) => (typeof home === 'string' && home !== ''
+    ? resolveRecordedPath(home, { projectRoot: ctx.projectRoot, recordedRoot: receipt.project_root ?? null })
+    : null);
+  const referencedHomes = new Set(records.map(({ receipt }) => liveHome(receipt, receipt.payload_home)).filter(Boolean));
+  const referencedEngines = new Set(records.map(({ receipt }) => liveHome(receipt, receipt.engine?.home)).filter(Boolean));
   const referencedVersions = new Set(
     receipts.map((receipt) => receipt.payload?.version).filter((version) => typeof version === 'string'),
   );
