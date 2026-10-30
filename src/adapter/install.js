@@ -42,6 +42,7 @@ import {
   sha256File,
   userHome,
 } from './util.js';
+import { removeVersionSet, supersededVersionSet } from './versions.js';
 
 function installError(code, message, details = null, exitCode = EXIT_CODES.USAGE) {
   return new R2cError(code, message, details, exitCode);
@@ -489,6 +490,15 @@ async function installOnce({ ctx, agentId, options, state, resolved, adapter, ma
     const runSteps = externalStepFile !== null && (changed || prior?.steps === null || prior?.steps === undefined);
 
     const manual = [...(adapter.manualSteps ?? [])];
+    // Engine, payload and adapters move as one set (C7): a re-install at another
+    // version retires the previous one, unless another receipt still uses it.
+    const currentSet = {
+      state_dir: state,
+      adapter: adapter.id,
+      engine,
+      payload_home: home,
+    };
+    const superseded = supersededVersionSet({ prior, current: currentSet, projectRoot: ctx.projectRoot });
     if (options.dryRun) {
       return {
         command: 'adapter.install',
@@ -513,6 +523,7 @@ async function installOnce({ ctx, agentId, options, state, resolved, adapter, ma
             ...writes.map(({ entry }) => ({ action: entry.action, target: entry.target })),
             ...mergeWrites.map((scan) => ({ action: 'merge-json', target: scan.target })),
             ...(runSteps ? [{ action: 'steps', target: externalStepFile }] : []),
+            ...superseded.map((entry) => ({ action: 'remove', target: entry.path })),
           ],
           files: [],
           skipped: decisions.filter((decision) => !decision.write).map(({ entry }) => entry.target),
@@ -716,6 +727,11 @@ async function installOnce({ ctx, agentId, options, state, resolved, adapter, ma
       atomicWriteJson(receiptPath(state, adapter.id), receipt);
       unlinkSync(pendingPath(state, adapter.id));
 
+      const cleanup = removeVersionSet(superseded);
+      for (const failure of cleanup.failed) {
+        warnings.push(`cleanup-failed:${failure.path}: ${failure.error}`);
+      }
+
       return {
         command: 'adapter.install',
         data: {
@@ -736,6 +752,7 @@ async function installOnce({ ctx, agentId, options, state, resolved, adapter, ma
           warnings,
           manual,
           leftover: [...receipt.step_leftover],
+          removed_version_set: cleanup.removed,
         },
       };
     } catch (error) {

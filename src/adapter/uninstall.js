@@ -7,7 +7,7 @@
  * parts of the file. Runtime state under `.r2c` survives unless `--purge-state`
  * is explicit.
  */
-import { existsSync, readFileSync, readdirSync, rmdirSync, unlinkSync } from 'node:fs';
+import { existsSync, readFileSync, rmdirSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { EXIT_CODES, R2cError } from '../errors.js';
@@ -24,6 +24,7 @@ import {
   removePath,
   sha256File,
 } from './util.js';
+import { engineReferenced, isEngineHome, payloadReferenced, removeVersionSet } from './versions.js';
 
 function uninstallError(code, message, details = null, exitCode = EXIT_CODES.USAGE) {
   return new R2cError(code, message, details, exitCode);
@@ -64,31 +65,6 @@ function pointerDelete(object, pointer) {
     }
   }
   return true;
-}
-
-function readReceipts(state) {
-  const dir = installDir(state);
-  if (!existsSync(dir)) return [];
-  const receipts = [];
-  for (const name of readdirSync(dir)) {
-    if (!name.endsWith('.json') || name.endsWith('.pending.json')) continue;
-    try {
-      receipts.push(JSON.parse(readFileSync(join(dir, name), 'utf8')));
-    } catch {
-      // A corrupt receipt is doctor's problem, not prune's.
-    }
-  }
-  return receipts;
-}
-
-function payloadReferenced(home, projectRoot, excludeAgent, excludeState) {
-  for (const state of [stateDir('project', projectRoot), stateDir('user', projectRoot)]) {
-    for (const receipt of readReceipts(state)) {
-      if (receipt.adapter === excludeAgent && state === excludeState) continue;
-      if (receipt.payload_home === home) return receipt.adapter;
-    }
-  }
-  return null;
 }
 
 function planUninstall({ receipt, force, projectRoot }) {
@@ -260,11 +236,18 @@ async function buildReport({ receipt, scope, dryRun, options, state, projectRoot
   leftovers.push(...modified);
 
   const sharedWith = receipt.payload_home
-    ? payloadReferenced(receipt.payload_home, projectRoot, receipt.adapter, state)
+    ? payloadReferenced(receipt.payload_home, projectRoot, { state, adapter: receipt.adapter })
     : null;
   if (sharedWith !== null) warnings.push(`payload-shared:${receipt.payload_home} still used by ${sharedWith}`);
 
   const payloadRemoved = Boolean(receipt.payload_home) && sharedWith === null;
+  const engineHome = receipt.engine?.home ?? null;
+  const engineVersion = receipt.engine?.version ?? null;
+  const engineSharedWith = engineHome === null
+    ? null
+    : engineReferenced(engineHome, projectRoot, { state, adapter: receipt.adapter });
+  if (engineSharedWith !== null) warnings.push(`engine-shared:${engineHome} still used by ${engineSharedWith}`);
+  const engineRemoved = engineSharedWith === null && isEngineHome(engineHome, engineVersion);
   const files = deletions.map((entry) => ({ path: entry.path, kind: entry.kind }));
 
   // Applying removals in a dry run would mutate the world; report the plan only.
@@ -274,6 +257,12 @@ async function buildReport({ receipt, scope, dryRun, options, state, projectRoot
     files.push(...touched);
 
     if (payloadRemoved) removePath(receipt.payload_home);
+    if (engineRemoved) {
+      const outcome = removeVersionSet([{ path: engineHome, kind: 'engine' }]);
+      for (const failure of outcome.failed) {
+        warnings.push(`cleanup-failed:${failure.path}: ${failure.error}`);
+      }
+    }
     for (const dir of [...(receipt.dirs_created ?? [])].sort((left, right) => right.length - left.length)) {
       try {
         rmdirSync(dir);
@@ -294,6 +283,9 @@ async function buildReport({ receipt, scope, dryRun, options, state, projectRoot
     payload_home: receipt.payload_home,
     payload_removed: payloadRemoved && !dryRun,
     payload_shared_with: sharedWith,
+    engine_home: engineHome,
+    engine_removed: engineRemoved && !dryRun,
+    engine_shared_with: engineSharedWith,
     files,
     skipped: [],
     warnings,
