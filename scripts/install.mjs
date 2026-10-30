@@ -38,6 +38,23 @@ const SUMS_ASSET = 'SHA256SUMS.txt';
 const BLOCK = 512;
 const VERSION_RE = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z][0-9A-Za-z.-]*)?$/;
 const SCOPES = Object.freeze(['project', 'user']);
+/**
+ * `engines.node` from package.json, mirrored from `src/cli.js` because the
+ * bootstrap may not import `src/` (C5). Checked before anything is fetched:
+ * an unsupported Node would otherwise download and extract an engine it cannot
+ * run, only to hand off into a child that refuses to start.
+ */
+export const NODE_RANGE = '>=22.19.0 <23 || >=24.0.0';
+/** The archive path bound `plugin.js`/`engine.js` enforce for every asset. */
+const MAX_PATH_BYTES = 100;
+
+/** True when `version` (as reported by process.versions.node) is in NODE_RANGE. */
+export function nodeSupported(version) {
+  const [major, minor] = String(version).split('.').map((part) => Number.parseInt(part, 10));
+  if (!Number.isInteger(major) || !Number.isInteger(minor)) return false;
+  if (major === 22) return minor >= 19;
+  return major >= 24;
+}
 const AUTH_HINT =
   'set GH_TOKEN, set GITHUB_TOKEN, or store a github.com credential for `git credential fill` (run `gh auth login` where it is installed)';
 
@@ -73,6 +90,7 @@ export function assetUnavailable(name, version, where, { status = null, credenti
 
 const USAGE = `Usage: node install.mjs --agent <id> [--version <V>] [--scope project|user]
                         [--project <dir>] [--release-base <dir|url>]
+                        [--profile <name>] [--force]
 
 Downloads r2c-engine-<V>.tgz, verifies it against the release's
 SHA256SUMS.txt, installs it under <project>/.r2c/engine/<V>/ (or
@@ -88,11 +106,20 @@ SHA256SUMS.txt, installs it under <project>/.r2c/engine/<V>/ (or
   --release-base <src>  A directory of flat release assets or an http(s)
                         mirror shaped <base>/v<V>/<asset> (also
                         R2C_RELEASE_BASE).
+  --profile <name>      Agent profile forwarded to "adapter install" (dsh:
+                        default "web"; other adapters ignore it).
+  --force               Forward "adapter install --force": back up and replace
+                        files another install owns, which is what adding a
+                        second adapter to one project needs.
 
-Exit codes: 0 ok, 1 download or asset failure, 2 usage, 3 checksum failure.
+Exit codes: 0 ok, 1 download or asset failure, 2 usage (including an
+unsupported Node), 3 archive or checksum failure. A failing hand-off keeps the
+engine's own status (2 usage, 3 gate, 4 not detected/not installed, 5 lock
+conflict) instead of 1.
 `;
 
-const VALUE_FLAGS = new Set(['--agent', '--version', '--scope', '--project', '--release-base']);
+const VALUE_FLAGS = new Set(['--agent', '--version', '--scope', '--project', '--release-base', '--profile']);
+const FLAG_FLAGS = new Set(['--force']);
 
 class BootstrapError extends Error {
   constructor(code, message, exitCode) {
@@ -112,6 +139,10 @@ function parseArgs(argv) {
     const arg = argv[index];
     if (arg === '-h' || arg === '--help') {
       options.help = true;
+      continue;
+    }
+    if (FLAG_FLAGS.has(arg)) {
+      options[arg.slice(2)] = true;
       continue;
     }
     const equals = arg.startsWith('--') ? arg.indexOf('=') : -1;
@@ -329,8 +360,17 @@ function tarString(header, start, length) {
   return (end === -1 ? slice : slice.subarray(0, end)).toString('utf8');
 }
 
-function archivePathProblem(path) {
+/**
+ * The engine archive path contract, re-stated because the bootstrap may not
+ * import `src/` (C5). It must not be laxer than `plugin.js`/`engine.js`:
+ * non-empty, relative, POSIX, canonical and at most `MAX_PATH_BYTES` bytes.
+ */
+export function archivePathProblem(path) {
   if (path === '') return 'engine archive entry has an empty path';
+  const bytes = Buffer.byteLength(path, 'utf8');
+  if (bytes > MAX_PATH_BYTES) {
+    return `engine archive path is ${bytes} bytes (max ${MAX_PATH_BYTES}): ${path}`;
+  }
   if (path.startsWith('/') || path.includes('\\')) {
     return `engine archive path must be relative and POSIX: ${path}`;
   }
@@ -450,6 +490,15 @@ async function main(argv) {
     process.stdout.write(USAGE);
     return 0;
   }
+  // The floor comes before every download: an unsupported Node cannot run the
+  // engine, so failing here leaves the project and the release untouched.
+  if (!nodeSupported(process.versions.node)) {
+    fail(
+      'NODE_UNSUPPORTED',
+      `r2c requires node ${NODE_RANGE}; this is node ${process.versions.node}`,
+      2,
+    );
+  }
 
   const projectDir = resolve(options.project ?? process.cwd());
   if (!existsSync(projectDir) || !statSync(projectDir).isDirectory()) {
@@ -495,9 +544,24 @@ async function main(argv) {
   if (explicitBase !== null) {
     env.R2C_RELEASE_BASE = source.kind === 'dir' ? source.dir : source.base;
   }
+  const installArgs = [
+    entry,
+    'adapter',
+    'install',
+    options.agent,
+    '--engine',
+    engineHome,
+    '--scope',
+    scope,
+    '--project',
+    projectDir,
+  ];
+  // Only `adapter install` takes these, so they never reach the next command.
+  if (options.profile !== undefined) installArgs.push('--profile', options.profile);
+  if (options.force === true) installArgs.push('--force');
   const child = spawnSync(
     process.execPath,
-    [entry, 'adapter', 'install', options.agent, '--engine', engineHome, '--scope', scope, '--project', projectDir],
+    installArgs,
     { cwd: projectDir, env, stdio: 'inherit' },
   );
   if (child.error) {

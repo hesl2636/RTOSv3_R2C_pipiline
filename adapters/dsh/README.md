@@ -17,6 +17,14 @@ plugin assets into `<state>/payload/<V>/adapters/dsh/`.
 
 ## Install
 
+Through the release bootstrap (it forwards `--profile` and `--scope`):
+
+```bash
+node .r2c/bootstrap/install.mjs --agent dsh --version <V> --scope user --profile web
+```
+
+Or with an engine that is already on disk:
+
 ```bash
 node ~/.r2c/engine/<V>/bin/r2c.js adapter install dsh --profile web
 node ~/.r2c/engine/<V>/bin/r2c.js adapter doctor dsh

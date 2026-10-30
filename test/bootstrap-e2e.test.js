@@ -368,8 +368,10 @@ test('a tampered or missing release asset fails the bootstrap with zero writes',
       mutate: (dir) => rmSync(join(dir, 'SHA256SUMS.txt')),
     },
     {
+      // Every payload checksum failure is one exit code (2), wherever the
+      // archive came from; only the engine archive is a 3.
       label: 'a byte flipped inside the payload archive',
-      exitCode: 3,
+      exitCode: 2,
       stderr: /SHA256SUMS\.txt mismatch for r2c-payload-/,
       rollback: true,
       mutate: (dir) => flipByte(join(dir, PAYLOAD_ASSET), 40),

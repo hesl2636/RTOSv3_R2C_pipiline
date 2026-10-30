@@ -11,7 +11,7 @@ import { basename, dirname, isAbsolute, join, normalize, relative as relativePat
 import { parse as parseYaml } from 'yaml';
 import { EXIT_CODES, R2cError } from '../errors.js';
 import { runnerCommand } from '../render.js';
-import { sha256, userHome } from './util.js';
+import { isInside, sha256, userHome } from './util.js';
 
 export const ADAPTER_SCHEMA = 'r2c.adapter/v1';
 export const ADAPTER_MAP_SCHEMA = 'r2c.adapter-map/v1';
@@ -20,16 +20,10 @@ export const ADAPTER_MAP_SCHEMA = 'r2c.adapter-map/v1';
  * Payload trees copied verbatim into the project root by every install, so the
  * project owns a manifest and task/skill references `r2c run` can discover.
  */
-const LAYOUT_DIRS = Object.freeze(['workflows', 'tasks', 'skills']);
+export const LAYOUT_DIRS = Object.freeze(['workflows', 'tasks', 'skills']);
 
 function usageError(code, message, details = null) {
   return new R2cError(code, message, details, EXIT_CODES.USAGE);
-}
-
-/** True when `target` is `root` itself or lives beneath it, on every platform. */
-function isInside(root, target) {
-  const rel = relativePath(normalize(root), normalize(target));
-  return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel));
 }
 
 function entryByRel(resolved, rel) {
@@ -94,11 +88,12 @@ export function loadAdapterDeclaration(resolved, agentId) {
  * The command installed configs carry (C3/C9): `--runner-cmd` when the caller
  * overrode it, else `node <engine entry>` — project-relative for a project
  * scope whose engine lives inside the project, absolute (quoted when needed)
- * everywhere else.
+ * everywhere else. Distinct from `render.js`'s `defaultRunnerCommand`, which
+ * renders the same text from the running engine's own path.
  */
-export function defaultRunnerCommand(ctx, engine, { scope, projectRoot }) {
+export function installedRunnerCommand(ctx, engine, scope) {
   if (typeof ctx.runnerCmd === 'string' && ctx.runnerCmd !== '') return ctx.runnerCmd;
-  return runnerCommand(engine.entry, { projectRoot: scope === 'project' ? projectRoot : null });
+  return runnerCommand(engine.entry, { projectRoot: scope === 'project' ? ctx.projectRoot : null });
 }
 
 /**
@@ -110,9 +105,7 @@ export function defaultRunnerCommand(ctx, engine, { scope, projectRoot }) {
  */
 function placeholders({ projectRoot, payloadHome, runnerCmd, scope, version, agentId }) {
   const relativeHome = relativePath(projectRoot, payloadHome);
-  const homeInside = relativeHome !== ''
-    && !relativeHome.startsWith('..')
-    && !isAbsolute(relativeHome);
+  const homeInside = relativeHome !== '' && isInside(projectRoot, payloadHome);
   const projectScope = scope === 'project';
   const root = projectScope ? '.' : projectRoot;
   return {

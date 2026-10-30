@@ -16,6 +16,8 @@ _Avoid_: npx 命令、包名命令、引擎别名
 一次发布携带的工作流内容：清单、任务书、技能、命令、hook 中间层与适配器声明。
 _Avoid_: 插件、plugin、内容包
 
+保留的例外（C8）：`R2C_PLUGIN_SOURCE` 环境变量、`--plugin <V>` 选项、`r2c.plugin/v1` 清单标识与 `src/plugin.js` 模块名继续使用 plugin 字样。它们是载荷的协议名与代码入口，改名意味着同时破坏发布格式、CLI 与已装机器的回执，收益不抵成本；文档在提到这几个字面量时即为唯一允许出现 plugin 的场合。
+
 **布局 (Layout)**:
 载荷里进入项目的三棵目录：`workflows/`、`tasks/`、`skills/`。安装逐文件复制到项目根并记入回执，卸载按回执回退。
 _Avoid_: 内容包、模板、scaffold

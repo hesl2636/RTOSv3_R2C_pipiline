@@ -19,8 +19,9 @@ import {
   atomicWriteJson,
   isFile,
   isLink,
+  liveReceipt,
   readJsonIfExists,
-  receiptFilePath,
+  receiptEntryPath,
   removePath,
   sha256File,
 } from './util.js';
@@ -68,11 +69,11 @@ function pointerDelete(object, pointer) {
 }
 
 function planUninstall({ receipt, force, projectRoot }) {
-  const root = receipt.project_root ?? projectRoot;
+  const recordedRoot = receipt.project_root ?? null;
   const deletions = [];
   const leftovers = [];
   for (const entry of receipt.files ?? []) {
-    const path = receiptFilePath(entry, root);
+    const path = receiptEntryPath(entry, { projectRoot, recordedRoot });
     if (!existsSync(path)) continue;
     if (entry.kind === 'link') {
       if (isLink(path)) {
@@ -177,7 +178,7 @@ export async function uninstallAdapter({ ctx, agentId, options }) {
     return {
       command: 'adapter.uninstall',
       data: await buildReport({
-        receipt,
+        receipt: liveReceipt(receipt, ctx.projectRoot),
         scope,
         dryRun: true,
         options,
@@ -194,7 +195,14 @@ export async function uninstallAdapter({ ctx, agentId, options }) {
         scope,
       }, EXIT_CODES.NO_ACTIVE_RUN);
     }
-    const data = await buildReport({ receipt: fresh, scope, dryRun: false, options, state, projectRoot: ctx.projectRoot });
+    const data = await buildReport({
+      receipt: liveReceipt(fresh, ctx.projectRoot),
+      scope,
+      dryRun: false,
+      options,
+      state,
+      projectRoot: ctx.projectRoot,
+    });
     unlinkSync(receiptFile);
     if (options.purgeState) {
       purgeRuntimeState(state);
@@ -207,15 +215,19 @@ export async function uninstallAdapter({ ctx, agentId, options }) {
 async function buildReport({ receipt, scope, dryRun, options, state, projectRoot }) {
   const warnings = [];
   const leftovers = [];
+  // `receipt` is already the live view (see `liveReceipt`): payload home,
+  // engine home and merged files point at the project as it is now.
+  const payloadHome = receipt.payload_home ?? null;
+  const engineHome = receipt.engine?.home ?? null;
 
   if (!dryRun) {
-    const file = receipt.payload_home ? stepsFile(null, receipt.adapter, receipt.payload_home) : null;
+    const file = payloadHome ? stepsFile(null, receipt.adapter, payloadHome) : null;
     if (file !== null) {
       const outcome = await runAdapterStep(file, 'pre-uninstall', {
         adapter: receipt.adapter,
         scope,
         projectRoot,
-        payloadHome: receipt.payload_home,
+        payloadHome,
         runnerCmd: receipt.runner_cmd ?? null,
         version: receipt.payload?.version ?? null,
         profile: receipt.steps?.profile?.name ?? null,
@@ -235,13 +247,12 @@ async function buildReport({ receipt, scope, dryRun, options, state, projectRoot
   });
   leftovers.push(...modified);
 
-  const sharedWith = receipt.payload_home
-    ? payloadReferenced(receipt.payload_home, projectRoot, { state, adapter: receipt.adapter })
+  const sharedWith = payloadHome
+    ? payloadReferenced(payloadHome, projectRoot, { state, adapter: receipt.adapter })
     : null;
-  if (sharedWith !== null) warnings.push(`payload-shared:${receipt.payload_home} still used by ${sharedWith}`);
+  if (sharedWith !== null) warnings.push(`payload-shared:${payloadHome} still used by ${sharedWith}`);
 
-  const payloadRemoved = Boolean(receipt.payload_home) && sharedWith === null;
-  const engineHome = receipt.engine?.home ?? null;
+  const payloadRemoved = Boolean(payloadHome) && sharedWith === null;
   const engineVersion = receipt.engine?.version ?? null;
   const engineSharedWith = engineHome === null
     ? null
@@ -256,7 +267,7 @@ async function buildReport({ receipt, scope, dryRun, options, state, projectRoot
     const touched = applyMergedRemovals(receipt, options.force === true, leftovers);
     files.push(...touched);
 
-    if (payloadRemoved) removePath(receipt.payload_home);
+    if (payloadRemoved) removePath(payloadHome);
     if (engineRemoved) {
       const outcome = removeVersionSet([{ path: engineHome, kind: 'engine' }]);
       for (const failure of outcome.failed) {
@@ -280,7 +291,7 @@ async function buildReport({ receipt, scope, dryRun, options, state, projectRoot
     action: dryRun ? 'remove' : 'removed',
     changed: true,
     dry_run: dryRun,
-    payload_home: receipt.payload_home,
+    payload_home: payloadHome,
     payload_removed: payloadRemoved && !dryRun,
     payload_shared_with: sharedWith,
     engine_home: engineHome,

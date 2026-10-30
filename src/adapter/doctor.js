@@ -13,7 +13,7 @@ import { isValidRange, satisfies } from '../version.js';
 import { detectAgent } from './detect.js';
 import { runAdapterSmoke } from './smoke.js';
 import { receiptPath, stateDir } from './state.js';
-import { isFile, isLink, linkTarget, readJsonIfExists, receiptFilePath, sha256File, toPosix, userHome } from './util.js';
+import { isFile, isInside, isLink, linkTarget, liveReceipt, readJsonIfExists, receiptEntryPath, sha256File, toPosix, userHome } from './util.js';
 
 function check(name, status, detail) {
   return { name, status, detail };
@@ -73,10 +73,10 @@ function readInstalledAdapter(receipt) {
 
 function verifyFiles(receipt, projectRoot) {
   const problems = [];
-  const root = receipt.project_root ?? projectRoot;
+  const recordedRoot = receipt.project_root ?? null;
   let verified = 0;
   for (const file of receipt.files ?? []) {
-    const path = receiptFilePath(file, root);
+    const path = receiptEntryPath(file, { projectRoot, recordedRoot });
     if (!existsSync(path)) {
       problems.push(`missing:${path}`);
       continue;
@@ -119,7 +119,7 @@ function shimReferences(receipt, carrierRoot) {
   if (absolute === null) return [];
   const references = [absolute];
   const rel = relative(carrierRoot, absolute);
-  if (rel !== '' && !rel.startsWith('..') && !isAbsolute(rel)) references.push(toPosix(rel));
+  if (rel !== '' && isInside(carrierRoot, absolute)) references.push(toPosix(rel));
   return references;
 }
 
@@ -343,10 +343,10 @@ export function doctorAdapter({ ctx, agentId, options }) {
       : 'user';
   }
   const state = stateDir(scope, ctx.projectRoot);
-  const receipt = readJsonIfExists(receiptPath(state, agentId));
+  const stored = readJsonIfExists(receiptPath(state, agentId));
   const checks = [];
 
-  if (receipt === null) {
+  if (stored === null) {
     checks.push(check('receipt.present', 'fail', `no receipt at ${receiptPath(state, agentId)}`));
     throw new R2cError(
       'NOT_INSTALLED',
@@ -357,6 +357,9 @@ export function doctorAdapter({ ctx, agentId, options }) {
     );
   }
   checks.push(check('receipt.present', 'pass', `${scope} receipt found`));
+  // Read every recorded path against the live root: a renamed or moved project
+  // keeps its payload, engine and config, it only changed directory.
+  const receipt = liveReceipt(stored, ctx.projectRoot);
 
   const adapter = readInstalledAdapter(receipt);
   const detection = detectAgent(adapter?.detect ?? {});

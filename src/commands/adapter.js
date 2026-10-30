@@ -6,6 +6,10 @@
  * written by the CLI from `data`.
  */
 import { runAdapter } from '../adapter/index.js';
+import { LAYOUT_DIRS } from '../adapter/plan.js';
+
+/** `workflows/, tasks/, skills/` — the layout the installer copies. */
+const LAYOUT_LABEL = `${LAYOUT_DIRS.map((dir) => `${dir}/`).join(', ')} `;
 
 function listText(data) {
   const header = ['id', 'version', 'engine', 'agent', 'installed'];
@@ -27,7 +31,7 @@ function installText(data) {
   const lines = [`adapter ${data.adapter}: ${data.action} (${data.scope}${data.dry_run ? ', dry-run' : ''})`];
   lines.push(`payload ${data.payload.version} from ${data.payload.source}`);
   lines.push(
-    `layout: workflows/, tasks/, skills/ ${data.dry_run ? 'planned for the project root' : 'copied into the project root'}`,
+    `layout: ${LAYOUT_LABEL}${data.dry_run ? 'planned for the project root' : 'copied into the project root'}`,
   );
   if (data.dry_run) {
     for (const step of data.plan) lines.push(`  plan ${step.action} ${step.target}`);

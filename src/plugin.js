@@ -48,30 +48,44 @@ export function comparePayloadPaths(left, right) {
   return left < right ? -1 : 1;
 }
 
-/** `null` when `rel` is a legal payload path, otherwise a problem string. */
-export function payloadPathProblem(rel) {
-  if (typeof rel !== 'string' || rel === '') return 'payload path is empty';
-  const bytes = Buffer.byteLength(rel, 'utf8');
-  if (bytes > MAX_PATH_BYTES) {
-    return `payload path is ${bytes} bytes (max ${MAX_PATH_BYTES}): ${rel}`;
-  }
-  if (rel.startsWith('/') || rel.includes('\\')) {
-    return `payload path must be relative and POSIX: ${rel}`;
-  }
-  const segments = rel.split('/');
-  if (segments.some((segment) => segment === '' || segment === '.' || segment === '..')) {
-    return `payload path is not canonical: ${rel}`;
-  }
-  return null;
+/**
+ * Build the "legal archive path" validator for one archive family.
+ *
+ * The payload and the engine container are the same ustar contract (#17 §5),
+ * so they share one rule set and differ only in the word problems use: paths
+ * are non-empty, relative, POSIX, canonical and at most `MAX_PATH_BYTES`.
+ */
+export function pathProblemFactory(label) {
+  return (rel) => {
+    if (typeof rel !== 'string' || rel === '') return `${label} path is empty`;
+    const bytes = Buffer.byteLength(rel, 'utf8');
+    if (bytes > MAX_PATH_BYTES) {
+      return `${label} path is ${bytes} bytes (max ${MAX_PATH_BYTES}): ${rel}`;
+    }
+    if (rel.startsWith('/') || rel.includes('\\')) {
+      return `${label} path must be relative and POSIX: ${rel}`;
+    }
+    const segments = rel.split('/');
+    if (segments.some((segment) => segment === '' || segment === '.' || segment === '..')) {
+      return `${label} path is not canonical: ${rel}`;
+    }
+    return null;
+  };
 }
 
+export const payloadPathProblem = pathProblemFactory('payload');
+
 /**
- * Collect the payload file set from a repository checkout.
+ * Collect one archive's file set from a repository checkout.
  *
+ * `dirs` are `{ from, rel }` pairs — the repository path and the path inside
+ * the archive — and `rootFiles` are individual files at the archive root.
  * Returns `{ files: [{rel, absolute}], problems[] }`; problems (missing,
- * empty, symlinked or over-long paths) make the release build fail.
+ * empty, symlinked, non-regular or over-long paths) make the release build
+ * fail, so neither archive can be built outside its contract.
  */
-export function collectPayload(root) {
+export function collectArchiveTree({ root, label, dirs, rootFiles }) {
+  const pathProblem = pathProblemFactory(label);
   const files = [];
   const problems = [];
 
@@ -81,7 +95,7 @@ export function collectPayload(root) {
       const rel = `${relDir}/${name}`;
       const stat = lstatSync(child);
       if (stat.isSymbolicLink()) {
-        problems.push(`symlink not allowed in payload: ${rel}`);
+        problems.push(`symlink not allowed in ${label}: ${rel}`);
         continue;
       }
       if (stat.isDirectory()) {
@@ -89,10 +103,10 @@ export function collectPayload(root) {
         continue;
       }
       if (!stat.isFile()) {
-        problems.push(`unsupported file type in payload: ${rel}`);
+        problems.push(`unsupported file type in ${label}: ${rel}`);
         continue;
       }
-      const problem = payloadPathProblem(rel);
+      const problem = pathProblem(rel);
       if (problem !== null) {
         problems.push(problem);
         continue;
@@ -103,44 +117,56 @@ export function collectPayload(root) {
 
   const addTree = (absolute, relDir) => {
     if (!existsSync(absolute)) {
-      problems.push(`missing payload path: ${relDir}`);
+      problems.push(`missing ${label} path: ${relDir}`);
       return;
     }
     const stat = lstatSync(absolute);
     if (stat.isSymbolicLink()) {
-      problems.push(`symlink not allowed in payload: ${relDir}`);
+      problems.push(`symlink not allowed in ${label}: ${relDir}`);
       return;
     }
     if (!stat.isDirectory()) {
-      problems.push(`payload path is not a directory: ${relDir}`);
+      problems.push(`${label} path is not a directory: ${relDir}`);
       return;
     }
     const before = files.length;
     walk(absolute, relDir);
-    if (files.length === before) problems.push(`payload directory is empty: ${relDir}`);
+    if (files.length === before) problems.push(`${label} directory is empty: ${relDir}`);
   };
 
-  for (const dir of PAYLOAD_DIRS) addTree(join(root, dir), dir);
-  for (const dir of PAYLOAD_PACK_DIRS) addTree(join(root, 'pack', dir), dir);
-  for (const name of PAYLOAD_ROOT_FILES) {
+  for (const dir of dirs) addTree(join(root, dir.from), dir.rel);
+  for (const name of rootFiles) {
     const absolute = join(root, name);
     if (!existsSync(absolute)) {
-      problems.push(`missing payload file: ${name}`);
+      problems.push(`missing ${label} file: ${name}`);
       continue;
     }
     const stat = lstatSync(absolute);
-    if (stat.isSymbolicLink()) problems.push(`symlink not allowed in payload: ${name}`);
-    else if (!stat.isFile()) problems.push(`payload file is not a regular file: ${name}`);
+    if (stat.isSymbolicLink()) problems.push(`symlink not allowed in ${label}: ${name}`);
+    else if (!stat.isFile()) problems.push(`${label} file is not a regular file: ${name}`);
     else files.push({ rel: name, absolute });
   }
 
   files.sort((left, right) => comparePayloadPaths(left.rel, right.rel));
   const seen = new Set();
   for (const file of files) {
-    if (seen.has(file.rel)) problems.push(`duplicate payload path: ${file.rel}`);
+    if (seen.has(file.rel)) problems.push(`duplicate ${label} path: ${file.rel}`);
     seen.add(file.rel);
   }
   return { files, problems };
+}
+
+/** The payload file set: adapters, schemas, shims, the packed content and LICENSE. */
+export function collectPayload(root) {
+  return collectArchiveTree({
+    root,
+    label: 'payload',
+    dirs: [
+      ...PAYLOAD_DIRS.map((dir) => ({ from: dir, rel: dir })),
+      ...PAYLOAD_PACK_DIRS.map((dir) => ({ from: `pack/${dir}`, rel: dir })),
+    ],
+    rootFiles: PAYLOAD_ROOT_FILES,
+  });
 }
 
 /** `{ rel: sha256 }` in codepoint order, exactly what `r2c-payload.json.files` holds. */
