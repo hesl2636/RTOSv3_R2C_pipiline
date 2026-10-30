@@ -973,7 +973,8 @@ function doctorCheck(h, agentId) {
         if (!names.has(required)) throw new Error(`I3: missing doctor check ${required}`);
       }
       // Ticket #35: a modified installed file must flip the corresponding check.
-      const receipt = readJsonIfExists(join(h.installRoot, '.r2c', 'install', `${agentId}.json`));
+      const receipt = readJsonIfExists(join(h.installRoot, '.r2c', 'install', `${agentId}.json`))
+        ?? readJsonIfExists(join(h.home, '.r2c', 'install', `${agentId}.json`));
       const target = (receipt?.files ?? []).find(
         (file) => file.kind === 'copy' || file.kind === 'render' || file.kind === 'derive-agent',
       );
