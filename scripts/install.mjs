@@ -6,6 +6,9 @@
  * `SHA256SUMS.txt`, extracts it to `<project>/.r2c/engine/<V>/` (or
  * `~/.r2c/engine/<V>/` with `--scope user`), then hands over to that engine's
  * own `adapter install` — the payload is resolved by the engine, never here.
+ * Both stages are all-or-nothing: a checksum failure writes nothing, and a
+ * failed hand-off (a tampered or missing payload asset, a conflict, a broken
+ * agent config) removes the engine this run extracted.
  *
  * Self-contained by design: node built-ins only (plus the global `fetch`), no
  * imports from `src/`, so this file runs both from the repository and as the
@@ -18,6 +21,7 @@ import {
   mkdirSync,
   readFileSync,
   renameSync,
+  rmdirSync,
   rmSync,
   statSync,
   writeFileSync,
@@ -422,6 +426,24 @@ function engineReady(engineHome, version) {
   }
 }
 
+/**
+ * Undo the engine this run extracted when the hand-off fails: a tampered or
+ * missing payload asset must leave the project byte-for-byte as it was found,
+ * not a project with an engine and no receipt. Directories this run created
+ * (`.r2c/engine`, `.r2c`) are removed too, but only when they are empty.
+ */
+function undoExtractedEngine(engineHome, createdDirs) {
+  rmSync(engineHome, { recursive: true, force: true });
+  for (const dir of [dirname(engineHome), dirname(dirname(engineHome))]) {
+    if (!createdDirs.has(dir)) continue;
+    try {
+      rmdirSync(dir);
+    } catch {
+      // something else already lives there
+    }
+  }
+}
+
 async function main(argv) {
   const options = parseArgs(argv);
   if (options.help) {
@@ -439,6 +461,10 @@ async function main(argv) {
   const source = releaseSource(explicitBase === null ? DEFAULT_RELEASE_BASE : explicitBase);
   const version = options.version ?? (await latestVersion(source));
   const engineHome = join(scope === 'user' ? userHome() : projectDir, '.r2c', 'engine', version);
+  const engineRoot = dirname(engineHome);
+  const stateRoot = dirname(engineRoot);
+  const createdDirs = new Set([stateRoot, engineRoot].filter((dir) => !existsSync(dir)));
+  let extracted = false;
 
   // Same version already in place: re-running writes nothing and fetches nothing.
   if (engineReady(engineHome, version)) {
@@ -460,6 +486,7 @@ async function main(argv) {
       );
     }
     installEngine(archive, engineHome);
+    extracted = true;
     process.stdout.write(`engine ${version}: ${engineHome}\n`);
   }
 
@@ -474,12 +501,17 @@ async function main(argv) {
     { cwd: projectDir, env, stdio: 'inherit' },
   );
   if (child.error) {
+    if (extracted) undoExtractedEngine(engineHome, createdDirs);
     fail('ENGINE_SPAWN_FAILED', `cannot run ${entry}: ${child.error.message}`, 1);
   }
   if (child.status !== 0) {
+    const removedEngine = extracted;
+    if (removedEngine) undoExtractedEngine(engineHome, createdDirs);
     fail(
       'ADAPTER_INSTALL_FAILED',
-      `adapter install ${options.agent} failed with exit ${child.status ?? 'signal'}`,
+      `adapter install ${options.agent} failed with exit ${child.status ?? 'signal'}${
+        removedEngine ? '; the engine this run extracted was removed' : ''
+      }`,
       typeof child.status === 'number' && child.status !== 0 ? child.status : 1,
     );
   }
