@@ -140,7 +140,10 @@ test('acceptance covers all five adapters on ubuntu and windows', () => {
     (step) => /Install agent CLIs|Install omp/.test(step.name ?? ''),
   );
   assert.equal(installSteps.length, 2);
-  for (const step of installSteps) assert.equal(step['continue-on-error'], true);
+  for (const step of installSteps) {
+    assert.equal(step['continue-on-error'], true);
+    assert.equal(step['timeout-minutes'], 2, 'a best-effort install must time-box itself');
+  }
   assert.match(installSteps[1].run, /omp\.sh\/install/);
 });
 
