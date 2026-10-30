@@ -1,27 +1,13 @@
 /**
- * `adapter prune`: remove only payloads, backups and cache entries that no
- * receipt references. Installed versions, receipts and runtime state are never
- * candidates.
+ * `adapter prune`: remove only engines, payloads, backups and cache entries
+ * that no receipt references. Installed versions, receipts and runtime state are
+ * never candidates.
  */
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { removePath, userHome } from './util.js';
-import { installDir, stateDir } from './state.js';
-
-function receiptFiles(state) {
-  const dir = join(installDir(state));
-  if (!existsSync(dir)) return [];
-  return readdirSync(dir)
-    .filter((name) => name.endsWith('.json') && !name.endsWith('.pending.json'))
-    .map((name) => {
-      try {
-        return JSON.parse(readFileSync(join(dir, name), 'utf8'));
-      } catch {
-        return null;
-      }
-    })
-    .filter(Boolean);
-}
+import { stateDir } from './state.js';
+import { receiptsAcrossScopes } from './versions.js';
 
 function subdirectories(dir) {
   if (!existsSync(dir)) return [];
@@ -33,8 +19,9 @@ function subdirectories(dir) {
 
 export function pruneAdapter({ ctx, options }) {
   const states = [...new Set([stateDir('project', ctx.projectRoot), stateDir('user', ctx.projectRoot)])];
-  const receipts = states.flatMap((state) => receiptFiles(state));
+  const receipts = receiptsAcrossScopes(ctx.projectRoot).map((entry) => entry.receipt);
   const referencedHomes = new Set(receipts.map((receipt) => receipt.payload_home).filter(Boolean));
+  const referencedEngines = new Set(receipts.map((receipt) => receipt.engine?.home).filter(Boolean));
   const referencedVersions = new Set(
     receipts.map((receipt) => receipt.payload?.version).filter((version) => typeof version === 'string'),
   );
@@ -45,6 +32,14 @@ export function pruneAdapter({ ctx, options }) {
   const plan = [];
 
   for (const state of states) {
+    for (const name of subdirectories(join(state, 'engine'))) {
+      const home = join(state, 'engine', name);
+      if (referencedEngines.has(home)) {
+        kept.push(home);
+      } else {
+        plan.push({ path: home, kind: 'engine' });
+      }
+    }
     for (const name of subdirectories(join(state, 'payload'))) {
       const home = join(state, 'payload', name);
       if (referencedHomes.has(home)) {
@@ -93,6 +88,7 @@ export function pruneAdapter({ ctx, options }) {
       removed,
       kept,
       referenced_payloads: [...referencedHomes],
+      referenced_engines: [...referencedEngines],
       referenced_versions: [...referencedVersions],
     },
   };

@@ -18,6 +18,15 @@ step-by-step across the engine, the payload, and all five agent adapters; see
   self-contained `scripts/install.mjs` bootstrap that downloads the engine,
   verifies it against `SHA256SUMS.txt`, extracts it to `.r2c/engine/<V>/`
   (or `~/.r2c/engine/<V>/`) and runs the engine's `adapter install`.
+- Bootstrap credential chain for a private release — `GH_TOKEN` →
+  `GITHUB_TOKEN` → `git credential fill` for `host=github.com`, non-interactive
+  and time-limited — so a machine without `gh` still installs; when no
+  credential exists the anonymous `404` is reported as "a token is required"
+  with the `gh auth login` hint instead of a generic failure.
+- Engine, payload and adapters move as one version set: installing another
+  version retires the previous engine and payload that the receipt owned unless
+  another receipt still references them, `adapter uninstall` and `adapter prune`
+  remove unreferenced engines, and `--dry-run` lists the removals.
 - Adapters for `claude-code`, `codex`, `dsh`, `omp`, and `opencode`, each with
   install, doctor, smoke, and uninstall steps plus a shared command/skill source.
 - Every install copies the payload layout (`workflows/`, `tasks/`, `skills/`)

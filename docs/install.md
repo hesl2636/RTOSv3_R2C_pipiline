@@ -43,15 +43,19 @@ order:
 3. `~/.r2c/cache/payload-<V>`;
 4. the GitHub Release download for version `V`.
 
-Anonymous downloads use the public release URL. For a private repository the
-anonymous request returns `404`, so set `GITHUB_TOKEN` or `GH_TOKEN` (contents:
-read) and the installer reads the release and streams its assets through the
-GitHub API (`/releases/tags/v<V>` + `/releases/assets/<id>`); the web download
-URL itself answers `404` to token requests. Without a token, `--from` and the
-cache remain the supported path. A `.tgz` payload is verified against the
-sha256 recorded in its own `r2c-payload.json`, and every file is hashed before
-the plan is built. `--link` is only accepted together with `--from <dir>`: a
-`.tgz` always installs with `--copy`.
+Anonymous downloads use the public release URL. A private repository answers the
+anonymous request with `404`, so the installer walks one credential chain:
+`GH_TOKEN` → `GITHUB_TOKEN` → `git credential fill` for `host=github.com`
+(non-interactive, 5 s timeout; a credential stored by `gh auth login` or a git
+credential helper is found here). With a token the installer reads the release
+and streams its assets through the GitHub API (`/releases/tags/v<V>` +
+`/releases/assets/<id>`); the web download URL itself answers `404` to token
+requests. When none of the three sources yields a credential, the error names
+the missing credential and `gh auth login` instead of reporting a plain `404`,
+and `--from` plus the cache remain the supported path. A `.tgz` payload is
+verified against the sha256 recorded in its own `r2c-payload.json`, and every
+file is hashed before the plan is built. `--link` is only accepted together
+with `--from <dir>`: a `.tgz` always installs with `--copy`.
 
 The payload is materialised under `<state>/payload/<payload-version>/`, where
 `<state>` is `<project>/.r2c` for project scope and `~/.r2c` for user scope.
@@ -156,9 +160,13 @@ resolves the version the project pins.
    `payload.version = <V>` and `engine.version = <V>`.
 
 Adapters can be upgraded independently — upgrading `claude-code` does not touch
-`codex` — and re-running the same version is a no-op. A payload whose
-`engine` range does not match the engine fails the install gate (exit `2`) for
-`--copy`; `--link` only warns, because the linked files are shared in place.
+`codex` — and re-running the same version is a no-op. Installing another
+version retires the previous one: the engine and payload directories that the
+replacing receipt owned are removed once no other receipt references them, so
+`.r2c/engine/` and `.r2c/payload/` hold the versions in use, not a history. A
+payload whose `engine` range does not match the engine fails the install gate
+(exit `2`) for `--copy`; `--link` only warns, because the linked files are
+shared in place.
 
 ## Rollback
 
@@ -176,10 +184,11 @@ npx r2c-runner@<old-V> adapter doctor <agent> --project .
 cached under `~/.r2c/cache/payload-<old-V>`. `--force` covers any target the
 receipt does not know about (hand-edited files, files left by another tool);
 files the newer install owned are replaced and backed up from the receipt. The
-receipt is rewritten with the old payload/engine pair. Files that exist only in
-the newer payload have no counterpart in the old plan and stay behind — check
-the agent's install directory afterwards and delete what the old version never
-installed.
+receipt is rewritten with the old payload/engine pair, and the newer engine and
+payload directories are removed once no receipt references them, so `doctor`
+sees one consistent set. Files that exist only in the newer payload have no
+counterpart in the old plan and stay behind — check the agent's install
+directory afterwards and delete what the old version never installed.
 
 **Pointing `PATH` back at an older engine is not a rollback.** The receipt
 still pins the newer payload, every hook and Submit line still invokes the
@@ -198,11 +207,11 @@ Uninstall deletes exactly the files listed in the receipt — agent config and t
 project-root layout copies alike — removes only the
 JSON entries and hook items this install merged (never a neighbour's), deletes
 self-created empty directories without going above the install root, and drops
-the payload only when no receipt still references it. A file whose sha256 no
-longer matches the receipt is not deleted; it is reported in `leftover[]` for
-manual review (`--force` deletes it anyway). Runtime state under `.r2c/` —
-runs, events, usage, business artifacts — is **kept** by default so a later
-reinstall or `r2c status` still sees the history.
+the payload and the engine only when no receipt still references them. A file
+whose sha256 no longer matches the receipt is not deleted; it is reported in
+`leftover[]` for manual review (`--force` deletes it anyway). Runtime state under
+`.r2c/` — runs, events, usage, business artifacts — is **kept** by default so a
+later reinstall or `r2c status` still sees the history.
 
 `--purge-state` additionally removes the runtime paths
 (`.r2c/runs/`, `.r2c/usage/`, `.r2c/latest.json`), every installed payload under
