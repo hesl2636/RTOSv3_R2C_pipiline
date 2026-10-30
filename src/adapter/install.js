@@ -37,6 +37,7 @@ import {
   isLink,
   linkTarget,
   readJsonIfExists,
+  receiptFilePath,
   removePath,
   sha256File,
   userHome,
@@ -287,8 +288,10 @@ async function recoverPending(state, agentId, warnings) {
   }
 }
 
-function collectFilePlan(planEntries, prior, options) {
-  const priorByPath = new Map((prior?.files ?? []).map((file) => [pathKey(file.path), file]));
+function collectFilePlan(planEntries, prior, options, projectRoot) {
+  const priorByPath = new Map(
+    (prior?.files ?? []).map((file) => [pathKey(receiptFilePath(file, projectRoot)), file]),
+  );
   const conflicts = [];
   const decisions = [];
   for (const entry of planEntries) {
@@ -345,14 +348,19 @@ function buildReceipt({ ctx, resolved, adapter, scope, mode, runnerCmd, detectio
     files.push(
       entry.action === 'link'
         ? { path: entry.target, kind: 'link', sha256: null, target: entry.linkTarget }
-        : { path: entry.target, kind: entry.kind ?? entry.action, sha256: entry.sha256, source: entry.sourceRel },
+        : entry.action === 'layout'
+          ? { path: entry.rel, kind: 'layout', sha256: entry.sha256 }
+          : { path: entry.target, kind: entry.kind ?? entry.action, sha256: entry.sha256, source: entry.sourceRel },
     );
   }
+  const hasLayout = files.some((file) => file.kind === 'layout');
   return {
     schema: 'r2c.install/v1',
     adapter: adapter.id,
     scope,
-    project_root: scope === 'user' ? null : ctx.projectRoot,
+    // Layout copies live in the project root even for user scope, so the
+    // receipt must say which project it wrote into for uninstall to revert them.
+    project_root: hasLayout || scope !== 'user' ? ctx.projectRoot : null,
     payload_home: home,
     mode,
     payload: {
@@ -439,7 +447,7 @@ async function installOnce({ ctx, agentId, options, state, resolved, adapter, ma
     if (!options.dryRun) await recoverPending(state, adapter.id, warnings);
     const payloadNeeded = !payloadReady(home, resolved);
     const filePlan = plan.entries.filter((entry) => entry.action !== 'merge-json');
-    const { conflicts, decisions } = collectFilePlan(filePlan, prior, options);
+    const { conflicts, decisions } = collectFilePlan(filePlan, prior, options, ctx.projectRoot);
     const mergeGroups = groupMerges(plan.entries.filter((entry) => entry.action === 'merge-json'));
     const mergeScans = new Map();
     for (const [target, group] of mergeGroups) mergeScans.set(target, scanMergeGroup(group));
@@ -701,7 +709,9 @@ async function installOnce({ ctx, agentId, options, state, resolved, adapter, ma
           runner_cmd: runnerCmd,
           requires: receipt.requires,
           agent: receipt.agent,
-          files: receipt.files.filter((file) => writes.some(({ entry }) => pathKey(entry.target) === pathKey(file.path))),
+          files: receipt.files.filter((file) => writes.some(
+            ({ entry }) => pathKey(entry.target) === pathKey(receiptFilePath(file, ctx.projectRoot)),
+          )),
           skipped: decisions.filter((decision) => !decision.write).map(({ entry }) => entry.target),
           warnings,
           manual,

@@ -15,6 +15,10 @@ step-by-step across the engine, the payload, and all five agent adapters; see
   `SHA256SUMS.txt`.
 - Adapters for `claude-code`, `codex`, `dsh`, `omp`, and `opencode`, each with
   install, doctor, smoke, and uninstall steps plus a shared command/skill source.
+- Every install copies the payload layout (`workflows/`, `tasks/`, `skills/`)
+  into the project root and records each file's project-relative path and
+  sha256 in the receipt, so `r2c run` works with no manual copy; `doctor`
+  reports hand-edited copies and uninstall reverts them.
 - Hook shims for stop, claim, and pre-tool-use events in each agent's native
   stdin/stdout dialect.
 - CI gates for tests, manifest validation, release contract checks, the npm pack

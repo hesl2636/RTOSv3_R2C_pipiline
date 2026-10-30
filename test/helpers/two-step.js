@@ -7,7 +7,7 @@
  * the old `test/fixtures/two-step`: step-a reads tasks/a.md (skills and MCP
  * whitelists), step-b is prompt-only with an inline body.
  */
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 export const TWO_STEP_YAML = `schema: r2c.workflow/v1
@@ -54,4 +54,12 @@ export function writeTwoStepProject(root, { yaml = TWO_STEP_YAML } = {}) {
   writeFileSync(join(root, 'workflows', 'two-step.yaml'), yaml);
   writeFileSync(join(root, 'tasks', 'a.md'), TWO_STEP_TASK);
   return root;
+}
+
+/**
+ * Drop the manifest the installer copies into the project root (#40), for
+ * fixtures that bring their own workflow: discovery refuses two manifests.
+ */
+export function dropPayloadManifest(root) {
+  rmSync(join(root, 'workflows', 'RTOSv3_R2C_pipiline.yaml'), { force: true });
 }

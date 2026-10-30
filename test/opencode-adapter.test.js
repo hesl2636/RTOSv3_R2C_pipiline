@@ -12,8 +12,9 @@ import {
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { pathToFileURL, fileURLToPath } from 'node:url';
-import { withPath } from './support/env.js';
 import { test } from 'node:test';
+import { dropPayloadManifest } from './helpers/two-step.js';
+import { withPath } from './support/env.js';
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const BIN = join(REPO, 'bin', 'r2c.js');
@@ -95,6 +96,8 @@ function install(env, project, extra = []) {
 }
 
 function writeWorkflow(project) {
+  // The project fixture owns its manifest; drop the one the installer copied.
+  dropPayloadManifest(project);
   mkdirSync(join(project, 'workflows'), { recursive: true });
   writeFileSync(
     join(project, 'workflows', 'test.yaml'),

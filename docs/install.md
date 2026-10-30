@@ -96,25 +96,24 @@ trust them in `/hooks`, which is a manual step (see below).
 
 ## First run
 
-The installer materialises the payload (workflow, tasks, skills) at
-`<state>/payload/<V>/`; it does not copy that tree into the project. `r2c run`
-discovers a manifest only under the project's `workflows/`, and `taskFile`
-resolves relative to that same root, so do one of these once per project:
+Every install materialises the payload at `<state>/payload/<V>/` and copies its
+layout — `workflows/`, `tasks/` and `skills/` — file by file into the project
+root, so `r2c run` discovers the manifest with no manual copy. Each copied file
+is recorded in the receipt with its project-relative path and sha256, so
+`adapter doctor` reports a hand-edited copy and `adapter uninstall` reverts
+exactly those files and the directories the install created.
 
 ```bash
-# (a) recommended: copy the whole payload layout into the project root
-cp -r .r2c/payload/0.1.0/{workflows,tasks,skills} .
+npx r2c-runner adapter install <agent> --from r2c-payload-0.1.0.tgz --project .
 npx r2c-runner run --project .
-
-# (b) terminal-only: point at the payload manifest (absolute path required)
-npx r2c-runner run --project . \
-  --manifest "$PWD/.r2c/payload/0.1.0/workflows/RTOSv3_R2C_pipiline.yaml"
 ```
 
-Copying only the YAML is not enough: its `taskFile` entries resolve against the
-manifest root, which is the project root for default discovery. Hook delivery
-also rediscovers the project manifest, so the layout copy is the only shape
-where Stop/idle delivery works without extra flags.
+A same-name file the receipt does not own aborts the install with `CONFLICT`
+and writes nothing; `--force` backs it up under `.r2c/install/backup/` first.
+Terminal-only runs may still point at another manifest with `--manifest`
+(absolute path required, and the printed Submit line carries it).
+`r2c run --dry-run` reports the discovered manifest and writes no state, which
+is the cheapest way to confirm the layout landed.
 
 `--project` and `--project-root` are aliases on every command.
 
@@ -195,7 +194,8 @@ schema of the runs you intend to continue.
 npx r2c-runner adapter uninstall <agent> --project .
 ```
 
-Uninstall deletes exactly the files listed in the receipt, removes only the
+Uninstall deletes exactly the files listed in the receipt — agent config and the
+project-root layout copies alike — removes only the
 JSON entries and hook items this install merged (never a neighbour's), deletes
 self-created empty directories without going above the install root, and drops
 the payload only when no receipt still references it. A file whose sha256 no

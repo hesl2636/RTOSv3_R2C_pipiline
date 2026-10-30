@@ -12,6 +12,10 @@ _Avoid_: 运行时、runtime、CLI 工具、npm 包
 一次发布携带的工作流内容：清单、任务书、技能、命令、hook 中间层与适配器声明。
 _Avoid_: 插件、plugin、内容包
 
+**布局 (Layout)**:
+载荷里进入项目的三棵目录：`workflows/`、`tasks/`、`skills/`。安装逐文件复制到项目根并记入回执，卸载按回执回退。
+_Avoid_: 内容包、模板、scaffold
+
 **适配器 (Adapter)**:
 把一个具体 agent 接上引擎与载荷的声明与资产，覆盖 `claude-code`、`codex`、`dsh`、`omp`、`opencode` 五者之一。
 _Avoid_: 集成、integration、驱动

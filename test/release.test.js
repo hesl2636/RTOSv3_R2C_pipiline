@@ -338,7 +338,13 @@ test('install --from <tgz> materialises the payload under the user-scope state d
   assert.equal(envelope(result).data.scope, 'user');
   assert.ok(existsSync(join(home, '.r2c', 'payload', VERSION, 'r2c-payload.json')));
   assert.ok(existsSync(join(home, '.claude', 'settings.json')));
-  assert.deepEqual(readdirSync(project), [], 'user scope must not write under the project');
+  assert.deepEqual(
+    readdirSync(project).sort(),
+    ['skills', 'tasks', 'workflows'],
+    'user scope writes only the shared layout into the project root',
+  );
+  const receipt = JSON.parse(readFileSync(join(home, '.r2c', 'install', 'claude-code.json'), 'utf8'));
+  assert.equal(receipt.project_root, project, 'the user-scope receipt records the project it wrote into');
 });
 
 test('createTarGz rejects invalid entries with a coded runner error', () => {

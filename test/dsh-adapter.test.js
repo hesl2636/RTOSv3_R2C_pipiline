@@ -15,7 +15,7 @@ import { dirname, join, resolve } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { withPath } from './support/env.js';
-import { writeTwoStepProject } from './helpers/two-step.js';
+import { dropPayloadManifest, writeTwoStepProject } from './helpers/two-step.js';
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const BIN = join(REPO, 'bin', 'r2c.js');
@@ -390,6 +390,7 @@ test('pre-tool-use denial is exit 0 + hookSpecificOutput.permissionDecision=deny
 test('the native plugin registers commands, steers on stop and denies guarded tools', async (t) => {
   const { home, project, env } = setup(t);
   assert.equal(install(env, project).status, 0);
+  dropPayloadManifest(project);
   const payloadHome = join(home, '.r2c', 'payload', ENGINE_VERSION);
   const plugin = await import(`${pathToFileURL(join(payloadHome, 'adapters', 'dsh', 'index.mjs')).href}?t=${Date.now()}`);
   const listeners = new Map();
@@ -449,6 +450,7 @@ test('the native plugin registers commands, steers on stop and denies guarded to
 test('DSH_SESSION_ID covers a stop when the event has no session id', async (t) => {
   const { home, project, env } = setup(t);
   assert.equal(install(env, project).status, 0);
+  dropPayloadManifest(project);
   const payloadHome = join(home, '.r2c', 'payload', ENGINE_VERSION);
   const plugin = await import(`${pathToFileURL(join(payloadHome, 'adapters', 'dsh', 'index.mjs')).href}?t=${Date.now()}-env`);
   let stop;

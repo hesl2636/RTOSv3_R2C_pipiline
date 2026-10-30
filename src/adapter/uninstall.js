@@ -20,6 +20,7 @@ import {
   isFile,
   isLink,
   readJsonIfExists,
+  receiptFilePath,
   removePath,
   sha256File,
 } from './util.js';
@@ -90,32 +91,34 @@ function payloadReferenced(home, projectRoot, excludeAgent, excludeState) {
   return null;
 }
 
-function planUninstall({ receipt, force }) {
+function planUninstall({ receipt, force, projectRoot }) {
+  const root = receipt.project_root ?? projectRoot;
   const deletions = [];
   const leftovers = [];
-  for (const file of receipt.files ?? []) {
-    if (!existsSync(file.path)) continue;
-    if (file.kind === 'link') {
-      if (isLink(file.path)) {
-        deletions.push({ path: file.path, kind: 'link' });
+  for (const entry of receipt.files ?? []) {
+    const path = receiptFilePath(entry, root);
+    if (!existsSync(path)) continue;
+    if (entry.kind === 'link') {
+      if (isLink(path)) {
+        deletions.push({ path, kind: 'link' });
       } else if (force) {
-        deletions.push({ path: file.path, kind: 'link' });
+        deletions.push({ path, kind: 'link' });
       } else {
-        leftovers.push(`modified:${file.path}`);
+        leftovers.push(`modified:${path}`);
       }
       continue;
     }
-    if (!isFile(file.path)) {
-      if (force) deletions.push({ path: file.path, kind: file.kind });
-      else leftovers.push(`modified:${file.path}`);
+    if (!isFile(path)) {
+      if (force) deletions.push({ path, kind: entry.kind });
+      else leftovers.push(`modified:${path}`);
       continue;
     }
-    if (sha256File(file.path) === file.sha256) {
-      deletions.push({ path: file.path, kind: file.kind });
+    if (sha256File(path) === entry.sha256) {
+      deletions.push({ path, kind: entry.kind });
     } else if (force) {
-      deletions.push({ path: file.path, kind: file.kind });
+      deletions.push({ path, kind: entry.kind });
     } else {
-      leftovers.push(`modified:${file.path}`);
+      leftovers.push(`modified:${path}`);
     }
   }
   return { deletions, leftovers };
@@ -249,7 +252,11 @@ async function buildReport({ receipt, scope, dryRun, options, state, projectRoot
     }
   }
 
-  const { deletions, leftovers: modified } = planUninstall({ receipt, force: options.force === true });
+  const { deletions, leftovers: modified } = planUninstall({
+    receipt,
+    force: options.force === true,
+    projectRoot,
+  });
   leftovers.push(...modified);
 
   const sharedWith = receipt.payload_home

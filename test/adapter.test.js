@@ -171,8 +171,9 @@ test('install --from a source tree writes commands, skills and a receipt', (t) =
   assert.equal(receipt.engine.version, ENGINE_VERSION);
   assert.equal(receipt.engine.requires, '^0.1.0');
   assert.equal(receipt.requires.agent, '>=2.1.312 <3');
-  assert.equal(receipt.files.length, 46);
-  for (const file of receipt.files) {
+  const configFiles = receipt.files.filter((file) => file.kind !== 'layout');
+  assert.equal(configFiles.length, 46);
+  for (const file of configFiles) {
     assert.ok(existsSync(file.path), file.path);
     assert.match(file.sha256, /^[0-9a-f]{64}$/);
     const expectedKind = file.path.includes(`${join('.claude', 'commands')}`)
@@ -181,6 +182,12 @@ test('install --from a source tree writes commands, skills and a receipt', (t) =
         ? 'derive-agent'
         : 'copy';
     assert.equal(file.kind, expectedKind);
+  }
+  const layoutFiles = receipt.files.filter((file) => file.kind === 'layout');
+  assert.equal(layoutFiles.length, 40, 'workflows/, tasks/ and skills/ are copied into the project root');
+  for (const file of layoutFiles) {
+    assert.ok(existsSync(join(project, file.path)), file.path);
+    assert.match(file.sha256, /^[0-9a-f]{64}$/);
   }
   assert.equal(readdirSync(join(project, '.claude', 'agents')).length, 4);
   assert.ok(existsSync(join(receipt.payload_home, 'r2c-payload.json')));

@@ -13,7 +13,7 @@ import { isValidRange, satisfies } from '../version.js';
 import { detectAgent } from './detect.js';
 import { runAdapterSmoke } from './smoke.js';
 import { receiptPath, stateDir } from './state.js';
-import { isFile, isLink, linkTarget, readJsonIfExists, sha256File, userHome } from './util.js';
+import { isFile, isLink, linkTarget, readJsonIfExists, receiptFilePath, sha256File, userHome } from './util.js';
 
 function check(name, status, detail) {
   return { name, status, detail };
@@ -30,30 +30,32 @@ function readInstalledAdapter(receipt) {
   }
 }
 
-function verifyFiles(receipt) {
+function verifyFiles(receipt, projectRoot) {
   const problems = [];
+  const root = receipt.project_root ?? projectRoot;
   let verified = 0;
   for (const file of receipt.files ?? []) {
-    if (!existsSync(file.path)) {
-      problems.push(`missing:${file.path}`);
+    const path = receiptFilePath(file, root);
+    if (!existsSync(path)) {
+      problems.push(`missing:${path}`);
       continue;
     }
     if (file.kind === 'link') {
-      if (!isLink(file.path)) {
-        problems.push(`not-a-link:${file.path}`);
-      } else if (!existsSync(linkTarget(file.path) ?? file.target ?? '')) {
-        problems.push(`broken-link:${file.path}`);
+      if (!isLink(path)) {
+        problems.push(`not-a-link:${path}`);
+      } else if (!existsSync(linkTarget(path) ?? file.target ?? '')) {
+        problems.push(`broken-link:${path}`);
       } else {
         verified += 1;
       }
       continue;
     }
-    if (!isFile(file.path)) {
-      problems.push(`not-a-file:${file.path}`);
+    if (!isFile(path)) {
+      problems.push(`not-a-file:${path}`);
       continue;
     }
-    if (sha256File(file.path) !== file.sha256) {
-      problems.push(`hash-mismatch:${file.path}`);
+    if (sha256File(path) !== file.sha256) {
+      problems.push(`hash-mismatch:${path}`);
     } else {
       verified += 1;
     }
@@ -352,7 +354,7 @@ export function doctorAdapter({ ctx, agentId, options }) {
     checks.push(check('engine.version', 'pass', `engine ${ctx.version} satisfies ${engineRange}`));
   }
 
-  const files = verifyFiles(receipt);
+  const files = verifyFiles(receipt, ctx.projectRoot);
   if (files.problems.length > 0) {
     checks.push(
       check(

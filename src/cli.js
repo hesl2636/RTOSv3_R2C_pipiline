@@ -40,6 +40,7 @@ Global options:
       --runner-cmd CMD    Prefix used in rendered Submit lines.
       --retry             resume: re-activate the current failed step.
       --workflow ID       hook stop: only consider this workflow's runs.
+      --dry-run           run: discover and validate only, write no state.
 
 Adapter options:
       --from PATH         Payload directory or r2c-payload-<V>.tgz archive.
@@ -350,8 +351,10 @@ export async function main(argv) {
   ]);
   const ACCEPTANCE_ONLY = new Set(['--keep', '--only']);
   let foreign = null;
+  const adapterOnly = (option) => ADAPTER_ONLY.has(option)
+    && !(option === '--dry-run' && command === 'run');
   if (command !== 'adapter' && command !== 'acceptance') {
-    foreign = (options.provided ?? []).find((option) => ADAPTER_ONLY.has(option));
+    foreign = (options.provided ?? []).find(adapterOnly);
   } else if (command === 'acceptance') {
     foreign = (options.provided ?? []).find(
       (option) => ADAPTER_ONLY.has(option) && option !== '--agent',

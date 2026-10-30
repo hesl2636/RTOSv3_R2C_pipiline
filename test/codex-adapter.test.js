@@ -16,7 +16,7 @@ import { tmpdir } from 'node:os';
 import { delimiter, dirname, join, relative, resolve } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { writeTwoStepProject } from './helpers/two-step.js';
+import { dropPayloadManifest, writeTwoStepProject } from './helpers/two-step.js';
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const BIN = join(REPO, 'bin', 'r2c.js');
@@ -159,6 +159,20 @@ function expectedSkillCount() {
   return readdirSync(join(REPO, 'pack', 'skills')).length;
 }
 
+function countFiles(dir) {
+  let total = 0;
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    total += entry.isDirectory() ? countFiles(join(dir, entry.name)) : 1;
+  }
+  return total;
+}
+
+/** Payload files copied into the project root by every install. */
+function expectedLayoutCount() {
+  return ['workflows', 'tasks', 'skills']
+    .reduce((total, dir) => total + countFiles(join(REPO, 'pack', dir)), 0);
+}
+
 test('install writes command skills, skills, agents, hooks and a receipt', (t) => {
   const { project, env } = setup(t);
   const result = install(env, project);
@@ -210,9 +224,13 @@ test('install writes command skills, skills, agents, hooks and a receipt', (t) =
   const receipt = readReceipt(project);
   assert.equal(receipt.adapter, 'codex');
   assert.equal(receipt.scope, 'project');
-  assert.equal(receipt.files.length, expectedCommandCount() + expectedSkillCount() + agents.length + 3);
-  const kinds = new Set(receipt.files.map((file) => file.kind));
+  const configFiles = receipt.files.filter((file) => file.kind !== 'layout');
+  assert.equal(configFiles.length, expectedCommandCount() + expectedSkillCount() + agents.length + 3);
+  const kinds = new Set(configFiles.map((file) => file.kind));
   for (const kind of ['wrap-skill', 'copy', 'derive-agent', 'render']) assert.ok(kinds.has(kind), kind);
+  const layoutFiles = receipt.files.filter((file) => file.kind === 'layout');
+  assert.equal(layoutFiles.length, expectedLayoutCount());
+  for (const file of layoutFiles) assert.ok(existsSync(join(project, file.path)), file.path);
   assert.equal(receipt.agent.version, '0.165.0');
   assert.deepEqual(receipt.manual, [
     'run /hooks in codex and trust the r2c Stop and PreToolUse hooks (non-interactive bypass: --dangerously-bypass-hook-trust)',
@@ -354,6 +372,7 @@ test('the installed Stop hook delivers next --format plain and caps at 8', (t) =
   const runnerCmd = `node ${BIN.replaceAll('\\', '/')}`;
   assert.equal(install(env, project, ['--runner-cmd', runnerCmd]).status, 0);
 
+  dropPayloadManifest(project);
   writeTwoStepProject(project);
   const started = cli(
     ['run', '--project-root', project, '--session-id', 'sess-codex-a', '--runner-cmd', runnerCmd],
@@ -417,6 +436,7 @@ test('untrusted or absent hooks never block the B-mode run -> submit chain', (t)
   rmSync(join(project, '.codex', 'r2c-hook-stop.cmd'), { force: true });
   rmSync(join(project, '.codex', 'r2c-hook-pre-tool-use.cmd'), { force: true });
 
+  dropPayloadManifest(project);
   writeTwoStepProject(project);
 
   const started = cli(['run', '--project-root', project], { cwd: project, env });

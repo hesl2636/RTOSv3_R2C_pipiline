@@ -51,6 +51,21 @@ export async function run(_argv, ctx) {
   }
 
   assertRenderableSteps(inspected.data, inspected.root);
+
+  if (ctx.options?.dryRun === true) {
+    return {
+      command: 'run',
+      text: `dry-run: ${inspected.manifestPath} (${inspected.data.id})\n`,
+      data: {
+        dry_run: true,
+        manifest: inspected.manifestPath,
+        workflow_id: inspected.data.id,
+        status: 'dry-run',
+        warnings: inspected.warnings,
+      },
+    };
+  }
+
   const created = createRun({
     root: ctx.projectRoot,
     manifest: inspected.data,

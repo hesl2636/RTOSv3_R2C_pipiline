@@ -157,3 +157,12 @@ export function createDirLink(linkPath, targetPath) {
   const type = process.platform === 'win32' ? 'junction' : 'dir';
   symlinkSync(targetPath, linkPath, type);
 }
+
+/**
+ * Absolute path of a receipt entry. Agent config is recorded absolute, layout
+ * copies project-relative (so a moved or renamed project still resolves them).
+ */
+export function receiptFilePath(entry, projectRoot) {
+  if (entry.kind !== 'layout' || isAbsolute(entry.path)) return entry.path;
+  return join(projectRoot, entry.path);
+}
