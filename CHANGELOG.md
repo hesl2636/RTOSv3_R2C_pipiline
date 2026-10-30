@@ -23,7 +23,10 @@ step-by-step across the engine, the payload, and all five agent adapters; see
   `package.json`, the vendored `yaml` dependency and LICENSE) plus the
   self-contained `scripts/install.mjs` bootstrap that downloads the engine,
   verifies it against `SHA256SUMS.txt`, extracts it to `.r2c/engine/<V>/`
-  (or `~/.r2c/engine/<V>/`) and runs the engine's `adapter install`.
+  (or `~/.r2c/engine/<V>/`) and runs the engine's `adapter install`. A tampered
+  or missing release asset fails the bootstrap with nothing written: the
+  checksum stage never extracts, and a failed hand-off removes the engine that
+  run extracted.
 - Bootstrap credential chain for a private release — `GH_TOKEN` →
   `GITHUB_TOKEN` → `git credential fill` for `host=github.com`, non-interactive
   and time-limited — so a machine without `gh` still installs; when no
