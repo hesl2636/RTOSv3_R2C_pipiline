@@ -41,9 +41,8 @@ the engine is published.
 │   ├── analysis/                  # frozen intranet attribution analysis plugin
 │   └── intranet-mcp/              # frozen intranet MCP server definitions
 ├── scripts/
-│   ├── release.mjs                # the only packager (r2c-engine-V.tgz + r2c-payload-V.tgz)
+│   ├── release.mjs                # the only packager (the four release assets)
 │   ├── install.mjs                # the bootstrap, published verbatim as the install.mjs asset
-│   ├── check-pack.mjs             # npm files whitelist gate
 │   └── verify-sums.mjs            # SHA256SUMS verification
 ├── docs/
 │   ├── layout.md                  # this file
@@ -71,18 +70,21 @@ the engine is published.
 | `pack/` | workflow authors | The only place workflow content exists: manifests, task files, skills, command sources. Adapters must not keep copies of these files. `pack/` is the manifest root (`workflows/` sits directly inside it). |
 | `adapters/<agent>/` | agent adapters | Declarations (`adapter.json`, `map.json`), agent-specific assets, optional `steps.mjs` / `smoke.mjs`. Copies of `pack/` content are forbidden; install-time generation only. |
 | `plugins/{upload,analysis,intranet-mcp}/` | intranet maintainers | Frozen. Not published to npm and never installed by default. See `docs/plugins.md`. |
-| `scripts/release.mjs` | release maintainer | The single packager; produces `r2c-engine-V.tgz`, `r2c-payload-V.tgz` + `SHA256SUMS.txt`. |
+| `scripts/release.mjs` | release maintainer | The single packager; produces `r2c-engine-V.tgz`, `r2c-payload-V.tgz`, `install.mjs` and `SHA256SUMS.txt` — the whole release. |
 | `scripts/install.mjs` | release maintainer | The bootstrap; one copy, published unchanged as the `install.mjs` asset. Node built-ins only — no imports from `src/`. |
 | `docs/` | maintainers | `docs/agents/issue-tracker.md` is preserved unchanged; the remaining docs describe this layout, installation, legacy recovery, plugins, compatibility and blue-zone preflight. |
 | `.github/workflows/` | CI maintainers | Zero-secret gates; live agent probes stay manual and `continue-on-error`. |
 
 ## What is published
 
-The npm package contains exactly `package.json` plus the `files` whitelist:
-`bin/`, `src/`, `schema/`, `README.md`, `LICENSE`. `pack/`, `adapters/`,
-`plugins/`, `test/`, `docs/`, `scripts/` and `.github/` are never published —
-the engine ships as `r2c-engine-V.tgz`, adapters as the separate
-`r2c-payload-V.tgz` release asset.
+A release has exactly four assets and nothing else: `r2c-engine-V.tgz` (the
+runnable CLI), `r2c-payload-V.tgz` (adapters, workflow content and shims),
+`install.mjs` (the repository bootstrap, byte for byte) and `SHA256SUMS.txt`
+(one digest per other asset). Nothing is published to npm; `npm ci` in CI only
+installs the build/test dependencies. `scripts/release.mjs --check` enforces
+that asset whitelist, so `pack/`, `adapters/`, `plugins/`, `test/`, `docs/`,
+`scripts/` and `.github/` can only reach a release inside the two archives that
+declare them.
 
 ## Runtime state
 

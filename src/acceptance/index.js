@@ -8,9 +8,6 @@
  * Faces:
  *   no --agent  -> 17 checks: E0 V1 FS1 FS3' FS4 T2 T4 + SB1..SB10
  *   --agent <a> -> 15 checks: the same 7 engine checks + I1 I2 I3 I4 I5 T1 U1 U2
- *
- * P1 (pack whitelist) is outside both faces (ticket #34's CI gate owns it) but
- * remains reachable through `--only P1`.
  */
 import { randomBytes } from 'node:crypto';
 import { existsSync, mkdirSync, readdirSync, rmSync } from 'node:fs';
@@ -29,7 +26,6 @@ import {
   allCheckIds,
   coreChecks,
   engineChecks,
-  packWhitelist,
 } from './checks.js';
 
 function usage(message, details = null) {
@@ -178,7 +174,7 @@ export async function runAcceptance(_argv, ctx) {
   if (only === null) {
     checks = requestedAgent === null ? allEngine : [...coreChecks(h), ...agent];
   } else {
-    const all = [...allEngine, ...agent, packWhitelist()];
+    const all = [...allEngine, ...agent];
     const known = new Set(all.map((check) => check.id));
     for (const id of only) {
       if (!known.has(id)) {
