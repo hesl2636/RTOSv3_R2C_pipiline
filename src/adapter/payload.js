@@ -48,7 +48,30 @@ import {
 } from './util.js';
 
 export { PLUGIN_SCHEMA };
-const RELEASE_BASE = 'https://github.com/hesl2636/RTOSv3_R2C_pipiline/releases/download';
+const RELEASE_REPO = 'hesl2636/RTOSv3_R2C_pipiline';
+const RELEASE_BASE = `https://github.com/${RELEASE_REPO}/releases/download`;
+const RELEASE_API = `https://api.github.com/repos/${RELEASE_REPO}`;
+
+/**
+ * Anonymous downloads use the public web URL. Token downloads must go through
+ * the REST API: GitHub answers the web download URL with `404` when the
+ * repository is private and the request carries a bearer token, while the
+ * asset endpoint (`Accept: application/octet-stream`) streams it.
+ */
+export function releaseEndpoints({ version, asset, token = null }) {
+  if (token) {
+    return {
+      kind: 'api',
+      release: `${RELEASE_API}/releases/tags/v${version}`,
+      asset: (id) => `${RELEASE_API}/releases/assets/${id}`,
+    };
+  }
+  return {
+    kind: 'direct',
+    archive: `${RELEASE_BASE}/v${version}/${asset}`,
+    sums: `${RELEASE_BASE}/v${version}/SHA256SUMS.txt`,
+  };
+}
 
 function payloadError(code, message, details = null, exitCode = EXIT_CODES.USAGE) {
   return new R2cError(code, message, details, exitCode);
@@ -382,31 +405,70 @@ function extractPayloadArchive(home, entries, manifestBytes) {
 
 async function downloadRelease(version) {
   const asset = `r2c-plugin-${version}.tgz`;
-  const base = `${RELEASE_BASE}/v${version}`;
+  const token = process.env.GITHUB_TOKEN || process.env.GH_TOKEN || null;
   const headers = { 'user-agent': 'r2c-runner' };
-  const token = process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
   if (token) headers.authorization = `Bearer ${token}`;
+  const endpoints = releaseEndpoints({ version, asset, token });
+
+  const request = async (url, timeout, extra = null) => {
+    try {
+      return await fetch(url, {
+        headers: extra === null ? headers : { ...headers, ...extra },
+        signal: AbortSignal.timeout(timeout),
+      });
+    } catch (error) {
+      const authHint = token === null ? ' (the release repository is private; set GITHUB_TOKEN)' : '';
+      throw payloadError(
+        'PAYLOAD_UNAVAILABLE',
+        `cannot reach the payload release v${version}: ${error.message}${authHint}; ${hintFrom()}`,
+        { version, url },
+      );
+    }
+  };
+
+  let archiveUrl;
   let response;
   let sumsResponse;
-  try {
-    response = await fetch(`${base}/${asset}`, { headers, signal: AbortSignal.timeout(60_000) });
-    sumsResponse = await fetch(`${base}/SHA256SUMS.txt`, {
-      headers,
-      signal: AbortSignal.timeout(30_000),
+  if (endpoints.kind === 'api') {
+    const releaseResponse = await request(endpoints.release, 30_000, {
+      accept: 'application/vnd.github+json',
     });
-  } catch (error) {
-    throw payloadError(
-      'PAYLOAD_UNAVAILABLE',
-      `cannot reach the payload release v${version}: ${error.message}; ${hintFrom()}`,
-      { version, url: `${base}/${asset}` },
-    );
+    if (!releaseResponse.ok) {
+      throw payloadError(
+        'PAYLOAD_UNAVAILABLE',
+        `cannot read release v${version}: HTTP ${releaseResponse.status}; ${hintFrom()}`,
+        { version, url: endpoints.release, status: releaseResponse.status },
+      );
+    }
+    const release = await releaseResponse.json().catch(() => null);
+    const assets = Array.isArray(release?.assets) ? release.assets : [];
+    const archiveAsset = assets.find((entry) => entry?.name === asset);
+    const sumsAsset = assets.find((entry) => entry?.name === 'SHA256SUMS.txt');
+    if (archiveAsset === undefined || sumsAsset === undefined) {
+      const missing = archiveAsset === undefined ? asset : 'SHA256SUMS.txt';
+      throw payloadError(
+        'PAYLOAD_UNAVAILABLE',
+        `release v${version} does not carry ${missing}; ${hintFrom()}`,
+        { version, url: endpoints.release },
+      );
+    }
+    archiveUrl = endpoints.asset(archiveAsset.id);
+    response = await request(archiveUrl, 60_000, { accept: 'application/octet-stream' });
+    sumsResponse = await request(endpoints.asset(sumsAsset.id), 30_000, {
+      accept: 'application/octet-stream',
+    });
+  } else {
+    archiveUrl = endpoints.archive;
+    response = await request(archiveUrl, 60_000);
+    sumsResponse = await request(endpoints.sums, 30_000);
   }
+
   if (!response.ok) {
-    const authHint = token ? '' : ' (the release repository is private; set GITHUB_TOKEN)';
+    const authHint = token === null ? ' (the release repository is private; set GITHUB_TOKEN)' : '';
     throw payloadError(
       'PAYLOAD_UNAVAILABLE',
       `cannot download ${asset}: HTTP ${response.status}${authHint}; ${hintFrom()}`,
-      { version, url: `${base}/${asset}`, status: response.status },
+      { version, url: archiveUrl, status: response.status },
     );
   }
   const archive = Buffer.from(await response.arrayBuffer());

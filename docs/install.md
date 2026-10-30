@@ -43,8 +43,12 @@ order:
 3. `~/.r2c/cache/plugin-<V>`;
 4. the GitHub Release download for version `V`.
 
-While the release repository is private, the anonymous Release download returns
-`404`; `--from` is the supported path. A `.tgz` payload is verified against the
+Anonymous downloads use the public release URL. For a private repository the
+anonymous request returns `404`, so set `GITHUB_TOKEN` or `GH_TOKEN` (contents:
+read) and the installer reads the release and streams its assets through the
+GitHub API (`/releases/tags/v<V>` + `/releases/assets/<id>`); the web download
+URL itself answers `404` to token requests. Without a token, `--from` and the
+cache remain the supported path. A `.tgz` payload is verified against the
 sha256 recorded in its own `r2c-plugin.json`, and every file is hashed before
 the plan is built. `--link` is only accepted together with `--from <dir>`: a
 `.tgz` always installs with `--copy`.

@@ -391,9 +391,9 @@ export async function installAdapter({ ctx, agentId, options }) {
     const scope = resolveScope(options, adapter);
     const state = stateDir(scope, ctx.projectRoot);
     if (options.dryRun) {
-      return installOnce({ ctx, agentId, options, state, resolved, adapter, map, scope });
+      return await installOnce({ ctx, agentId, options, state, resolved, adapter, map, scope });
     }
-    return withLock(installLockPath(state), () =>
+    return await withLock(installLockPath(state), () =>
       installOnce({ ctx, agentId, options, state, resolved, adapter, map, scope }),
     );
   } finally {
