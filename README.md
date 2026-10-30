@@ -31,23 +31,18 @@ test/ scripts/ docs/ .github/   测试、打包、文档、CI
 
 ### 首次使用（所有 agent 相同）
 
-安装器把载荷（含默认清单、任务书、技能）放在 `.r2c/payload/0.1.0/`，不会把它们
-复制到项目根。默认发现只读项目根的 `workflows/`，而 `taskFile` 又相对该根解析，
-所以推荐把载荷的 `workflows/`、`tasks/`、`skills/` 整套复制到项目根
-（hook 续跑也依赖项目根的默认发现）；只用终端推进时也可以 `--manifest` 直接指向载荷清单：
+安装器把载荷（含默认清单、任务书、技能）放在 `.r2c/payload/0.1.0/`，并把其中的
+`workflows/`、`tasks/`、`skills/` 逐文件复制到项目根：装完即可直接 `r2c run`，
+不需要任何手工复制（hook 续跑依赖同一套默认发现）。回执记录每个复制文件的
+项目相对路径与 sha256，`doctor` 据此报告被手改的布局文件，`adapter uninstall`
+按回执回退这些复制文件与自建空目录。项目根同名但非本安装拥有的文件按冲突拒绝，
+`--force` 先备份到 `.r2c/install/backup/` 再替换。
 
 ```bash
-# (a) 推荐：复制整套载荷内容到项目根
-cp -r .r2c/payload/0.1.0/{workflows,tasks,skills} .
+npx r2c-runner@0.1.0 adapter install <agent> --from r2c-payload-0.1.0.tgz --project .
 npx r2c-runner@0.1.0 run --project .
-
-# (b) 仅终端/手工推进：直接指向载荷清单（--manifest 需要绝对路径，打印的 Submit 行会带上它）
-npx r2c-runner@0.1.0 run --project . \
-  --manifest "$PWD/.r2c/payload/0.1.0/workflows/RTOSv3_R2C_pipiline.yaml"
 ```
 
-Windows PowerShell 用 `Copy-Item .r2c\payload\0.1.0\{workflows,tasks,skills} . -Recurse`
-或把 (a) 的 `$PWD` 换成 `$((Get-Location).Path)`。
 `--project` 与 `--project-root` 同义，所有命令都接受。
 
 ### claude-code

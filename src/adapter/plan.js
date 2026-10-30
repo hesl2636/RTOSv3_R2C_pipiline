@@ -15,6 +15,12 @@ import { sha256, userHome } from './util.js';
 export const ADAPTER_SCHEMA = 'r2c.adapter/v1';
 export const ADAPTER_MAP_SCHEMA = 'r2c.adapter-map/v1';
 
+/**
+ * Payload trees copied verbatim into the project root by every install, so the
+ * project owns a manifest and task/skill references `r2c run` can discover.
+ */
+const LAYOUT_DIRS = Object.freeze(['workflows', 'tasks', 'skills']);
+
 function usageError(code, message, details = null) {
   return new R2cError(code, message, details, EXIT_CODES.USAGE);
 }
@@ -228,6 +234,26 @@ function agentsFromPayload(resolved) {
   return [...roles].sort();
 }
 
+/** One plan entry per payload layout file: a byte copy under the project root. */
+function layoutEntries({ resolved, projectRoot }) {
+  const entries = [];
+  for (const payloadEntry of resolved.entries) {
+    if (!LAYOUT_DIRS.some((dir) => payloadEntry.rel.startsWith(`${dir}/`))) continue;
+    const content = readFileSync(payloadEntry.abs);
+    entries.push({
+      action: 'layout',
+      kind: 'layout',
+      // Recorded project-relative: a renamed or moved project still resolves it.
+      rel: payloadEntry.rel,
+      target: join(projectRoot, payloadEntry.rel),
+      content,
+      sha256: sha256(content),
+      linkWarning: null,
+    });
+  }
+  return entries;
+}
+
 /**
  * Build the plan for one install.
  *
@@ -374,6 +400,8 @@ export function buildPlan({
       });
     }
   }
+
+  for (const entry of layoutEntries({ resolved, projectRoot })) fileEntries.push(entry);
 
   for (const entry of linkEntries) entries.push(entry);
   for (const entry of fileEntries) {
