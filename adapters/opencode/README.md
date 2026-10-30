@@ -61,14 +61,15 @@ code passes.
 ## Install / verify / remove
 
 ```bash
-r2c adapter install opencode --from <payload-dir> --project .
-r2c adapter doctor opencode --project .
-r2c adapter smoke opencode --project .
-r2c adapter uninstall opencode --project .
+node .r2c/engine/<V>/bin/r2c.js adapter install opencode --project .
+node .r2c/engine/<V>/bin/r2c.js adapter doctor opencode --project .
+node .r2c/engine/<V>/bin/r2c.js adapter smoke opencode --project .
+node .r2c/engine/<V>/bin/r2c.js adapter uninstall opencode --project .
 ```
 
-`--from` accepts an unpacked payload (`r2c-payload.json`) or a source checkout
-(`package.json` + `pack/` + `adapters/`).
+The engine resolves `r2c-payload-<V>.tgz` from the GitHub Release at its own
+version; `--from` accepts an unpacked payload (`r2c-payload.json`) or a source
+checkout (`package.json` + `pack/` + `adapters/`) for an offline install.
 
 ## Manual steps
 

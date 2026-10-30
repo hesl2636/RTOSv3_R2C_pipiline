@@ -12,9 +12,10 @@ path.
 
 ## Boundaries
 
-- **Not in npm.** The package `files` whitelist is `bin/`, `src/`, `schema/`,
-  `README.md`, `LICENSE`. `plugins/` is excluded and `npm pack` must never
-  contain it.
+- **Not in a release.** The four release assets are `r2c-engine-V.tgz`,
+  `r2c-payload-V.tgz`, `install.mjs` and `SHA256SUMS.txt`; `plugins/` is in
+  neither archive and `node scripts/release.mjs --check` enforces the asset
+  whitelist.
 - **Not in the default install.** No `adapter.json`, `map.json` or default
   workflow references `plugins/`. Installing an agent adapter installs the
   engine payload only. Users who want the intranet stages opt in by pointing a
