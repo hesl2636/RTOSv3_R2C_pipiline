@@ -140,7 +140,7 @@ test('the agent face reports 15 checks, never runs a model and never invokes ano
   const result = cli(['acceptance', '--agent', 'claude-code', '--json'], {
     env: cleanEnv({ home, pathDir: sentinels }),
   });
-  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.status, 0, result.stdout + result.stderr);
   const json = envelope(result, 'agent face');
   assert.deepEqual(json.data.checks.map((check) => check.id), AGENT_IDS);
   assert.equal(new Set(json.data.checks.map((check) => check.id)).size, 15);
@@ -165,7 +165,7 @@ test('a modified installed file fails the relevant check and the aggregate exits
     ['acceptance', '--agent', 'claude-code', '--project-root', project, '--json'],
     { cwd: project, env },
   );
-  assert.equal(result.status, 3, result.stderr);
+  assert.equal(result.status, 3, result.stdout + result.stderr);
   const json = envelope(result, 'tamper');
   assert.equal(json.error.code, 'ACCEPTANCE_FAILED');
   const doctor = json.data.checks.find((check) => check.id === 'I3');

@@ -305,9 +305,12 @@ test('hooks.json and the .cmd launcher survive a project path with a space', (t)
   assert.match(cmd, /--event stop/);
   assert.match(cmd, /--project-root "[^"]*project with space"/);
 
-  const shell = process.platform === 'win32' ? process.env.ComSpec : cmdFile;
-  const args = process.platform === 'win32' ? ['/d', '/c', cmdFile] : [];
-  const launch = spawnSync(shell, args, {
+  if (process.platform !== 'win32') {
+    // A .cmd launcher is a Windows artifact; its content is asserted above.
+    assert.ok(existsSync(cmdFile));
+    return;
+  }
+  const launch = spawnSync(process.env.ComSpec, ['/d', '/c', cmdFile], {
     cwd: project,
     encoding: 'utf8',
     input: '{}',

@@ -244,7 +244,8 @@ test('user-scope install renders the plugin, patch, hooks and profile entry', (t
   const doctor = cli(['adapter', 'doctor', 'dsh', '--scope', 'user', '--project-root', project, '--json'], { env });
   assert.equal(doctor.status, 0, doctor.stdout + doctor.stderr);
   const checks = envelope(doctor).data.checks;
-  assert.equal(checks.find((entry) => entry.name === 'plugin.activated').status, 'pass');
+  const activated = checks.find((entry) => entry.name === 'plugin.activated');
+  assert.equal(activated.status, 'pass', JSON.stringify(activated));
   assert.equal(checks.find((entry) => entry.name === 'discovery').status, 'pass');
   assert.equal(checks.find((entry) => entry.name === 'hooks.sandbox_write').status, 'pass');
   assert.equal(checks.find((entry) => entry.name === 'hooks.launch').status, 'pass');

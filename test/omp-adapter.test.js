@@ -159,7 +159,7 @@ function readReceipt(root) {
 test('project install writes .omp files, never touches user scope, and never links a plugin', (t) => {
   const { home, project, env, log } = setup(t);
   const result = install(env, project);
-  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.status, 0, result.stdout + result.stderr);
   const json = envelope(result);
   assert.equal(json.command, 'adapter.install');
   assert.equal(json.data.scope, 'project');
@@ -228,10 +228,11 @@ test('project install writes .omp files, never touches user scope, and never lin
 
 test('doctor discovery passes on a clean install and fails when a skill is emptied', (t) => {
   const { project, env } = setup(t);
-  assert.equal(install(env, project).status, 0);
+  const installed = install(env, project);
+  assert.equal(installed.status, 0, installed.stdout + installed.stderr);
 
   const clean = cli(['adapter', 'doctor', 'omp', '--project-root', project, '--json'], { env });
-  assert.equal(clean.status, 0, clean.stderr);
+  assert.equal(clean.status, 0, clean.stdout + clean.stderr);
   const cleanChecks = envelope(clean).data.checks;
   assert.equal(cleanChecks.find((check) => check.name === 'discovery').status, 'pass');
   assert.equal(cleanChecks.find((check) => check.name === 'hooks.launch').status, 'pass');
@@ -249,7 +250,8 @@ test('doctor discovery passes on a clean install and fails when a skill is empti
 
 test('uninstall removes adapter files and keeps .r2c runtime state', (t) => {
   const { project, env } = setup(t);
-  assert.equal(install(env, project).status, 0);
+  const installed = install(env, project);
+  assert.equal(installed.status, 0, installed.stdout + installed.stderr);
   writeFileSync(join(project, '.r2c', 'ir.md'), '# interface requirements\n');
 
   const removed = cli(['adapter', 'uninstall', 'omp', '--project-root', project, '--json'], { env });

@@ -160,7 +160,7 @@ test('doctor reports wired, parsed and launchable hooks as healthy', (t) => {
   assert.equal(install(env, project).status, 0);
 
   const result = cli(['adapter', 'doctor', 'claude-code', '--project-root', project, '--json'], { env });
-  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.status, 0, result.stdout + result.stderr);
   const data = envelope(result).data;
   assert.equal(data.healthy, true);
   for (const name of ['hooks.wired', 'hooks.smoke', 'hooks.launch', 'discovery']) {
@@ -222,7 +222,7 @@ test('user scope writes only commands, skills and settings under the home claude
     ['adapter', 'doctor', 'claude-code', '--project-root', project, '--scope', 'user', '--json'],
     { env },
   );
-  assert.equal(doctor.status, 0, doctor.stderr);
+  assert.equal(doctor.status, 0, doctor.stdout + doctor.stderr);
   assert.equal(envelope(doctor).data.healthy, true);
 });
 
