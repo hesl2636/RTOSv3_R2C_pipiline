@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { test } from 'node:test';
@@ -10,9 +9,7 @@ const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const WORKFLOWS = join(REPO, '.github', 'workflows');
 const pkg = JSON.parse(readFileSync(join(REPO, 'package.json'), 'utf8'));
 
-const FILES = ['bin/', 'src/', 'schema/', 'README.md', 'LICENSE'];
 const ADAPTERS = ['claude-code', 'codex', 'dsh', 'omp', 'opencode'];
-const FORBIDDEN = ['.github/', 'adapters/', 'docs/', 'pack/', 'plugins/', 'scripts/', 'test/'];
 
 function workflow(name) {
   const text = readFileSync(join(WORKFLOWS, name), 'utf8');
@@ -34,33 +31,15 @@ function findStep(parsed, needle) {
   return null;
 }
 
-function npmPack() {
-  const cli = join(dirname(process.execPath), 'node_modules', 'npm', 'bin', 'npm-cli.js');
-  const args = ['pack', '--dry-run', '--json', '--ignore-scripts'];
-  const options = { cwd: REPO, encoding: 'utf8' };
-  const result = existsSync(cli)
-    ? spawnSync(process.execPath, [cli, ...args], options)
-    : spawnSync(process.platform === 'win32' ? 'npm.cmd' : 'npm', args, {
-        ...options,
-        shell: process.platform === 'win32',
-      });
-  assert.equal(result.status, 0, `npm pack failed\n${result.stdout}\n${result.stderr}`);
-  const [metadata] = JSON.parse(result.stdout);
-  return metadata.files.map((file) => file.path).sort();
-}
-
-function trackedFiles() {
-  const result = spawnSync('git', ['ls-files', '-z'], { cwd: REPO, encoding: 'utf8' });
-  assert.equal(result.status, 0, result.stderr);
-  return result.stdout.split('\0').filter(Boolean);
-}
-
-test('package.json exposes test/release scripts and the exact files whitelist', () => {
+test('package.json exposes test/release scripts and no npm publishing whitelist', () => {
   assert.deepEqual(pkg.scripts, {
     test: 'node --test test/*.test.js',
     release: 'node scripts/release.mjs',
   });
-  assert.deepEqual(pkg.files, FILES);
+  // #44: the package is not published to npm, so the npm `files` whitelist is
+  // gone; the release asset whitelist in scripts/release.mjs replaces it.
+  assert.equal('files' in pkg, false, 'npm files whitelist must stay removed');
+  assert.equal(existsSync(join(REPO, 'scripts', 'check-pack.mjs')), false, 'the npm pack gate must stay deleted');
 });
 
 test('all four workflows exist with their expected triggers', () => {
@@ -84,7 +63,7 @@ test('ci, acceptance, and live contain no secrets', () => {
   }
 });
 
-test('ci runs the node matrix, tests, manifest validation, and both release gates', () => {
+test('ci runs the node matrix, tests, manifest validation, and the release gate', () => {
   const ci = workflow('ci.yml').parsed;
   const include = ci.jobs.test.strategy.matrix.include;
   // Adjudication: spec §7 says "node 22.19/24 × ubuntu + windows 24" and
@@ -104,9 +83,15 @@ test('ci runs the node matrix, tests, manifest validation, and both release gate
     /node bin\/r2c\.js validate --manifest .*pack\/workflows\/RTOSv3_R2C_pipiline\.yaml/,
   );
   assert.match(runs, /node scripts\/release\.mjs --check/);
-  assert.match(runs, /node scripts\/check-pack\.mjs/);
   assert.match(runs, /git ls-files .*workflows\/\*\.yaml/);
   assert.match(runs, /-ne 1/);
+
+  // #44: the npm pack whitelist is gone. The asset whitelist lives in
+  // `scripts/release.mjs --check`, so a second npm-flavoured gate must not
+  // come back and contradict it.
+  assert.doesNotMatch(runs, /check-pack|npm pack/);
+  const text = workflow('ci.yml').text;
+  assert.doesNotMatch(text, /npm pack/, 'ci must not pack npm tarballs');
 });
 
 test('acceptance covers all five adapters on ubuntu and windows', () => {
@@ -168,10 +153,9 @@ test('live is manual, redirects HOME/USERPROFILE/DSH_HOME, and never gates', () 
   assert.match(runs, /opencode run .*--format json/);
 });
 
-test('release gates tag==version, builds, checksums, drafts two assets, then publishes', () => {
+test('release gates tag==version, builds four assets, verifies sums, then publishes', () => {
   const release = workflow('release.yml').parsed;
-  const job = release.jobs.release;
-  assert.deepEqual(release.permissions, { contents: 'write', 'id-token': 'write' });
+  assert.deepEqual(release.permissions, { contents: 'write' });
 
   const version = findStep(release, 'GITHUB_REF_NAME');
   assert.ok(version, 'tag==version step is missing');
@@ -183,60 +167,42 @@ test('release gates tag==version, builds, checksums, drafts two assets, then pub
 
   const runs = stepRuns(release);
   const joined = runs.join('\n');
+  // npm stays for `npm ci` + `npm test` only; it is not a distribution channel.
   assert.match(joined, /npm ci/);
   assert.match(joined, /npm test/);
-  assert.match(joined, /node scripts\/release\.mjs/);
+  assert.doesNotMatch(joined, /npm publish/);
+  assert.match(joined, /node scripts\/release\.mjs --check/);
+  assert.match(joined, /node scripts\/release\.mjs --out dist/);
   assert.match(joined, /node scripts\/verify-sums\.mjs dist\/SHA256SUMS\.txt/);
+  assert.ok(
+    runs.findIndex((run) => run.includes('--out dist')) <
+      runs.findIndex((run) => run.includes('verify-sums')),
+    'the assets must be built before their checksums are verified',
+  );
 
   const draftIndex = runs.findIndex((run) => run.includes('gh release create'));
-  const publishIndex = runs.findIndex((run) => run.includes('npm publish'));
+  const editIndex = runs.findIndex((run) => run.includes('gh release edit'));
   assert.ok(draftIndex >= 0, 'draft release step is missing');
-  assert.ok(publishIndex >= 0, 'npm publish step is missing');
-  assert.ok(draftIndex < publishIndex, 'draft release must be created before publishing');
+  assert.ok(editIndex >= 0, 'draft must be published after the assets are verified');
+  assert.ok(draftIndex < editIndex, 'draft release must be created before it is published');
 
   const draft = runs[draftIndex];
   assert.match(draft, /--draft/);
   const assets = [...new Set(draft.match(/dist\/[^\s"\\]+/g) ?? [])].sort();
-  assert.deepEqual(assets, ['dist/SHA256SUMS.txt', 'dist/r2c-payload-${version}.tgz']);
+  assert.deepEqual(assets, [
+    'dist/SHA256SUMS.txt',
+    'dist/install.mjs',
+    'dist/r2c-engine-${version}.tgz',
+    'dist/r2c-payload-${version}.tgz',
+  ]);
 
-  const publish = runs[publishIndex];
-  assert.match(publish, /dist_tag=latest/);
-  assert.match(publish, /dist_tag=next/);
-  assert.match(publish, /--tag "\$dist_tag"/);
-  assert.doesNotMatch(publish, /--tag (latest|next)/);
-
-  const editIndex = runs.findIndex((run) => run.includes('gh release edit'));
-  assert.ok(editIndex >= 0, 'draft must be published after a successful npm publish');
-  assert.ok(editIndex > publishIndex, 'gh release edit must come after npm publish');
   assert.match(runs[editIndex], /--draft=false/);
   assert.equal(runs.filter((run) => run.includes('gh release edit')).length, 1);
 
-  const secrets = [...workflow('release.yml').text.matchAll(/secrets\.(\w+)/g)].map((match) => match[1]);
-  assert.deepEqual(secrets, ['NPM_TOKEN']);
-});
-
-test('npm pack ships exactly package.json plus the files whitelist', () => {
-  const packed = npmPack();
-  const tracked = trackedFiles();
-  const expected = ['package.json'];
-  for (const entry of pkg.files) {
-    if (entry.endsWith('/')) {
-      for (const file of tracked) if (file.startsWith(entry)) expected.push(file);
-    } else if (tracked.includes(entry)) {
-      expected.push(entry);
-    }
-  }
-  expected.sort();
-
-  // Compare only tracked paths: a stray untracked file in a developer checkout
-  // must not turn this contract test red (CI runs on a clean checkout anyway).
-  const packedTracked = packed.filter(
-    (file) => file === 'package.json' || tracked.includes(file),
-  );
-  assert.deepEqual(packedTracked, expected);
-  for (const file of packed) {
-    assert.equal(FORBIDDEN.some((prefix) => file.startsWith(prefix)), false, `${file} must not be packed`);
-  }
+  const text = workflow('release.yml').text;
+  assert.doesNotMatch(text, /secrets\./, 'the release must hold no secret');
+  assert.doesNotMatch(text, /NPM_TOKEN|NODE_AUTH_TOKEN|R2C_PROVENANCE/);
+  assert.doesNotMatch(text, /id-token|npm publish|registry-url/);
 });
 
 test('CHANGELOG records the 0.1.0 release', () => {

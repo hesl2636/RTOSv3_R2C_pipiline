@@ -26,6 +26,8 @@ const BOOTSTRAP = join(REPO, 'scripts', 'install.mjs');
 const VERSION = JSON.parse(readFileSync(join(REPO, 'package.json'), 'utf8')).version;
 const ASSET = `r2c-payload-${VERSION}.tgz`;
 const ENGINE_ASSET = `r2c-engine-${VERSION}.tgz`;
+const INSTALL_ASSET = 'install.mjs';
+const SUMS_ASSET = 'SHA256SUMS.txt';
 const ADAPTERS = ['claude-code', 'codex', 'dsh', 'omp', 'opencode'];
 
 function tempDir(t, prefix) {
@@ -204,14 +206,45 @@ test('two consecutive builds are byte-identical and list identical per-file hash
     'engine archive is byte-identical across builds',
   );
   assert.equal(
-    readFileSync(join(first, 'SHA256SUMS.txt'), 'utf8'),
-    readFileSync(join(second, 'SHA256SUMS.txt'), 'utf8'),
+    sha256File(join(first, INSTALL_ASSET)),
+    sha256File(join(second, INSTALL_ASSET)),
+    'install.mjs asset is byte-identical across builds',
   );
   assert.equal(
-    readFileSync(join(first, 'SHA256SUMS.txt'), 'utf8'),
-    `${sha256File(join(first, ENGINE_ASSET))}  ${ENGINE_ASSET}\n${sha256File(archiveA)}  ${ASSET}\n`,
+    readFileSync(join(first, SUMS_ASSET), 'utf8'),
+    readFileSync(join(second, SUMS_ASSET), 'utf8'),
+  );
+  assert.equal(
+    readFileSync(join(first, INSTALL_ASSET)).equals(readFileSync(BOOTSTRAP)),
+    true,
+    'the published install.mjs is the repository bootstrap, byte for byte',
   );
   assert.deepEqual(manifestOf(archiveA).files, manifestOf(archiveB).files);
+});
+
+test('one build writes exactly the four assets and the sums cover every hashed asset', (t) => {
+  const out = build(t);
+
+  assert.deepEqual(readdirSync(out).sort(), [
+    SUMS_ASSET,
+    INSTALL_ASSET,
+    ENGINE_ASSET,
+    ASSET,
+  ].sort());
+
+  // Sorted asset names, one digest each, no self-entry and no extra asset.
+  const lines = readFileSync(join(out, SUMS_ASSET), 'utf8').split('\n').filter(Boolean);
+  const expected = [INSTALL_ASSET, ENGINE_ASSET, ASSET].sort();
+  assert.deepEqual(lines.map((line) => line.slice(64 + 2)), expected);
+  for (const line of lines) {
+    const [, digest, name] = /^([0-9a-f]{64}) {2}(.+)$/.exec(line);
+    assert.equal(digest, sha256File(join(out, name)), `${name} digest matches its file`);
+  }
+  assert.equal(
+    readFileSync(join(out, INSTALL_ASSET)).equals(readFileSync(BOOTSTRAP)),
+    true,
+    'install.mjs is published byte-identical to scripts/install.mjs',
+  );
 });
 
 test('archive paths and metadata follow the payload contract exactly', (t) => {
@@ -287,6 +320,135 @@ test('--check passes on the repository and fails when an adapter engine range dr
   assert.equal(failed.status, 1, failed.stdout);
   assert.match(failed.stderr, /adapters[/\\]codex[/\\]adapter\.json/);
   assert.match(failed.stderr, /\^0\.0\.9/);
+});
+
+test('--check fails when package.json moves without the adapters and the lockfile', (t) => {
+  const copy = copyRepo(t, 'version-lock');
+  const pkgFile = join(copy, 'package.json');
+  const bumped = JSON.parse(readFileSync(pkgFile, 'utf8'));
+  bumped.version = '0.2.0';
+  writeFileSync(pkgFile, `${JSON.stringify(bumped, null, 2)}\n`);
+
+  const failed = runRelease(['--check'], { cwd: copy });
+  assert.equal(failed.status, 1, failed.stdout);
+  assert.match(failed.stderr, /requires\.engine is "\^0\.1\.0" but must equal "\^0\.2\.0" byte-for-byte/);
+  assert.match(failed.stderr, /package-lock\.json version 0\.1\.0 does not match package\.json 0\.2\.0/);
+});
+
+test('--check fails when CHANGELOG has no section for the version', (t) => {
+  const copy = copyRepo(t, 'changelog');
+  const file = join(copy, 'CHANGELOG.md');
+  writeFileSync(file, readFileSync(file, 'utf8').replace(/^## \[0\.1\.0\][^\n]*$/m, '## [0.0.9] - 2026-10-28'));
+
+  const failed = runRelease(['--check'], { cwd: copy });
+  assert.equal(failed.status, 1, failed.stdout);
+  assert.match(failed.stderr, /CHANGELOG\.md has no "## \[0\.1\.0\]" section/);
+});
+
+test('--check fails when the lockfile version drifts', (t) => {
+  const copy = copyRepo(t, 'lockfile');
+  const file = join(copy, 'package-lock.json');
+  const lock = JSON.parse(readFileSync(file, 'utf8'));
+  lock.version = '0.0.9';
+  lock.packages[''].version = '0.0.9';
+  writeFileSync(file, `${JSON.stringify(lock, null, 2)}\n`);
+
+  const failed = runRelease(['--check'], { cwd: copy });
+  assert.equal(failed.status, 1, failed.stdout);
+  assert.match(failed.stderr, /package-lock\.json version 0\.0\.9 does not match package\.json 0\.1\.0/);
+});
+
+test('--check fails when docs/compat.md drifts from the adapter declarations', (t) => {
+  const copy = copyRepo(t, 'compat');
+  const file = join(copy, 'docs', 'compat.md');
+  writeFileSync(file, `${readFileSync(file, 'utf8')}| Agent | \`stale\` (Stale) | \`>=1 <2\` |\n`);
+
+  const failed = runRelease(['--check'], { cwd: copy });
+  assert.equal(failed.status, 1, failed.stdout);
+  assert.match(failed.stderr, /docs[/\\]compat\.md does not match adapter\.json/);
+});
+
+test('--check keeps one bootstrap source and refuses a second install.mjs', (t) => {
+  const copy = copyRepo(t, 'bootstrap');
+  const missing = join(copy, 'scripts', 'install.mjs');
+  const saved = readFileSync(missing);
+  rmSync(missing);
+  const gone = runRelease(['--check'], { cwd: copy });
+  assert.equal(gone.status, 1, gone.stdout);
+  assert.match(gone.stderr, /install\.mjs asset has no source/);
+  writeFileSync(missing, saved);
+
+  writeFileSync(join(copy, 'install.mjs'), saved);
+  const second = runRelease(['--check'], { cwd: copy });
+  assert.equal(second.status, 1, second.stdout);
+  assert.match(second.stderr, /only bootstrap source is scripts\/install\.mjs/);
+});
+
+test('--check validates a built asset directory: whitelist, sums coverage, bootstrap bytes', (t) => {
+  const copy = copyRepo(t, 'assets');
+  const out = join(copy, 'dist');
+  const built = runRelease(['--out', out], { cwd: copy });
+  assert.equal(built.status, 0, built.stderr);
+  const clean = runRelease(['--check'], { cwd: copy });
+  assert.equal(clean.status, 0, clean.stderr);
+
+  writeFileSync(join(out, 'notes.txt'), 'x');
+  const stray = runRelease(['--check'], { cwd: copy });
+  assert.equal(stray.status, 1, stray.stdout);
+  assert.match(stray.stderr, /does not hold the release asset whitelist.*notes\.txt/);
+  rmSync(join(out, 'notes.txt'));
+
+  writeFileSync(join(out, 'r2c-payload-0.0.9.tgz'), 'x');
+  const stale = runRelease(['--check'], { cwd: copy });
+  assert.equal(stale.status, 1, stale.stdout);
+  assert.match(stale.stderr, /r2c-payload-0\.0\.9\.tgz/);
+  rmSync(join(out, 'r2c-payload-0.0.9.tgz'));
+
+  const sumsFile = join(out, SUMS_ASSET);
+  const sums = readFileSync(sumsFile, 'utf8');
+  const trimmed = sums.split('\n').filter(Boolean).slice(1).join('\n');
+  writeFileSync(sumsFile, trimmed === '' ? '' : `${trimmed}\n`);
+  const uncovered = runRelease(['--check'], { cwd: copy });
+  assert.equal(uncovered.status, 1, uncovered.stdout);
+  assert.match(uncovered.stderr, /SHA256SUMS\.txt does not cover the asset whitelist/);
+  writeFileSync(sumsFile, sums);
+
+  writeFileSync(
+    join(out, INSTALL_ASSET),
+    `${readFileSync(join(out, INSTALL_ASSET), 'utf8')}\n// hand edit\n`,
+  );
+  const edited = runRelease(['--check'], { cwd: copy });
+  assert.equal(edited.status, 1, edited.stdout);
+  assert.match(edited.stderr, /install\.mjs in .* is not byte-identical to scripts\/install\.mjs/);
+});
+
+test('--check fails when the payload archive manifest misses a file', (t) => {
+  const copy = copyRepo(t, 'manifest');
+  const out = join(copy, 'dist');
+  const built = runRelease(['--out', out], { cwd: copy });
+  assert.equal(built.status, 0, built.stderr);
+
+  const archive = join(out, ASSET);
+  const members = listArchive(archive);
+  const manifestEntry = members.find((member) => member.path === 'r2c-payload.json');
+  const manifest = JSON.parse(manifestEntry.data.toString('utf8'));
+  const dropped = Object.keys(manifest.files).sort()[0];
+  delete manifest.files[dropped];
+  writeFileSync(
+    archive,
+    createTarGz(
+      members.map((member) =>
+        member.path === 'r2c-payload.json'
+          ? { path: member.path, data: Buffer.from(`${JSON.stringify(manifest, null, 2)}\n`) }
+          : { path: member.path, data: member.data },
+      ),
+    ),
+  );
+
+  const failed = runRelease(['--check'], { cwd: copy });
+  assert.equal(failed.status, 1, failed.stdout);
+  assert.match(failed.stderr, /r2c-payload\.json does not cover/);
+  assert.ok(failed.stderr.includes(dropped), `${dropped} must be named: ${failed.stderr}`);
 });
 
 test('a tampered archive installs nothing into the project', (t) => {

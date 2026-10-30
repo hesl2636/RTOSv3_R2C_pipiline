@@ -40,8 +40,6 @@ jobs:
         run: node bin/r2c.js validate --manifest "${{ github.workspace }}/pack/workflows/RTOSv3_R2C_pipiline.yaml"
       - name: Release contract check
         run: node scripts/release.mjs --check
-      - name: npm pack --dry-run --json whitelist
-        run: node scripts/check-pack.mjs
       - name: Tracked workflow count
         shell: bash
         run: |
