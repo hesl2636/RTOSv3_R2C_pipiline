@@ -1,0 +1,90 @@
+schema: r2c.workflow/v1
+id: rtosv3-r2c-pipeline
+name: RTOSv3_R2C_pipiline
+version: 0.1.1
+description: ''
+stages:
+  - id: stg-8749f706-ec6d-426a-a5fd-46c215c4c8aa
+    name: 分析设计
+    steps:
+      - id: step-01479654-57d0-468a-9a53-78c821a29f5b
+        name: 需求分析与设计编排
+        type: prompt
+        agent: bys-architect
+        taskFile: tasks/step-01479654-57d0-468a-9a53-78c821a29f5b.md
+        skill: r2c-design
+        skills:
+          - req-analysis
+          - req-design
+          - codebase-search
+          - r2c-design
+          - sr-miner
+          - ar-miner
+          - v3-kb
+          - req-formal-verif
+          - semantic-equiv
+          - workflow-core
+          - using-workflow
+          - code-research
+  - id: stg-22483f60-0ea8-4d1a-8dc3-3502b61b527f
+    name: 详细设计
+    steps:
+      - id: step-b36f057d-e366-4169-afeb-2b3b23b22b18
+        name: 详细设计编排
+        type: prompt
+        agent: bys-designer
+        taskFile: tasks/step-b36f057d-e366-4169-afeb-2b3b23b22b18.md
+        skill: r2c-imdesign
+        skills:
+          - r2c-imdesign
+          - codebase-search
+          - design-gen
+          - v3-query-symbol
+          - writing-plans
+          - workflow-core
+          - using-workflow
+  - id: stg-ae37726a-00f8-44b6-94f5-e34073939f7d
+    name: 编码实现
+    steps:
+      - id: step-eb5bed2f-b911-473b-b111-46d4a3a963de
+        name: 编码实现编排
+        type: prompt
+        agent: bys-impl-lead
+        taskFile: tasks/step-eb5bed2f-b911-473b-b111-46d4a3a963de.md
+        skill: r2c-implement-redblue
+        skills:
+          - r2c-implement-redblue
+          - red-blue
+          - executing-plans
+          - subagent-driven-development
+          - v3-query-symbol
+          - v3-check-symbol-context
+          - v3-hm-kernel
+          - workflow-core
+          - using-workflow
+  - id: stg-5a7e5822-a044-48b0-8206-695e8b905f20
+    name: 验证检视
+    steps:
+      - id: step-d69854c5-e22f-4998-a0df-82433e5c1e9e
+        name: 验证检视编排
+        type: prompt
+        agent: bys-release-lead
+        taskFile: tasks/step-d69854c5-e22f-4998-a0df-82433e5c1e9e.md
+        skill: r2c-verify-rb
+        skills:
+          - v3-personal-pipeline
+          - r2c-build-redblue
+          - r2c-verify-rb
+          - r2c-push-mr
+          - red-blue
+          - all-build-single-package
+          - cleancode-scanfix
+          - all-cleancode
+          - all-securec-replace
+          - huawei-c-coding-standard
+          - r2c-review
+          - all-multirepo-upload
+          - workflow-core
+          - using-workflow
+          - v3-commit
+          - aceharness-rag

@@ -1,4 +1,7 @@
+.r2c/runs/
+.r2c/latest.json
+.r2c/usage/
+.r2c/install/
+.r2c/plugin/
 node_modules/
-*.log
-.DS_Store
-.scratch/
+dist/

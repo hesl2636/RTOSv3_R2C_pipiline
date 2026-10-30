@@ -1,0 +1,48 @@
+{
+  "schema": "r2c.adapter/v1",
+  "id": "claude-code",
+  "title": "Claude Code",
+  "requires": {
+    "engine": "^0.1.0",
+    "agent": ">=2.1.312 <3"
+  },
+  "detect": {
+    "commands": [
+      ["claude", "--version"]
+    ],
+    "paths": [
+      "~/.claude"
+    ]
+  },
+  "scopes": ["project", "user"],
+  "defaults": {
+    "scope": "project",
+    "mode": "copy"
+  },
+  "hooks": {
+    "stop": {
+      "carrier": ".claude/settings.json",
+      "format": "json"
+    },
+    "preToolUse": {
+      "carrier": ".claude/settings.json"
+    },
+    "usage": {
+      "source": "transcript"
+    }
+  },
+  "capabilities": {
+    "stop": "block",
+    "preToolUse": "block",
+    "commands": "md",
+    "skills": "md",
+    "agents": "md",
+    "mcp": "json"
+  },
+  "sharedRoots": [
+    ".claude/commands",
+    ".claude/skills"
+  ],
+  "options": {},
+  "manualSteps": []
+}

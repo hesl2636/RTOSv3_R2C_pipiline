@@ -1,0 +1,75 @@
+{
+  "schema": "r2c.adapter-map/v1",
+  "entries": [
+    {
+      "from": "skills",
+      "to": "{project}/.claude/skills",
+      "action": "link-root",
+      "scope": "project"
+    },
+    {
+      "from": "skills",
+      "to": "{user}/.claude/skills",
+      "action": "link-root",
+      "scope": "user"
+    },
+    {
+      "from": "commands/r2c-*.md",
+      "to": "{project}/.claude/commands/{stem}.md",
+      "action": "render",
+      "scope": "project"
+    },
+    {
+      "from": "commands/r2c-*.md",
+      "to": "{user}/.claude/commands/{stem}.md",
+      "action": "render",
+      "scope": "user"
+    },
+    {
+      "from": "assets/agent.md",
+      "to": "{project}/.claude/agents/r2c-{name}.md",
+      "action": "derive-agent",
+      "scope": "project"
+    },
+    {
+      "from": "assets/agent.md",
+      "to": "{user}/.claude/agents/r2c-{name}.md",
+      "action": "derive-agent",
+      "scope": "user"
+    },
+    {
+      "from": "skills/*/SKILL.md",
+      "to": "{project}/.claude/skills/{dir}/SKILL.md",
+      "action": "copy",
+      "scope": "project"
+    },
+    {
+      "from": "skills/*/SKILL.md",
+      "to": "{user}/.claude/skills/{dir}/SKILL.md",
+      "action": "copy",
+      "scope": "user"
+    },
+    {
+      "from": "assets/hooks.json",
+      "to": "{project}/.claude/settings.json",
+      "action": "merge-json",
+      "pointers": ["hooks"],
+      "scope": "project"
+    },
+    {
+      "from": "assets/hooks.json",
+      "to": "{user}/.claude/settings.json",
+      "action": "merge-json",
+      "pointers": ["hooks"],
+      "scope": "user"
+    },
+    {
+      "from": "--mcp",
+      "to": "{project}/.mcp.json",
+      "action": "merge-json",
+      "pointers": ["mcpServers"],
+      "scope": "project",
+      "optional": "mcp"
+    }
+  ]
+}

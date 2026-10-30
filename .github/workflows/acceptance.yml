@@ -1,0 +1,76 @@
+name: acceptance
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'adapters/**'
+      - 'pack/**'
+      - 'schema/**'
+  schedule:
+    - cron: '0 3 * * 1'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: acceptance-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  acceptance:
+    name: ${{ matrix.agent }} / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-24.04
+          - windows-2025
+        agent:
+          - claude-code
+          - codex
+          - dsh
+          - omp
+          - opencode
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      # Acceptance stages its own fake agent; real CLIs only add discovery
+      # coverage. Installing them must never hold the job open, so cap it.
+      - name: Install agent CLIs (best effort, no login)
+        continue-on-error: true
+        timeout-minutes: 2
+        shell: bash
+        run: |
+          npm install -g --no-audit --no-fund --loglevel=error \
+            @anthropic-ai/claude-code@2.1.312 \
+            @openai/codex@0.165.0 \
+            @deepseek-ai/dsh@0.2.1-rc.2 \
+            opencode-ai@1.19.5
+      - name: Install omp (best effort; checks skip when the binary is unavailable)
+        continue-on-error: true
+        timeout-minutes: 2
+        shell: bash
+        run: |
+          curl -fsSL https://omp.sh/install | bash
+      - name: Acceptance ${{ matrix.agent }}
+        shell: bash
+        env:
+          AGENT: ${{ matrix.agent }}
+        run: |
+          set +e
+          node bin/r2c.js acceptance --agent "$AGENT" --json > acceptance.json
+          status=$?
+          set -e
+          node --input-type=module -e 'import { readFileSync } from "node:fs"; const envelope = JSON.parse(readFileSync("acceptance.json", "utf8")); const summary = envelope?.data?.summary ?? null; if (summary === null || summary.fail !== 0) { console.error("acceptance failed: " + JSON.stringify(summary)); process.exit(1); } console.log(`acceptance pass=${summary.pass} warn=${summary.warn} skip=${summary.skip} fail=${summary.fail}`);'
+          if [ "$status" -ne 0 ]; then
+            echo "::error::r2c acceptance exited $status for $AGENT"
+            exit "$status"
+          fi

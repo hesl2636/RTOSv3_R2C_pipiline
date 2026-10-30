@@ -1,0 +1,59 @@
+{
+  "schema": "r2c.adapter/v1",
+  "id": "dsh",
+  "title": "DeepSeek Harness",
+  "requires": {
+    "engine": "^0.1.0",
+    "agent": ">=0.2.1-rc.2 <0.3.0"
+  },
+  "detect": {
+    "commands": [
+      ["dsh", "-V"]
+    ],
+    "paths": [
+      "$DSH_HOME",
+      "~/.dsh"
+    ]
+  },
+  "scopes": ["user"],
+  "modes": ["copy"],
+  "defaults": {
+    "scope": "user",
+    "mode": "copy"
+  },
+  "hooks": {
+    "stop": {
+      "carrier": null,
+      "format": "json",
+      "native": "agent/turn-stopping"
+    },
+    "preToolUse": {
+      "carrier": null,
+      "native": "tools/pre-execute"
+    },
+    "usage": {
+      "source": "none"
+    }
+  },
+  "capabilities": {
+    "stop": "block",
+    "preToolUse": "block",
+    "commands": "cordis",
+    "skills": "bundled",
+    "agents": "none",
+    "mcp": "patch"
+  },
+  "sharedRoots": [
+    ".agents/skills"
+  ],
+  "options": {
+    "profile": {
+      "type": "string",
+      "default": "web",
+      "description": "dsh profile that receives the r2c-adapter-dsh bundle."
+    }
+  },
+  "manualSteps": [
+    "restart dsh"
+  ]
+}

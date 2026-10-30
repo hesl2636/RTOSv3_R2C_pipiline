@@ -1,0 +1,52 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: node ${{ matrix.node }} / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            node: '22.19'
+          - os: ubuntu-24.04
+            node: '24'
+          - os: windows-2025
+            node: '24'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Test
+        run: npm test
+      - name: Validate workflow manifest
+        shell: bash
+        run: node bin/r2c.js validate --manifest "${{ github.workspace }}/pack/workflows/RTOSv3_R2C_pipiline.yaml"
+      - name: Release contract check
+        run: node scripts/release.mjs --check
+      - name: npm pack --dry-run --json whitelist
+        run: node scripts/check-pack.mjs
+      - name: Tracked workflow count
+        shell: bash
+        run: |
+          count=$(git ls-files '*/workflows/*.yaml' | wc -l | tr -d ' ')
+          if [ "$count" -ne 1 ]; then
+            echo "::error::expected exactly one tracked workflows/*.yaml, found $count"
+            exit 1
+          fi
