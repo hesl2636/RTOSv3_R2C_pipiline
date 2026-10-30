@@ -2,7 +2,7 @@
 /**
  * The only release packager (#17 §7).
  *
- * `node scripts/release.mjs` writes `dist/r2c-plugin-<V>.tgz` plus
+ * `node scripts/release.mjs` writes `dist/r2c-payload-<V>.tgz` plus
  * `dist/SHA256SUMS.txt`. The container is deterministic (sorted ustar entries,
  * fixed metadata, gzip mtime 0), so repeated builds of the same tree are
  * byte-identical.
@@ -20,12 +20,13 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  PLUGIN_MANIFEST,
+  PAYLOAD_MANIFEST,
   buildPluginManifest,
   collectPayload,
   createTarGz,
   hashPayloadFiles,
   manifestBuffer,
+  payloadAssetName,
   sha256,
 } from '../src/plugin.js';
 import { isValidRange, isValidVersion } from '../src/version.js';
@@ -135,8 +136,8 @@ function generateCompat({ pkg, adapters }) {
     '',
     '| Dimension | Object | Range |',
     '| --- | --- | --- |',
-    `| Version | \`r2c-runner\`, \`r2c-plugin-${version}.tgz\`, adapters | \`${version}\` |`,
-    `| Engine ↔ payload | \`${PLUGIN_MANIFEST}.engine\` | \`${engine}\` |`,
+    `| Version | \`r2c-runner\`, \`r2c-payload-${version}.tgz\`, adapters | \`${version}\` |`,
+    `| Engine ↔ payload | \`${PAYLOAD_MANIFEST}.engine\` | \`${engine}\` |`,
     ...adapters.map(
       (adapter) =>
         `| Engine ↔ adapter | \`adapters/${adapter.id}/adapter.json\` | \`${adapter.requires?.engine ?? ''}\` |`,
@@ -155,7 +156,7 @@ function checkPayloadProblems(ctx, failures) {
   for (const problem of ctx.payload.problems) failures.push(problem);
   if (ctx.payload.files.length === 0) failures.push('payload file set is empty');
   for (const file of ctx.payload.files) {
-    if (file.rel === PLUGIN_MANIFEST) failures.push(`${PLUGIN_MANIFEST} is generated, not a payload input`);
+    if (file.rel === PAYLOAD_MANIFEST) failures.push(`${PAYLOAD_MANIFEST} is generated, not a payload input`);
     if (/^(test|tests|docs|plugins|scripts|node_modules|dist)\//.test(file.rel)) {
       failures.push(`payload must not ship ${file.rel}`);
     }
@@ -174,7 +175,7 @@ function checkVersion(ctx, failures) {
   }
   const engine = `^${version}`;
   if (manifest === null || manifest.engine !== engine) {
-    failures.push(`${PLUGIN_MANIFEST} engine would be "${manifest?.engine}" but package.json ${version} implies "${engine}"`);
+    failures.push(`${PAYLOAD_MANIFEST} engine would be "${manifest?.engine}" but package.json ${version} implies "${engine}"`);
   }
   if (adapters.length !== ADAPTER_IDS.length) {
     failures.push(`expected ${ADAPTER_IDS.length} adapters, found ${adapters.length}`);
@@ -218,7 +219,7 @@ function checkFiles(ctx, failures) {
     const missing = expected.filter((rel) => !declared.includes(rel));
     const extra = declared.filter((rel) => !expected.includes(rel));
     failures.push(
-      `${PLUGIN_MANIFEST}.files does not match the payload contract (missing: ${missing.join(', ') || 'none'}; extra: ${extra.join(', ') || 'none'})`,
+      `${PAYLOAD_MANIFEST}.files does not match the payload contract (missing: ${missing.join(', ') || 'none'}; extra: ${extra.join(', ') || 'none'})`,
     );
   }
 }
@@ -314,11 +315,11 @@ function build(ctx, outDir) {
     path: file.rel,
     data: readFileSync(file.absolute),
   }));
-  entries.push({ path: PLUGIN_MANIFEST, data: manifestBuffer(ctx.manifest) });
+  entries.push({ path: PAYLOAD_MANIFEST, data: manifestBuffer(ctx.manifest) });
   const archive = createTarGz(entries);
 
   mkdirSync(outDir, { recursive: true });
-  const asset = `r2c-plugin-${ctx.pkg.version}.tgz`;
+  const asset = payloadAssetName(ctx.pkg.version);
   const archivePath = join(outDir, asset);
   writeFileSync(archivePath, archive);
   const digest = sha256(archive);

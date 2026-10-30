@@ -31,7 +31,7 @@ r2c adapter smoke claude-code --project .
 r2c adapter uninstall claude-code --project .
 ```
 
-`--from` accepts an unpacked payload (`r2c-plugin.json`) or a source checkout
+`--from` accepts an unpacked payload (`r2c-payload.json`) or a source checkout
 (`package.json` + `pack/` + `adapters/`). It is the supported path while the
 release repository is private.
 

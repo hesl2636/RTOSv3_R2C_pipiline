@@ -45,8 +45,8 @@ export function pruneAdapter({ ctx, options }) {
   const plan = [];
 
   for (const state of states) {
-    for (const name of subdirectories(join(state, 'plugin'))) {
-      const home = join(state, 'plugin', name);
+    for (const name of subdirectories(join(state, 'payload'))) {
+      const home = join(state, 'payload', name);
       if (referencedHomes.has(home)) {
         kept.push(home);
       } else {
@@ -68,8 +68,8 @@ export function pruneAdapter({ ctx, options }) {
 
   const cacheDir = join(userHome(), '.r2c', 'cache');
   for (const name of subdirectories(cacheDir)) {
-    if (!name.startsWith('plugin-')) continue;
-    const version = name.slice('plugin-'.length);
+    if (!name.startsWith('payload-')) continue;
+    const version = name.slice('payload-'.length);
     const dir = join(cacheDir, name);
     if (referencedVersions.has(version)) kept.push(dir);
     else plan.push({ path: dir, kind: 'cache' });

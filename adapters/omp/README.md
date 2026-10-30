@@ -18,7 +18,7 @@ and leaks across projects.
 ## Install
 
 ```bash
-npx r2c-runner adapter install omp --from r2c-plugin-0.1.0.tgz --project .
+npx r2c-runner adapter install omp --from r2c-payload-0.1.0.tgz --project .
 npx r2c-runner adapter doctor  omp --project .
 npx r2c-runner adapter uninstall omp --project .
 ```

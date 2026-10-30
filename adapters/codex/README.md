@@ -19,7 +19,7 @@ MCP is not supported (`capabilities.mcp = "none"`).
 ## Install
 
 ```bash
-npx r2c-runner adapter install codex --from r2c-plugin-0.1.0.tgz --project .
+npx r2c-runner adapter install codex --from r2c-payload-0.1.0.tgz --project .
 npx r2c-runner adapter doctor  codex --project .
 npx r2c-runner adapter uninstall codex --project .
 ```

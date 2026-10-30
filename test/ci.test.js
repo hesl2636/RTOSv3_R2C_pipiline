@@ -197,7 +197,7 @@ test('release gates tag==version, builds, checksums, drafts two assets, then pub
   const draft = runs[draftIndex];
   assert.match(draft, /--draft/);
   const assets = [...new Set(draft.match(/dist\/[^\s"\\]+/g) ?? [])].sort();
-  assert.deepEqual(assets, ['dist/SHA256SUMS.txt', 'dist/r2c-plugin-${version}.tgz']);
+  assert.deepEqual(assets, ['dist/SHA256SUMS.txt', 'dist/r2c-payload-${version}.tgz']);
 
   const publish = runs[publishIndex];
   assert.match(publish, /dist_tag=latest/);

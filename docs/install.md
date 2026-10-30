@@ -6,8 +6,8 @@ install script to run: one installer path performs every write, records a
 receipt, and can undo itself.
 
 ```bash
-npx r2c-runner adapter list  --from <payload-dir|r2c-plugin-0.1.0.tgz>
-npx r2c-runner adapter install <agent> --from <payload-dir|r2c-plugin-0.1.0.tgz> --project .
+npx r2c-runner adapter list  --from <payload-dir|r2c-payload-0.1.0.tgz>
+npx r2c-runner adapter install <agent> --from <payload-dir|r2c-payload-0.1.0.tgz> --project .
 npx r2c-runner adapter doctor  <agent> --project .
 npx r2c-runner adapter smoke   <agent> --project .
 npx r2c-runner adapter uninstall <agent> --project .
@@ -32,15 +32,15 @@ hook wiring are in `adapters/<agent>/README.md` (starting with
 
 ## Payload: `--from <dir|tgz>`
 
-The payload is the release artifact `r2c-plugin-V.tgz`: `r2c-plugin.json`,
+The payload is the release artifact `r2c-payload-V.tgz`: `r2c-payload.json`,
 `workflows/`, `tasks/`, `skills/`, `commands/`, `shims/hook.mjs`,
 `adapters/*`, `schema/*` and `LICENSE`. The installer resolves it in this
 order:
 
-1. `--from <dir|tgz>` (a directory containing `r2c-plugin.json`, or a source
+1. `--from <dir|tgz>` (a directory containing `r2c-payload.json`, or a source
    checkout with `package.json` + `pack/` + `adapters/`);
 2. `R2C_PLUGIN_SOURCE` (same shapes);
-3. `~/.r2c/cache/plugin-<V>`;
+3. `~/.r2c/cache/payload-<V>`;
 4. the GitHub Release download for version `V`.
 
 Anonymous downloads use the public release URL. For a private repository the
@@ -49,11 +49,11 @@ read) and the installer reads the release and streams its assets through the
 GitHub API (`/releases/tags/v<V>` + `/releases/assets/<id>`); the web download
 URL itself answers `404` to token requests. Without a token, `--from` and the
 cache remain the supported path. A `.tgz` payload is verified against the
-sha256 recorded in its own `r2c-plugin.json`, and every file is hashed before
+sha256 recorded in its own `r2c-payload.json`, and every file is hashed before
 the plan is built. `--link` is only accepted together with `--from <dir>`: a
 `.tgz` always installs with `--copy`.
 
-The payload is materialised under `<state>/plugin/<payload-version>/`, where
+The payload is materialised under `<state>/payload/<payload-version>/`, where
 `<state>` is `<project>/.r2c` for project scope and `~/.r2c` for user scope.
 `--plugin <V>` selects a cached payload version instead of the engine version;
 `--from` takes precedence over it.
@@ -97,18 +97,18 @@ trust them in `/hooks`, which is a manual step (see below).
 ## First run
 
 The installer materialises the payload (workflow, tasks, skills) at
-`<state>/plugin/<V>/`; it does not copy that tree into the project. `r2c run`
+`<state>/payload/<V>/`; it does not copy that tree into the project. `r2c run`
 discovers a manifest only under the project's `workflows/`, and `taskFile`
 resolves relative to that same root, so do one of these once per project:
 
 ```bash
 # (a) recommended: copy the whole payload layout into the project root
-cp -r .r2c/plugin/0.1.0/{workflows,tasks,skills} .
+cp -r .r2c/payload/0.1.0/{workflows,tasks,skills} .
 npx r2c-runner run --project .
 
 # (b) terminal-only: point at the payload manifest (absolute path required)
 npx r2c-runner run --project . \
-  --manifest "$PWD/.r2c/plugin/0.1.0/workflows/RTOSv3_R2C_pipiline.yaml"
+  --manifest "$PWD/.r2c/payload/0.1.0/workflows/RTOSv3_R2C_pipiline.yaml"
 ```
 
 Copying only the YAML is not enough: its `taskFile` entries resolve against the
@@ -151,7 +151,7 @@ resolves the version the project pins.
 1. Install the new engine (`npx r2c-runner@<V>` or the pinned spec).
 2. Re-run `adapter install <agent>` with the new engine and no `--plugin`
    override. The payload version defaults to the engine version, so the
-   installer materialises `<state>/plugin/<V>/` and rewires hooks and Submit
+   installer materialises `<state>/payload/<V>/` and rewires hooks and Submit
    lines to it.
 3. Re-run `adapter doctor <agent>`. The receipt now records
    `payload.version = <V>` and `engine.version = <V>`.
@@ -169,12 +169,12 @@ allowing the overwrite:
 
 ```bash
 npx r2c-runner@<old-V> adapter install <agent> \
-  --from <old-payload-dir|r2c-plugin-<old-V>.tgz> --force --project .
+  --from <old-payload-dir|r2c-payload-<old-V>.tgz> --force --project .
 npx r2c-runner@<old-V> adapter doctor <agent> --project .
 ```
 
 `--from` can be replaced by `--plugin <old-V>` when the old payload is already
-cached under `~/.r2c/cache/plugin-<old-V>`. `--force` covers any target the
+cached under `~/.r2c/cache/payload-<old-V>`. `--force` covers any target the
 receipt does not know about (hand-edited files, files left by another tool);
 files the newer install owned are replaced and backed up from the receipt. The
 receipt is rewritten with the old payload/engine pair. Files that exist only in
@@ -206,7 +206,7 @@ reinstall or `r2c status` still sees the history.
 
 `--purge-state` additionally removes the runtime paths
 (`.r2c/runs/`, `.r2c/usage/`, `.r2c/latest.json`), every installed payload under
-`.r2c/plugin/` and the receipts directory `.r2c/install/`. Business artifacts
+`.r2c/payload/` and the receipts directory `.r2c/install/`. Business artifacts
 (`.r2c/ir.md`, `.r2c/sr-map.md`, `.r2c/artifacts/**`) are not touched. Anything
 the installer cannot own safely is reported in `leftover[]` for manual cleanup;
 dsh additionally needs a restart after uninstall.

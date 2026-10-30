@@ -15,8 +15,16 @@ import { SUPPORTED } from '../src/schema.js';
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const SCHEMA_DIR = join(REPO, 'schema');
 
-function schema(id) {
-  return JSON.parse(readFileSync(join(SCHEMA_DIR, `${id}.schema.json`), 'utf8'));
+/**
+ * Family -> document file. The payload manifest keeps its frozen revision id
+ * (`r2c.plugin/v1`) while the asset is named "payload", so its document is
+ * `payload.schema.json`; every other family matches its file name.
+ */
+const DOCUMENT = Object.freeze({ plugin: 'payload' });
+
+function schema(family) {
+  const file = `${DOCUMENT[family] ?? family}.schema.json`;
+  return JSON.parse(readFileSync(join(SCHEMA_DIR, file), 'utf8'));
 }
 
 test('every frozen schema family has one v1 JSON Schema document', () => {

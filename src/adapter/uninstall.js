@@ -175,7 +175,7 @@ function applyMergedRemovals(receipt, force, leftovers) {
 }
 
 function purgeRuntimeState(state) {
-  for (const name of ['runs', 'usage', 'plugin']) {
+  for (const name of ['runs', 'usage', 'payload']) {
     removePath(join(state, name));
   }
   removePath(join(state, 'latest.json'));

@@ -22,7 +22,7 @@ const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const BIN = join(REPO, 'bin', 'r2c.js');
 const RELEASE = join(REPO, 'scripts', 'release.mjs');
 const VERSION = JSON.parse(readFileSync(join(REPO, 'package.json'), 'utf8')).version;
-const ASSET = `r2c-plugin-${VERSION}.tgz`;
+const ASSET = `r2c-payload-${VERSION}.tgz`;
 const ADAPTERS = ['claude-code', 'codex', 'dsh', 'omp', 'opencode'];
 
 function tempDir(t, prefix) {
@@ -104,8 +104,8 @@ function listArchive(file) {
 }
 
 function manifestOf(file) {
-  const entry = listArchive(file).find((item) => item.path === 'r2c-plugin.json');
-  assert.ok(entry, 'archive contains r2c-plugin.json');
+  const entry = listArchive(file).find((item) => item.path === 'r2c-payload.json');
+  assert.ok(entry, 'archive contains r2c-payload.json');
   return JSON.parse(entry.data.toString('utf8'));
 }
 
@@ -177,7 +177,7 @@ test('archive paths and metadata follow the payload contract exactly', (t) => {
   assert.ok(entries.every((entry) => entry.type === '0'), 'only regular files');
   const paths = entries.map((entry) => entry.path).sort();
   const expected = [...expectedPayload()].sort();
-  assert.deepEqual(paths, ['r2c-plugin.json', ...expected].sort());
+  assert.deepEqual(paths, ['r2c-payload.json', ...expected].sort());
 
   for (const path of paths) {
     assert.ok(Buffer.byteLength(path) <= 100, `path is longer than 100 bytes: ${path}`);
@@ -260,7 +260,7 @@ test('a tampered archive installs nothing into the project', (t) => {
   assert.equal(result.status, 2, result.stderr);
   assert.equal(envelope(result).error.code, 'PAYLOAD_HASH_MISMATCH');
   assert.deepEqual(readdirSync(project), []);
-  assert.ok(!existsSync(join(home, '.r2c', 'cache', `plugin-${VERSION}`)));
+  assert.ok(!existsSync(join(home, '.r2c', 'cache', `payload-${VERSION}`)));
 
   const sidecarDir = tempDir(t, 'sidecar');
   const sidecar = join(sidecarDir, ASSET);
@@ -303,14 +303,42 @@ test('install --from <tgz> verifies the archive, caches it and installs the adap
 
   assert.equal(readdirSync(join(project, '.claude', 'commands')).length, 7);
   assert.equal(readdirSync(join(project, '.claude', 'skills')).length, 35);
-  assert.ok(existsSync(join(project, '.r2c', 'plugin', VERSION, 'r2c-plugin.json')));
-  assert.ok(existsSync(join(home, '.r2c', 'cache', `plugin-${VERSION}`, 'r2c-plugin.json')));
+  assert.ok(existsSync(join(project, '.r2c', 'payload', VERSION, 'r2c-payload.json')));
+  assert.ok(existsSync(join(home, '.r2c', 'cache', `payload-${VERSION}`, 'r2c-payload.json')));
 
   const receipt = JSON.parse(readFileSync(join(project, '.r2c', 'install', 'claude-code.json'), 'utf8'));
-  const manifestEntry = listArchive(join(out, ASSET)).find((entry) => entry.path === 'r2c-plugin.json');
+  const manifestEntry = listArchive(join(out, ASSET)).find((entry) => entry.path === 'r2c-payload.json');
   assert.equal(receipt.payload.version, VERSION);
   assert.equal(receipt.payload.sha256, sha256(manifestEntry.data));
   assert.equal(receipt.engine.requires, `^${VERSION}`);
+});
+
+test('install --from <tgz> materialises the payload under the user-scope state dir', (t) => {
+  const out = build(t);
+  const project = tempDir(t, 'project');
+  const home = tempDir(t, 'home');
+  const result = cli(
+    [
+      'adapter',
+      'install',
+      '--agent',
+      'claude-code',
+      '--from',
+      join(out, ASSET),
+      '--scope',
+      'user',
+      '--project-root',
+      project,
+      '--no-smoke',
+      '--json',
+    ],
+    { env: cleanEnv(home) },
+  );
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(envelope(result).data.scope, 'user');
+  assert.ok(existsSync(join(home, '.r2c', 'payload', VERSION, 'r2c-payload.json')));
+  assert.ok(existsSync(join(home, '.claude', 'settings.json')));
+  assert.deepEqual(readdirSync(project), [], 'user scope must not write under the project');
 });
 
 test('createTarGz rejects invalid entries with a coded runner error', () => {

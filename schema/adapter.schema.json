@@ -30,7 +30,7 @@
       "additionalProperties": false,
       "required": ["engine", "agent"],
       "properties": {
-        "engine": { "type": "string", "minLength": 1, "description": "Engine range; must equal r2c-plugin.json.engine byte for byte." },
+        "engine": { "type": "string", "minLength": 1, "description": "Engine range; must equal r2c-payload.json.engine byte for byte." },
         "agent": { "type": "string", "minLength": 1, "description": "Agent CLI range; a mismatch warns at runtime." }
       }
     },

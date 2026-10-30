@@ -67,7 +67,7 @@ r2c adapter smoke opencode --project .
 r2c adapter uninstall opencode --project .
 ```
 
-`--from` accepts an unpacked payload (`r2c-plugin.json`) or a source checkout
+`--from` accepts an unpacked payload (`r2c-payload.json`) or a source checkout
 (`package.json` + `pack/` + `adapters/`).
 
 ## Manual steps

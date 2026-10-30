@@ -10,7 +10,7 @@
  * throwing listener can end a user's turn.
  *
  * The module has no imports outside Node core so it resolves from the payload
- * (`~/.r2c/plugin/<V>/adapters/dsh`) without a profile install step.
+ * (`~/.r2c/payload/<V>/adapters/dsh`) without a profile install step.
  */
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';

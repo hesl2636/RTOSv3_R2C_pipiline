@@ -62,7 +62,7 @@ function toRow(adapter, { version, source, projectRoot }) {
 function installedPayloadRoots(projectRoot) {
   const roots = [];
   for (const state of [stateDir('project', projectRoot), stateDir('user', projectRoot)]) {
-    const dir = join(state, 'plugin');
+    const dir = join(state, 'payload');
     if (!existsSync(dir)) continue;
     for (const name of readdirSync(dir).sort()) {
       const root = join(dir, name, 'adapters');
