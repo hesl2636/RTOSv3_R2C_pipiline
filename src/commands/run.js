@@ -76,7 +76,7 @@ export async function run(_argv, ctx) {
     now: ctx.now(),
   });
 
-  const runnerCmd = ctx.runnerCmd ?? defaultRunnerCommand(ctx.binPath);
+  const runnerCmd = ctx.runnerCmd ?? defaultRunnerCommand(ctx.binPath, { projectRoot: ctx.projectRoot });
   const settled = await executeShellSteps({
     manifest: inspected.data,
     projectRoot: ctx.projectRoot,

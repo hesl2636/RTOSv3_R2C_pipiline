@@ -133,6 +133,10 @@ function cli(args, { env, cwd, input } = {}) {
   });
 }
 
+function posix(value) {
+  return value.replaceAll('\\', '/');
+}
+
 function envelope(result) {
   const line = result.stdout.trim().split(/\r?\n/).filter(Boolean).at(-1) ?? '';
   try {
@@ -211,7 +215,9 @@ test('user-scope install renders the plugin, patch, hooks and profile entry', (t
   const json = envelope(result);
   assert.equal(json.data.scope, 'user');
   assert.equal(json.data.action, 'installed');
-  assert.equal(json.data.runner_cmd, `npx --yes r2c-runner@${ENGINE_VERSION}`);
+  // dsh is user-scope only, so the engine path is absolute and quoted on demand.
+  assert.equal(json.data.runner_cmd, `node ${posix(BIN)}`);
+  assert.ok(!json.data.runner_cmd.includes('npx'));
 
   const payloadHome = join(home, '.r2c', 'payload', ENGINE_VERSION);
   for (const file of ['index.mjs', 'package.json', 'cordis.patch.yml', 'hooks.json']) {
@@ -237,6 +243,16 @@ test('user-scope install renders the plugin, patch, hooks and profile entry', (t
   assert.equal(receipt.steps.profile.name, 'web');
   assert.equal(receipt.steps.profile.dir, profileDir(dshHome));
   assert.match(receipt.steps.bundle_patch, /cordis\.patch\.yml$/);
+
+  // User scope: the engine entry is absolute, quoted, and carried by every
+  // hook line; the payload path is JSON-escaped exactly once.
+  const entry = receipt.engine.entry;
+  const stopCommand = hooks.Stop[0].hooks[0].command;
+  assert.ok(!hooksText.includes('npx'), hooksText);
+  assert.ok(stopCommand.includes(`--runner-cmd="node ${posix(entry)}"`), stopCommand);
+  assert.ok(posix(stopCommand).includes(posix(join(payloadHome, 'shims', 'hook.mjs'))), stopCommand);
+  assert.ok(!hooksText.includes('\\\\\\\\'), 'paths are JSON-escaped once, not twice');
+  assert.ok(patch.includes(`runnerCmd: 'node ${posix(entry)}'`), patch);
 
   const second = install(env, project);
   assert.equal(second.status, 0, second.stderr);

@@ -447,8 +447,8 @@ async function installOnce({ ctx, agentId, options, state, resolved, adapter, ma
     warnings.push(...gateAgent({ detection, adapter }));
 
     const home = payloadHome(scope, ctx.projectRoot, resolved.manifest.version);
-    const runnerCmd = defaultRunnerCommand(ctx, resolved);
     const engine = resolveEngineHome(ctx, options);
+    const runnerCmd = defaultRunnerCommand(ctx, engine, { scope, projectRoot: ctx.projectRoot });
     const plan = buildPlan({
       resolved,
       adapter,
@@ -504,7 +504,12 @@ async function installOnce({ ctx, agentId, options, state, resolved, adapter, ma
             sha256: resolved.sha256,
             source: resolved.source,
           },
-          engine: { version: ctx.version, requires: adapter.requires?.engine ?? null },
+          engine: {
+            version: ctx.version,
+            requires: adapter.requires?.engine ?? null,
+            home: engine.home,
+            entry: engine.entry,
+          },
           runner_cmd: runnerCmd,
           requires: { engine: adapter.requires?.engine ?? null, agent: adapter.requires?.agent ?? null },
           agent: { bin: detection.bin, version: detection.version },
@@ -537,7 +542,12 @@ async function installOnce({ ctx, agentId, options, state, resolved, adapter, ma
             sha256: resolved.sha256,
             source: resolved.source,
           },
-          engine: { version: ctx.version, requires: adapter.requires?.engine ?? null },
+          engine: {
+            version: ctx.version,
+            requires: adapter.requires?.engine ?? null,
+            home: engine.home,
+            entry: engine.entry,
+          },
           runner_cmd: runnerCmd,
           requires: { engine: adapter.requires?.engine ?? null, agent: adapter.requires?.agent ?? null },
           agent: { bin: detection.bin, version: detection.version },

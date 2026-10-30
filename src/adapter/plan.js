@@ -10,6 +10,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { basename, dirname, isAbsolute, join, normalize, relative as relativePath } from 'node:path';
 import { parse as parseYaml } from 'yaml';
 import { EXIT_CODES, R2cError } from '../errors.js';
+import { runnerCommand } from '../render.js';
 import { sha256, userHome } from './util.js';
 
 export const ADAPTER_SCHEMA = 'r2c.adapter/v1';
@@ -89,29 +90,44 @@ export function loadAdapterDeclaration(resolved, agentId) {
   return { adapter, map, adapterRel, mapRel };
 }
 
-export function defaultRunnerCommand(ctx, resolved) {
+/**
+ * The command installed configs carry (C3/C9): `--runner-cmd` when the caller
+ * overrode it, else `node <engine entry>` — project-relative for a project
+ * scope whose engine lives inside the project, absolute (quoted when needed)
+ * everywhere else.
+ */
+export function defaultRunnerCommand(ctx, engine, { scope, projectRoot }) {
   if (typeof ctx.runnerCmd === 'string' && ctx.runnerCmd !== '') return ctx.runnerCmd;
-  const pkg = ctx.packageName || 'r2c-runner';
-  return `npx --yes ${pkg}@${resolved.manifest.version}`;
+  return runnerCommand(engine.entry, { projectRoot: scope === 'project' ? projectRoot : null });
 }
 
-function jsonInline(value) {
-  const quoted = JSON.stringify(value);
-  return quoted.slice(1, -1);
-}
-
-function placeholders({ projectRoot, payloadHome, runnerCmd, version, agentId }) {
+/**
+ * Placeholder values for the agent-facing templates.
+ *
+ * Project scope writes only paths relative to the project root (C3), so a
+ * renamed or moved project keeps its installed hooks working; user scope keeps
+ * absolute paths because the agent's working directory is not the project.
+ */
+function placeholders({ projectRoot, payloadHome, runnerCmd, scope, version, agentId }) {
+  const relativeHome = relativePath(projectRoot, payloadHome);
+  const homeInside = relativeHome !== ''
+    && !relativeHome.startsWith('..')
+    && !isAbsolute(relativeHome);
+  const projectScope = scope === 'project';
+  const root = projectScope ? '.' : projectRoot;
   return {
-    PAYLOAD_HOME: payloadHome,
-    PROJECT_ROOT: projectRoot,
+    PAYLOAD_HOME: projectScope && homeInside ? toPosixName(relativeHome) : payloadHome,
+    // Project scope is relative to the project root, so a moved project keeps
+    // its hooks working; a batch file needs `.\` and gets it from the template.
+    PROJECT_ROOT: root,
     RUNNER_CMD: runnerCmd,
+    // Same command embedded inside a double-quoted shell word (JSON hook
+    // settings, .cmd files): the inner quotes must survive the outer pair.
+    RUNNER_CMD_DQ: runnerCmd.replaceAll('"', '\\"'),
+    RUNNER_CMD_BATCH: runnerCmd.replaceAll('"', '""'),
     NODE_BIN: process.execPath,
     VERSION: version,
     AGENT_ID: agentId,
-    // Escaped variants for assets that are JSON or YAML double-quoted strings.
-    PAYLOAD_HOME_JSON: jsonInline(payloadHome),
-    PROJECT_ROOT_JSON: jsonInline(projectRoot),
-    RUNNER_CMD_JSON: jsonInline(runnerCmd),
   };
 }
 
@@ -248,7 +264,6 @@ function layoutEntries({ resolved, projectRoot }) {
       target: join(projectRoot, payloadEntry.rel),
       content,
       sha256: sha256(content),
-      linkWarning: null,
     });
   }
   return entries;
@@ -278,6 +293,7 @@ export function buildPlan({
     projectRoot,
     payloadHome,
     runnerCmd,
+    scope,
     version: resolved.manifest.version,
     agentId: adapter.id,
   });
@@ -407,7 +423,9 @@ export function buildPlan({
   for (const entry of fileEntries) {
     const covered = linkRoots.some((root) => isInside(root, entry.target));
     if (covered) continue;
-    if (entry.linkWarning !== null) warnings.push(entry.linkWarning);
+    // Only map-derived copies carry `linkWarning`; layout and derive-agent
+    // entries have none, and an `undefined` here printed `warn: undefined`.
+    if (typeof entry.linkWarning === 'string') warnings.push(entry.linkWarning);
     delete entry.linkWarning;
     entries.push(entry);
   }

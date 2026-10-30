@@ -8,6 +8,10 @@
 执行 `r2c` 命令的那个程序：发现清单、推进步骤、校验提交、维护运行记录。它与载荷、适配器同版本锁定。
 _Avoid_: 运行时、runtime、CLI 工具、npm 包
 
+**运行命令 (Runner command)**:
+写进 agent 配置的那条命令：`node <引擎入口>`。`project` 作用域写项目相对路径，项目改名、移动后 hook 仍可用；`user` 作用域写带引号的绝对路径（agent 的 cwd 与项目无关）。`--runner-cmd` 是唯一的手工覆盖。
+_Avoid_: npx 命令、包名命令、引擎别名
+
 **载荷 (Payload)**:
 一次发布携带的工作流内容：清单、任务书、技能、命令、hook 中间层与适配器声明。
 _Avoid_: 插件、plugin、内容包

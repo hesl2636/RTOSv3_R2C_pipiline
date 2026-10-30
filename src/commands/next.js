@@ -34,7 +34,7 @@ export async function run(_argv, ctx) {
   }
 
   const manifest = loadManifest({ manifest: ctx.manifest, projectRoot: ctx.projectRoot });
-  const runnerCmd = ctx.runnerCmd ?? defaultRunnerCommand(ctx.binPath);
+  const runnerCmd = ctx.runnerCmd ?? defaultRunnerCommand(ctx.binPath, { projectRoot: ctx.projectRoot });
   const sessionId = state.session_id;
   const text = renderStep({
     manifest: manifest.data,

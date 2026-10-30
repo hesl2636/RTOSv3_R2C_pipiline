@@ -203,6 +203,14 @@ test('install writes commands, skills, agents, plugin and merged opencode.json m
 
   const receipt = readReceipt(project);
   assert.ok(receipt.files.some((file) => file.path.endsWith(join('.opencode', 'plugins', 'r2c.ts'))));
+  for (const file of receipt.files) {
+    if (file.kind === 'link') continue;
+    const path = file.kind === 'layout' ? join(project, file.path) : file.path;
+    const text = readFileSync(path, 'utf8');
+    assert.ok(!text.includes('npx'), path);
+    assert.ok(!text.includes('r2c-runner'), path);
+  }
+  assert.match(plugin, /const PROJECT_ROOT = String\.raw`\.`;/, 'the project root placeholder is project-relative');
   assert.deepEqual(receipt.merged.map((entry) => entry.pointer), ['mcp.r2c-sr']);
   assert.equal(receipt.requires.agent, '>=1.19.5 <2');
 });
@@ -272,10 +280,13 @@ test('session.idle injects once, dedupes (run_id, step_id) and caps a run at 32'
   writeWorkflow(project);
   const run = startRun(env, project, 'idle-session');
   const R2cPlugin = await loadPlugin(project);
+  // opencode hands the plugin its project directory; the project-scope carrier
+  // is relative, so the runtime must be anchored there.
+  const runtime = R2cPlugin.defaultRuntime({ projectRoot: project });
   const state = R2cPlugin.createIdleState();
   const client = mockClient();
 
-  const first = await R2cPlugin.handleIdle({ event: idle('idle-session'), client, state });
+  const first = await R2cPlugin.handleIdle({ event: idle('idle-session'), client, state, runtime });
   assert.equal(first.injected, true, first.reason);
   assert.equal(first.runId, run.run_id);
   assert.equal(first.stepId, 'step-1');
@@ -284,14 +295,14 @@ test('session.idle injects once, dedupes (run_id, step_id) and caps a run at 32'
   assert.match(client.calls[0].body.parts[0].text, /--step step-1/);
   assert.deepEqual(client.calls[0].path, { id: 'idle-session' });
 
-  const second = await R2cPlugin.handleIdle({ event: idle('idle-session'), client, state });
+  const second = await R2cPlugin.handleIdle({ event: idle('idle-session'), client, state, runtime });
   assert.equal(second.injected, false);
   assert.equal(second.reason, 'duplicate');
   assert.equal(client.calls.length, 1);
 
   const capped = R2cPlugin.createIdleState();
   capped.injections.set(run.run_id, R2cPlugin.INJECTION_CAP);
-  const third = await R2cPlugin.handleIdle({ event: idle('idle-session'), client, state: capped });
+  const third = await R2cPlugin.handleIdle({ event: idle('idle-session'), client, state: capped, runtime });
   assert.equal(third.injected, false);
   assert.equal(third.reason, 'capped');
   assert.equal(client.calls.length, 1);
@@ -310,6 +321,7 @@ test('the first idle claims a minted cli run through hook stop and injects its s
     event: idle('oc-real-session'),
     client,
     state: R2cPlugin.createIdleState(),
+    runtime: R2cPlugin.defaultRuntime({ projectRoot: project }),
   });
   assert.equal(result.injected, true, result.reason);
   assert.equal(client.calls.length, 1);
@@ -329,6 +341,7 @@ test('no run means an empty hook stop: exit 0, no injection', async (t) => {
     event: idle('no-run-session'),
     client,
     state: R2cPlugin.createIdleState(),
+    runtime: R2cPlugin.defaultRuntime({ projectRoot: project }),
   });
   assert.equal(result.injected, false);
   assert.equal(result.reason, 'no-run');
@@ -341,12 +354,14 @@ test('tool.execute.before throws on a protected write and passes ordinary writes
   writeWorkflow(project);
   const run = startRun(env, project, 'guard-session');
   const R2cPlugin = await loadPlugin(project);
+  const runtime = R2cPlugin.defaultRuntime({ projectRoot: project });
 
   const protectedFile = join(project, '.r2c', 'runs', run.run_id, 'state.json');
   await assert.rejects(
     R2cPlugin.guardTool({
       input: { tool: 'write', sessionID: 'guard-session' },
       output: { args: { filePath: protectedFile, content: '{}' } },
+      runtime,
     }),
     /denied|guard/i,
   );
@@ -354,6 +369,7 @@ test('tool.execute.before throws on a protected write and passes ordinary writes
   const allowed = await R2cPlugin.guardTool({
     input: { tool: 'write', sessionID: 'guard-session' },
     output: { args: { filePath: join(project, 'src', 'safe.txt'), content: 'ok' } },
+    runtime,
   });
   assert.equal(allowed.blocked, false);
 });

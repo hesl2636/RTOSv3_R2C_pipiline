@@ -17,6 +17,7 @@ import { delimiter, dirname, join, relative, resolve } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { dropPayloadManifest, writeTwoStepProject } from './helpers/two-step.js';
+import { writeEngine } from './helpers/engine.js';
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const BIN = join(REPO, 'bin', 'r2c.js');
@@ -128,6 +129,10 @@ function posix(value) {
   return value.replaceAll('\\', '/');
 }
 
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 /** path → {size, mtime, content} for every file under `root`. */
 function snapshot(root) {
   const files = new Map();
@@ -193,7 +198,7 @@ test('install writes command skills, skills, agents, hooks and a receipt', (t) =
     assert.ok(!text.includes('<runner>'), `${id} kept the <runner> placeholder`);
   }
   const run = readFileSync(join(project, '.agents', 'skills', 'r2c-run', 'SKILL.md'), 'utf8');
-  assert.match(run, new RegExp(`npx --yes r2c-runner@${ENGINE_VERSION} run`));
+  assert.match(run, new RegExp(`node ${escapeRegExp(posix(BIN))} run`));
   assert.match(run, /--input "\$ARGUMENTS"/);
 
   const skills = readdirSync(join(project, '.agents', 'skills'))
@@ -219,15 +224,21 @@ test('install writes command skills, skills, agents, hooks and a receipt', (t) =
   assert.match(stop.command, /--event stop/);
   assert.match(stop.command, /--project-root/);
   assert.ok(!stop.command.includes('${'));
-  assert.equal(posix(stop.commandWindows), `${posix(project)}/.codex/r2c-hook-stop.cmd`);
+  assert.equal(posix(stop.commandWindows), './.codex/r2c-hook-stop.cmd');
 
   const receipt = readReceipt(project);
+  assert.equal(receipt.runner_cmd, `node ${posix(BIN)}`);
   assert.equal(receipt.adapter, 'codex');
   assert.equal(receipt.scope, 'project');
   const configFiles = receipt.files.filter((file) => file.kind !== 'layout');
   assert.equal(configFiles.length, expectedCommandCount() + expectedSkillCount() + agents.length + 3);
   const kinds = new Set(configFiles.map((file) => file.kind));
   for (const kind of ['wrap-skill', 'copy', 'derive-agent', 'render']) assert.ok(kinds.has(kind), kind);
+  for (const file of configFiles) {
+    const text = readFileSync(file.path, 'utf8');
+    assert.ok(!text.includes('npx'), file.path);
+    assert.ok(!text.includes('r2c-runner'), file.path);
+  }
   const layoutFiles = receipt.files.filter((file) => file.kind === 'layout');
   assert.equal(layoutFiles.length, expectedLayoutCount());
   for (const file of layoutFiles) assert.ok(existsSync(join(project, file.path)), file.path);
@@ -302,33 +313,41 @@ test('hooks.json and the .cmd launcher survive a project path with a space', (t)
   const { project, env } = setup(t, { projectName: 'project with space' });
   const result = install(env, project);
   assert.equal(result.status, 0, result.stderr);
-  const receipt = readReceipt(project);
 
   const hooksFile = join(project, '.codex', 'hooks.json');
   const document = readJson(hooksFile);
   const stop = document.hooks.Stop[0].hooks[0];
   const preToolUse = document.hooks.PreToolUse[0].hooks[0];
-  assert.equal(posix(stop.commandWindows), posix(join(project, '.codex', 'r2c-hook-stop.cmd')));
-  assert.equal(posix(preToolUse.commandWindows), posix(join(project, '.codex', 'r2c-hook-pre-tool-use.cmd')));
+  // Project scope records everything relative to the project root (C3), which
+  // is what makes a renamed or moved project keep working.
+  assert.equal(posix(stop.commandWindows), './.codex/r2c-hook-stop.cmd');
+  assert.equal(posix(preToolUse.commandWindows), './.codex/r2c-hook-pre-tool-use.cmd');
   assert.ok(!stop.commandWindows.includes('"'), 'commandWindows must not carry quoted arguments');
+  assert.ok(!posix(stop.command).includes(posix(project)), stop.command);
+  assert.match(stop.command, /--project-root '\.'/);
   assert.ok(stop.command.startsWith('node '), 'POSIX launch uses node');
+  assert.ok(!stop.command.includes('npx'));
+  assert.ok(!stop.command.includes('r2c-runner'));
 
   const cmdFile = join(project, '.codex', 'r2c-hook-stop.cmd');
   const cmd = readFileSync(cmdFile, 'utf8');
   assert.ok(cmd.includes(`"${process.execPath}"`), 'node path is quoted inside the .cmd');
   assert.ok(
-    cmd.includes(`"${receipt.payload_home}/shims/hook.mjs"`),
+    cmd.includes(`".r2c/payload/${ENGINE_VERSION}/shims/hook.mjs"`),
     'shim path is quoted inside the .cmd',
   );
   assert.match(cmd, /--event stop/);
-  assert.match(cmd, /--project-root "[^"]*project with space"/);
+  assert.match(cmd, /--project-root "\."/);
+  assert.ok(!cmd.includes(posix(project)), cmd);
 
   if (process.platform !== 'win32') {
     // A .cmd launcher is a Windows artifact; its content is asserted above.
     assert.ok(existsSync(cmdFile));
     return;
   }
-  const launch = spawnSync(process.env.ComSpec, ['/d', '/c', cmdFile], {
+  // Codex runs the relative launcher from the project directory, so this is
+  // also the check that a moved project still starts the hook.
+  const launch = spawnSync(process.env.ComSpec, ['/d', '/c', stop.commandWindows], {
     cwd: project,
     encoding: 'utf8',
     input: '{}',

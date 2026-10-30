@@ -387,6 +387,7 @@ export async function R2cPlugin(ctx = {}) {
 }
 
 Object.assign(R2cPlugin, {
+  defaultRuntime,
   createIdleState,
   sessionIdFromEvent,
   parseJsonLine,
