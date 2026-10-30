@@ -11,9 +11,10 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { delimiter, dirname, join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { withPath } from './support/env.js';
 import { writeTwoStepProject } from './helpers/two-step.js';
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -113,7 +114,7 @@ function cleanEnv({ pathDir, home, dshHome, extra = {} } = {}) {
   ]) {
     delete env[key];
   }
-  if (pathDir) env.PATH = `${pathDir}${delimiter}${env.PATH ?? ''}`;
+  if (pathDir) withPath(env, pathDir);
   if (home) {
     env.R2C_HOME = home;
     env.HOME = home;

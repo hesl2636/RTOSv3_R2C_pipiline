@@ -209,6 +209,14 @@ export function claims(events) {
   return events.filter((event) => event.kind === 'run' && event.event === 'claimed');
 }
 
+/** Read PATH regardless of its Windows casing (`Path` is the common one). */
+function inheritedPath(env) {
+  for (const key of Object.keys(env)) {
+    if (key.toLowerCase() === 'path') return env[key] ?? '';
+  }
+  return '';
+}
+
 function childEnvironment({ home, pathDir }) {
   const env = { ...process.env };
   for (const key of ['R2C_SESSION_ID', 'R2C_PROJECT_ROOT']) delete env[key];
@@ -216,9 +224,15 @@ function childEnvironment({ home, pathDir }) {
   env.USERPROFILE = home;
   env.R2C_HOME = home;
   env.DSH_HOME = join(home, '.dsh');
-  if (pathDir !== null && pathDir !== undefined) {
-    env.PATH = `${pathDir}${delimiter}${env.PATH ?? ''}`;
+  // Collapse `Path`/`PATH` into one entry. Leaving both makes Windows keep
+  // only the value assigned here, which drops `node` and the system tools.
+  const current = inheritedPath(env);
+  for (const key of Object.keys(env)) {
+    if (key.toLowerCase() === 'path') delete env[key];
   }
+  env.PATH = pathDir === null || pathDir === undefined
+    ? current
+    : `${pathDir}${delimiter}${current}`;
   return env;
 }
 

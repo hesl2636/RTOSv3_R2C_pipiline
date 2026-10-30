@@ -12,9 +12,10 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { delimiter, dirname, join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { withPath } from './support/env.js';
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const BIN = join(REPO, 'bin', 'r2c.js');
@@ -42,7 +43,7 @@ function fakeClaude(t, version = '2.1.312') {
 function cleanEnv({ pathDir, home } = {}) {
   const env = { ...process.env };
   for (const key of ['R2C_SESSION_ID', 'R2C_PROJECT_ROOT', 'R2C_PLUGIN_SOURCE']) delete env[key];
-  if (pathDir) env.PATH = `${pathDir}${delimiter}${env.PATH ?? ''}`;
+  if (pathDir) withPath(env, pathDir);
   if (home) {
     env.R2C_HOME = home;
     env.HOME = home;

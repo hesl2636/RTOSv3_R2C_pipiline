@@ -13,9 +13,10 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { delimiter, dirname, join, relative, resolve } from 'node:path';
+import { dirname, join, relative, resolve } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { withPath } from './support/env.js';
 import { createDirLink, linkTarget } from '../src/adapter/util.js';
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -50,7 +51,7 @@ function cleanEnv({ pathDir, home } = {}) {
   ]) {
     delete env[key];
   }
-  if (pathDir) env.PATH = `${pathDir}${delimiter}${env.PATH ?? ''}`;
+  if (pathDir) withPath(env, pathDir);
   if (home) {
     env.R2C_HOME = home;
     env.HOME = home;

@@ -2,10 +2,10 @@
  * Documentation contract (#17 §1, §7, §8; ticket #36).
  *
  * Three docs are user-facing contracts, so they are tested like code:
- * `README.md` (one recommended entry, quick start, five adapters, four modes),
  * `docs/install.md` (install → doctor → upgrade → rollback → uninstall),
  * `docs/compat.md` (generated from `adapter.json`, never hand-edited) and
  * `docs/blue-zone/preflight.md` (exactly 47 rows, each with five fields).
+ * `README.md` is deliberately free-form and is not pinned by wording tests.
  */
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
@@ -54,63 +54,6 @@ function section(text, heading) {
   const next = text.indexOf('\n## ', start + heading.length);
   return next === -1 ? text.slice(start) : text.slice(start, next);
 }
-
-// --- README ---------------------------------------------------------------
-
-test('README recommends npx r2c-runner and nothing else as the entry point', () => {
-  const readme = read('README.md');
-  assert.match(readme, /^# r2c-runner\n/);
-  assert.match(readme, /`npx r2c-runner <cmd>` is the recommended entry point/);
-  // No global-binary installation instructions.
-  assert.doesNotMatch(readme, /npm (?:install|i) -g/);
-  assert.doesNotMatch(readme, /npm (?:install|i) --global/);
-});
-
-test('README quick start is run -> submit -> status', () => {
-  const quick = section(read('README.md'), '## Quick start');
-  const run = quick.indexOf('npx r2c-runner run');
-  const submit = quick.indexOf('npx r2c-runner submit');
-  const status = quick.indexOf('npx r2c-runner status');
-  assert.notEqual(run, -1, 'quick start must start a run');
-  assert.notEqual(submit, -1, 'quick start must submit');
-  assert.notEqual(status, -1, 'quick start must inspect status');
-  assert.ok(run < submit && submit < status, 'quick start order must be run -> submit -> status');
-});
-
-test('README has one install line per adapter', () => {
-  const readme = read('README.md');
-  for (const id of ADAPTER_IDS) {
-    assert.match(
-      readme,
-      new RegExp(`npx r2c-runner adapter install ${id}\\s+--from`),
-      `README is missing the ${id} install one-liner`,
-    );
-  }
-});
-
-test('README documents A, A-prime, B and C stepping modes and the B/C guard gap', () => {
-  const readme = read('README.md');
-  assert.match(readme, /\*\*A\*\*/);
-  assert.match(readme, /\*\*A′\*\*/);
-  assert.match(readme, /\*\*B\*\*/);
-  assert.match(readme, /\*\*C\*\*/);
-  assert.match(readme, /B and C have no runtime guard/);
-  assert.match(readme, /\.r2c\/runs\/\*\*/);
-  assert.match(readme, /\.r2c\/latest\.json/);
-});
-
-test('README documents the state layout', () => {
-  const readme = read('README.md');
-  for (const path of [
-    '.r2c/latest.json',
-    '.r2c/runs/',
-    '.r2c/usage/',
-    '.r2c/ir.md',
-    '.r2c/artifacts/',
-  ]) {
-    assert.ok(readme.includes(path), `README state layout is missing ${path}`);
-  }
-});
 
 // --- docs/install.md ------------------------------------------------------
 

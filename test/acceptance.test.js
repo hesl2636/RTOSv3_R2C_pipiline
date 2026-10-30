@@ -17,9 +17,10 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { delimiter, dirname, join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { withPath } from './support/env.js';
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const BIN = join(REPO, 'bin', 'r2c.js');
@@ -77,7 +78,7 @@ function cleanEnv({ home, pathDir } = {}) {
     env.R2C_HOME = home;
     env.DSH_HOME = join(home, '.dsh');
   }
-  if (pathDir) env.PATH = `${pathDir}${delimiter}${env.PATH ?? ''}`;
+  if (pathDir) withPath(env, pathDir);
   return env;
 }
 
@@ -147,6 +148,18 @@ test('the agent face reports 15 checks, never runs a model and never invokes ano
   assert.equal(json.data.checks.filter((check) => check.id.startsWith('SB')).length, 0);
   assert.deepEqual(json.data.summary, { pass: 15, warn: 0, fail: 0 });
   assert.equal(existsSync(marker), false, `an unexpected agent binary was invoked: ${existsSync(marker) ? readFileSync(marker, 'utf8') : ''}`);
+});
+
+test('the acceptance sandbox keeps the system PATH when the host spells it Path', (t) => {
+  if (process.platform !== 'win32') return t.skip('Windows-only PATH casing');
+  const home = tempDir(t, 'path-home');
+  const env = cleanEnv({ home });
+  const value = env.PATH;
+  delete env.PATH;
+  env.Path = value;
+  const result = cli(['acceptance', '--agent', 'claude-code', '--json'], { env });
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.equal(envelope(result, 'path casing').data.summary.fail, 0);
 });
 
 test('a modified installed file fails the relevant check and the aggregate exits 3', (t) => {

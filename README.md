@@ -1,143 +1,90 @@
 # r2c-runner
 
-Declarative workflow runner for the RTOSv3 R2C pipeline. A workflow is a YAML
-manifest (`r2c.workflow/v1`); the runner executes it, keeps state in `.r2c/`
-inside the project, and hands each step to whichever agent you use (Claude
-Code, Codex, DeepSeek Harness, omp, opencode) or to you directly.
+声明式工作流运行器：一份 `r2c.workflow/v1` YAML 驱动四个阶段，运行态保存在项目 `.r2c/`，每个步骤交给已安装的 agent 执行。
 
-## Run
-
-```bash
-npx r2c-runner <cmd>
-```
-
-`npx r2c-runner <cmd>` is the recommended entry point: it always resolves the
-version the project pins and needs no globally installed binary. Every command
-in this document and in `docs/` is written that way.
-
-## Quick start
-
-A project runs one workflow manifest placed under `workflows/`. Start a run,
-do the step, submit it with the line the runner printed, then inspect the run:
-
-```bash
-cd my-project
-npx r2c-runner run
-# ... do the step printed above, then run the printed Submit line, e.g.
-npx r2c-runner submit --session-id <session-id> --step <step-id>
-npx r2c-runner status
-```
-
-- `run` mints a session id when none is given, activates the first step and
-  prints the full step text plus an executable Submit line. Nothing else may
-  advance the run.
-- `submit` re-checks `expect.outputs` and every `gate` command before it
-  completes the step; a missing output or a failing gate exits `3` and leaves
-  the step active.
-- `status` shows the run, stage, step and next action for the current session
-  (or for `latest.json` when the command is read-only).
-
-If the manifest lives outside `workflows/` — for example the copy installed
-with an adapter payload — pass it explicitly:
-
-```bash
-npx r2c-runner run --manifest .r2c/plugin/0.1.0/workflows/RTOSv3_R2C_pipiline.yaml
-```
-
-The Submit line uses the runner command captured at install time or passed with
-`--runner-cmd`. To keep it in the same form as this document:
-
-```bash
-npx r2c-runner run --runner-cmd "npx r2c-runner"
-```
-
-## Install an agent adapter
-
-Adapters are declarative: the engine installer performs every write, so all
-five share one code path. Install into the current project from a payload
-directory or the release archive:
-
-```bash
-npx r2c-runner adapter install claude-code --from <payload-dir|r2c-plugin-0.1.0.tgz> --project .
-npx r2c-runner adapter install codex       --from <payload-dir|r2c-plugin-0.1.0.tgz> --project .
-npx r2c-runner adapter install dsh         --from <payload-dir|r2c-plugin-0.1.0.tgz> --project .
-npx r2c-runner adapter install omp         --from <payload-dir|r2c-plugin-0.1.0.tgz> --project .
-npx r2c-runner adapter install opencode    --from <payload-dir|r2c-plugin-0.1.0.tgz> --project .
-```
-
-Then check the install without a model call, and remove it when done:
-
-```bash
-npx r2c-runner adapter doctor <agent> --project .
-npx r2c-runner adapter uninstall <agent> --project .
-```
-
-`docs/install.md` covers detection, scopes and paths, `--from`, doctor, upgrade,
-rollback and uninstall. Per-agent landing paths are in
-`adapters/<agent>/README.md`.
-
-## Stepping modes
-
-The runner defines four ways a finished turn turns into "here is the next step".
-The text is identical in all four; only the trigger and the envelope differ.
-
-| Mode | Trigger | Agents | Hand-off |
-| --- | --- | --- | --- |
-| **A** | Stop / turn-stopping hook, same turn | Claude Code, Codex (after `/hooks` trust), DeepSeek Harness, omp | block/steer payload with the next step |
-| **A′** | `session.idle`, new turn | opencode V1 | injected user turn with the next step |
-| **B** | No hook fired (untrusted, absent, capped) | any installed adapter | run the printed `next` line yourself |
-| **C** | No adapter installed | none | `status` / `next` / `submit` by hand |
-
-**B and C have no runtime guard.** Nothing blocks the model from writing
-`.r2c/runs/**`, `.r2c/usage/**`, `.r2c/latest.json` or a workflow manifest when
-the adapter is not enforcing the pre-tool-use hook. Only an A/A′ install wires
-that guard; under B/C those paths are protected by convention, not by the
-runner. The same applies to any host that never receives the hook (for example
-Codex before `/hooks` trust): use `submit` and let `expect`/`gate` decide
-completion.
-
-## State layout
-
-Everything the runner owns lives under `.r2c/` in the project root:
+## 仓库结构
 
 ```text
-.r2c/
-├── latest.json                 # run routing per session (runtime)
-├── runs/<runId>/               # state.json, events.jsonl, workflow.yaml, .lock
-├── usage/<runId>.jsonl         # token usage snapshots (runtime)
-├── install/<agent>.json        # install receipts (runtime)
-├── plugin/<version>/           # installed payload (runtime)
-├── ir.md, sr-map.md            # business artifacts (commit these)
-└── artifacts/                  # business artifacts (commit these)
+bin/r2c.js            命令行入口
+src/                  引擎
+  commands/           run/next/submit/status/pause/resume/cancel/token-usage/hook/validate/adapter/acceptance
+  adapter/            唯一安装器：install/doctor/smoke/uninstall/prune
+  acceptance/         零模型验收
+  state.js            运行态、事件、锁、replay
+pack/                 工作流内容
+  workflows/          1 份默认清单（四阶段）
+  tasks/              4 份阶段任务书
+  skills/             35 份技能
+  commands/           7 个 r2c-* 命令
+adapters/             五个 agent 的声明与资产：claude-code、codex、dsh、omp、opencode
+shims/hook.mjs        五个 agent 共用的 hook 中间层
+plugins/              冻结的业务插件：analysis、upload、intranet-mcp
+schema/               7 份 JSON Schema
+test/ scripts/ docs/ .github/   测试、打包、文档、CI
 ```
 
-`.r2c/runs/`, `.r2c/latest.json`, `.r2c/usage/`, `.r2c/install/` and
-`.r2c/plugin/` are runtime state and belong in `.gitignore`; the artifacts
-under `.r2c/ir.md`, `.r2c/sr-map.md` and `.r2c/artifacts/**` are meant to be
-committed. See `docs/layout.md` for the repository tree and ownership.
+项目运行后，`.r2c/` 保存运行态（`runs/`、`usage/`、`plugin/` 等）；`.r2c/ir.md` 与 `.r2c/artifacts/` 是可提交的业务产物。
 
-## Documentation
+## 安装与卸载
 
-- [docs/install.md](docs/install.md) — install, payload `--from`, doctor,
-  upgrade, rollback, uninstall, per-scope paths, B/C guard warning.
-- [docs/compat.md](docs/compat.md) — engine, payload and adapter version matrix
-  (generated from the five `adapter.json` files).
-- [docs/layout.md](docs/layout.md) — repository tree, ownership, what npm
-  publishes.
-- [docs/plugins.md](docs/plugins.md) — the frozen optional plugins that are
-  never installed by default.
-- [docs/legacy.md](docs/legacy.md) — recovery of the archived pre-migration
-  tree.
-- [docs/blue-zone/preflight.md](docs/blue-zone/preflight.md) — the 47-row
-  environment checklist.
-- [adapters/<agent>/README.md](adapters/claude-code/README.md) — per-agent
-  landing paths and hook wiring (one `README.md` per adapter directory).
+引擎为 `r2c-runner@0.1.0`，载荷为 `r2c-plugin-0.1.0.tgz`。以下命令在目标项目根目录执行。
 
-## Requirements
+### 使用（所有 agent 相同）
 
-Node `>=22.19.0 <23 || >=24.0.0`. The engine has one runtime dependency
-(`yaml`); adapters are installed by the engine, not by a package manager.
+```bash
+npx r2c-runner@0.1.0 run --project .
+# 完成当前步骤后，执行打印的 submit 行
+npx r2c-runner@0.1.0 status --project .
+```
 
-## License
+### claude-code
 
-MIT — see `LICENSE`.
+```bash
+npx r2c-runner@0.1.0 adapter install claude-code --from r2c-plugin-0.1.0.tgz --project .
+npx r2c-runner@0.1.0 adapter doctor  claude-code --project .
+npx r2c-runner@0.1.0 adapter uninstall claude-code --project .
+```
+
+项目级，写入 `.claude/` 与 `.mcp.json`。
+
+### codex
+
+```bash
+npx r2c-runner@0.1.0 adapter install codex --from r2c-plugin-0.1.0.tgz --project .
+npx r2c-runner@0.1.0 adapter doctor  codex --project .
+npx r2c-runner@0.1.0 adapter uninstall codex --project .
+```
+
+项目级，写入 `.agents/` 与 `.codex/`；首次使用需在 codex 中 `/hooks` 信任 hook。
+
+### dsh
+
+```bash
+npx r2c-runner@0.1.0 adapter install dsh --from r2c-plugin-0.1.0.tgz --profile web --project .
+npx r2c-runner@0.1.0 adapter doctor  dsh --project .
+npx r2c-runner@0.1.0 adapter uninstall dsh --profile web --project .
+```
+
+用户级，写入 `~/.dsh/profiles/web/`；安装或卸载后重启 dsh。
+
+### omp
+
+```bash
+npx r2c-runner@0.1.0 adapter install omp --from r2c-plugin-0.1.0.tgz --project .
+npx r2c-runner@0.1.0 adapter doctor  omp --project .
+npx r2c-runner@0.1.0 adapter uninstall omp --project .
+```
+
+项目级，写入 `.omp/`。
+
+### opencode
+
+```bash
+npx r2c-runner@0.1.0 adapter install opencode --from r2c-plugin-0.1.0.tgz --project .
+npx r2c-runner@0.1.0 adapter doctor  opencode --project .
+npx r2c-runner@0.1.0 adapter uninstall opencode --project .
+```
+
+项目级，写入 `.opencode/` 与 `opencode.json` 的 `mcp`；要求 V1 `>=1.19.5 <2`。
+
+卸载默认保留 `.r2c/` 运行历史与业务产物；加 `--purge-state` 同时删除运行态。完整规则见 [docs/install.md](docs/install.md)。

@@ -10,8 +10,9 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { delimiter, dirname, join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { pathToFileURL, fileURLToPath } from 'node:url';
+import { withPath } from './support/env.js';
 import { test } from 'node:test';
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -41,7 +42,7 @@ function cleanEnv({ pathDir, home } = {}) {
   for (const key of ['R2C_SESSION_ID', 'R2C_PROJECT_ROOT', 'R2C_PLUGIN_SOURCE', 'R2C_HOME']) {
     delete env[key];
   }
-  if (pathDir) env.PATH = `${pathDir}${delimiter}${env.PATH ?? ''}`;
+  if (pathDir) withPath(env, pathDir);
   if (home) {
     env.R2C_HOME = home;
     env.HOME = home;
