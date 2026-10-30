@@ -7,16 +7,57 @@
  */
 import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, unlinkSync } from 'node:fs';
-import { join } from 'node:path';
+import { isAbsolute, join, relative, resolve } from 'node:path';
 import { EXIT_CODES, R2cError } from '../errors.js';
 import { isValidRange, satisfies } from '../version.js';
 import { detectAgent } from './detect.js';
 import { runAdapterSmoke } from './smoke.js';
 import { receiptPath, stateDir } from './state.js';
-import { isFile, isLink, linkTarget, readJsonIfExists, receiptFilePath, sha256File, userHome } from './util.js';
+import { isFile, isLink, linkTarget, readJsonIfExists, receiptFilePath, sha256File, toPosix, userHome } from './util.js';
 
 function check(name, status, detail) {
   return { name, status, detail };
+}
+
+/**
+ * The engine this install points at must really run (C6): a deleted, moved or
+ * non-executable entry is a `fail` here instead of a silently broken first hook.
+ */
+function checkEngineEntry(receipt, ctx) {
+  const engine = receipt.engine ?? {};
+  const entry = typeof engine.entry === 'string' ? engine.entry : '';
+  if (entry === '') {
+    return check('engine.executable', 'fail', 'receipt records no engine entry; re-run install with --engine <dir>');
+  }
+  if (!existsSync(entry)) {
+    return check('engine.executable', 'fail', `engine entry is missing: ${entry}`);
+  }
+  const result = spawnSync(process.execPath, [entry, '--version'], {
+    cwd: ctx.projectRoot,
+    encoding: 'utf8',
+    timeout: 15_000,
+    windowsHide: true,
+  });
+  if (result.error) {
+    return check('engine.executable', 'fail', `engine entry could not run: ${result.error.message}`);
+  }
+  if (result.status !== 0) {
+    const detail = (result.stderr || '').trim().slice(0, 200);
+    return check(
+      'engine.executable',
+      'fail',
+      `engine entry exited ${result.status}${detail === '' ? '' : `: ${detail}`}`,
+    );
+  }
+  const reported = (result.stdout || '').trim();
+  if (reported !== String(engine.version)) {
+    return check(
+      'engine.executable',
+      'fail',
+      `engine entry reports "${reported}", receipt records ${engine.version}`,
+    );
+  }
+  return check('engine.executable', 'pass', `${entry} --version → ${reported}`);
 }
 
 function readInstalledAdapter(receipt) {
@@ -67,6 +108,21 @@ function shimPath(receipt) {
   return receipt.payload_home ? join(receipt.payload_home, 'shims', 'hook.mjs') : null;
 }
 
+/**
+ * Paths a carrier may use to reference this shim: the absolute one (user
+ * scope, or any carrier outside the project) and, for a project-scope carrier,
+ * the project-relative spelling the installer writes so a moved project keeps
+ * working.
+ */
+function shimReferences(receipt, carrierRoot) {
+  const absolute = shimPath(receipt);
+  if (absolute === null) return [];
+  const references = [absolute];
+  const rel = relative(carrierRoot, absolute);
+  if (rel !== '' && !rel.startsWith('..') && !isAbsolute(rel)) references.push(toPosix(rel));
+  return references;
+}
+
 /** Declaration key → Claude-style settings event key. */
 const HOOK_EVENTS = [
   ['stop', 'Stop'],
@@ -108,10 +164,11 @@ function eventCommands(document, event) {
   return node === undefined ? [] : hookCommands(node);
 }
 
-function usesShim(command, shim) {
+function usesShim(command, shims) {
   const comparable = (value) =>
     (process.platform === 'win32' ? value.toLowerCase() : value).replaceAll('\\', '/');
-  return comparable(command).includes(comparable(shim));
+  const haystack = comparable(command);
+  return shims.some((shim) => haystack.includes(comparable(shim)));
 }
 
 /**
@@ -120,7 +177,7 @@ function usesShim(command, shim) {
  * `commandWindows` is a rendered `.cmd` still qualifies through its sibling
  * `command` (the .cmd itself quotes node/shim internally).
  */
-function eventLaunchCommands(document, event, shim) {
+function eventLaunchCommands(document, event, shims) {
   const node = document?.hooks?.[event];
   if (node === undefined) return [];
   const commands = [];
@@ -131,7 +188,7 @@ function eventLaunchCommands(document, event, shim) {
     }
     if (value === null || typeof value !== 'object') return;
     const fields = [value.command, value.commandWindows].filter((field) => typeof field === 'string');
-    if (fields.some((field) => usesShim(field, shim))) {
+    if (fields.some((field) => usesShim(field, shims))) {
       const chosen = process.platform === 'win32'
         ? value.commandWindows ?? value.command
         : value.command ?? value.commandWindows;
@@ -353,6 +410,7 @@ export function doctorAdapter({ ctx, agentId, options }) {
   } else {
     checks.push(check('engine.version', 'pass', `engine ${ctx.version} satisfies ${engineRange}`));
   }
+  checks.push(checkEngineEntry(receipt, ctx));
 
   const files = verifyFiles(receipt, ctx.projectRoot);
   if (files.problems.length > 0) {
@@ -371,6 +429,8 @@ export function doctorAdapter({ ctx, agentId, options }) {
   const shim = shimPath(receipt);
   const shimPresent = shim !== null && existsSync(shim);
   const carrierRoot = scope === 'user' ? userHome() : ctx.projectRoot;
+  // Project scope writes the shim project-relative; user scope writes it absolute.
+  const shimRefs = shimReferences(receipt, carrierRoot);
   const carriers = new Map();
   for (const entry of declared) {
     const file = join(carrierRoot, ...entry.carrier.split('/'));
@@ -407,10 +467,10 @@ export function doctorAdapter({ ctx, agentId, options }) {
     const unwired = declared.filter((entry) => {
       const state = carriers.get(join(carrierRoot, ...entry.carrier.split('/')));
       if (state?.module === true) {
-        return shim === null || !usesShim(state.text, shim);
+        return shimRefs.length === 0 || !usesShim(state.text, shimRefs);
       }
       const commands = eventCommands(state?.document, entry.event);
-      return shim === null || !commands.some((command) => usesShim(command, shim));
+      return shimRefs.length === 0 || !commands.some((command) => usesShim(command, shimRefs));
     });
     checks.push(
       unwired.length === 0
@@ -457,14 +517,19 @@ export function doctorAdapter({ ctx, agentId, options }) {
     const nativeSeam = agentId === 'dsh' && stopDecl === undefined;
     const stopCommands = stopModule || nativeSeam
       ? []
-      : eventLaunchCommands(stopState?.document, 'Stop', shim);
-    if (stopModule && !usesShim(stopState.text, shim)) {
+      : eventLaunchCommands(stopState?.document, 'Stop', shimRefs);
+    if (stopModule && !usesShim(stopState.text, shimRefs)) {
       checks.push(check('hooks.launch', 'fail', 'module carrier does not reference this shim'));
     } else if (!stopModule && !nativeSeam && stopCommands.length === 0) {
       checks.push(check('hooks.launch', 'fail', 'settings has no configured Stop command for this shim'));
     } else {
       const started = Date.now();
       const isWin = process.platform === 'win32';
+      // A project-scope launcher is recorded relative to the project root; cmd
+      // needs it resolved, and takes a spaced path as one /c argument.
+      const launcher = isWin && stopCommands[0] !== undefined && /\.(?:cmd|bat)$/i.test(stopCommands[0])
+        ? (isAbsolute(stopCommands[0]) ? stopCommands[0] : resolve(carrierRoot, stopCommands[0]))
+        : null;
       const options = {
         cwd: ctx.projectRoot,
         encoding: 'utf8',
@@ -479,9 +544,10 @@ export function doctorAdapter({ ctx, agentId, options }) {
           [shim, '--agent', agentId, '--event', 'stop', '--format', 'json'],
           options,
         );
-      } else if (isWin && /\.(?:cmd|bat)$/i.test(stopCommands[0]) && existsSync(stopCommands[0])) {
-        // A launcher path may contain spaces; cmd finds it as one /c argument.
-        result = spawnSync(process.env.ComSpec || 'cmd.exe', ['/d', '/c', stopCommands[0]], options);
+      } else if (launcher !== null) {
+        result = existsSync(launcher)
+          ? spawnSync(process.env.ComSpec || 'cmd.exe', ['/d', '/c', launcher], options)
+          : { error: new Error(`launcher is missing: ${launcher}`) };
       } else {
         result = spawnSync(stopCommands[0], { ...options, shell: true });
       }

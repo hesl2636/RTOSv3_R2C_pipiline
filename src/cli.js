@@ -103,10 +103,6 @@ function readVersion() {
   return readPackage().version;
 }
 
-function readPackageName() {
-  return readPackage().name;
-}
-
 /** True when `version` (as reported by process.versions.node) is in NODE_RANGE. */
 function isSupportedNode(version) {
   const [major, minor] = version.split('.').map((part) => Number.parseInt(part, 10));
@@ -418,7 +414,6 @@ export async function main(argv) {
       workflow: options.workflow,
       retry: options.retry,
       version: readVersion(),
-      packageName: readPackageName(),
       binPath: BIN_PATH,
       options,
       hookInput,

@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${PAYLOAD_HOME}/shims/hook.mjs\" --agent claude-code --event stop --format json --runner-cmd=\"${RUNNER_CMD}\""
+            "command": "node \"${PAYLOAD_HOME}/shims/hook.mjs\" --agent claude-code --event stop --format json --runner-cmd=\"${RUNNER_CMD_DQ}\""
           }
         ]
       }
@@ -15,7 +15,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${PAYLOAD_HOME}/shims/hook.mjs\" --agent claude-code --event pre-tool-use --format json --runner-cmd=\"${RUNNER_CMD}\""
+            "command": "node \"${PAYLOAD_HOME}/shims/hook.mjs\" --agent claude-code --event pre-tool-use --format json --runner-cmd=\"${RUNNER_CMD_DQ}\""
           }
         ]
       }
