@@ -8,12 +8,13 @@ import {
   mkdtempSync,
   readFileSync,
   readdirSync,
+  renameSync,
   rmSync,
   statSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { delimiter, dirname, join, relative, resolve } from 'node:path';
+import { basename, delimiter, dirname, join, relative, resolve } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { dropPayloadManifest, writeTwoStepProject } from './helpers/two-step.js';
@@ -357,6 +358,24 @@ test('hooks.json and the .cmd launcher survive a project path with a space', (t)
   const trace = join(project, '.r2c', 'runs', '.hooks', 'trace', 'codex.jsonl');
   assert.ok(existsSync(trace));
   assert.match(readFileSync(trace, 'utf8'), /"hook":"stop".*"no-session"/);
+
+  // The launcher, the shim path and --project-root are all project-relative,
+  // so the same command still starts the hook after a rename.
+  rmSync(trace, { force: true });
+  const moved = join(dirname(project), `${basename(project)}-renamed`);
+  renameSync(project, moved);
+  t.after(() => rmSync(moved, { recursive: true, force: true }));
+  const relaunch = spawnSync(process.env.ComSpec, ['/d', '/c', stop.commandWindows], {
+    cwd: moved,
+    encoding: 'utf8',
+    input: '{}',
+    windowsHide: true,
+  });
+  assert.equal(relaunch.status, 0, relaunch.stderr);
+  assert.ok(
+    existsSync(join(moved, '.r2c', 'runs', '.hooks', 'trace', 'codex.jsonl')),
+    'the moved project gets its own hook trace',
+  );
 });
 
 function hookLauncher(project) {
