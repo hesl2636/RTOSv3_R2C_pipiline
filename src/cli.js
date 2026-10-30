@@ -58,7 +58,7 @@ Adapter options:
 
 Acceptance options:
       --keep              Keep the temporary sandbox and print its path.
-      --only ID[,ID]      Run only the named checks (P1 is reachable here).
+      --only ID[,ID]      Run only the named checks.
 `;
 
 const PACKAGE_JSON = new URL('../package.json', import.meta.url);

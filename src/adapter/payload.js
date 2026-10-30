@@ -12,6 +12,7 @@
  * mismatching `r2c-payload.json.files` entry aborts with exit 2 and zero
  * installed bytes.
  */
+import { spawnSync } from 'node:child_process';
 import {
   existsSync,
   mkdtempSync,
@@ -22,7 +23,7 @@ import {
   statSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { basename, dirname, join, relative, resolve } from 'node:path';
+import { basename, dirname, extname, join, relative, resolve } from 'node:path';
 import { EXIT_CODES, R2cError } from '../errors.js';
 import {
   PAYLOAD_MANIFEST,
@@ -34,6 +35,7 @@ import {
   verifyPluginFiles,
 } from '../plugin.js';
 import { isValidRange, isValidVersion } from '../version.js';
+import { which } from './detect.js';
 import { stateDir } from './state.js';
 import {
   atomicWriteFile,
@@ -104,6 +106,69 @@ export function releaseEndpoints({ version, token = null, base = null }) {
 
 function payloadError(code, message, details = null, exitCode = EXIT_CODES.USAGE) {
   return new R2cError(code, message, details, exitCode);
+}
+
+/**
+ * `git credential fill` for github.com, never prompting: GIT_TERMINAL_PROMPT=0
+ * plus a short timeout means an unattended download cannot hang on a password
+ * prompt, it just finds no credential. `git` is resolved through PATH because
+ * a Windows git may be a `.cmd` shim, which needs a shell to start.
+ */
+function gitCredentialToken() {
+  const bin = which('git');
+  if (bin === null) return null;
+  const needsShell = process.platform === 'win32' && ['.cmd', '.bat'].includes(extname(bin).toLowerCase());
+  const result = spawnSync(
+    needsShell ? `"${bin}" credential fill` : bin,
+    needsShell ? [] : ['credential', 'fill'],
+    {
+      input: 'protocol=https\nhost=github.com\n\n',
+      encoding: 'utf8',
+      timeout: 5000,
+      windowsHide: true,
+      shell: needsShell,
+      env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
+    },
+  );
+  if (result.error || result.status !== 0 || typeof result.stdout !== 'string') return null;
+  const match = /^password=(.*)$/m.exec(result.stdout);
+  return match === null || match[1] === '' ? null : match[1];
+}
+
+/**
+ * Credential chain (C4): `GH_TOKEN` → `GITHUB_TOKEN` → `git credential fill`.
+ * `source` names the winning entry so an authorization failure can point at the
+ * credential the user has to fix; `null` means "anonymous".
+ */
+export function releaseCredential() {
+  for (const name of ['GH_TOKEN', 'GITHUB_TOKEN']) {
+    const value = process.env[name];
+    if (typeof value === 'string' && value !== '') return { token: value, source: name };
+  }
+  const fromGit = gitCredentialToken();
+  return fromGit === null ? { token: null, source: null } : { token: fromGit, source: 'git-credential' };
+}
+
+/**
+ * Why an HTTP status means the credential is the problem. A private repository
+ * answers `404` (not `401`) to an anonymous request, so "no token" plus `404`
+ * is the one case that must ask for a token instead of reporting a missing
+ * release.
+ */
+export function releaseAuthHint(status, credential) {
+  const anonymous = credential.token === null;
+  if (status === 401 || status === 403) {
+    return `: ${anonymous ? 'the anonymous request' : credential.source} is not authorized for ${RELEASE_REPO}; run \`gh auth login\` or set GH_TOKEN with release read access`;
+  }
+  if (status === 404) {
+    return anonymous
+      ? `: HTTP 404 on a private repository means a token is required — set GH_TOKEN, set GITHUB_TOKEN, or store a github.com credential for \`git credential fill\` (run \`gh auth login\` where it is installed)`
+      : `: HTTP 404 — the release tag or asset is absent, or ${credential.source} cannot see ${RELEASE_REPO}; run \`gh auth login\` or set a GH_TOKEN with contents:read`;
+  }
+  if (status === null && anonymous) {
+    return `: no credential found — set GH_TOKEN, set GITHUB_TOKEN, or store a github.com credential for \`git credential fill\` (run \`gh auth login\` where it is installed)`;
+  }
+  return '';
 }
 
 function hintFrom() {
@@ -496,7 +561,11 @@ async function downloadRelease(version) {
   // Spelling out the default base must not degrade the API path a token needs.
   const base = declared === RELEASE_BASE ? null : declared;
   if (base !== null && !isHttpBase(base)) return downloadReleaseDir(version, base);
-  const token = process.env.GITHUB_TOKEN || process.env.GH_TOKEN || null;
+  // The GitHub credential (env or `git credential fill`) is only for GitHub: a
+  // custom mirror authenticates its own way and must not receive it.
+  const credential = base === null ? releaseCredential() : { token: null, source: null };
+  const token = credential.token;
+  const authHint = (status) => (base === null ? releaseAuthHint(status, credential) : '');
   const headers = { 'user-agent': 'r2c-runner' };
   if (token) headers.authorization = `Bearer ${token}`;
   const endpoints = releaseEndpoints({ version, token, base });
@@ -509,11 +578,10 @@ async function downloadRelease(version) {
         signal: AbortSignal.timeout(timeout),
       });
     } catch (error) {
-      const authHint = token === null ? ' (the release repository is private; set GITHUB_TOKEN)' : '';
       throw payloadError(
         'PAYLOAD_UNAVAILABLE',
-        `cannot reach the payload release v${version}: ${error.message}${authHint}; ${hintFrom()}`,
-        { version, url },
+        `cannot reach the payload release v${version}: ${error.message}${authHint(null)}; ${hintFrom()}`,
+        { version, url, token_source: credential.source },
       );
     }
   };
@@ -528,8 +596,13 @@ async function downloadRelease(version) {
     if (!releaseResponse.ok) {
       throw payloadError(
         'PAYLOAD_UNAVAILABLE',
-        `cannot read release v${version}: HTTP ${releaseResponse.status}; ${hintFrom()}`,
-        { version, url: endpoints.release, status: releaseResponse.status },
+        `cannot read release v${version}: HTTP ${releaseResponse.status}${authHint(releaseResponse.status)}; ${hintFrom()}`,
+        {
+          version,
+          url: endpoints.release,
+          status: releaseResponse.status,
+          token_source: credential.source,
+        },
       );
     }
     const release = await releaseResponse.json().catch(() => null);
@@ -556,11 +629,10 @@ async function downloadRelease(version) {
   }
 
   if (!response.ok) {
-    const authHint = token === null ? ' (the release repository is private; set GITHUB_TOKEN)' : '';
     throw payloadError(
       'PAYLOAD_UNAVAILABLE',
-      `cannot download ${asset}: HTTP ${response.status}${authHint}; ${hintFrom()}`,
-      { version, url: archiveUrl, status: response.status },
+      `cannot download ${asset}: HTTP ${response.status}${authHint(response.status)}; ${hintFrom()}`,
+      { version, url: archiveUrl, status: response.status, token_source: credential.source },
     );
   }
   const archive = Buffer.from(await response.arrayBuffer());

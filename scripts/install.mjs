@@ -23,7 +23,8 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { homedir } from 'node:os';
-import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
+import { delimiter, dirname, extname, isAbsolute, join, relative, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { gunzipSync } from 'node:zlib';
 
 const RELEASE_REPO = 'hesl2636/RTOSv3_R2C_pipiline';
@@ -34,7 +35,37 @@ const BLOCK = 512;
 const VERSION_RE = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z][0-9A-Za-z.-]*)?$/;
 const SCOPES = Object.freeze(['project', 'user']);
 const AUTH_HINT =
-  'authentication: set GH_TOKEN, set GITHUB_TOKEN, or store a github.com credential for `git credential fill` (for example `gh auth login`)';
+  'set GH_TOKEN, set GITHUB_TOKEN, or store a github.com credential for `git credential fill` (run `gh auth login` where it is installed)';
+
+/** Why an HTTP status means the credential is the problem (private repo = 404). */
+function credentialHint(status, credential) {
+  if (status === 401 || status === 403) {
+    const who = credential.token === null ? 'the anonymous request' : credential.source;
+    return `: ${who} is not authorized for ${RELEASE_REPO}; run \`gh auth login\` or set GH_TOKEN with release read access`;
+  }
+  if (status === 404) {
+    return credential.token === null
+      ? `: HTTP 404 on a private repository means a token is required — ${AUTH_HINT}`
+      : `: HTTP 404 — the tag or asset is absent, or ${credential.source} cannot see ${RELEASE_REPO}; run \`gh auth login\``;
+  }
+  return '';
+}
+
+/**
+ * A missing asset: a `404`/`401`/`403` names the credential story, anything
+ * else (or a local directory without the file) just says what is missing.
+ */
+export function assetUnavailable(name, version, where, { status = null, credential = null } = {}) {
+  const hint = credential === null ? '' : credentialHint(status, credential);
+  const anonymousPrivate = credential?.token === null && (status === 401 || status === 403 || status === 404);
+  return new BootstrapError(
+    anonymousPrivate ? 'ENGINE_AUTH_REQUIRED' : 'ENGINE_ASSET_MISSING',
+    hint === ''
+      ? `release v${version} does not carry ${name}: ${where}\navailable authentication: ${AUTH_HINT}`
+      : `cannot read ${name} from release v${version}: ${where}${hint}`,
+    1,
+  );
+}
 
 const USAGE = `Usage: node install.mjs --agent <id> [--version <V>] [--scope project|user]
                         [--project <dir>] [--release-base <dir|url>]
@@ -125,22 +156,59 @@ function bearer(token) {
 }
 
 /**
- * Credential order (C4): `GH_TOKEN` → `GITHUB_TOKEN` → `git credential fill`.
- * The helper call never prompts, so an unattended install cannot hang.
+ * Resolve `git` through PATH with Windows PATHEXT, exactly like the engine's
+ * `which()`: a Windows git may be a `.cmd` shim, which needs a shell to start.
  */
-function authToken() {
-  const fromEnv = process.env.GH_TOKEN || process.env.GITHUB_TOKEN;
-  if (typeof fromEnv === 'string' && fromEnv !== '') return fromEnv;
-  const result = spawnSync('git', ['credential', 'fill'], {
-    input: 'protocol=https\nhost=github.com\n\n',
-    encoding: 'utf8',
-    timeout: 5000,
-    windowsHide: true,
-    env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
-  });
-  if (result.error || result.status !== 0 || typeof result.stdout !== 'string') return null;
+function gitBinary() {
+  const extensions = process.platform === 'win32'
+    ? ['', ...(process.env.PATHEXT || '.COM;.EXE;.BAT;.CMD').split(';').filter(Boolean).map((e) => e.toLowerCase())]
+    : [''];
+  for (const dir of (process.env.PATH || '').split(delimiter)) {
+    if (dir === '') continue;
+    for (const extension of extensions) {
+      const candidate = join(dir, `git${extension}`);
+      try {
+        if (statSync(candidate).isFile()) return candidate;
+      } catch {
+        // keep looking
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * Credential order (C4): `GH_TOKEN` → `GITHUB_TOKEN` → `git credential fill`.
+ * The helper call never prompts, so an unattended install cannot hang; `source`
+ * names the entry that won so a 403/404 can point at the credential to fix.
+ */
+export function authCredential() {
+  for (const name of ['GH_TOKEN', 'GITHUB_TOKEN']) {
+    const value = process.env[name];
+    if (typeof value === 'string' && value !== '') return { token: value, source: name };
+  }
+  const bin = gitBinary();
+  if (bin === null) return { token: null, source: null };
+  const needsShell = process.platform === 'win32' && ['.cmd', '.bat'].includes(extname(bin).toLowerCase());
+  const result = spawnSync(
+    needsShell ? `"${bin}" credential fill` : bin,
+    needsShell ? [] : ['credential', 'fill'],
+    {
+      input: 'protocol=https\nhost=github.com\n\n',
+      encoding: 'utf8',
+      timeout: 5000,
+      windowsHide: true,
+      shell: needsShell,
+      env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
+    },
+  );
+  if (result.error || result.status !== 0 || typeof result.stdout !== 'string') {
+    return { token: null, source: null };
+  }
   const match = /^password=(.*)$/m.exec(result.stdout);
-  return match === null || match[1] === '' ? null : match[1];
+  return match === null || match[1] === ''
+    ? { token: null, source: null }
+    : { token: match[1], source: 'git-credential' };
 }
 
 async function request(url, timeout, headers) {
@@ -159,46 +227,46 @@ async function request(url, timeout, headers) {
   }
 }
 
-function assetMissing(name, version, where) {
-  return new BootstrapError(
-    'ENGINE_ASSET_MISSING',
-    `release v${version} does not carry ${name}: ${where}\navailable ${AUTH_HINT}`,
-    1,
-  );
-}
-
 /** Read `name` from the release: a local file, a mirror URL, or the GitHub API. */
 async function fetchAsset(source, version, name) {
   if (source.kind === 'dir') {
     const file = join(source.dir, name);
-    if (!existsSync(file)) throw assetMissing(name, version, file);
+    if (!existsSync(file)) throw assetUnavailable(name, version, file);
     return readFileSync(file);
   }
 
-  const token = authToken();
-  if (source.github && token !== null) {
+  // The credential chain is GitHub's; a custom mirror authenticates its own way.
+  const credential = source.github ? authCredential() : null;
+  if (credential !== null && credential.token !== null) {
     const releaseUrl = `${GITHUB_API}/repos/${RELEASE_REPO}/releases/tags/v${version}`;
     const release = await request(releaseUrl, 30_000, {
-      ...bearer(token),
+      ...bearer(credential.token),
       accept: 'application/vnd.github+json',
     });
-    if (!release.ok) throw assetMissing(name, version, `${releaseUrl} (HTTP ${release.status})`);
+    if (!release.ok) {
+      throw assetUnavailable(name, version, releaseUrl, {
+        status: release.status,
+        credential,
+      });
+    }
     const body = await release.json().catch(() => null);
     const assets = Array.isArray(body?.assets) ? body.assets : [];
     const found = assets.find((entry) => entry?.name === name);
-    if (found === undefined) throw assetMissing(name, version, releaseUrl);
+    if (found === undefined) throw assetUnavailable(name, version, releaseUrl);
     const url = `${GITHUB_API}/repos/${RELEASE_REPO}/releases/assets/${found.id}`;
     const asset = await request(url, 60_000, {
-      ...bearer(token),
+      ...bearer(credential.token),
       accept: 'application/octet-stream',
     });
-    if (!asset.ok) throw assetMissing(name, version, `${url} (HTTP ${asset.status})`);
+    if (!asset.ok) throw assetUnavailable(name, version, url, { status: asset.status, credential });
     return Buffer.from(await asset.arrayBuffer());
   }
 
   const url = `${source.base}/v${version}/${name}`;
-  const response = await request(url, 60_000, bearer(token));
-  if (!response.ok) throw assetMissing(name, version, `${url} (HTTP ${response.status})`);
+  const response = await request(url, 60_000, credential === null ? {} : bearer(credential.token));
+  if (!response.ok) {
+    throw assetUnavailable(name, version, url, { status: response.status, credential });
+  }
   return Buffer.from(await response.arrayBuffer());
 }
 
@@ -217,16 +285,16 @@ async function latestVersion(source) {
       2,
     );
   }
-  const token = authToken();
+  const credential = authCredential();
   const url = `${GITHUB_API}/repos/${RELEASE_REPO}/releases/latest`;
   const response = await request(url, 30_000, {
-    ...bearer(token),
+    ...bearer(credential.token),
     accept: 'application/vnd.github+json',
   });
   if (!response.ok) {
     fail(
       'ENGINE_VERSION_UNRESOLVED',
-      `cannot resolve the latest release of ${RELEASE_REPO}: HTTP ${response.status}; pass --version <V>\navailable ${AUTH_HINT}`,
+      `cannot resolve the latest release of ${RELEASE_REPO}: HTTP ${response.status}${credentialHint(response.status, credential)}; pass --version <V>`,
       1,
     );
   }
@@ -380,7 +448,7 @@ async function main(argv) {
     const sums = await fetchAsset(source, version, SUMS_ASSET);
     const expected = digestFor(sums.toString('utf8'), assetName);
     if (expected === null) {
-      throw assetMissing(assetName, version, `${SUMS_ASSET} lists no entry for it`);
+      throw assetUnavailable(assetName, version, `${SUMS_ASSET} lists no entry for it`);
     }
     const archive = await fetchAsset(source, version, assetName);
     const actual = createHash('sha256').update(archive).digest('hex');
@@ -422,18 +490,33 @@ async function main(argv) {
   return 0;
 }
 
-main(process.argv.slice(2)).then(
-  (code) => {
-    process.exitCode = code;
-  },
-  (error) => {
-    if (error instanceof BootstrapError) {
-      process.stderr.write(`install: ${error.code}: ${error.message}\n`);
-      process.exitCode = error.exitCode;
-      return;
-    }
-    const detail = error instanceof Error ? (error.stack ?? error.message) : String(error);
-    process.stderr.write(`install: INTERNAL: ${detail}\n`);
-    process.exitCode = 1;
-  },
-);
+/**
+ * Run only when executed (`node install.mjs`), never when imported: the tests
+ * import the pure helpers above, and the release asset is the same file.
+ */
+function invokedDirectly() {
+  if (process.argv[1] === undefined) return false;
+  const invokedPath = resolve(process.argv[1]);
+  const modulePath = fileURLToPath(import.meta.url);
+  return process.platform === 'win32'
+    ? invokedPath.toLowerCase() === modulePath.toLowerCase()
+    : invokedPath === modulePath;
+}
+
+if (invokedDirectly()) {
+  main(process.argv.slice(2)).then(
+    (code) => {
+      process.exitCode = code;
+    },
+    (error) => {
+      if (error instanceof BootstrapError) {
+        process.stderr.write(`install: ${error.code}: ${error.message}\n`);
+        process.exitCode = error.exitCode;
+        return;
+      }
+      const detail = error instanceof Error ? (error.stack ?? error.message) : String(error);
+      process.stderr.write(`install: INTERNAL: ${detail}\n`);
+      process.exitCode = 1;
+    },
+  );
+}
