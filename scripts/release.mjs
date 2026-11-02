@@ -22,6 +22,13 @@
  * bad package is caught locally instead of in CI.
  *
  * `--compat` regenerates `docs/compat.md` from the same adapter data.
+ *
+ * The bundle channel (#105, decision #74) lives in the same command:
+ * `--bundle <zip|dir> --out DIR` writes the 6–8 per-bundle assets, and
+ * `--bundle <zip|dir> --check [--out DIR] [--tag TAG]` is the pre-publish
+ * gate. A bundle Release is self-contained: zip, IR, pre-projected payloads,
+ * engine, framework, bootstrap and sums. `--bundle` never touches the legacy
+ * `v<engine>` asset set.
  */
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
@@ -40,6 +47,11 @@ import {
 } from '../src/plugin.js';
 import { collectEngine, engineAssetName } from '../src/engine.js';
 import { isValidRange, isValidVersion } from '../src/version.js';
+import {
+  buildBundleRelease,
+  checkBundleRelease,
+  describeBundleCheck,
+} from './lib/bundle-release.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const ADAPTER_IDS = Object.freeze(['claude-code', 'codex', 'dsh', 'omp', 'opencode']);
@@ -62,25 +74,50 @@ function hashedAssets(version) {
 function usage(message) {
   if (message) process.stderr.write(`release: ${message}\n`);
   process.stderr.write(
-    'usage: node scripts/release.mjs [--out DIR] | --check [--out DIR] | --compat\n',
+    'usage: node scripts/release.mjs [--out DIR] | --check [--out DIR] | --compat\n'
+    + '       node scripts/release.mjs --bundle <zip|dir> --out DIR [--tag TAG]\n'
+    + '       node scripts/release.mjs --bundle <zip|dir> --check [--out DIR] [--tag TAG]\n',
   );
   process.exit(2);
 }
 
 function parseArgs(argv) {
-  const options = { check: false, compat: false, out: join(ROOT, 'dist') };
+  const options = {
+    check: false,
+    compat: false,
+    out: join(ROOT, 'dist'),
+    outSet: false,
+    bundle: null,
+    tag: null,
+  };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg === '--check') options.check = true;
     else if (arg === '--compat') options.compat = true;
-    else if (arg === '--out') {
+    else if (arg === '--bundle') {
+      const value = argv[index + 1];
+      if (value === undefined || value.startsWith('--')) usage('--bundle requires a zip or directory');
+      options.bundle = resolve(process.cwd(), value);
+      index += 1;
+    } else if (arg === '--tag') {
+      const value = argv[index + 1];
+      if (value === undefined || value.startsWith('--')) usage('--tag requires a tag name');
+      options.tag = value;
+      index += 1;
+    } else if (arg === '--out') {
       const value = argv[index + 1];
       if (value === undefined || value.startsWith('--')) usage('--out requires a directory');
       options.out = resolve(process.cwd(), value);
+      options.outSet = true;
       index += 1;
     } else usage(`unknown argument: ${arg}`);
   }
   if (options.check && options.compat) usage('--check and --compat are mutually exclusive');
+  if (options.compat && options.bundle !== null) usage('--compat and --bundle are mutually exclusive');
+  if (options.tag !== null && options.bundle === null) usage('--tag only applies to --bundle');
+  if (options.bundle !== null && !options.check && !options.outSet) {
+    usage('--bundle requires --out DIR (a bundle Release never shares the legacy dist directory)');
+  }
   return options;
 }
 
@@ -545,6 +582,48 @@ function build(ctx, outDir) {
   process.stdout.write(`asset ${sumsPath}\n`);
 }
 
+function buildBundle(options) {
+  const result = buildBundleRelease({
+    root: ROOT,
+    bundlePath: options.bundle,
+    tag: options.tag,
+  });
+  if (!result.ok) {
+    process.stderr.write(`bundle release failed for ${options.bundle}:\n`);
+    for (const failure of result.failures) process.stderr.write(`- ${failure}\n`);
+    process.exit(1);
+  }
+  mkdirSync(options.out, { recursive: true });
+  for (const asset of result.assets) {
+    writeFileSync(join(options.out, asset.name), asset.data);
+  }
+  process.stdout.write(
+    `bundle ${result.id}@${result.version}: ${result.frameworkFiles.length} framework files, `
+    + `${result.engineFiles.length} engine files, ${result.plan.assets.length} assets\n`,
+  );
+  for (const asset of result.plan.assets) {
+    process.stdout.write(`asset ${join(options.out, asset.name)}\n`);
+    process.stdout.write(`sha256 ${asset.sha256}\n`);
+  }
+  for (const note of result.notes) process.stdout.write(`note: ${note}\n`);
+}
+
+function checkBundle(options) {
+  const result = checkBundleRelease({
+    root: ROOT,
+    bundlePath: options.bundle,
+    tag: options.tag,
+    outDir: options.outSet ? options.out : null,
+  });
+  if (!result.ok) {
+    process.stderr.write(`bundle release --check failed for ${options.tag ?? options.bundle}:\n`);
+    for (const failure of result.failures) process.stderr.write(`- ${failure}\n`);
+    process.exit(1);
+  }
+  process.stdout.write(`${describeBundleCheck(result)}\n`);
+  for (const note of result.notes) process.stdout.write(`note: ${note}\n`);
+}
+
 const options = parseArgs(process.argv.slice(2));
 if (options.compat) {
   const ctx = load({ root: ROOT });
@@ -552,6 +631,9 @@ if (options.compat) {
   mkdirSync(dirname(file), { recursive: true });
   writeFileSync(file, generateCompat(ctx));
   process.stdout.write(`wrote ${file}\n`);
+} else if (options.bundle !== null) {
+  if (options.check) checkBundle(options);
+  else buildBundle(options);
 } else {
   const ctx = load({ root: ROOT, out: options.out });
   if (options.check) check(ctx);
