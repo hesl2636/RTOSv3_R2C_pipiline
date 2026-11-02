@@ -18,6 +18,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { gunzipSync, gzipSync } from 'node:zlib';
 import { sha256, sha256File, createTarGz } from '../src/plugin.js';
 import { isR2cError } from '../src/errors.js';
+import { withPath } from './support/env.js';
+import { toolSentinels } from './helpers/tools.js';
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const BIN = join(REPO, 'bin', 'r2c.js');
@@ -641,12 +643,11 @@ test('the bootstrap downloads, verifies, extracts and installs with no npm and n
   mkdirSync(join(home, '.claude'), { recursive: true });
   const env = cleanEnv(home);
   delete env.R2C_RELEASE_BASE;
-  // Only node is on PATH: no npm, no global engine, nothing but the archive.
-  for (const key of Object.keys(env)) {
-    if (key.toLowerCase() === 'path') delete env[key];
-  }
-  env.PATH = dirname(process.execPath);
-  assert.equal(spawnSync('npm', ['--version'], { env, encoding: 'utf8' }).status === 0, false, 'npm is off PATH');
+  // npm, npx, gh and git are shadowed by sentinels that record and refuse:
+  // reaching for any of them fails the run and names the tool. Asserting they
+  // are absent would only describe the machine, not the chain.
+  const shims = toolSentinels(t);
+  withPath(env, shims.dir);
 
   const result = bootstrap(
     ['--agent', 'claude-code', '--version', VERSION, '--project', project, '--release-base', out],
@@ -676,6 +677,11 @@ test('the bootstrap downloads, verifies, extracts and installs with no npm and n
   );
   assert.equal(rerun.status, 0, `${rerun.stdout}\n${rerun.stderr}`);
   assert.match(rerun.stdout, new RegExp(`engine ${VERSION.replaceAll('.', '\\.')} already at`));
+  assert.equal(
+    shims.invoked(),
+    false,
+    `the chain reached for a sentinel tool:\n${shims.invoked() ? readFileSync(shims.marker, 'utf8') : ''}`,
+  );
 });
 
 test('--scope user puts the engine under the user home and a dsh user-scope install works', (t) => {

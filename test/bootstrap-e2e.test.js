@@ -28,6 +28,7 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import { withPath } from './support/env.js';
+import { toolSentinels } from './helpers/tools.js';
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const BOOTSTRAP = join(REPO, 'scripts', 'install.mjs');
@@ -62,26 +63,6 @@ function cleanEnv(home) {
   env.USERPROFILE = home;
   env.R2C_HOME = home;
   return env;
-}
-
-/**
- * The release tools the chain must never reach for. Each shim records its
- * invocation and refuses to run, so an empty marker after a successful
- * install is proof that npm, npx, gh and git were not part of the chain.
- */
-function toolSentinels(t) {
-  const dir = tempDir(t, 'path-shims');
-  const marker = join(dir, 'invoked.log');
-  for (const name of ['npm', 'npx', 'gh', 'git']) {
-    if (process.platform === 'win32') {
-      writeFileSync(join(dir, `${name}.cmd`), `@echo off\r\necho ${name} %*>>"${marker}"\r\nexit /b 91\r\n`);
-    } else {
-      const file = join(dir, name);
-      writeFileSync(file, `#!/bin/sh\nprintf '%s %s\\n' "${name}" "$*" >> "${marker}"\nexit 91\n`);
-      chmodSync(file, 0o755);
-    }
-  }
-  return { dir, marker };
 }
 
 /** Fake `claude` so detection and the doctor launch check never guess. */
