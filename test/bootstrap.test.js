@@ -404,6 +404,7 @@ test('an upgrade removes layout files the new payload no longer ships, keeping h
   const upgraded = install(clean.project, 'claude-code', newRelease, NEXT_VERSION, clean.env, clean.views);
   assert.equal(upgraded.status, 0, `${upgraded.stdout}\n${upgraded.stderr}`);
   assert.equal(existsSync(join(clean.project, droppedRel)), false, 'the stale layout copy is gone');
+  assert.match(upgraded.stdout, /1 stale layout file\(s\) removed/);
   assert.ok(!receiptOf(clean.project, 'claude-code').files.some((file) => file.path === droppedRel));
   doctor(clean.project, clean.env);
 

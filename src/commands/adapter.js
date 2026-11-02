@@ -37,6 +37,9 @@ function installText(data) {
     for (const step of data.plan) lines.push(`  plan ${step.action} ${step.target}`);
   } else {
     lines.push(`${data.files.length} file(s) changed, ${data.skipped.length} skipped`);
+    if ((data.removed_layout ?? []).length > 0) {
+      lines.push(`${data.removed_layout.length} stale layout file(s) removed`);
+    }
   }
   for (const warning of data.warnings) lines.push(`warn: ${warning}`);
   for (const step of data.manual) lines.push(`manual: ${step}`);
