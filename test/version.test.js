@@ -2,12 +2,12 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
   SemverError,
-  compareVersions,
+  compareSemver,
   isValidRange,
   isValidVersion,
-  parseVersion,
-  satisfies,
-} from '../src/version.js';
+  parseSemver,
+  satisfiesRange,
+} from '../core/semver.js';
 
 /** Fixed vectors from #11 §1.4; the first five rows were cross-checked with npm. */
 const VECTORS = [
@@ -31,44 +31,44 @@ const VECTORS = [
 
 test('satisfies the fixed range vectors', () => {
   for (const [range, version, expected] of VECTORS) {
-    assert.equal(satisfies(version, range), expected, `${version} in ${range}`);
+    assert.equal(satisfiesRange(range, version), expected, `${version} in ${range}`);
   }
 });
 
 test('supports every operator, bare versions and disjunctions', () => {
-  assert.equal(satisfies('0.1.0', '0.1.0'), true);
-  assert.equal(satisfies('0.1.0', '=0.1.0'), true);
-  assert.equal(satisfies('0.1.1', '=0.1.0'), false);
-  assert.equal(satisfies('0.1.0', '>0.1.0'), false);
-  assert.equal(satisfies('0.1.1', '>0.1.0'), true);
-  assert.equal(satisfies('0.1.0', '<0.1.0'), false);
-  assert.equal(satisfies('0.0.9', '<0.1.0'), true);
-  assert.equal(satisfies('0.1.0', '<=0.1.0'), true);
-  assert.equal(satisfies('0.1.1', '<=0.1.0'), false);
-  assert.equal(satisfies('0.1.9', '>=0.1.0'), true);
-  assert.equal(satisfies('0.0.9', '>=0.1.0'), false);
-  assert.equal(satisfies('1.0.0', '^9.0.0 || ^1.0.0'), true);
-  assert.equal(satisfies('1.0.0', '^9.0.0 || ^2.0.0'), false);
-  assert.equal(satisfies('1.2.3', '~1.2.0'), true);
-  assert.equal(satisfies('1.3.0', '~1.2.0'), false);
-  assert.equal(satisfies('0.0.3', '^0.0.3'), true);
-  assert.equal(satisfies('0.0.4', '^0.0.3'), false);
+  assert.equal(satisfiesRange('0.1.0', '0.1.0'), true);
+  assert.equal(satisfiesRange('=0.1.0', '0.1.0'), true);
+  assert.equal(satisfiesRange('=0.1.0', '0.1.1'), false);
+  assert.equal(satisfiesRange('>0.1.0', '0.1.0'), false);
+  assert.equal(satisfiesRange('>0.1.0', '0.1.1'), true);
+  assert.equal(satisfiesRange('<0.1.0', '0.1.0'), false);
+  assert.equal(satisfiesRange('<0.1.0', '0.0.9'), true);
+  assert.equal(satisfiesRange('<=0.1.0', '0.1.0'), true);
+  assert.equal(satisfiesRange('<=0.1.0', '0.1.1'), false);
+  assert.equal(satisfiesRange('>=0.1.0', '0.1.9'), true);
+  assert.equal(satisfiesRange('>=0.1.0', '0.0.9'), false);
+  assert.equal(satisfiesRange('^9.0.0 || ^1.0.0', '1.0.0'), true);
+  assert.equal(satisfiesRange('^9.0.0 || ^2.0.0', '1.0.0'), false);
+  assert.equal(satisfiesRange('~1.2.0', '1.2.3'), true);
+  assert.equal(satisfiesRange('~1.2.0', '1.3.0'), false);
+  assert.equal(satisfiesRange('^0.0.3', '0.0.3'), true);
+  assert.equal(satisfiesRange('^0.0.3', '0.0.4'), false);
 });
 
 test('applies semver prerelease precedence', () => {
-  assert.equal(compareVersions('1.0.0-alpha', '1.0.0') < 0, true);
-  assert.equal(compareVersions('1.0.0-alpha.1', '1.0.0-alpha.beta') < 0, true);
-  assert.equal(compareVersions('1.0.0-alpha.beta', '1.0.0-beta') < 0, true);
-  assert.equal(compareVersions('1.0.0-beta.2', '1.0.0-beta.11') < 0, true);
-  assert.equal(compareVersions('1.0.0-rc.1', '1.0.0') < 0, true);
-  assert.equal(compareVersions('0.2.1-rc.2', '0.2.1-rc.10') < 0, true);
-  assert.equal(compareVersions('1.0.0+build.1', '1.0.0+build.2'), 0);
-  assert.equal(satisfies('0.2.1-rc.1', '>=0.2.1-rc.2 <0.3.0'), false);
-  assert.equal(satisfies('0.2.1-rc.10', '>=0.2.1-rc.2 <0.3.0'), true);
+  assert.equal(compareSemver('1.0.0-alpha', '1.0.0') < 0, true);
+  assert.equal(compareSemver('1.0.0-alpha.1', '1.0.0-alpha.beta') < 0, true);
+  assert.equal(compareSemver('1.0.0-alpha.beta', '1.0.0-beta') < 0, true);
+  assert.equal(compareSemver('1.0.0-beta.2', '1.0.0-beta.11') < 0, true);
+  assert.equal(compareSemver('1.0.0-rc.1', '1.0.0') < 0, true);
+  assert.equal(compareSemver('0.2.1-rc.2', '0.2.1-rc.10') < 0, true);
+  assert.equal(compareSemver('1.0.0+build.1', '1.0.0+build.2'), 0);
+  assert.equal(satisfiesRange('>=0.2.1-rc.2 <0.3.0', '0.2.1-rc.1'), false);
+  assert.equal(satisfiesRange('>=0.2.1-rc.2 <0.3.0', '0.2.1-rc.10'), true);
 });
 
 test('parses and validates strictly', () => {
-  assert.deepEqual(parseVersion('1.2.3-rc.4+meta'), {
+  assert.deepEqual(parseSemver('1.2.3-rc.4+meta'), {
     major: 1,
     minor: 2,
     patch: 3,
@@ -86,8 +86,8 @@ test('parses and validates strictly', () => {
   assert.equal(isValidRange('*'), false);
 
   for (const invalid of ['', 'nope', '1', '1.2', '1.2.3.4', '1.2.3-', '1.2.3+']) {
-    assert.throws(() => parseVersion(invalid), SemverError, invalid);
+    assert.throws(() => parseSemver(invalid), SemverError, invalid);
   }
-  assert.throws(() => satisfies('1.0.0', '>=x'), SemverError);
-  assert.throws(() => satisfies('not-a-version', '^1.0.0'), SemverError);
+  assert.throws(() => satisfiesRange('>=x', '1.0.0'), SemverError);
+  assert.throws(() => satisfiesRange('^1.0.0', 'not-a-version'), SemverError);
 });

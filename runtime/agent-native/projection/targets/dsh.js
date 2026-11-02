@@ -24,6 +24,7 @@
  * change, not a descriptor tweak.
  */
 import { compareCodePoints } from '../../../../core/code-point.js';
+import { layoutSmoke, hostProfile } from './host.js';
 
 const CAPABILITIES = Object.freeze({
   state: 'unavailable',
@@ -118,6 +119,16 @@ export const dshTarget = Object.freeze({
   default: true,
   capabilities: CAPABILITIES,
   capabilityNotes: CAPABILITY_NOTES,
+  ...hostProfile({
+    detect: {"commands":[["dsh","-V"]],"paths":["$DSH_HOME","~/.dsh"]},
+    assets: [
+    Object.freeze({ path: 'runtime/agent-native/targets/dsh/assets/dsh.patch.yml', sha256: '07d1046db9972a3aa8df188fdad3b5e23ee2efda1804a095a8861f1f63dc8b58' }),
+    Object.freeze({ path: 'runtime/agent-native/targets/dsh/assets/hooks.json', sha256: 'bf2247ed875939700b1f8014a19cbcd51b67bc40e88c6c452a6c295e995ceaed' }),
+    Object.freeze({ path: 'runtime/agent-native/targets/dsh/assets/index.mjs', sha256: '2163df89409f376f585b86b635374938c49ad56dfaa23785e1486a5d10f4d803' }),
+    Object.freeze({ path: 'runtime/agent-native/targets/dsh/assets/package.json', sha256: 'f468c9020560b06b437fc282b3f44cb468f3c57b5b2f692f28cac0f20bc53ef0' }),
+    ],
+    smoke: (namespace) => layoutSmoke(namespace, { skillsRoot: '.agents/skills', extra: [{ kind: 'agents', root: '.dsh/agent-native', prefix: `${namespace}.`, format: 'md' }] }),
+  }),
   layout: Object.freeze({
     skillsRoot: '.agents/skills',
     agentsRoot: AGENTS_ROOT,

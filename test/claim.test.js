@@ -17,7 +17,7 @@ import { fileURLToPath } from 'node:url';
 import { TWO_STEP_YAML, writeTwoStepProject } from './helpers/two-step.js';
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const BIN = join(REPO, 'bin', 'r2c.js');
+const BIN = join(REPO, 'runtime', 'r2c', 'engine', 'bin', 'r2c.js');
 const CLI_SID = /^cli-R\d{8}T\d{6}Z-[0-9a-f]{6}$/;
 const RUN_ID = /^R\d{8}T\d{6}Z-[0-9a-f]{6}$/;
 const S = '01a181f0-00a9-7606-9db4-7eccaedcc245';

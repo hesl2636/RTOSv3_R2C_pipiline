@@ -12,10 +12,10 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { stringify } from 'yaml';
+
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const BIN = join(REPO, 'bin', 'r2c.js');
+const BIN = join(REPO, 'runtime', 'r2c', 'engine', 'bin', 'r2c.js');
 
 function manifest(stages) {
   return {
@@ -44,7 +44,8 @@ function tempProject(t, data) {
   });
   mkdirSync(join(root, 'workflows'), { recursive: true });
   mkdirSync(join(root, 'scripts'), { recursive: true });
-  writeFileSync(join(root, 'workflows', 'gate.yaml'), stringify(data));
+  writeFileSync(join(root, 'workflows', 'gate.yaml'), `${JSON.stringify(data, null, 2)}
+`);
   return { root, outside };
 }
 

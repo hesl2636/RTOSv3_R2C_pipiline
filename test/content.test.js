@@ -1,23 +1,27 @@
+/**
+ * Sample bundle content contract (replaces the retired `pack/` checks).
+ *
+ * `examples/rtosv3/bundle/` is the only editable form of the first bundle:
+ * four stages, four roles, four tasks and thirty-five placeholder skills, with
+ * `bundle.json` as the closed index. The task bodies stay runner-agnostic and
+ * the skills keep the placeholder banner. The committed zip is a build output
+ * (`scripts/build-bundle.mjs --check` proves it), not an input.
+ */
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { parse } from 'yaml';
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const BIN = join(REPO, 'bin', 'r2c.js');
-const PACK = join(REPO, 'pack');
-const MANIFEST = join(PACK, 'workflows', 'hm2B_drvport_pipiline.yaml');
-const SKILLS = join(PACK, 'skills');
+const BUNDLE = join(REPO, 'examples', 'rtosv3', 'bundle');
+const DIST = join(REPO, 'examples', 'rtosv3', 'dist');
 
-const H2 = ['## Agent 角色设定', '## 任务', '## 约束条件'];
+const STAGE_IDS = ['analysis-design', 'detailed-design', 'implementation', 'verification'];
 const STAGE_NAMES = ['分析设计', '详细设计', '编码实现', '验证检视'];
-const PLACEHOLDER_LINE =
-  '- 占位技能不得臆测执行：按本文件步骤降级，产物首行写「> 占位：<id> 未实现（<date>）」并填入当天日期，提交时 --note placeholder:<id>';
+const H2 = ['## Agent 角色设定', '## 任务', '## 约束条件', '## 提交'];
+const PLACEHOLDER_BANNER = '> **占位（placeholder）** 本技能本期未实现';
 
-/** `/<name>` entry forms, but never a slash inside a relative path. */
 const SLASH_ENTRY = /(?:^|[\s`'“（(])\/[A-Za-z0-9_.-]+/gm;
 const RUNTIME_PATH = /runs\/|latest\.json|state\.json|events\.jsonl|usage\//g;
 const AGENT_PRIMITIVE = /AskUserQuestion|\bRead\s*工具|\bGlob\b/g;
@@ -27,108 +31,76 @@ function counts(text, pattern) {
   return [...text.matchAll(new RegExp(pattern.source, pattern.flags))].length;
 }
 
-function readManifest() {
-  return parse(readFileSync(MANIFEST, 'utf8'));
+function readJson(rel) {
+  return JSON.parse(readFileSync(join(BUNDLE, rel), 'utf8'));
 }
 
-function allSteps(manifest) {
-  return manifest.stages.flatMap((stage) => stage.steps);
-}
+const bundle = readJson('bundle.json');
 
-function taskFiles(manifest) {
-  return allSteps(manifest).map((step) => resolve(PACK, step.taskFile));
-}
+test('bundle.json indexes exactly four stages, roles, tasks and thirty-five skills', () => {
+  assert.equal(bundle.schema, 'r2c.bundle/v1');
+  assert.equal(bundle.id, 'rtosv3-drvport');
+  assert.equal(bundle.version, '1.0.0');
+  assert.deepEqual(bundle.stages, STAGE_IDS);
+  assert.equal(bundle.roles.length, 4);
+  assert.equal(bundle.tasks.length, 4);
+  assert.equal(bundle.skills.length, 35);
+  assert.equal(new Set(bundle.skills).size, 35);
+  assert.deepEqual(bundle.constitution, { path: 'constitution/CONSTITUTION.md', placeholder: true });
+});
 
-function skillDirs() {
-  return new Set(
-    readdirSync(SKILLS, { withFileTypes: true })
+test('every stage has one prompt step and references only declared entities', () => {
+  const roles = new Set(bundle.roles);
+  const tasks = new Set(bundle.tasks);
+  const skills = new Set(bundle.skills);
+  for (const [index, id] of STAGE_IDS.entries()) {
+    const stage = readJson(`stages/${id}.json`);
+    assert.equal(stage.id, id);
+    assert.equal(stage.name, STAGE_NAMES[index]);
+    assert.equal(stage.steps.length, 1, `${id}: exactly one step`);
+    const [step] = stage.steps;
+    assert.equal(step.type, undefined, `${id}: stage steps are prompt steps by shape`);
+    assert.ok(roles.has(step.role), `${id}: role ${step.role}`);
+    assert.ok(tasks.has(step.task), `${id}: task ${step.task}`);
+    for (const skill of step.skills ?? []) assert.ok(skills.has(skill), `${id}: skill ${skill}`);
+  }
+});
+
+test('task bodies keep the three fixed H2 sections and stay runner-agnostic', () => {
+  for (const id of bundle.tasks) {
+    const text = readFileSync(join(BUNDLE, 'tasks', `${id}.md`), 'utf8');
+    const headings = text.split(/\r?\n/).filter((line) => line.startsWith('## '));
+    assert.deepEqual(headings, H2, `${id}: H2 contract`);
+    assert.equal(counts(text, SLASH_ENTRY), 0, `${id}: /<name> entry reference`);
+    assert.equal(counts(text, RUNTIME_PATH), 0, `${id}: runner runtime path`);
+    assert.equal(counts(text, AGENT_PRIMITIVE), 0, `${id}: agent-specific primitive`);
+    assert.equal(counts(text, TASK_WHITELIST), 0, `${id}: whitelist must render from the IR`);
+    assert.equal(text.split('{{submit}}').length, 2, `${id}: exactly one submit token`);
+    assert.ok(text.split(/\r?\n/).length <= 500, `${id}: under 500 lines`);
+  }
+});
+
+test('every skill is a placeholder directory with frontmatter and the banner', () => {
+  const dirs = new Set(
+    readdirSync(join(BUNDLE, 'skills'), { withFileTypes: true })
       .filter((entry) => entry.isDirectory())
-      .filter((entry) => existsSync(join(SKILLS, entry.name, 'SKILL.md')))
+      .filter((entry) => existsSync(join(BUNDLE, 'skills', entry.name, 'SKILL.md')))
       .map((entry) => entry.name),
   );
-}
-
-test('the default manifest validates with exit 0', () => {
-  const result = spawnSync(process.execPath, [BIN, 'validate', '--manifest', MANIFEST], {
-    cwd: REPO,
-    encoding: 'utf8',
-  });
-  assert.equal(result.status, 0, `validate failed: ${result.stderr}`);
-  assert.match(result.stdout, /^manifest valid: /);
-});
-
-test('the default manifest has exactly four stages with one prompt step each', () => {
-  const manifest = readManifest();
-  assert.equal(manifest.schema, 'r2c.workflow/v1');
-  assert.equal(manifest.stages.length, 4);
-  assert.deepEqual(
-    manifest.stages.map((stage) => stage.name),
-    STAGE_NAMES,
-  );
-
-  for (const stage of manifest.stages) {
-    assert.equal(stage.steps.length, 1, `${stage.name}: exactly one step`);
-    for (const step of stage.steps) {
-      assert.equal(step.type, 'prompt', `${step.id}: prompt step only`);
-      assert.ok(!('shell' in step), `${step.id}: no shell payload`);
-    }
-  }
-  assert.equal(allSteps(manifest).filter((step) => step.type === 'shell').length, 0);
-});
-
-test('the default manifest carries no stale path instructions', () => {
-  // taskFile is the authoritative body; the old inline prompt told the model to
-  // derive <插件根> from a bin/cli.js path that no longer exists.
-  const text = readFileSync(MANIFEST, 'utf8');
-  assert.doesNotMatch(text, /bin\/cli\.js/);
-  assert.doesNotMatch(text, /<插件根>/);
-  for (const step of allSteps(readManifest())) {
-    assert.ok(!('prompt' in step), `${step.id}: prompt body belongs in taskFile`);
+  assert.deepEqual([...dirs].sort(), [...bundle.skills].sort());
+  for (const id of bundle.skills) {
+    const text = readFileSync(join(BUNDLE, 'skills', id, 'SKILL.md'), 'utf8');
+    assert.match(text, /^---\nname: [a-z0-9-]+\ndescription: .+\nplaceholder: true\n---\n/, `${id}: frontmatter`);
+    assert.ok(text.includes(PLACEHOLDER_BANNER), `${id}: placeholder banner`);
   }
 });
 
-test('every manifest skill reference is a real pack/skills directory', () => {
-  const dirs = skillDirs();
-  for (const step of allSteps(readManifest())) {
-    const references = [step.skill, ...(step.skills ?? [])];
-    for (const skill of references) {
-      assert.ok(dirs.has(skill), `${step.id}: skills/${skill}/SKILL.md is missing`);
-    }
-    for (const mcp of step.mcp ?? []) {
-      assert.equal(typeof mcp, 'string');
-      assert.ok(mcp.length > 0, `${step.id}: empty mcp entry`);
-    }
-  }
+test('the constitution is the zero-byte placeholder declared by bundle.json', () => {
+  const file = join(BUNDLE, ...bundle.constitution.path.split('/'));
+  assert.equal(readFileSync(file).length, 0);
 });
 
-test('task files contain no slash entry, runtime path, or agent primitive', () => {
-  const manifest = readManifest();
-  for (const file of taskFiles(manifest)) {
-    const text = readFileSync(file, 'utf8');
-    const label = file.slice(REPO.length + 1);
-    assert.equal(counts(text, SLASH_ENTRY), 0, `${label}: /<name> entry reference`);
-    assert.equal(counts(text, RUNTIME_PATH), 0, `${label}: runner runtime path`);
-    assert.equal(counts(text, AGENT_PRIMITIVE), 0, `${label}: agent-specific primitive`);
-    assert.equal(counts(text, TASK_WHITELIST), 0, `${label}: whitelist must render from the manifest`);
-    assert.ok(text.includes(PLACEHOLDER_LINE), `${label}: placeholder fallback constraint`);
-    assert.ok(text.split(/\r?\n/).length <= 500, `${label}: must stay under 500 lines`);
-  }
-});
-
-test('each task keeps exactly the three fixed H2 sections in order', () => {
-  for (const file of taskFiles(readManifest())) {
-    const headings = readFileSync(file, 'utf8')
-      .split(/\r?\n/)
-      .filter((line) => line.startsWith('## '));
-    assert.deepEqual(headings, H2, `${file.slice(REPO.length + 1)}: H2 contract`);
-  }
-});
-
-test('exactly one tracked workflows yaml exists and it is the default manifest', () => {
-  const result = spawnSync('git', ['ls-files'], { cwd: REPO, encoding: 'utf8' });
-  assert.equal(result.status, 0, `git ls-files failed: ${result.stderr}`);
-  const tracked = result.stdout
-    .split(/\r?\n/)
-    .filter((file) => /(^|\/)workflows\/[^/]+\.yaml$/.test(file));
-  assert.deepEqual(tracked, ['pack/workflows/hm2B_drvport_pipiline.yaml']);
+test('exactly one committed deterministic zip exists for the sample bundle', () => {
+  const zips = readdirSync(DIST).filter((name) => /^bundle-.+-v.+\.zip$/.test(name));
+  assert.deepEqual(zips, ['bundle-rtosv3-drvport-v1.0.0.zip']);
 });

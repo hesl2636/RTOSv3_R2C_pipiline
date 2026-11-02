@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { renameIntoPlace } from '../src/rename.js';
+import { renameIntoPlace } from '../core/node/atomic-write.js';
 
 function coded(code) {
   return Object.assign(new Error(`simulated ${code}`), { code });

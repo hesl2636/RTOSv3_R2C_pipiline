@@ -16,6 +16,7 @@
  *   superset of the IR ladder `low..max`, so every valid IR effort maps 1:1.
  */
 import { perRoleRoleFiles } from '../role-files.js';
+import { layoutSmoke, hostProfile } from './host.js';
 
 const TOKENS = ['read', 'write', 'edit', 'glob', 'grep', 'bash', 'task', 'web'];
 
@@ -88,6 +89,15 @@ export const ompTarget = Object.freeze({
   mirrorsSharedSkills: true,
   capabilities: CAPABILITIES,
   capabilityNotes: CAPABILITY_NOTES,
+  ...hostProfile({
+    detect: {"commands":[["omp","--version"]],"paths":["~/.omp/agent"]},
+    assets: [
+    Object.freeze({ path: 'runtime/agent-native/targets/omp/assets/mcp.json', sha256: 'd8e397af03b5b032f21d0aa967086f0c78b33c87b76f2e9898ae0a144df7de02' }),
+    Object.freeze({ path: 'runtime/agent-native/targets/omp/assets/hooks/pre/r2c-guard.ts', sha256: '608bcc531c35f30e2388ceecd2acdbf0d61afea01fa0cdb192508320ae7f15bb' }),
+    Object.freeze({ path: 'runtime/agent-native/targets/omp/assets/hooks/post/r2c-stop.ts', sha256: '50b2dd7659a334865b97d204d303f731a45ea4aa5fc4189cee3d251bcbfec181' }),
+    ],
+    smoke: (namespace) => layoutSmoke(namespace, { skillsRoot: '.agents/skills', agentsRoot: '.omp/agents', agentFormat: 'md' }),
+  }),
   layout: Object.freeze({
     skillsRoot: '.agents/skills',
     agentsRoot: '.omp/agents',

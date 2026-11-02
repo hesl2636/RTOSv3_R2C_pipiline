@@ -21,6 +21,7 @@ import { project } from '../projection/project.js';
 import { getProjection } from '../projection/registry.js';
 import { validateResult } from '../projection/validate-result.js';
 import { AGENT_NATIVE_MANIFEST } from '../runtime/agent-native/projection/manifest.js';
+import { TARGETS } from '../runtime/agent-native/projection/targets/index.js';
 import { placeholderInstructions } from '../runtime/shared/placeholder.js';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -375,7 +376,6 @@ test('V1–V12 pass and the manifest declares the dsh target', () => {
   assert.ok(MANIFEST.writeRoots.includes('.dsh/agent-native'));
   assert.equal(MANIFEST.writeRoots.some((root) => /\.cordis\.patch\.yml$/.test(root)), false);
 
-  const adapter = JSON.parse(readFileSync(join(ROOT, 'adapters/dsh/adapter.json'), 'utf8'));
-  assert.equal(adapter.capabilities.agents, 'none');
-  assert.equal(adapter.sharedRoots.includes('.agents/skills'), true);
+  assert.equal(TARGETS.dsh.capabilities.subagents, 'unavailable');
+  assert.equal(TARGETS.dsh.layout.skillsRoot, '.agents/skills');
 });

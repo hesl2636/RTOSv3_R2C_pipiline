@@ -16,7 +16,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { writeTwoStepProject } from './helpers/two-step.js';
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const BIN = join(REPO, 'bin', 'r2c.js');
+const BIN = join(REPO, 'runtime', 'r2c', 'engine', 'bin', 'r2c.js');
 const RUN_ID = /^R\d{8}T\d{6}Z-[0-9a-f]{6}$/;
 
 function tempProject(t) {
@@ -489,7 +489,7 @@ test('two concurrent writers: one succeeds, the other exits 5 with zero writes',
   const marker = join(outside, 'held.marker');
   const release = join(outside, 'release.marker');
   const holderScript = join(outside, 'holder.mjs');
-  const lockUrl = pathToFileURL(join(REPO, 'src', 'lock.js')).href;
+  const lockUrl = pathToFileURL(join(REPO, 'runtime', 'r2c', 'engine', 'src', 'lock.js')).href;
   writeFileSync(
     holderScript,
     [

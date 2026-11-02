@@ -1,58 +1,40 @@
 #!/usr/bin/env node
 /**
- * The only release packager (#17 §7, #44).
+ * The framework release packager.
  *
- * `node scripts/release.mjs` writes exactly four assets into `--out`
- * (default `dist/`): `r2c-engine-<V>.tgz`, `r2c-payload-<V>.tgz`,
- * `install.mjs` (published byte-identical to `scripts/install.mjs`) and
- * `SHA256SUMS.txt` (one line per hashed asset). The engine asset is the
- * runnable CLI (sources, schema, `package.json`, the vendored `yaml` and
- * LICENSE); the payload asset is the adapter/workflow file set. Both use the
- * same container: deterministic (sorted ustar entries, fixed metadata, gzip
- * mtime 0), so repeated builds of the same tree are byte-identical.
+ * P6 (#111) split the old lock-step channel in two:
  *
- * `--check` is the pre-publish gate, and it replaces the npm `files` whitelist
- * with the asset whitelist above: one locked-step version
- * (`package.json.version`), the same `^V` engine range in the payload manifest
- * and all five `adapter.json` files, the payload file whitelist, the
- * `docs/compat.md` view, the CHANGELOG section, the lockfile and the
- * fixture/workflow yaml counts. When the output directory holds a build, the
- * same run also verifies the four asset names, the sums coverage, the
- * byte-identical bootstrap and the whitelist/manifest of both archives — so a
- * bad package is caught locally instead of in CI.
+ * - the **legacy channel** (`v<E>`) is frozen. This command still builds its
+ *   engine asset `r2c-engine-<E>.tgz` with the P6 archive layout (root
+ *   launcher + `runtime/r2c/engine/**` + `core/**` + vendored `yaml`), and
+ *   `--check` still gates the engine, the bootstrap and the generated
+ *   compatibility document. It no longer builds or publishes a payload: main
+ *   stopped shipping `r2c-payload-<E>.tgz` at the cutover, and old Releases
+ *   remain installable with their frozen engines.
+ * - the **bundle channel** (`bundle-<id>-v<version>`) lives in
+ *   `scripts/lib/bundle-release.mjs`: `--bundle <zip|dir> --out DIR`,
+ *   `--bundle ... --check` and `--bundle ... --publish`.
  *
- * `--compat` regenerates `docs/compat.md` from the same adapter data.
- *
- * The bundle channel (#105, decision #74) lives in the same command:
- * `--bundle <zip|dir> --out DIR` writes the 6–8 per-bundle assets, and
- * `--bundle <zip|dir> --check [--out DIR] [--tag TAG]` is the pre-publish
- * gate. A bundle Release is self-contained: zip, IR, pre-projected payloads,
- * engine, framework, bootstrap and sums. `--bundle` never touches the legacy
- * `v<engine>` asset set. `--options FILE` packs a custom local selection (the
- * payload manifests record the actual options; only canonical builds are
- * publishable) and `--json` emits JSON-lines progress for the web child.
- *
- * `--bundle <zip|dir> --publish` builds the same assets, then drives the draft
- * → upload → verify → publish state machine (#107). Publishing reads
- * GH_TOKEN/GITHUB_TOKEN from the launch environment only and never prompts.
+ * `--check` is the pre-publish gate. Digests are `scripts/verify-sums.mjs`'s
+ * job; this gate is structural so a coverage failure is never masked by a
+ * digest failure.
  */
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { compareCodePoints } from '../core/code-point.js';
+import { sha256Hex as sha256 } from '../core/node/sha256.js';
+import { isValidVersion } from '../core/semver.js';
+import { IR_BUNDLE_SCHEMA, IR_SCHEMA } from '../ir/schema.js';
+import { listProjections } from '../projection/registry.js';
+import { createReleaseTarGz, readReleaseTarGz } from './lib/release-tar.mjs';
 import {
-  PAYLOAD_MANIFEST,
-  buildPayloadManifest,
-  collectPayload,
-  createTarGz,
-  hashPayloadFiles,
-  manifestBuffer,
-  payloadAssetName,
-  readTarGz,
-  sha256,
-} from '../src/plugin.js';
-import { collectEngine, engineAssetName } from '../src/engine.js';
-import { isValidRange, isValidVersion } from '../src/version.js';
+  ENGINE_ENTRY,
+  collectEngine,
+  engineAssetName,
+  engineEntryBytes,
+} from './lib/engine-archive.mjs';
 import {
   buildBundleRelease,
   checkBundleRelease,
@@ -63,19 +45,17 @@ import { GITHUB_API_BASE, createGithubClient } from '../installer/release-client
 import { publishBundle } from '../installer/release-publish.js';
 import { DEFAULT_RELEASE_REPO, verifySums } from '../installer/release-source.js';
 import { IR_ASSET, bundleTag, isValidBundleId } from '../installer/release-tags.js';
-import { compareCodePoints } from '../core/code-point.js';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const ADAPTER_IDS = Object.freeze(['claude-code', 'codex', 'dsh', 'omp', 'opencode']);
-const WORKFLOW_PATTERN = /(^|\/)workflows\/[^/]+\.yaml$/;
 /** The bootstrap ships verbatim; `scripts/install.mjs` is its only source (#41). */
 const BOOTSTRAP_SOURCE = 'scripts/install.mjs';
 const INSTALL_ASSET = 'install.mjs';
 const SUMS_ASSET = 'SHA256SUMS.txt';
+const ENGINE_PACKAGE = 'runtime/r2c/engine/package.json';
 
-/** The four asset names of one release at one version, sorted. */
+/** The legacy asset names of one engine version, sorted. */
 function releaseAssets(version) {
-  return [INSTALL_ASSET, engineAssetName(version), payloadAssetName(version), SUMS_ASSET].sort();
+  return [INSTALL_ASSET, engineAssetName(version), SUMS_ASSET].sort();
 }
 
 /** The assets `SHA256SUMS.txt` covers: everything except the sums file itself. */
@@ -176,164 +156,113 @@ function readJson(file) {
   }
 }
 
-function loadAdapter(root, id) {
-  const file = join(root, 'adapters', id, 'adapter.json');
-  if (!existsSync(file)) return null;
-  return readJson(file);
-}
-
 function load(ctx) {
-  const pkg = readJson(join(ctx.root, 'package.json'));
-  if (pkg === null) {
+  const framework = readJson(join(ctx.root, 'package.json'));
+  if (framework === null) {
     process.stderr.write(`release: cannot read ${join(ctx.root, 'package.json')}\n`);
     process.exit(1);
   }
-  const adapters = [];
-  for (const id of ADAPTER_IDS) {
-    const adapter = loadAdapter(ctx.root, id);
-    if (adapter !== null) adapters.push(adapter);
+  const enginePkg = readJson(join(ctx.root, ENGINE_PACKAGE));
+  if (enginePkg === null) {
+    process.stderr.write(`release: cannot read ${join(ctx.root, ENGINE_PACKAGE)}\n`);
+    process.exit(1);
   }
-  const payload = collectPayload(ctx.root);
-  const engine = collectEngine(ctx.root);
-  const manifest =
-    typeof pkg.version === 'string'
-      ? buildPayloadManifest({ version: pkg.version, files: hashPayloadFiles(payload.files) })
-      : null;
-  return { ...ctx, pkg, adapters, payload, engine, manifest };
+  // `collectEngine` reads the engine package itself; the parsed copy here is
+  // only for the version/engine-range checks and the compatibility document.
+  return { ...ctx, framework, enginePkg, engine: collectEngine(ctx.root) };
 }
 
-function workflowFiles(root) {
-  if (existsSync(join(root, '.git'))) {
-    const result = spawnSync('git', ['ls-files', '-z'], { cwd: root, encoding: 'utf8' });
-    if (result.status === 0) {
-      return result.stdout.split('\0').filter((file) => file !== '' && WORKFLOW_PATTERN.test(file));
-    }
-  }
-  const found = [];
-  const walk = (dir, relDir) => {
-    for (const entry of readdirSync(dir, { withFileTypes: true })) {
-      if (entry.name === 'node_modules' || entry.name === '.git' || entry.name === 'dist') continue;
-      const rel = relDir === '' ? entry.name : `${relDir}/${entry.name}`;
-      if (entry.isDirectory()) walk(join(dir, entry.name), rel);
-      else if (WORKFLOW_PATTERN.test(rel)) found.push(rel);
-    }
-  };
-  walk(root, '');
-  return found.sort();
-}
-
-function fixtureCount(root) {
-  const dir = join(root, 'src', 'acceptance', 'fixture');
-  if (!existsSync(dir)) return null;
-  return readdirSync(dir).filter((name) => name.endsWith('.yaml')).length;
-}
+const ESCAPE_PIPE = /\\\|/g;
 
 function escapePipe(value) {
   return String(value).replaceAll('|', '\\|');
 }
 
-function generateCompat({ pkg, adapters }) {
-  const version = pkg.version;
-  const engine = `^${version}`;
+/**
+ * The compatibility document is generated from the three version sources the
+ * framework actually has: the framework package, the engine package and the
+ * static projection manifests. Contract revisions are the published API ids.
+ */
+function generateCompat({ framework, enginePkg }) {
+  const projections = listProjections();
+  const contracts = [IR_BUNDLE_SCHEMA, IR_SCHEMA, ...projections.map((projection) => projection.api.result)];
   const lines = [
     '# Compatibility matrix',
     '',
-    'Generated from `package.json` and `adapters/*/adapter.json` by',
-    '`node scripts/release.mjs --compat`. Do not edit by hand:',
-    '`node scripts/release.mjs --check` fails when this file drifts.',
+    'Generated from `package.json`, `runtime/r2c/engine/package.json` and the',
+    'projection manifests by `node scripts/release.mjs --compat`. Do not edit by',
+    'hand: `node scripts/release.mjs --check` fails when this file drifts.',
     '',
     '| Dimension | Object | Range |',
     '| --- | --- | --- |',
-    `| Version | \`r2c-runner\`, \`r2c-payload-${version}.tgz\`, adapters | \`${version}\` |`,
-    `| Engine ↔ payload | \`${PAYLOAD_MANIFEST}.engine\` | \`${engine}\` |`,
-    ...adapters.map(
-      (adapter) =>
-        `| Engine ↔ adapter | \`adapters/${adapter.id}/adapter.json\` | \`${adapter.requires?.engine ?? ''}\` |`,
+    `| Framework | \`${framework.name}\` | \`${framework.version}\` |`,
+    `| Engine | \`${enginePkg.name}\` | \`${enginePkg.version}\` |`,
+    `| Contract | bundle / IR / projection | ${[...new Set(contracts)].map((id) => `\`${id}\``).join(', ')} |`,
+    ...projections.map(
+      (projection) => `| Projection | \`${projection.id}\` | \`${projection.version}\` |`,
     ),
-    ...adapters.map(
-      (adapter) =>
-        `| Agent | \`${adapter.id}\` (${adapter.title ?? adapter.id}) | \`${adapter.requires?.agent ?? ''}\` |`,
-    ),
-    `| Node | \`r2c-runner\` | \`${escapePipe(pkg.engines?.node ?? '')}\` |`,
+    `| Node | \`${framework.name}\`, \`${enginePkg.name}\` | \`${escapePipe(framework.engines?.node ?? '')}\` |`,
     '',
   ];
   return lines.join('\n');
 }
 
-function checkPayloadProblems(ctx, failures) {
-  for (const problem of ctx.payload.problems) failures.push(problem);
-  if (ctx.payload.files.length === 0) failures.push('payload file set is empty');
-  for (const file of ctx.payload.files) {
-    if (file.rel === PAYLOAD_MANIFEST) failures.push(`${PAYLOAD_MANIFEST} is generated, not a payload input`);
-    if (/^(test|tests|docs|plugins|scripts|node_modules|dist)\//.test(file.rel)) {
-      failures.push(`payload must not ship ${file.rel}`);
-    }
-    if (file.rel === 'package.json' || file.rel === 'package-lock.json') {
-      failures.push(`payload must not ship ${file.rel}`);
-    }
-  }
-}
-
 function checkEngine(ctx, failures) {
   for (const problem of ctx.engine.problems) failures.push(problem);
+  if (ctx.engine.version !== ctx.enginePkg.version) {
+    failures.push(
+      `engine package version is ${ctx.engine.version} but ${ENGINE_PACKAGE} says ${ctx.enginePkg.version}`,
+    );
+  }
   if (ctx.engine.files.length === 0) failures.push('engine file set is empty');
+  const rels = new Set(ctx.engine.files.map((file) => file.rel));
+  for (const required of [
+    ENGINE_ENTRY,
+    'package.json',
+    ENGINE_PACKAGE,
+    'runtime/r2c/engine/bin/r2c.js',
+    'runtime/r2c/contract/manifest.js',
+    'LICENSE',
+  ]) {
+    if (!rels.has(required)) failures.push(`engine archive is missing ${required}`);
+  }
+  if (![...rels].some((rel) => rel.startsWith('core/'))) failures.push('engine archive is missing core/**');
+  if (![...rels].some((rel) => rel.startsWith('node_modules/yaml/'))) {
+    failures.push('engine archive is missing the vendored node_modules/yaml');
+  }
   for (const file of ctx.engine.files) {
-    if (/^(test|docs|scripts|pack|adapters|plugins|dist)\//.test(file.rel)) {
+    if (/^(test|tests|docs|scripts|pack|adapters|plugins|dist|web|installer|projection|assembler|ir|examples|\.github)\//.test(file.rel)) {
       failures.push(`engine must not ship ${file.rel}`);
     }
+  }
+  const rootPackage = ctx.engine.files.find((file) => file.rel === 'package.json');
+  const nestedPackage = ctx.engine.files.find((file) => file.rel === ENGINE_PACKAGE);
+  if (rootPackage !== undefined && nestedPackage !== undefined) {
+    if (!engineEntryBytes(rootPackage).equals(engineEntryBytes(nestedPackage))) {
+      failures.push('engine archive package.json is not byte-identical to the engine package');
+    }
+  }
+  const launcher = ctx.engine.files.find((file) => file.rel === ENGINE_ENTRY);
+  if (launcher !== undefined && !String(engineEntryBytes(launcher)).includes('runtime/r2c/engine/bin/r2c.js')) {
+    failures.push(`${ENGINE_ENTRY} does not point at the extracted engine entry`);
   }
 }
 
 function checkVersion(ctx, failures) {
-  const { pkg, adapters, manifest } = ctx;
-  const version = pkg.version;
-  if (typeof version !== 'string' || !isValidVersion(version)) {
-    failures.push(`package.json version is not a valid version: ${version}`);
-    return;
+  const { framework, enginePkg } = ctx;
+  if (typeof framework.version !== 'string' || !isValidVersion(framework.version)) {
+    failures.push(`package.json version is not a valid version: ${framework.version}`);
   }
-  const engine = `^${version}`;
-  if (manifest === null || manifest.engine !== engine) {
-    failures.push(`${PAYLOAD_MANIFEST} engine would be "${manifest?.engine}" but package.json ${version} implies "${engine}"`);
+  if (typeof enginePkg.version !== 'string' || !isValidVersion(enginePkg.version)) {
+    failures.push(`${ENGINE_PACKAGE} version is not a valid version: ${enginePkg.version}`);
   }
-  if (adapters.length !== ADAPTER_IDS.length) {
-    failures.push(`expected ${ADAPTER_IDS.length} adapters, found ${adapters.length}`);
+  if (framework.private !== true) failures.push('the root package must be private (r2c-framework is not published)');
+  if ('workspaces' in framework) failures.push('the root package must not declare npm workspaces');
+  if (framework.engines?.node !== enginePkg.engines?.node) {
+    failures.push('framework and engine must declare the same engines.node range');
   }
-  const present = adapters.map((adapter) => adapter.id).sort();
-  if (JSON.stringify(present) !== JSON.stringify([...ADAPTER_IDS].sort())) {
-    failures.push(`adapter ids differ from the contract: ${present.join(', ')}`);
-  }
-  for (const id of ADAPTER_IDS) {
-    const adapter = adapters.find((entry) => entry.id === id);
-    if (adapter === undefined) {
-      failures.push(`adapters/${id}/adapter.json is missing`);
-      continue;
-    }
-    const declared = adapter.requires?.engine;
-    if (declared !== engine) {
-      failures.push(
-        `adapters/${id}/adapter.json requires.engine is "${declared}" but must equal "${engine}" byte-for-byte`,
-      );
-    }
-    if (!isValidRange(declared)) {
-      failures.push(`adapters/${id}/adapter.json requires.engine is not a valid range: ${declared}`);
-    }
-    if (!isValidRange(adapter.requires?.agent)) {
-      failures.push(`adapters/${id}/adapter.json requires.agent is not a valid range: ${adapter.requires?.agent}`);
-    }
-  }
-}
-
-function checkFiles(ctx, failures) {
-  const { payload, manifest } = ctx;
-  if (manifest === null) return;
-  const declared = Object.keys(manifest.files);
-  const expected = payload.files.map((file) => file.rel);
-  if (JSON.stringify(declared) !== JSON.stringify(expected)) {
-    const missing = expected.filter((rel) => !declared.includes(rel));
-    const extra = declared.filter((rel) => !expected.includes(rel));
-    failures.push(
-      `${PAYLOAD_MANIFEST}.files does not match the payload contract (missing: ${missing.join(', ') || 'none'}; extra: ${extra.join(', ') || 'none'})`,
-    );
+  if (framework.dependencies?.yaml !== enginePkg.dependencies?.yaml) {
+    failures.push('framework and engine must declare the same yaml dependency');
   }
 }
 
@@ -345,7 +274,7 @@ function checkDocs(ctx, failures) {
   }
   const expected = generateCompat(ctx);
   if (readFileSync(file, 'utf8') !== expected) {
-    failures.push('docs/compat.md does not match adapter.json engine/agent ranges (run --compat)');
+    failures.push('docs/compat.md does not match the framework/engine/projection versions (run --compat)');
   }
 }
 
@@ -355,7 +284,7 @@ function checkChangelog(ctx, failures) {
     failures.push('CHANGELOG.md is missing');
     return;
   }
-  const heading = `## [${ctx.pkg.version}]`;
+  const heading = `## [${ctx.framework.version}]`;
   if (!readFileSync(file, 'utf8').split(/\r?\n/).some((line) => line.startsWith(heading))) {
     failures.push(`CHANGELOG.md has no "${heading}" section`);
   }
@@ -372,22 +301,27 @@ function checkLockfile(ctx, failures) {
     failures.push('package-lock.json is not valid JSON');
     return;
   }
-  const version = ctx.pkg.version;
+  const version = ctx.framework.version;
   if (lock.version !== version || lock.packages?.['']?.version !== version) {
     failures.push(`package-lock.json version ${lock.version} does not match package.json ${version}`);
   }
+  if (lock.packages?.['']?.name !== ctx.framework.name) {
+    failures.push(`package-lock.json name ${lock.packages?.['']?.name} does not match package.json ${ctx.framework.name}`);
+  }
 }
 
-function checkCounts(ctx, failures, notes) {
-  const fixtures = fixtureCount(ctx.root);
-  if (fixtures === null) {
-    notes.push('src/acceptance/fixture is not present yet (#35); fixture count is enforced once it lands');
-  } else if (fixtures !== 1) {
-    failures.push(`expected exactly one fixture yaml in src/acceptance/fixture, found ${fixtures}`);
+/** Exactly one example bundle and exactly one committed deterministic zip. */
+function checkCounts(ctx, failures) {
+  const bundleDir = join(ctx.root, 'examples', 'rtosv3', 'bundle');
+  if (!existsSync(join(bundleDir, 'bundle.json'))) {
+    failures.push('examples/rtosv3/bundle/bundle.json is missing');
   }
-  const workflows = workflowFiles(ctx.root);
-  if (workflows.length !== 1) {
-    failures.push(`expected exactly one tracked workflows/*.yaml, found ${workflows.length}: ${workflows.join(', ')}`);
+  const dist = join(ctx.root, 'examples', 'rtosv3', 'dist');
+  const zips = existsSync(dist)
+    ? readdirSync(dist).filter((name) => /^bundle-.+-v.+\.zip$/.test(name))
+    : [];
+  if (zips.length !== 1) {
+    failures.push(`expected exactly one examples/rtosv3/dist/bundle-*.zip, found ${zips.length}`);
   }
 }
 
@@ -400,16 +334,13 @@ function setDifference(actual, expected) {
 }
 
 /**
- * The asset whitelist (#44). Source side: the four names of one release, one
- * bootstrap copy, nothing else. Built side (when `--out` holds a build): the
- * directory holds exactly those four, the sums cover every hashed asset, the
- * bootstrap is byte-identical, and both archives ship only their contract.
- *
- * Digests are `scripts/verify-sums.mjs`'s job: this gate is structural, so a
- * coverage failure is never masked by a digest failure.
+ * The legacy asset whitelist. Source side: the engine, the bootstrap and the
+ * sums file, nothing else. Built side (when `--out` holds a build): the
+ * directory holds exactly those, the sums cover every hashed asset and the
+ * engine archive ships its frozen layout with an engine-version package.
  */
 function checkAssets(ctx, failures) {
-  const version = ctx.pkg.version;
+  const version = ctx.enginePkg.version;
   if (typeof version !== 'string' || !isValidVersion(version)) return;
   const expected = releaseAssets(version);
   const hashed = hashedAssets(version);
@@ -432,8 +363,7 @@ function checkAssets(ctx, failures) {
       `${INSTALL_ASSET} exists at the repository root; the only bootstrap source is ${BOOTSTRAP_SOURCE}`,
     );
   }
-  if (ctx.payload.problems.length > 0 || ctx.engine.problems.length > 0) return;
-  if (ctx.manifest === null) return;
+  if (ctx.engine.problems.length > 0) return;
 
   const outDir = ctx.out;
   if (!existsSync(outDir)) return;
@@ -475,118 +405,61 @@ function checkAssets(ctx, failures) {
     }
   }
 
-  checkArchiveWhitelist({
-    failures,
-    name: payloadAssetName(version),
-    file: join(outDir, payloadAssetName(version)),
-    expected: [...ctx.payload.files.map((file) => file.rel), PAYLOAD_MANIFEST],
-    manifest: {
-      expected: PAYLOAD_MANIFEST,
-      describe: (manifest) => {
-        if (manifest.version !== version) {
-          return `payload version is ${manifest.version} but package.json is ${version}`;
-        }
-        if (manifest.engine !== `^${version}`) {
-          return `payload engine is ${manifest.engine} but package.json ${version} implies ^${version}`;
-        }
-        return null;
-      },
-    },
-  });
-
-  checkArchiveWhitelist({
-    failures,
-    name: engineAssetName(version),
-    file: join(outDir, engineAssetName(version)),
-    expected: ctx.engine.files.map((file) => file.rel),
-    manifest: {
-      expected: 'package.json',
-      describe: (manifest) =>
-        manifest.version === version
-          ? null
-          : `engine package.json version is ${manifest.version} but package.json is ${version}`,
-    },
-  });
-}
-
-/** Member whitelist and embedded manifest/version lock of one built archive. */
-function checkArchiveWhitelist({ failures, name, file, expected, manifest }) {
-  if (!existsSync(file)) {
-    failures.push(`${name} is missing from its asset directory`);
+  const engineFile = join(outDir, engineAssetName(version));
+  if (!existsSync(engineFile)) {
+    failures.push(`${engineAssetName(version)} is missing from its asset directory`);
     return;
   }
-  const { entries, problems } = readTarGz(readFileSync(file));
-  for (const problem of problems) failures.push(`${name}: ${problem}`);
+  const { entries, problems } = readReleaseTarGz(readFileSync(engineFile));
+  for (const problem of problems) failures.push(`${engineAssetName(version)}: ${problem}`);
   const members = entries.map((entry) => entry.path).sort();
-  const difference = setDifference(members, [...expected].sort());
-  if (difference !== null) {
-    failures.push(`${name} ships paths outside its contract (${difference})`);
-    return;
+  const memberDifference = setDifference(members, ctx.engine.files.map((file) => file.rel).sort());
+  if (memberDifference !== null) {
+    failures.push(`${engineAssetName(version)} ships paths outside its contract (${memberDifference})`);
   }
-  const entry = entries.find((member) => member.path === manifest.expected);
-  if (entry === undefined) {
-    failures.push(`${name} has no ${manifest.expected}`);
-    return;
-  }
-  let parsed = null;
-  try {
-    parsed = JSON.parse(entry.data.toString('utf8'));
-  } catch (error) {
-    failures.push(`${name}: ${manifest.expected} is not valid JSON: ${error.message}`);
-    return;
-  }
-  const drifted = manifest.describe(parsed);
-  if (drifted !== null) failures.push(`${name}: ${drifted}`);
-  if (manifest.expected !== PAYLOAD_MANIFEST) return;
-  const declared = Object.keys(parsed.files ?? {}).sort();
-  const covered = members.filter((member) => member !== PAYLOAD_MANIFEST);
-  const missing = covered.filter((member) => !declared.includes(member));
-  if (missing.length > 0) {
-    failures.push(`${name}: ${PAYLOAD_MANIFEST} does not cover ${missing.join(', ')}`);
-  }
-  const extra = declared.filter((member) => !covered.includes(member));
-  if (extra.length > 0) {
-    failures.push(`${name}: ${PAYLOAD_MANIFEST} lists files the archive does not ship: ${extra.join(', ')}`);
+  const packageEntry = entries.find((entry) => entry.path === 'package.json');
+  if (packageEntry === undefined) {
+    failures.push(`${engineAssetName(version)} has no package.json`);
+  } else {
+    let parsed = null;
+    try {
+      parsed = JSON.parse(packageEntry.data.toString('utf8'));
+    } catch (error) {
+      failures.push(`${engineAssetName(version)}: package.json is not valid JSON: ${error.message}`);
+    }
+    if (parsed !== null && parsed.version !== version) {
+      failures.push(
+        `${engineAssetName(version)}: engine package.json version is ${parsed.version} but the engine package is ${version}`,
+      );
+    }
   }
 }
 
 function check(ctx) {
   const failures = [];
-  const notes = [];
-  checkPayloadProblems(ctx, failures);
   checkEngine(ctx, failures);
   checkVersion(ctx, failures);
-  checkFiles(ctx, failures);
   checkDocs(ctx, failures);
   checkChangelog(ctx, failures);
   checkLockfile(ctx, failures);
   checkAssets(ctx, failures);
-  checkCounts(ctx, failures, notes);
+  checkCounts(ctx, failures);
 
   if (failures.length > 0) {
-    process.stderr.write(`release --check failed for r2c ${ctx.pkg.version ?? '?'}:\n`);
+    process.stderr.write(`release --check failed for ${ctx.framework.name ?? 'r2c'} ${ctx.framework.version ?? '?'}:\n`);
     for (const failure of failures) process.stderr.write(`- ${failure}\n`);
     process.exit(1);
   }
   process.stdout.write(
-    `release --check ok: r2c ${ctx.pkg.version}, engine ^${ctx.pkg.version}, ${ctx.payload.files.length} payload files, ${ctx.engine.files.length} engine files, ${releaseAssets(ctx.pkg.version).length} assets\n`,
+    `release --check ok: ${ctx.framework.name} ${ctx.framework.version}, engine ${ctx.enginePkg.version}, `
+    + `${ctx.engine.files.length} engine files, ${releaseAssets(ctx.enginePkg.version).length} assets\n`,
   );
-  for (const note of notes) process.stdout.write(`note: ${note}\n`);
 }
 
 function build(ctx, outDir) {
-  if (ctx.payload.problems.length > 0) {
-    process.stderr.write('release: refusing to build an invalid payload:\n');
-    for (const problem of ctx.payload.problems) process.stderr.write(`- ${problem}\n`);
-    process.exit(1);
-  }
   if (ctx.engine.problems.length > 0) {
     process.stderr.write('release: refusing to build an invalid engine archive:\n');
     for (const problem of ctx.engine.problems) process.stderr.write(`- ${problem}\n`);
-    process.exit(1);
-  }
-  if (ctx.manifest === null || Object.keys(ctx.manifest.files).length !== ctx.payload.files.length) {
-    process.stderr.write('release: payload manifest does not cover every payload file\n');
     process.exit(1);
   }
   const bootstrap = join(ctx.root, BOOTSTRAP_SOURCE);
@@ -594,22 +467,19 @@ function build(ctx, outDir) {
     process.stderr.write(`release: the ${INSTALL_ASSET} asset has no source: ${BOOTSTRAP_SOURCE}\n`);
     process.exit(1);
   }
+  const version = ctx.enginePkg.version;
 
-  const entries = ctx.payload.files.map((file) => ({
-    path: file.rel,
-    data: readFileSync(file.absolute),
-  }));
-  entries.push({ path: PAYLOAD_MANIFEST, data: manifestBuffer(ctx.manifest) });
-
-  // One build, one version: every asset name carries the same V.
+  // One build, one version: every asset name carries the engine version E.
   const assets = [
-    { name: engineAssetName(ctx.pkg.version), data: createTarGz(
-      ctx.engine.files.map((file) => ({ path: file.rel, data: readFileSync(file.absolute) })),
-    ) },
-    { name: payloadAssetName(ctx.pkg.version), data: createTarGz(entries) },
+    {
+      name: engineAssetName(version),
+      data: createReleaseTarGz(
+        ctx.engine.files.map((file) => ({ path: file.rel, data: engineEntryBytes(file), mode: 0o644 })),
+      ),
+    },
     // The bootstrap ships verbatim, so users can pipe the asset straight to node.
     { name: INSTALL_ASSET, data: readFileSync(bootstrap) },
-  ].sort((left, right) => (left.name < right.name ? -1 : 1));
+  ].sort((left, right) => compareCodePoints(left.name, right.name));
 
   mkdirSync(outDir, { recursive: true });
   const sums = [];
@@ -620,15 +490,13 @@ function build(ctx, outDir) {
   const sumsPath = join(outDir, SUMS_ASSET);
   writeFileSync(sumsPath, sums.join(''));
 
-  process.stdout.write(`engine ${ctx.pkg.version}: ${ctx.engine.files.length} files\n`);
-  process.stdout.write(`payload ${ctx.pkg.version}: ${ctx.payload.files.length + 1} files\n`);
+  process.stdout.write(`engine ${version}: ${ctx.engine.files.length} files\n`);
   for (const asset of assets) {
     process.stdout.write(`asset ${join(outDir, asset.name)}\n`);
     process.stdout.write(`sha256 ${sha256(asset.data)}\n`);
   }
   process.stdout.write(`asset ${sumsPath}\n`);
 }
-
 function emitJsonLine(value) {
   process.stdout.write(`${JSON.stringify(value)}\n`);
 }

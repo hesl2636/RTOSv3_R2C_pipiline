@@ -19,11 +19,11 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { replayDerived } from '../src/state.js';
+import { replayDerived } from '../runtime/r2c/engine/src/state.js';
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const BIN = join(REPO, 'bin', 'r2c.js');
-const PACK = join(REPO, 'pack');
+const BIN = join(REPO, 'runtime', 'r2c', 'engine', 'bin', 'r2c.js');
+const BUNDLE = join(REPO, 'examples', 'rtosv3', 'bundle');
 const REPAIR_WARNING = /repaired from events/;
 
 const MANIFEST_HEAD = `schema: r2c.workflow/v1
@@ -71,12 +71,37 @@ function tempRoot(t) {
 /** The shipped default manifest (4 stages, one prompt step each) in a temp project. */
 function defaultProject(t) {
   const project = tempRoot(t);
-  cpSync(
-    join(PACK, 'workflows', 'hm2B_drvport_pipiline.yaml'),
+  const bundle = JSON.parse(readFileSync(join(BUNDLE, 'bundle.json'), 'utf8'));
+  const manifest = {
+    schema: 'r2c.workflow/v1',
+    id: 'hm2B_drvport_pipiline',
+    name: bundle.name,
+    version: bundle.version,
+    description: bundle.description,
+    stages: bundle.stages.map((stageId) => {
+      const stage = JSON.parse(readFileSync(join(BUNDLE, 'stages', `${stageId}.json`), 'utf8'));
+      const [step] = stage.steps;
+      return {
+        id: stage.id,
+        name: stage.name,
+        steps: [{
+          id: step.id,
+          name: step.name,
+          type: 'prompt',
+          agent: step.role,
+          taskFile: `tasks/${step.task}.md`,
+          skills: step.skills,
+        }],
+      };
+    }),
+  };
+  mkdirSync(join(project.root, 'workflows'), { recursive: true });
+  writeFileSync(
     join(project.root, 'workflows', 'hm2B_drvport_pipiline.yaml'),
+    `${JSON.stringify(manifest, null, 2)}\n`,
   );
-  cpSync(join(PACK, 'tasks'), join(project.root, 'tasks'), { recursive: true });
-  cpSync(join(PACK, 'skills'), join(project.root, 'skills'), { recursive: true });
+  cpSync(join(BUNDLE, 'tasks'), join(project.root, 'tasks'), { recursive: true });
+  cpSync(join(BUNDLE, 'skills'), join(project.root, 'skills'), { recursive: true });
   return project;
 }
 
@@ -172,7 +197,7 @@ test('default manifest: run and every submit are events-consistent without repai
   const statePath = join(project.root, '.r2c', 'runs', runId, 'state.json');
 
   let state = assertNoDrift(project.root, runId, 'after run');
-  assert.equal(state.current_step_id, 'step-01479654-57d0-468a-9a53-78c821a29f5b');
+  assert.equal(state.current_step_id, 'analysis-design');
   assert.equal(state.stages[0].status, 'active');
 
   const stepIds = state.steps.map((step) => step.id);

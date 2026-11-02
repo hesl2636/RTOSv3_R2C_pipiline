@@ -1,11 +1,12 @@
 {
-  "name": "r2c-runner",
+  "name": "r2c-framework",
   "version": "0.1.0",
-  "description": "Declarative workflow runner for the hm2B driver port pipeline",
+  "private": true,
+  "description": "Bundle assembler, projections and installer for the r2c workflow runtime",
   "license": "MIT",
   "type": "module",
   "bin": {
-    "r2c": "bin/r2c.js",
+    "r2c": "runtime/r2c/engine/bin/r2c.js",
     "r2c-assembler": "bin/r2c-assembler.js"
   },
   "engines": {

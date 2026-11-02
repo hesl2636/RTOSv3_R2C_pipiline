@@ -15,7 +15,7 @@ import { fileURLToPath } from 'node:url';
 import { writeTwoStepProject } from './helpers/two-step.js';
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const BIN = join(REPO, 'bin', 'r2c.js');
+const BIN = join(REPO, 'runtime', 'r2c', 'engine', 'bin', 'r2c.js');
 const VERSION = JSON.parse(readFileSync(join(REPO, 'package.json'), 'utf8')).version;
 const RUN_ID = /^R\d{8}T\d{6}Z-[0-9a-f]{6}$/;
 const STATE_FIELDS = [

@@ -1,43 +1,29 @@
 /**
- * Schema documentation contract (spec §8).
+ * Schema documentation contract (spec §8, decision #77 §3.4).
  *
- * `schema/*.schema.json` are documentation only — the runner validates by hand
- * and never loads a JSON-Schema engine — but they are the published shape, so
- * every frozen `r2c.<family>/v1` id in src/schema.js must have a matching file.
+ * The documents now live with their owner: the engine's state/workflow/
+ * latest/usage revisions are in `runtime/r2c/schema/`. They are documentation
+ * and test fixtures only — the hand-written validators are the implementation
+ * — but every frozen engine revision must have one closed v1 document. The
+ * retired adapter/payload families no longer have documents or ids.
  */
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { SUPPORTED } from '../src/schema.js';
+import { SUPPORTED } from '../runtime/r2c/engine/src/schema.js';
 
-const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const SCHEMA_DIR = join(REPO, 'schema');
-
-/**
- * Family -> document file. The payload manifest keeps its frozen revision id
- * (`r2c.plugin/v1`) while the asset is named "payload", so its document is
- * `payload.schema.json`; every other family matches its file name.
- */
-const DOCUMENT = Object.freeze({ plugin: 'payload' });
+const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const SCHEMA_DIR = join(ROOT, 'runtime/r2c/schema');
 
 function schema(family) {
-  const file = `${DOCUMENT[family] ?? family}.schema.json`;
-  return JSON.parse(readFileSync(join(SCHEMA_DIR, file), 'utf8'));
+  return JSON.parse(readFileSync(join(SCHEMA_DIR, `${family}.schema.json`), 'utf8'));
 }
 
-test('every frozen schema family has one v1 JSON Schema document', () => {
+test('every frozen engine schema family has one v1 JSON Schema document', () => {
   const families = Object.keys(SUPPORTED).sort();
-  assert.deepEqual(families, [
-    'adapter',
-    'adapter-map',
-    'latest',
-    'plugin',
-    'state',
-    'usage',
-    'workflow',
-  ]);
+  assert.deepEqual(families, ['latest', 'state', 'usage', 'workflow']);
   for (const family of families) {
     const ids = SUPPORTED[family];
     assert.deepEqual(ids, [`r2c.${family}/v1`], `${family}: one v1 revision`);
@@ -47,5 +33,26 @@ test('every frozen schema family has one v1 JSON Schema document', () => {
     assert.equal(document.type, 'object', `${family}: root object`);
     assert.equal(document.additionalProperties, false, `${family}: closed root object`);
     assert.equal(document.properties.schema.const, ids[0], `${family}: schema const`);
+  }
+});
+
+test('schema documents keep the frozen r2c.runner $id base', () => {
+  for (const family of Object.keys(SUPPORTED)) {
+    const document = schema(family);
+    assert.equal(document.$id, `https://r2c.runner/schema/${family}.schema.json`);
+  }
+});
+
+test('retired schema families have no document and no id', () => {
+  for (const family of ['adapter', 'adapter-map', 'plugin', 'payload']) {
+    assert.equal(family in SUPPORTED, false, `${family} must be retired`);
+  }
+});
+
+test('no schema document points at a retired source path', () => {
+  for (const family of Object.keys(SUPPORTED)) {
+    const text = readFileSync(join(SCHEMA_DIR, `${family}.schema.json`), 'utf8');
+    assert.doesNotMatch(text, /(?<!engine\/)\bsrc\//, `${family}: stale src/ path`);
+    assert.doesNotMatch(text, /adapters\//, `${family}: retired adapter path`);
   }
 });

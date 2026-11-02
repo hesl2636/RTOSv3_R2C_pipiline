@@ -6,6 +6,17 @@ step-by-step across the engine, the payload, and all five agent adapters; see
 
 ## [Unreleased]
 
+### Changed
+
+- P6 cutover (#111): the engine moved to `runtime/r2c/engine/`, the pure
+  manifest contract to `runtime/r2c/contract/`, and the runtime assets to the
+  two runtimes. The legacy directory trees, the declaration-driven install
+  mechanism, the four role templates, the old acceptance command and the
+  top-level schema/shims/pack/plugin trees are retired with wired
+  replacements. Architecture tests enforce the static import graph, the
+  engine's dependency cut and the released source sets. Glossary and docs
+  describe only the bundle/projection/target vocabulary.
+
 ### Added
 
 - Install from a per-bundle Release (#106): `install.mjs` keeps its name and

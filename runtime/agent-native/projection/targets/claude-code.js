@@ -6,6 +6,7 @@
  * owns naming, field states, placeholder instructions and exposure.
  */
 import { perRoleRoleFiles } from '../role-files.js';
+import { layoutSmoke, hostProfile } from './host.js';
 
 const TOKENS = ['read', 'write', 'edit', 'glob', 'grep', 'bash', 'task', 'web'];
 
@@ -62,6 +63,14 @@ export const claudeCodeTarget = Object.freeze({
   default: true,
   capabilities: CAPABILITIES,
   capabilityNotes: CAPABILITY_NOTES,
+  ...hostProfile({
+    detect: {"commands":[["claude","--version"]],"paths":["~/.claude"]},
+    assets: [
+    Object.freeze({ path: 'runtime/agent-native/targets/claude-code/assets/hooks.json', sha256: '8bce6f03c9b8903f74095f31a4ac1ef8e9711cf7d8bdf5224c59403d366651b3' }),
+    Object.freeze({ path: 'runtime/agent-native/targets/claude-code/assets/mcp.json', sha256: 'd8e397af03b5b032f21d0aa967086f0c78b33c87b76f2e9898ae0a144df7de02' }),
+    ],
+    smoke: (namespace) => layoutSmoke(namespace, { skillsRoot: '.claude/skills', agentsRoot: '.claude/agents', agentFormat: 'md' }),
+  }),
   layout: Object.freeze({
     skillsRoot: '.claude/skills',
     agentsRoot: '.claude/agents',

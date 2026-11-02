@@ -1,7 +1,7 @@
 /**
  * r2c install composition (#104, #82 §11, spec §12).
  *
- * `render-roles` replaces `derive-agent`: the installer renders the four host
+ * `render-roles` renders the four host
  * agent definitions from the IR through `runtime/shared/render-role.js`, names
  * them `r2c-<id>`, records field-level degradations and writes one
  * `.r2c/projection/roles.json` sectioned by the host adapter ids that were
