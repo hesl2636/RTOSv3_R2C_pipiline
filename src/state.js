@@ -15,13 +15,13 @@ import {
   mkdirSync,
   readFileSync,
   readdirSync,
-  renameSync,
   rmSync,
   writeFileSync,
 } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import { R2cError, EXIT_CODES, isR2cError } from './errors.js';
 import { withLatestLock, withRunLock, withRunWriteLock } from './lock.js';
+import { renameIntoPlace } from './rename.js';
 import { SUPPORTED, isNewerSchema } from './schema.js';
 import {
   eventsPath,
@@ -81,7 +81,7 @@ export function atomicWriteFile(file, content) {
   const temp = tempName(file);
   try {
     writeFileSync(temp, content);
-    renameSync(temp, file);
+    renameIntoPlace(temp, file);
   } catch (error) {
     rmSync(temp, { force: true });
     throw error;

@@ -75,6 +75,10 @@ step-by-step across the engine, the payload, and all five agent adapters; see
 - Upgrading or rolling back removes layout files the previous payload carried
   but the new one does not ship, after backing each one up. A hand-edited
   stale file is kept and reported as `layout-stale:` instead of being deleted.
+- Atomic writes retry transient Windows `EPERM`/`EACCES`/`EBUSY` renames: a
+  concurrent reader could make the `latest.json` replacement fail after the
+  claim event and `state.json` were written, so `hook stop` exited 1 and the
+  run kept a claim event with a stale route.
 
 ### Changed
 

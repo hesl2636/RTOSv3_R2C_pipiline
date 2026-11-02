@@ -14,16 +14,15 @@ import {
   readFileSync,
   readdirSync,
   readlinkSync,
-  renameSync,
   rmSync,
   statSync,
   symlinkSync,
-  unlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, dirname, isAbsolute, join, relative, sep } from 'node:path';
 import { isInside } from '../paths.js';
+import { renameIntoPlace } from '../rename.js';
 
 export function userHome() {
   return process.env.R2C_HOME || process.env.HOME || process.env.USERPROFILE || homedir();
@@ -63,34 +62,19 @@ export function ensureDir(dir, created = []) {
 /**
  * Write `data` through a sibling temp file and rename. Same-directory rename is
  * atomic on NTFS and POSIX alike; the temp name is pid-scoped so concurrent
- * installers (different locks) cannot collide.
+ * installers (different locks) cannot collide. Windows sharing violations are
+ * retried by `renameIntoPlace`.
  */
 export function atomicWriteFile(file, data, options = {}) {
   const dir = dirname(file);
   mkdirSync(dir, { recursive: true });
   const temp = join(dir, `.${basename(file)}.r2c-tmp-${process.pid}-${Date.now().toString(36)}`);
   writeFileSync(temp, data, options);
-  replacePath(temp, file);
+  renameIntoPlace(temp, file);
 }
 
 export function atomicWriteJson(file, value) {
   atomicWriteFile(file, `${JSON.stringify(value, null, 2)}\n`);
-}
-
-function replacePath(temp, target) {
-  try {
-    renameSync(temp, target);
-  } catch (error) {
-    if (process.platform !== 'win32' || !['EEXIST', 'EPERM', 'EACCES'].includes(error?.code)) throw error;
-    // Windows rename-over-existing can be denied while an antivirus/editor
-    // holds the target; fall back to an explicit unlink and retry once.
-    try {
-      unlinkSync(target);
-    } catch (unlinkError) {
-      if (unlinkError?.code !== 'ENOENT') throw unlinkError;
-    }
-    renameSync(temp, target);
-  }
 }
 
 export function toPosix(value) {
