@@ -6,10 +6,12 @@
  */
 import { claudeCodeTarget } from './claude-code.js';
 import { dshTarget } from './dsh.js';
+import { opencodeTarget } from './opencode.js';
 
 export const TARGETS = Object.freeze({
   'claude-code': claudeCodeTarget,
   dsh: dshTarget,
+  opencode: opencodeTarget,
 });
 
 export const TARGET_ORDER = Object.freeze(Object.keys(TARGETS));
