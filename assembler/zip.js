@@ -391,7 +391,7 @@ export function readZip(input, primitives = {}) {
     const special = entryLimitFor(name);
     if (special !== null && record.size > special.limit) {
       reject(name, special.code, 'entry exceeds the size limit for its kind', {
-        details: { entry: name, limit: special.limit, actual: record.size },
+        details: { limit: special.limit, actual: record.size },
       });
       continue;
     }
@@ -462,7 +462,7 @@ export function readZip(input, primitives = {}) {
     const actualSpecial = entryLimitFor(name);
     if (actualSpecial !== null && data.length > actualSpecial.limit) {
       reject(name, actualSpecial.code, 'entry exceeds the size limit for its kind', {
-        details: { entry: name, limit: actualSpecial.limit, actual: data.length },
+        details: { limit: actualSpecial.limit, actual: data.length },
       });
       continue;
     }
