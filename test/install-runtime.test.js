@@ -64,6 +64,7 @@ function writeEngineSource(root, version = '1.2.3') {
   writeFileSync(join(root, 'hosts', 'claude-code', 'settings.hooks.json'), `${JSON.stringify({
     hooks: { Stop: [{ hooks: [{ type: 'command', command: 'node <hook>' }] }] },
   }, null, 2)}\n`);
+  writeFileSync(join(root, 'hosts', 'claude-code', 'mcp.json'), `${JSON.stringify({ mcpServers: { demo: { command: 'demo' } } }, null, 2)}\n`);
   mkdirSync(join(root, 'hosts', 'codex'), { recursive: true });
   writeFileSync(join(root, 'hosts', 'codex', 'hooks.json'), `${JSON.stringify({ hooks: { Stop: [] } }, null, 2)}\n`);
   writeFileSync(join(root, 'hosts', 'codex', 'r2c-hook-stop.cmd'), '@echo off\r\n');
@@ -129,7 +130,8 @@ test('installs the engine under .r2c/engine/<V> with a fixed resolver launcher',
   }
 
   const merged = runtime.merged.map((item) => `${item.path}|${item.pointer}`).sort();
-  assert.deepEqual(merged, ['.claude/settings.json|hooks', '.omp/mcp.json|mcpServers', 'opencode.json|mcp']);
+  assert.deepEqual(merged, ['.claude/settings.json|hooks', '.mcp.json|mcpServers', '.omp/mcp.json|mcpServers', 'opencode.json|mcp']);
+  assert.equal(JSON.parse(read(projectRoot, '.mcp.json')).mcpServers.demo.command, 'demo');
   assert.deepEqual(JSON.parse(read(projectRoot, '.claude/settings.json')).hooks.Stop[0].hooks[0].type, 'command');
   assert.equal(JSON.parse(read(projectRoot, '.omp/mcp.json')).mcpServers.demo.command, 'demo');
   assert.equal(JSON.parse(read(projectRoot, 'opencode.json')).mcp.demo.type, 'local');
@@ -193,7 +195,7 @@ test('engine upgrade swaps only runtime.json and the engine directory', (t) => {
   assert.equal(runtime.engine.version, '2.0.0');
   assert.equal(runtime.engine.entry, '.r2c/engine/2.0.0/bin/r2c.js');
   assert.equal(runtime.files.some((file) => file.path === '.claude/settings.json' || file.path === 'opencode.json'), false);
-  assert.deepEqual(runtime.merged.map((item) => item.pointer).sort(), ['hooks', 'mcp', 'mcpServers']);
+  assert.deepEqual(runtime.merged.map((item) => item.pointer).sort(), ['hooks', 'mcp', 'mcpServers', 'mcpServers']);
   assert.equal(readFileSync(receiptFile).equals(bundleReceipt), true, 'bundle receipt never records the engine version');
 
   const after = hashTree(projectRoot);

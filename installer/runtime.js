@@ -100,6 +100,7 @@ const COMMAND_TARGETS = Object.freeze({
 const HOST_LAYOUT = Object.freeze({
   'claude-code': Object.freeze([
     Object.freeze({ from: 'hosts/claude-code/settings.hooks.json', merge: Object.freeze({ path: '.claude/settings.json', pointer: 'hooks' }) }),
+    Object.freeze({ from: 'hosts/claude-code/mcp.json', merge: Object.freeze({ path: '.mcp.json', pointer: 'mcpServers' }) }),
   ]),
   codex: Object.freeze([
     Object.freeze({ from: 'hosts/codex/hooks.json', to: '.codex/hooks.json', kind: 'hook' }),
