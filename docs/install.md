@@ -30,9 +30,9 @@ generated from. Per-agent landing paths and hook wiring are in
   first, or bypass detection with the engine's
   `adapter install --agent <id>` form (option instead of positional; it records
   a warning instead of failing).
-- `gh` for the release download below, or a repository checkout, or a local
-  copy of the release assets (see [Offline and private
-  downloads](#offline-and-private-downloads)). No npm.
+- `gh`, a plain HTTPS download (`curl` or PowerShell `Invoke-WebRequest`), a
+  repository checkout, or a local copy of the release assets (see [Offline and
+  private downloads](#offline-and-private-downloads)). No npm.
 - Write access to the target scope's directories (see [Scopes and landing
   paths](#scopes-and-landing-paths)).
 
@@ -41,6 +41,31 @@ generated from. Per-agent landing paths and hook wiring are in
 Run every command from the project root. `--agent` is required; `--scope`
 defaults to `project`; `--project` defaults to the current directory;
 `--version` defaults to the latest formal release.
+
+Without `gh` and without a checkout, download the published bootstrap over
+HTTPS. This is the path for an external machine. The example uses `opencode`;
+substitute another adapter id and its extra flags from the matrix below.
+
+POSIX:
+
+```bash
+mkdir -p .r2c/bootstrap
+curl -fL -o .r2c/bootstrap/install.mjs https://github.com/hesl2636/RTOSv3_R2C_pipiline/releases/download/v0.1.0/install.mjs
+node .r2c/bootstrap/install.mjs --agent opencode --version 0.1.0 --project .
+```
+
+Windows (PowerShell):
+
+```powershell
+New-Item -ItemType Directory -Force .r2c\bootstrap | Out-Null
+Invoke-WebRequest -UseBasicParsing -Uri 'https://github.com/hesl2636/RTOSv3_R2C_pipiline/releases/download/v0.1.0/install.mjs' -OutFile '.r2c\bootstrap\install.mjs'
+node '.r2c\bootstrap\install.mjs' --agent opencode --version 0.1.0 --project '.'
+```
+
+A public repository only removes the authorization requirement. An anonymous
+release download can still fail at the network layer with `fetch failed`; set
+`GH_TOKEN` and rerun the same `node` command to make the bootstrap read the
+assets through the GitHub API.
 
 With `gh`, POSIX:
 
@@ -58,8 +83,8 @@ gh release download v0.1.0 -R hesl2636/RTOSv3_R2C_pipiline -p install.mjs --dir 
 node ".r2c\bootstrap\install.mjs" --agent claude-code --version 0.1.0 --project "."
 ```
 
-Without `gh`, from a repository checkout (`scripts/install.mjs` is the same file
-the release publishes as the `install.mjs` asset). The checkout is the project
+From a repository checkout (`scripts/install.mjs` is the same file the release
+publishes as the `install.mjs` asset). The checkout is the project
 when you install into it; otherwise pass `--project`:
 
 ```bash
@@ -242,9 +267,13 @@ Next: `git status --short` in the project root, to review the layout files the u
 
 ### Credentials
 
-A public repository is read anonymously. A private one answers the anonymous
-request with `404`, so the bootstrap and the payload downloader walk the same
-chain: `GH_TOKEN` → `GITHUB_TOKEN` → `git credential fill` for
+A public repository is read anonymously, but public visibility does not
+guarantee the download route: an anonymous `fetch failed` is a network failure,
+not a missing permission. Setting a credential switches the bootstrap to the
+GitHub API asset path below and is the supported workaround. A private
+repository answers the anonymous request with `404`, so the bootstrap and the
+payload downloader walk the same chain: `GH_TOKEN` → `GITHUB_TOKEN` →
+`git credential fill` for
 `protocol=https`, `host=github.com`. The helper call never prompts
 (`GIT_TERMINAL_PROMPT=0`) and times out after a few seconds, so an unattended
 install cannot hang; when none of the three yields a credential the error names

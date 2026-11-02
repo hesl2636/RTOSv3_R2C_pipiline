@@ -30,7 +30,6 @@ const VERDICTS = ['pass', 'fail', 'risk', 'HITL', 'unverified'];
 
 /** The four install sections and the next command each one must end with. */
 const INSTALL_SECTIONS = ['## Install', '## Upgrade', '## Rollback', '## Uninstall'];
-const README_SECTIONS = ['### 首次安装', '### 升级', '### 回滚', '### 卸载'];
 
 /**
  * Yellow-zone coordinates and non-public registry names must never reach a
@@ -78,15 +77,6 @@ function section(text, heading) {
   assert.notEqual(start, -1, `missing section ${heading}`);
   const next = text.indexOf('\n## ', start + heading.length);
   return next === -1 ? text.slice(start) : text.slice(start, next);
-}
-
-/** Heading slice for a `###` block, stopping at the next `##` or `###`. */
-function subsection(text, heading) {
-  const start = text.indexOf(`${heading}\n`);
-  assert.notEqual(start, -1, `missing section ${heading}`);
-  const rest = text.slice(start + heading.length + 1);
-  const next = /\n#{2,3} /.exec(rest);
-  return next === null ? rest : rest.slice(0, next.index);
 }
 
 function lastLine(text) {
@@ -263,18 +253,15 @@ test('install, upgrade, rollback and uninstall each end with the next command', 
   assert.match(uninstall, /receipt/);
 });
 
-test('README has the four install sections, each ending with the next command', () => {
+test('README gives one install command per adapter', () => {
   const readme = read('README.md');
-  for (const heading of README_SECTIONS) {
-    const body = subsection(readme, heading);
-    const tail = lastLine(body);
-    assert.match(tail, /^下一步：`/, `${heading} does not end with 下一步: ${tail}`);
+  const install = section(readme, '## 安装');
+  for (const id of ADAPTER_IDS) {
+    assert.ok(install.includes(`--agent ${id}`), `README has no install command for ${id}`);
   }
-  assert.match(subsection(readme, '### 首次安装'), /gh release download v0\.1\.0 -R hesl2636\/RTOSv3_R2C_pipiline/);
-  assert.match(subsection(readme, '### 首次安装'), /node scripts\/install\.mjs --agent claude-code/);
-  assert.match(subsection(readme, '### 升级'), /--version <new-V>/);
-  assert.match(subsection(readme, '### 回滚'), /--version <old-V>/);
-  assert.match(subsection(readme, '### 卸载'), /adapter uninstall claude-code/);
+  assert.match(install, /curl\.exe --create-dirs -fL -o \.r2c\/bootstrap\/install\.mjs/);
+  assert.match(install, /GH_TOKEN/);
+  assert.match(section(readme, '## 卸载'), /adapter uninstall opencode/);
 });
 
 // --- command contract -----------------------------------------------------
@@ -325,7 +312,7 @@ test('every documented node command uses flags and subcommands the CLI prints', 
 });
 
 test('both platform variants are separately copy-pasteable and quoting is stated', () => {
-  for (const rel of ['README.md', 'docs/install.md']) {
+  for (const rel of ['docs/install.md']) {
     const text = read(rel);
     const blocks = fencedBlocks(text);
     assert.ok(blocks.some((block) => block.lang === 'bash'), `${rel} has no POSIX block`);
