@@ -1,6 +1,6 @@
 {
   "schema": "r2c.web-manifest/v1",
-  "name": "r2c local read-only surface",
+  "name": "r2c local build surface",
   "assets": [
     "web/index.html",
     "web/app.js",
