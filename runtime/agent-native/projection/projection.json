@@ -1,0 +1,60 @@
+{
+  "schema": "r2c.projection/v1",
+  "id": "agent-native",
+  "name": "Agent-native 投影",
+  "version": "0.1.0",
+  "description": "把中立 IR 投影成原生 agent runtime 的技能与子 agent 定义；不生成 runner，不写用户自有配置文件。",
+  "api": {
+    "ir": "r2c.ir/v1",
+    "options": "r2c.projection-options/v1",
+    "result": "r2c.projection-result/v1"
+  },
+  "writeRoots": [
+    ".agents/agent-native",
+    ".agents/skills",
+    ".claude/agents",
+    ".claude/skills"
+  ],
+  "targets": [
+    {
+      "id": "claude-code",
+      "name": "Claude Code",
+      "default": true,
+      "capabilities": {
+        "state": {
+          "level": "unavailable",
+          "note": "无 runner：没有状态文件，进度与续跑由执行者维护"
+        },
+        "gates": {
+          "level": "degraded",
+          "note": "命令原文 + 超时写入阶段技能；执行者运行并自证，机器不强制"
+        },
+        "outputs": {
+          "level": "degraded",
+          "note": "glob 原样列出自检清单；回执逐项写存在/缺失，机器不检查"
+        },
+        "subagents": {
+          "level": "native",
+          "note": "角色定义落在 runtime 自动发现的项目目录"
+        },
+        "skills": {
+          "level": "adapted",
+          "note": "技能安装到 runtime 技能根；名字加 bundle 前缀，语义不变"
+        },
+        "preload": {
+          "level": "native",
+          "note": "Claude skills: 整份注入"
+        },
+        "stage-invocation": {
+          "level": "native",
+          "note": "阶段技能可单独加载"
+        },
+        "skill-invocation": {
+          "level": "native",
+          "note": "技能副本可单独加载"
+        }
+      }
+    }
+  ],
+  "assets": []
+}

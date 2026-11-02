@@ -25,10 +25,13 @@ export function usageError(message) {
 }
 
 /** Parse the shared flags; unknown flags are a usage error. */
-export function parseArgs(argv) {
-  const options = { json: false, out: null, help: false, positionals: [] };
+export function parseArgs(argv, spec = {}) {
+  const values = new Set(spec.values ?? []);
+  const lists = new Set(spec.lists ?? []);
+  const options = { json: false, out: null, help: false, positionals: [], values: {}, lists: {} };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
+    const long = arg.startsWith('--') ? arg.slice(2) : '';
     if (arg === '--json') {
       options.json = true;
     } else if (arg === '--format=json') {
@@ -44,6 +47,20 @@ export function parseArgs(argv) {
     } else if (arg.startsWith('--out=')) {
       options.out = arg.slice('--out='.length);
       if (options.out === '') return { error: usageError('--out requires a directory') };
+    } else if (values.has(long)) {
+      if (argv[index + 1] === undefined) return { error: usageError(`--${long} requires a value`) };
+      options.values[long] = argv[index + 1];
+      index += 1;
+    } else if (arg.startsWith('--') && values.has(long.split('=')[0]) && long.includes('=')) {
+      const [name, value] = long.split('=');
+      options.values[name] = value;
+    } else if (lists.has(long)) {
+      if (argv[index + 1] === undefined) return { error: usageError(`--${long} requires a value`) };
+      (options.lists[long] ??= []).push(argv[index + 1]);
+      index += 1;
+    } else if (arg.startsWith('--') && lists.has(long.split('=')[0]) && long.includes('=')) {
+      const [name, value] = long.split('=');
+      (options.lists[name] ??= []).push(value);
     } else if (arg === '--help' || arg === '-h') {
       options.help = true;
     } else if (arg === '--') {

@@ -13,6 +13,7 @@ import { EXIT_CODES, emitFailure, jsonRequested, usageError } from './assembler/
 import { run as bundleValidate } from './assembler/bundle-validate.js';
 import { run as compile } from './assembler/compile.js';
 import { run as irValidate } from './assembler/ir-validate.js';
+import { run as project } from './assembler/project.js';
 
 const HELP = `Usage: r2c-assembler <command> [options]
 
@@ -20,11 +21,14 @@ Commands:
   bundle validate <zip>        Validate a r2c.bundle/v1 archive.
   ir validate <file>           Validate a r2c.ir/v1 document.
   compile <zip> --out <dir>    Compile a bundle into workflow.ir.json.
+  project <ir> --projection <id> [--target <id> ...]
+                               [--stage-order a,b] [--skills a,b]
+                               [--out <dir>]   Project an IR into a runtime file set.
 
 Global options:
   -h, --help                   Show this help and exit.
       --json                   Print a single-line JSON envelope on stdout.
-      --out DIR                Output directory for compile.
+      --out DIR                Output directory for compile/project.
 `;
 
 function dispatch(argv) {
@@ -36,6 +40,7 @@ function dispatch(argv) {
   if (first === 'bundle' && second === 'validate') return bundleValidate(argv.slice(2));
   if (first === 'ir' && second === 'validate') return irValidate(argv.slice(2));
   if (first === 'compile') return compile(argv.slice(1));
+  if (first === 'project') return project(argv.slice(1));
   return emitFailure({
     json: jsonRequested(argv),
     command: [first, second].filter(Boolean).join('.') || null,
