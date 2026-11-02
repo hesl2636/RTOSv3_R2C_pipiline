@@ -69,6 +69,46 @@ codex 首次需在 codex 里执行 `/hooks` 信任；dsh 安装后重启。
 node .r2c\engine\0.1.0\bin\r2c.js run
 ```
 
+## 安装后的文件结构
+
+以项目级 `opencode` 安装为例，`<project>` 是执行安装命令的目录：
+
+```text
+<project>/
+├─ .r2c/
+│  ├─ bootstrap/install.mjs      # 下载的引导脚本，可删
+│  ├─ engine/0.1.0/              # 引擎
+│  ├─ payload/0.1.0/             # 载荷模板
+│  └─ install/opencode.json      # 安装回执，卸载依据
+├─ .opencode/
+│  ├─ commands/r2c-*.md          # 7 个命令
+│  ├─ skills/                    # 技能
+│  ├─ agents/r2c-*.md            # 子 agent
+│  └─ plugins/r2c.ts             # A′ hook
+├─ workflows/
+│  └─ RTOSv3_R2C_pipiline.yaml
+├─ tasks/
+│  └─ step-*.md
+└─ skills/
+   └─ */
+```
+
+`workflows/`、`tasks/`、`skills/` 是复制到项目根的布局副本，可以直接查看和修改。`.r2c/` 保存引擎、载荷、安装回执和运行态；`.opencode/` 是 opencode 的 agent 入口。
+
+首次 `run` 后还会生成 `.r2c/runs/`、`.r2c/ir.md` 和 `.r2c/artifacts/`。
+
+其他 agent 只替换 agent 侧目录：
+
+| Agent | 安装后的 agent 目录 |
+| --- | --- |
+| `claude-code` | `.claude/`、`.mcp.json` |
+| `codex` | `.agents/skills/`、`.codex/` |
+| `dsh` | `~/.dsh/profiles/web/`（user scope） |
+| `omp` | `.omp/` |
+| `opencode` | `.opencode/` |
+
+dsh 是 user scope：引擎、载荷和回执在 `~/.r2c/`，agent 文件在 `~/.dsh/profiles/web/`，项目根仍会得到 `workflows/`、`tasks/`、`skills/`。
+
 ## 卸载
 
 ```powershell
