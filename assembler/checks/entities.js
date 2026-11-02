@@ -5,18 +5,47 @@
  * placeholder skill must still carry the visible banner, and a declared
  * placeholder constitution may be a 0-byte file (with a warning).
  */
-import { codePointLength } from '../../core/code-point.js';
+import { codePointLength, compareCodePoints } from '../../core/code-point.js';
 import { parseFrontmatter } from '../frontmatter.js';
 import { ROLE_ENUMS, TOOL_TOKENS } from '../ids.js';
 import { nonEmptyLines, preamble } from '../util.js';
 
 const ROLE_KEYS = ['id', 'description', 'title', 'mode', 'model', 'effort', 'tools', 'tools_deny', 'skills', 'placeholder'];
 const SKILL_KEYS = ['name', 'description', 'placeholder'];
-const PLACEHOLDER_BANNER = /^> \*\*.*(占位|placeholder)/im;
+const PLACEHOLDER_BANNER = /^> \*\*占位（placeholder）\*\*/m;
 const ROLE_LEAK = /\{\{submit\}\}|\.r2c\//;
 
 function frontmatterInvalid(context, path, line, reason, message) {
   context.fail(path, 'BUNDLE_FRONTMATTER_INVALID', message, { line, details: { reason } });
+}
+
+/**
+ * Structural set rules that JSON Schema cannot express (decision #67 §7.2):
+ * arrays here are sets written in ascending code-point order. One diagnostic
+ * per array — a duplicate and a misordering share the same root cause.
+ */
+function checkSortedArray(context, path, key, values) {
+  if (!Array.isArray(values)) return;
+  let duplicate = null;
+  let outOfOrder = false;
+  for (let index = 1; index < values.length; index += 1) {
+    const order = compareCodePoints(values[index - 1], values[index]);
+    if (order > 0) outOfOrder = true;
+    else if (order === 0 && duplicate === null) duplicate = index;
+  }
+  if (outOfOrder) {
+    const pointer = `/${key}`;
+    context.fail(path, 'BUNDLE_SCHEMA_INVALID', `'${key}' must be sorted ascending`, {
+      pointer,
+      details: { pointer, rule: 'sorted' },
+    });
+  } else if (duplicate !== null) {
+    const pointer = `/${key}/${duplicate}`;
+    context.fail(path, 'BUNDLE_SCHEMA_INVALID', `'${key}' must not repeat entries`, {
+      pointer,
+      details: { pointer, rule: 'uniqueItems' },
+    });
+  }
 }
 
 function checkUnknownFrontmatterKeys(context, path, fields, allowed) {
@@ -33,9 +62,13 @@ function checkRole(context, id, record) {
   const { path, text, bytes } = record;
   const parsed = parseFrontmatter(text, { path });
   context.diagnostics.push(...parsed.diagnostics);
+  // S6: a frontmatter parse failure owns every frontmatter-derived check.
+  const fieldsOk = parsed.fields !== null && parsed.diagnostics.length === 0;
   if (parsed.fields === null) {
-    context.fail(path, 'BUNDLE_FRONTMATTER_MISSING', 'roles require frontmatter');
-  } else {
+    if (parsed.diagnostics.length === 0) {
+      context.fail(path, 'BUNDLE_FRONTMATTER_MISSING', 'roles require frontmatter');
+    }
+  } else if (fieldsOk) {
     const fields = parsed.fields;
     checkUnknownFrontmatterKeys(context, path, fields, ROLE_KEYS);
     for (const key of ['id', 'description']) {
@@ -89,16 +122,20 @@ function checkRole(context, id, record) {
           });
         }
       }
+      checkSortedArray(context, path, key, fields[key]);
     }
-    if (fields.skills !== undefined && context.declaredValid.skills !== false) {
+    if (fields.skills !== undefined) {
       if (!Array.isArray(fields.skills)) {
         frontmatterInvalid(context, path, 1, 'shape', "'skills' must be a list");
       } else {
-        for (const skill of fields.skills) {
-          if (!context.declared.skills.includes(skill)) {
-            context.fail(path, 'BUNDLE_ROLE_SKILL_UNDECLARED', `role preloads an undeclared skill: ${skill}`, {
-              details: { id: skill },
-            });
+        checkSortedArray(context, path, 'skills', fields.skills);
+        if (context.declaredValid.skills !== false) {
+          for (const skill of fields.skills) {
+            if (!context.declared.skills.includes(skill)) {
+              context.fail(path, 'BUNDLE_ROLE_SKILL_UNDECLARED', `role preloads an undeclared skill: ${skill}`, {
+                details: { id: skill },
+              });
+            }
           }
         }
       }
@@ -106,15 +143,14 @@ function checkRole(context, id, record) {
     if (fields.placeholder !== undefined && typeof fields.placeholder !== 'boolean') {
       frontmatterInvalid(context, path, 1, 'boolean', "'placeholder' must be true or false");
     }
-    const placeholder = fields.placeholder === true;
-    if (!placeholder && nonEmptyLines(parsed.body).length === 0) {
+    if (fields.placeholder !== true && nonEmptyLines(parsed.body).length === 0) {
       context.fail(path, 'BUNDLE_ROLE_BODY_EMPTY', 'role instructions are empty');
     }
-    if (ROLE_LEAK.test(parsed.body)) {
-      const line = parsed.body.split('\n').findIndex((textLine) => ROLE_LEAK.test(textLine)) + parsed.bodyLine;
-      context.warn(path, 'BUNDLE_ROLE_RUNTIME_LEAK', 'role instructions mention the runner', { line });
-    }
     record.fields = fields;
+  }
+  if (ROLE_LEAK.test(parsed.body)) {
+    const line = parsed.body.split('\n').findIndex((textLine) => ROLE_LEAK.test(textLine)) + parsed.bodyLine;
+    context.warn(path, 'BUNDLE_ROLE_RUNTIME_LEAK', 'role instructions mention the runner', { line });
   }
   record.body = parsed.body;
   record.bytes = bytes;
@@ -170,9 +206,14 @@ function checkSkills(context) {
     const parsed = parseFrontmatter(text, { path });
     context.diagnostics.push(...parsed.diagnostics);
     const record = { id, path, bytes: entry.data, text, fields: parsed.fields, body: parsed.body };
+    // S6: a frontmatter parse failure owns every frontmatter-derived check,
+    // including the placeholder state that gates the banner and body checks.
+    const fieldsOk = parsed.fields !== null && parsed.diagnostics.length === 0;
     if (parsed.fields === null) {
-      context.fail(path, 'BUNDLE_FRONTMATTER_MISSING', 'skills require frontmatter');
-    } else {
+      if (parsed.diagnostics.length === 0) {
+        context.fail(path, 'BUNDLE_FRONTMATTER_MISSING', 'skills require frontmatter');
+      }
+    } else if (fieldsOk) {
       const fields = parsed.fields;
       checkUnknownFrontmatterKeys(context, path, fields, SKILL_KEYS);
       for (const key of ['name', 'description']) {
@@ -209,7 +250,7 @@ function checkSkills(context) {
         context.fail(path, 'BUNDLE_SKILL_PLACEHOLDER_BANNER', 'placeholder skill is missing the visible banner');
       }
     }
-    if (parsed.fields?.placeholder !== true && nonEmptyLines(parsed.body).length === 0) {
+    if (fieldsOk && parsed.fields.placeholder !== true && nonEmptyLines(parsed.body).length === 0) {
       context.fail(path, 'BUNDLE_SKILL_BODY_EMPTY', 'skill body is empty');
     }
     records.set(id, record);
@@ -222,14 +263,19 @@ function checkConstitution(context) {
   if (declaration === undefined || declaration.valid === false) return;
   const path = 'constitution/CONSTITUTION.md';
   const present = context.entries.has(path);
+  // The whitelist only admits `constitution/` when the manifest declares it;
+  // a bare directory entry is the same mistake as an undeclared file.
+  const directoryPresent = context.directories.some((directory) => directory.path === 'constitution');
   if (declaration.declared && !present) {
     if (!context.rejectedPaths.has(path)) {
       context.fail(path, 'BUNDLE_CONSTITUTION_MISSING', 'bundle declares a constitution but the file is missing');
     }
     return;
   }
-  if (!declaration.declared && present) {
-    context.fail(path, 'BUNDLE_CONSTITUTION_UNDECLARED', 'constitution file is not declared in bundle.json');
+  if (!declaration.declared) {
+    if (present || directoryPresent) {
+      context.fail(path, 'BUNDLE_CONSTITUTION_UNDECLARED', 'constitution file is not declared in bundle.json');
+    }
     return;
   }
   if (!present) return;
