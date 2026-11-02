@@ -8,6 +8,22 @@ step-by-step across the engine, the payload, and all five agent adapters; see
 
 ### Added
 
+- Install from a per-bundle Release (#106): `install.mjs` keeps its name and
+  legacy flags and gains `--bundle <id>`, `--version`, `--projection
+  r2c|agent-native`, repeatable `--target` and `--project`. The bootstrap
+  downloads the Release, verifies assets against `SHA256SUMS.txt`, cross-checks
+  the zip / IR / payload manifest (id, version, IR digest, content digest) and
+  the payload members against the manifest, then hands the verified bytes to
+  the framework's installer — never compiling or projecting. Any mismatch exits
+  2 before a write. `requires.projections` is a hard whitelist,
+  `requires.engine` is evaluated only for r2c, and `--target` narrows writes
+  without re-projecting (the bundle `roles.json` is still installed). r2c
+  installs the runtime plus the bundle; agent-native installs its five targets.
+- `r2c.release-payload/v1` manifest and the pre-projected payload tgz contract
+  moved to `installer/release-payload.js` and `installer/release-tar.js`; the
+  manifest records the validated projection result without file content, and
+  every file entry records its `origin` (and `assetId` when projected from an
+  asset) so an installer can rebuild the exact V1–V12-validated result.
 - r2c runtime install surface: one `r2c.runtime/v1` receipt per project owns
   the versioned engine (`.r2c/engine/<V>/`), the fixed resolver launcher
   `.r2c/bin/r2c.js`, the `/r2c-*` host commands, hook carriers, pointer-level

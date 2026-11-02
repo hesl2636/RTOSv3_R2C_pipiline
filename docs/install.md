@@ -1,8 +1,11 @@
 # Install, upgrade, rollback, uninstall
 
-One channel: the four assets of a GitHub Release of
+Two channels share one bootstrap. A **bundle Release** (`bundle-<id>-v<version>`)
+installs a pre-projected bundle — see
+[Install from a bundle Release](#install-from-a-bundle-release). The **legacy
+engine Release** (`v<V>`) still installs the four assets of a GitHub Release of
 `hesl2636/hm2B_drvport_pipiline` — `r2c-engine-<V>.tgz`, `r2c-payload-<V>.tgz`,
-`install.mjs` and `SHA256SUMS.txt`. There is no npm channel and no manual
+`install.mjs` and `SHA256SUMS.txt` — and is described below. There is no npm channel and no manual
 payload copy. `install.mjs` downloads the engine archive, verifies it against
 `SHA256SUMS.txt`, extracts it to `<project>/.r2c/engine/<V>/` (project scope)
 or `~/.r2c/engine/<V>/` (user scope), then runs that engine's
@@ -150,6 +153,65 @@ node .r2c/engine/0.1.0/bin/r2c.js run --dry-run
 ```
 
 Next: `node .r2c/engine/0.1.0/bin/r2c.js run` in the project root (Windows: `node ".r2c\engine\0.1.0\bin\r2c.js" run`).
+
+## Install from a bundle Release
+
+A bundle Release is one publish unit, tag `bundle-<id>-v<version>`, and it is
+self-contained: the bundle zip, `workflow.ir.json`, a pre-projected payload per
+allowed projection (`r2c-payload-<id>-v<version>.tgz` /
+`agent-native-<id>-v<version>.tgz`), `r2c-engine-<E>.tgz` when r2c is
+allowed, `r2c-framework-<F>.tgz`, `install.mjs` and `SHA256SUMS.txt`.
+`install.mjs` keeps its release-asset identity and gains the bundle flags:
+
+```bash
+node .r2c/bootstrap/install.mjs --bundle <id> --version <version> \
+  --projection r2c|agent-native [--target <t>]... --project .
+```
+
+- `--bundle <id>` selects the tag `bundle-<id>-v<version>`; omitting
+  `--version` resolves the latest published `bundle-<id>-*` tag through the
+  GitHub API (drafts and prereleases are skipped), so prefer an explicit
+  version in CI.
+- `--projection` is required when the bundle allows both projections; a
+  release that allows exactly one selects it. A projection outside
+  `requires.projections` is refused with `RELEASE_PROJECTION_NOT_ALLOWED`
+  and exit 2 — never a silent downgrade.
+- `--target` (repeatable, agent-native only) narrows the written files; it is
+  a write filter, not a re-projection, and the per-bundle `roles.json` is
+  still installed.
+- `--project` defaults to the current directory. A bundle always installs into
+  the project root; `--scope user` remains a legacy-channel option.
+
+The bootstrap verifies three independent chains before it writes anything,
+then unpacks the payload and issues an `r2c.install/v2` receipt:
+
+1. every asset it uses hashes to its `SHA256SUMS.txt` line, and the sums cover
+   exactly the asset set the bundle's `requires` implies;
+2. the zip's `bundle.json` (id, version, manifest digest, content digest), the
+   IR's `source.bundle.contentSha256` and every IR entity's source digest agree
+   with the payload manifest's `ir` block;
+3. the payload's member set, modes and hashes agree with its manifest, and the
+   recorded projection result re-passes V1–V12 against the IR.
+
+Any mismatch — a tampered or truncated asset, a wrong version, a missing
+asset, a payload member that no longer matches its manifest — exits 2 and
+leaves the project byte-for-byte unchanged.
+
+The installer never compiles and never projects: the payload is the authority.
+For custom `stageOrder`/`skills`/`targets`, re-project the published IR with
+the framework CLI or the web front end and install that result; the Release
+bytes are immutable.
+
+r2c installs the runtime (engine under `.r2c/engine/<E>/`, the fixed
+`.r2c/bin/r2c.js` launcher, host files and the `r2c-<role>` definitions) and
+the bundle (the five roots plus `.r2c/projection/roles.json`).
+agent-native installs only its projected files for the five targets. The
+installed IR is kept at `.r2c/bundles/<id>/<version>/workflow.ir.json`.
+
+For an offline or local mirror, build the assets with
+`node scripts/release.mjs --bundle <zip> --out <dir>` and point
+`--release-base <dir>` at that directory (flat, or `<dir>/<tag>/<asset>`).
+The bundle path needs no package manager, `gh` or `git`.
 
 ## Upgrade
 
@@ -455,6 +517,14 @@ Bootstrap: `0` success · `1` download, asset or spawn failure · `2` usage
 (including an unsupported Node, refused before anything is downloaded) · `3`
 engine-archive checksum or extraction failure. A failing `adapter install`
 keeps its own exit code (`2`–`5`) instead of `1`.
+
+Bundle channel: `0` success (warnings included) · `2` every refusal that happens
+before a write — usage, `RELEASE_OPTION_CONFLICT`, a projection outside
+`requires.projections`, `PROJECTION_ENGINE_UNKNOWN`/`_UNSATISFIED`, a missing
+asset and every three-way mismatch (`RELEASE_CHECKSUM_MISMATCH`,
+`RELEASE_TAG_MISMATCH`, `RELEASE_IR_MISMATCH`, `RELEASE_PAYLOAD_INVALID`,
+`RELEASE_PAYLOAD_TARGET_UNKNOWN`) · a failing install keeps the installer's own
+code (`2`–`5`).
 
 ## B and C have no runtime guard
 
