@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>r2c — local bundle inspector</title>
+  <link rel="stylesheet" href="/web/style.css">
+  <script src="/web/boot-check.js"></script>
+  <script type="module" src="/web/app.js"></script>
+</head>
+<body>
+  <header class="bar">
+    <div>
+      <h1>r2c bundle inspector</h1>
+      <p class="subtitle">Read-only local surface. Nothing is installed, written to a project, or published.</p>
+    </div>
+    <div class="badges">
+      <span class="badge" id="mode-badge">starting</span>
+      <span class="badge badge-muted" id="degrade-badge" hidden>degraded</span>
+      <span class="badge badge-warn" id="publish-badge">publish disabled</span>
+    </div>
+  </header>
+
+  <div id="fatal" class="banner banner-error" role="alert" hidden>
+    <strong>Unsupported browser</strong>
+    <p id="fatal-reasons"></p>
+    <p>Open this page in Chrome/Edge 123+, Firefox 127+ or Safari 17.5+, or use the CLI:</p>
+    <pre><code>node bin/r2c-assembler.js bundle validate ./bundle.zip --json
+node bin/r2c-assembler.js compile ./bundle.zip --out ./dist</code></pre>
+    <p>Then serve the repository again with <code>npm run web</code>. No user-agent sniffing is used; this page is shown only when a required primitive is missing.</p>
+  </div>
+
+  <main>
+    <section class="panel" aria-labelledby="upload-title">
+      <h2 id="upload-title">1. Upload one bundle zip</h2>
+      <p class="hint">Single <code>.zip</code> only. Size limit: <span id="limit-text">8 MiB</span>. Archives are validated in memory; nothing is saved.</p>
+      <div class="row">
+        <input id="file-input" type="file" accept=".zip,application/zip,application/x-zip-compressed">
+        <button id="upload-button" type="button" disabled>Validate &amp; compile</button>
+      </div>
+      <p id="upload-status" class="status" role="status"></p>
+    </section>
+
+    <section id="mismatch" class="banner banner-error" role="alert" hidden>
+      <strong>WEB_CLIENT_SERVER_MISMATCH</strong>
+      <p id="mismatch-text">Browser and server disagree about this bundle. The server result is authoritative; publishing is disabled.</p>
+    </section>
+
+    <section class="panel" aria-labelledby="report-title">
+      <h2 id="report-title">2. Validation report</h2>
+      <div id="report-summary" class="summary" hidden></div>
+      <div id="report-body" class="report" hidden>
+        <div class="row">
+          <label>Severity
+            <select id="severity-filter">
+              <option value="all">all</option>
+              <option value="error">errors</option>
+              <option value="warning">warnings</option>
+            </select>
+          </label>
+          <label>Path prefix
+            <input id="path-filter" type="text" placeholder="tasks/" spellcheck="false">
+          </label>
+        </div>
+        <ul id="diagnostics" class="diagnostics"></ul>
+        <p id="diagnostics-empty" class="hint" hidden>No diagnostics match the filter.</p>
+      </div>
+    </section>
+
+    <section class="panel" aria-labelledby="ir-title">
+      <h2 id="ir-title">3. Read-only IR preview</h2>
+      <div id="ir-empty" class="hint">The IR appears after a successful compile.</div>
+      <div id="ir-body" hidden>
+        <div class="summary" id="ir-identity"></div>
+        <div class="row">
+          <strong>workflow.ir.json</strong>
+          <span id="ir-digest" class="mono"></span>
+          <button id="download-ir" type="button">Download IR</button>
+        </div>
+        <h3>Stages and steps</h3>
+        <ol id="ir-stages" class="stages"></ol>
+        <h3>Roles</h3>
+        <ul id="ir-roles" class="entities"></ul>
+        <h3>Tasks</h3>
+        <ul id="ir-tasks" class="entities"></ul>
+        <h3>Skills</h3>
+        <ul id="ir-skills" class="entities"></ul>
+        <h3>Constitution</h3>
+        <div id="ir-constitution"></div>
+        <h3>Raw IR (read-only)</h3>
+        <pre id="ir-raw" class="raw"></pre>
+      </div>
+    </section>
+  </main>
+
+  <noscript>
+    <div class="banner banner-error">
+      <strong>JavaScript is disabled.</strong>
+      <p>This surface needs ESM and Web APIs. Use the CLI instead:</p>
+      <pre><code>node bin/r2c-assembler.js bundle validate ./bundle.zip --json
+node bin/r2c-assembler.js compile ./bundle.zip --out ./dist</code></pre>
+    </div>
+  </noscript>
+</body>
+</html>

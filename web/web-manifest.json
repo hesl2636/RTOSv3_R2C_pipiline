@@ -1,0 +1,19 @@
+{
+  "schema": "r2c.web-manifest/v1",
+  "name": "r2c local read-only surface",
+  "assets": [
+    "web/index.html",
+    "web/app.js",
+    "web/style.css",
+    "web/primitives-browser.js",
+    "web/shared-imports.js",
+    "web/boot-check.js"
+  ],
+  "imports": [
+    "core/",
+    "ir/",
+    "assembler/",
+    "projection/",
+    "runtime/shared/"
+  ]
+}

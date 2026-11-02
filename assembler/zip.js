@@ -120,6 +120,11 @@ function readExtraFields(bytes, offset, length) {
 /**
  * Read a zip archive.
  *
+ * The parser is written once as a generator: the only host-specific step is
+ * raw-deflate, so a synchronous driver (`readZip`, Node zlib) and an
+ * asynchronous driver (`readZipAsync`, browser `DecompressionStream`) share
+ * every check, in the same order, with the same diagnostics.
+ *
  * @param {Uint8Array|ArrayBuffer} input
  * @param {{ inflateRaw?: (bytes: Uint8Array, options?: {maxOutputLength?: number}) => Uint8Array }} [primitives]
  * @returns {{
@@ -133,6 +138,50 @@ function readExtraFields(bytes, offset, length) {
  * }}
  */
 export function readZip(input, primitives = {}) {
+  return driveReadZip(zipSteps(input, primitives), primitives);
+}
+
+/**
+ * Async twin of `readZip`. The host primitive may return a promise
+ * (`DecompressionStream`); the archive checks are byte-identical.
+ *
+ * @returns {Promise<ReturnType<typeof readZip>>}
+ */
+export async function readZipAsync(input, primitives = {}) {
+  return driveReadZipAsync(zipSteps(input, primitives), primitives);
+}
+
+function driveReadZip(iterator, primitives) {
+  let step = iterator.next();
+  while (!step.done) {
+    let data;
+    try {
+      data = primitives.inflateRaw(step.value.bytes, step.value.options);
+    } catch (error) {
+      step = iterator.throw(error);
+      continue;
+    }
+    step = iterator.next(data);
+  }
+  return step.value;
+}
+
+async function driveReadZipAsync(iterator, primitives) {
+  let step = iterator.next();
+  while (!step.done) {
+    let data;
+    try {
+      data = await primitives.inflateRaw(step.value.bytes, step.value.options);
+    } catch (error) {
+      step = iterator.throw(error);
+      continue;
+    }
+    step = iterator.next(data);
+  }
+  return step.value;
+}
+
+function* zipSteps(input, primitives) {
   const bytes = input instanceof Uint8Array ? input : new Uint8Array(input);
   const diagnostics = [];
   const entries = new Map();
@@ -433,7 +482,7 @@ export function readZip(input, primitives = {}) {
       const cap = bound + 1;
       try {
         const raw = bytes.subarray(dataStart, dataStart + record.compressedSize);
-        data = primitives.inflateRaw(raw, { maxOutputLength: cap });
+        data = yield { bytes: raw, options: { maxOutputLength: cap } };
       } catch (error) {
         if (error && error.code === 'ERR_BUFFER_TOO_LARGE') {
           if (bound === LIMITS.MAX_ENTRY_BYTES) {

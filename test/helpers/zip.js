@@ -72,6 +72,7 @@ function extraFieldBytes(fields) {
  * @param {{
  *   method?: 'store'|'deflate',
  *   methodFor?: (name: string) => 'store'|'deflate'|number,
+ *   deflateLevel?: number,
  *   directory?: string[],
  *   dataDescriptor?: boolean,
  *   flags?: number|((name: string) => number),
@@ -80,6 +81,8 @@ function extraFieldBytes(fields) {
  *   extraFields?: Array<{id: number, data?: string|Uint8Array}>|((name: string) => Array<object>),
  *   declaredSizes?: Record<string, number>|((name: string) => number|undefined),
  *   zip64?: boolean,
+ *   dosTime?: number,
+ *   dosDate?: number,
  *   hardLinks?: Record<string, string>,
  *   eocd?: { disk?: number, centralDisk?: number, entriesOnDisk?: number, totalEntries?: number, centralSize?: number, centralOffset?: number },
  * }} [options]
@@ -88,6 +91,8 @@ function extraFieldBytes(fields) {
 export function buildZip(entries, options = {}) {
   const defaultMethod = options.method === 'deflate' ? 8 : 0;
   const dataDescriptor = options.dataDescriptor === true;
+  const dosTime = options.dosTime ?? DOS_TIME;
+  const dosDate = options.dosDate ?? DOS_DATE;
   const files = normalizeEntries(entries);
   const directories = options.directory ?? [];
   const hardLinks = options.hardLinks ?? {};
@@ -114,7 +119,11 @@ export function buildZip(entries, options = {}) {
     }
     const raw = isDirectory ? Buffer.alloc(0) : Buffer.from(utf8(data));
     const method = isDirectory ? 0 : methodOf(name);
-    const body = method === 8 && !isDirectory ? deflateRawSync(raw) : raw;
+    const body = method === 8 && !isDirectory
+      ? (options.deflateLevel === undefined
+        ? deflateRawSync(raw)
+        : deflateRawSync(raw, { level: options.deflateLevel }))
+      : raw;
     const checksum = crc32(raw);
     const flags = optionFor(options.flags, name) ?? (dataDescriptor ? 0x0008 : 0);
     const madeBy = optionFor(options.madeBy, name) ?? 0x0314;
@@ -127,8 +136,8 @@ export function buildZip(entries, options = {}) {
       u16(20),
       u16(flags),
       u16(method),
-      u16(DOS_TIME),
-      u16(DOS_DATE),
+      u16(dosTime),
+      u16(dosDate),
       u32(dataDescriptor ? 0 : checksum),
       u32(dataDescriptor ? 0 : body.length),
       u32(dataDescriptor ? 0 : raw.length),
@@ -170,8 +179,8 @@ export function buildZip(entries, options = {}) {
       u16(20),
       u16(record.flags),
       u16(record.method),
-      u16(DOS_TIME),
-      u16(DOS_DATE),
+      u16(dosTime),
+      u16(dosDate),
       u32(record.checksum),
       u32(zip64 ? 0xffffffff : record.compressedSize),
       u32(zip64 ? 0xffffffff : size),
