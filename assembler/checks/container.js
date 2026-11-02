@@ -65,7 +65,9 @@ function decodeText(context, entry) {
     reject('cr', 'text file contains a carriage return');
     return;
   }
-  if (text !== '' && !text.endsWith('\n')) {
+  // JSON's trailing LF is owned by *_JSON_NOT_CANONICAL (decision #67 §9.5);
+  // only Markdown text reports the encoding reason directly.
+  if (text !== '' && !text.endsWith('\n') && !path.endsWith('.json')) {
     reject('missing-final-lf', 'non-empty text file must end with a line feed');
     return;
   }

@@ -201,10 +201,13 @@ export function check(context) {
 
   for (const id of declared) {
     const path = `stages/${id}.json`;
-    if (!context.entries.has(path) && !context.rejectedPaths.has(path)) {
-      context.fail(path, 'BUNDLE_STAGE_FILE_MISSING', `declared stage '${id}' has no stage file`, {
-        details: { id },
-      });
+    if (!context.entries.has(path)) {
+      if (!context.rejectedPaths.has(path)) {
+        context.fail(path, 'BUNDLE_STAGE_FILE_MISSING', `declared stage '${id}' has no stage file`, {
+          details: { id },
+        });
+      }
+      // S4 keeps the container root cause, S8 still suppresses unused warnings.
       context.complete.stages = false;
     }
   }

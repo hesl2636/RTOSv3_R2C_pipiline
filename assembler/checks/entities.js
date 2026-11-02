@@ -90,7 +90,7 @@ function checkRole(context, id, record) {
         }
       }
     }
-    if (fields.skills !== undefined) {
+    if (fields.skills !== undefined && context.declaredValid.skills !== false) {
       if (!Array.isArray(fields.skills)) {
         frontmatterInvalid(context, path, 1, 'shape', "'skills' must be a list");
       } else {

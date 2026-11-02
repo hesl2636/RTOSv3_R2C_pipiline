@@ -83,17 +83,14 @@ function readIdArray(context, path, manifest, key, options) {
   }
   const seen = new Set();
   const valid = [];
-  let itemsValid = true;
   value.forEach((item, index) => {
     const pointer = `/${key}/${index}`;
     if (typeof item !== 'string') {
       schemaInvalid(context, path, pointer, 'type', `'${key}[${index}]' must be a string`);
-      itemsValid = false;
       return;
     }
     if (seen.has(item)) {
       schemaInvalid(context, path, pointer, 'uniqueItems', `duplicate '${key}' entry: ${item}`);
-      itemsValid = false;
       return;
     }
     seen.add(item);
@@ -102,7 +99,6 @@ function readIdArray(context, path, manifest, key, options) {
         pointer,
         details: { where: 'manifest', value: item },
       });
-      itemsValid = false;
       return;
     }
     if (reserved.includes(item)) {
@@ -111,7 +107,6 @@ function readIdArray(context, path, manifest, key, options) {
     }
     valid.push(item);
   });
-  context.declaredValid[kind] = itemsValid;
   return valid;
 }
 
