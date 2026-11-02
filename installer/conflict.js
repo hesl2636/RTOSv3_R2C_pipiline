@@ -32,14 +32,16 @@ function ownerLabel(receipt) {
 /**
  * Check the incoming file set against the project.
  *
- * `incoming`   — `{path, sha256, mode, overwrite}` entries (projection files).
- * `previous`   — this identity's receipt (`{path, receipt}`) or `null`.
- * `others`     — every other identity's receipt (`{path, receipt}`).
+ * `incoming`      — `{path, sha256, mode, overwrite}` entries (projection files).
+ * `previous`      — this identity's receipt (`{path, receipt}`) or `null`.
+ * `others`        — every other identity's receipt (`{path, receipt}`).
+ * `takeoverPaths` — legacy files a `--migrate-legacy` transaction will delete
+ *                   first, so their bytes cannot block the new projection.
  *
  * Returns `{conflicts, decisions, stale, warnings}` where `decisions` are
  * `{path, action: "create"|"replace"|"adopt"|"keep", backup}`.
  */
-export function checkConflicts({ projectRoot, incoming, previous = null, others = [], force = false }) {
+export function checkConflicts({ projectRoot, incoming, previous = null, others = [], force = false, takeoverPaths = new Set() }) {
   const conflicts = [];
   const decisions = [];
   const stale = [];
@@ -90,6 +92,15 @@ export function checkConflicts({ projectRoot, incoming, previous = null, others 
     const signature = `${incomingSide.path}|${otherSide.path}`;
     if (seenPrefix.has(signature)) continue;
     seenPrefix.add(signature);
+    if (otherSide.source === 'other') {
+      conflicts.push(conflict(
+        'INSTALL_PATH_CONFLICT',
+        incomingSide.path,
+        `${incomingSide.path} is a file/directory prefix of ${otherSide.path}, owned by ${otherSide.owner}`,
+        { kind: 'file-dir-prefix', owner: otherSide.owner },
+      ));
+      continue;
+    }
     conflicts.push(conflict(
       'PATH_PREFIX_CONFLICT',
       incomingSide.path,
@@ -108,6 +119,7 @@ export function checkConflicts({ projectRoot, incoming, previous = null, others 
     const otherExact = otherByPath.get(path);
     if (otherExact !== undefined) {
       conflicts.push(conflict('INSTALL_PATH_CONFLICT', path, `${path} is owned by ${otherExact.owner}`, {
+        kind: 'exact',
         owner: otherExact.owner,
         receipt: otherExact.receipt,
       }));
@@ -115,9 +127,11 @@ export function checkConflicts({ projectRoot, incoming, previous = null, others 
     }
     const otherFolded = otherByFold.get(foldCase(path));
     if (otherFolded !== undefined) {
-      conflicts.push(conflict('PATH_CASE_COLLISION', path, `${path} folds to ${otherFolded.path}, owned by ${otherFolded.owner}`, {
+      conflicts.push(conflict('INSTALL_PATH_CONFLICT', path, `${path} folds to ${otherFolded.path}, owned by ${otherFolded.owner}`, {
+        kind: 'case-fold',
         owner: otherFolded.owner,
         receipt: otherFolded.receipt,
+        folded: otherFolded.path,
       }));
       continue;
     }
@@ -163,6 +177,10 @@ export function checkConflicts({ projectRoot, incoming, previous = null, others 
     }
     if (diskSha === entry.sha256) {
       decisions.push({ path, action: 'adopt', backup: false });
+    } else if (takeoverPaths.has(path)) {
+      // Explicit `--migrate-legacy`: the legacy file is deleted in the same
+      // transaction, so it never blocks or overwrites the new bytes.
+      decisions.push({ path, action: 'replace', backup: true });
     } else if (force) {
       decisions.push({ path, action: 'replace', backup: true });
     } else {

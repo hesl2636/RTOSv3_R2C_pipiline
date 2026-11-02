@@ -29,7 +29,7 @@ import { formatStatus, installStatus } from './status.js';
 import { uninstallProjection } from './uninstall.js';
 
 const USAGE = [
-  'usage: installer/cli.js --result <dir|result.json> --project <dir> [--ir <file>] [--dry-run] [--force] [--json]',
+  'usage: installer/cli.js --result <dir|result.json> --project <dir> [--ir <file>] [--dry-run] [--force] [--migrate-legacy] [--json]',
   '       installer/cli.js --runtime <engineSource> [--engine-version <V>] [--engine-home <dir>] --project <dir> [--dry-run] [--force] [--json]',
   '       installer/cli.js --uninstall --bundle <id> --projection <id> --project <dir> [--force] [--dry-run] [--json]',
   '       installer/cli.js --status|--doctor --project <dir> [--json]',
@@ -201,6 +201,9 @@ function summaryData(outcome) {
     removed: outcome.removed ?? undefined,
     leftover: outcome.leftover ?? undefined,
     pruned: outcome.pruned ?? undefined,
+    occupied: outcome.occupied ?? undefined,
+    migration: outcome.migration ?? undefined,
+    manual_steps: outcome.manualSteps ?? undefined,
     ir_removed: outcome.irRemoved,
     ignore_suggestions: outcome.ignoreSuggestions ?? undefined,
   };
@@ -219,6 +222,10 @@ function humanInstall(outcome) {
     lines.push(`install ${receipt.projection.id}/${receipt.bundle.id}@${receipt.bundle.version}: ${outcome.files} file(s) ${outcome.mode}`);
   }
   for (const warning of outcome.warnings ?? []) lines.push(`warn: ${warning.code}: ${warning.path ?? ''} ${warning.message}`.trim());
+  if (outcome.mode === 'migrated' && outcome.migration !== null) {
+    lines.push(`migrated: retired ${outcome.migration.retired.join(', ')}`);
+  }
+  for (const step of outcome.manualSteps ?? []) lines.push(`manual: ${step}`);
   if (Array.isArray(outcome.ignoreSuggestions) && outcome.ignoreSuggestions.length > 0) {
     lines.push(`ignore: add ${outcome.ignoreSuggestions.join(' ')} to .gitignore (the installer never edits it)`);
   }
@@ -257,16 +264,12 @@ export function run(argv, io = {}) {
     process.stdout.write(`${USAGE}\n`);
     return EXIT_CODES.OK;
   }
-  if (options.flags.has('migrate-legacy')) {
+  if (options.flags.has('migrate-legacy') && options.flags.has('uninstall')) {
     return emit({
       json,
       code: EXIT_CODES.USAGE,
       data: null,
-      error: {
-        code: 'LEGACY_MIGRATION_UNSUPPORTED',
-        message: '--migrate-legacy lands in #103; use the legacy adapter uninstall first',
-        details: null,
-      },
+      error: usageError('--migrate-legacy belongs to install; uninstall a legacy receipt with the legacy adapter command'),
     });
   }
   const projectRoot = options.values.project ?? process.cwd();
@@ -385,6 +388,7 @@ export function run(argv, io = {}) {
     dryRun,
     force,
     clock,
+    migrateLegacy: options.flags.has('migrate-legacy'),
   });
   const code = exitCodeFor(outcome);
   if (json) {
