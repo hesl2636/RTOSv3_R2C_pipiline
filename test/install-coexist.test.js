@@ -212,8 +212,9 @@ test('a second r2c bundle is refused with R2C_ROOT_OCCUPIED before any write', (
     assert.equal(outcome.ok, false);
     assert.equal(outcome.code, 'R2C_ROOT_OCCUPIED');
     assert.match(outcome.message, /r2c/);
-    assert.equal(outcome.occupied.projection, 'r2c');
-    assert.equal(outcome.occupied.bundle, 'rtosv3-drvport');
+    assert.deepEqual(outcome.occupied, ['workflows/rtosv3-drvport.yaml']);
+    assert.equal(outcome.occupier.projection, 'r2c');
+    assert.equal(outcome.occupier.bundle, 'rtosv3-drvport');
   }
   assert.deepEqual(snapshot(projectRoot), before, 'nothing of the occupied root is rewritten');
 });
@@ -244,7 +245,8 @@ test('an unowned workflows/*.yaml with different bytes is refused even with --fo
   for (const force of [false, true]) {
     const outcome = installProjection({ result, irBytes, projectRoot, clock: CLOCK, force });
     assert.equal(outcome.code, 'R2C_ROOT_OCCUPIED');
-    assert.equal(outcome.occupied.reason, 'UNOWNED_DIFFERENT');
+    assert.deepEqual(outcome.occupied, [workflow.path]);
+    assert.equal(outcome.occupier.reason, 'UNOWNED_DIFFERENT');
     assert.equal(readFileSync(target, 'utf8'), 'name: someone-elses-workflow\n');
   }
   assert.equal(existsSync(absolute(projectRoot, '.r2c/install/receipts/r2c/rtosv3-drvport.json')), false);

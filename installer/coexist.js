@@ -27,6 +27,17 @@ function ownerIdentity(receipt) {
   };
 }
 
+/** `R2C_ROOT_OCCUPIED`: `occupied` stays a path list (status/doctor friendly). */
+function occupied(paths, occupier, message) {
+  return {
+    code: 'R2C_ROOT_OCCUPIED',
+    message,
+    occupied: [...paths],
+    occupier,
+    hint: 'uninstall the other r2c bundle, install it into another project, or wait for a namespaced r2c projection',
+  };
+}
+
 /** Every `workflows/*.yaml` currently on disk, project-relative. */
 function workflowFiles(projectRoot) {
   const dir = projectPath(projectRoot, R2C_WORKFLOW_DIR);
@@ -53,16 +64,15 @@ export function checkR2cRoot({ projectRoot, projectionId, bundleId, incoming, pr
   const foreign = others.find((item) => item.receipt?.projection?.id === 'r2c'
     && item.receipt?.bundle?.id !== bundleId);
   if (foreign !== undefined) {
-    return {
-      code: 'R2C_ROOT_OCCUPIED',
-      message: `the r2c root is occupied by bundle ${foreign.receipt?.bundle?.id ?? '?'}`,
-      occupied: {
-        ...ownerIdentity(foreign.receipt),
-        receipt: foreign.path,
-        reason: 'OTHER_IDENTITY',
-        hint: 'uninstall the other r2c bundle, install it into another project, or wait for a namespaced r2c projection',
-      },
-    };
+    const paths = (foreign.receipt?.files ?? [])
+      .map((file) => file.path)
+      .filter((path) => /^workflows\/.*\.ya?ml$/i.test(path))
+      .sort(compareCodePoints);
+    return occupied(
+      paths.length > 0 ? paths : [foreign.path],
+      { ...ownerIdentity(foreign.receipt), receipt: foreign.path, reason: 'OTHER_IDENTITY' },
+      `the r2c root is occupied by bundle ${foreign.receipt?.bundle?.id ?? '?'}`,
+    );
   }
 
   const incomingByPath = new Map(incoming.map((entry) => [entry.path, entry]));
@@ -80,27 +90,27 @@ export function checkR2cRoot({ projectRoot, projectionId, bundleId, incoming, pr
     if (own !== undefined && foldCase(own.path) === foldCase(path)) continue;
     const foreign = ownedByOthers.get(foldCase(path));
     if (foreign !== undefined) {
-      return {
-        code: 'R2C_ROOT_OCCUPIED',
-        message: `${path} is owned by ${foreign.projection}/${foreign.bundle}`,
-        occupied: { ...foreign, path, reason: 'OTHER_IDENTITY' },
-      };
+      return occupied(
+        [path],
+        { ...foreign, reason: 'OTHER_IDENTITY' },
+        `${path} is owned by ${foreign.projection}/${foreign.bundle}`,
+      );
     }
     const entry = incomingByPath.get(path);
     if (entry === undefined) {
-      return {
-        code: 'R2C_ROOT_OCCUPIED',
-        message: `${path} exists without a receipt; the r2c root is already in use`,
-        occupied: { projection: null, bundle: null, receipt: null, path, reason: 'UNOWNED_DIFFERENT' },
-      };
+      return occupied(
+        [path],
+        { projection: null, bundle: null, receipt: null, reason: 'UNOWNED_DIFFERENT' },
+        `${path} exists without a receipt; the r2c root is already in use`,
+      );
     }
     const absolute = projectPath(projectRoot, path);
     if (absolute === null || sha256File(absolute) !== entry.sha256) {
-      return {
-        code: 'R2C_ROOT_OCCUPIED',
-        message: `${path} exists with different bytes; --force never crosses the r2c root`,
-        occupied: { projection: null, bundle: null, receipt: null, path, reason: 'UNOWNED_DIFFERENT' },
-      };
+      return occupied(
+        [path],
+        { projection: null, bundle: null, receipt: null, reason: 'UNOWNED_DIFFERENT' },
+        `${path} exists with different bytes; --force never crosses the r2c root`,
+      );
     }
     // Byte-identical: the conflict matrix records it as an adopt.
   }

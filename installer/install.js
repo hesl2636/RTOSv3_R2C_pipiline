@@ -25,6 +25,7 @@ import {
 import {
   ancestorDirs,
   irPath as irRelPath,
+  isInstallPath,
   projectPath,
   receiptPath as receiptRelPath,
 } from './paths.js';
@@ -95,9 +96,9 @@ export function receiptOptions(result) {
   };
 }
 
-function incomingFiles(result) {
+function incomingFiles(result, owned = null) {
   const overwrite = new Map((result.installPlan?.steps ?? []).map((step) => [step.path, step.overwrite]));
-  return result.files.map((file) => ({
+  const files = result.files.map((file) => ({
     path: file.path,
     kind: file.kind,
     targets: [...(file.targets ?? [])],
@@ -105,7 +106,22 @@ function incomingFiles(result) {
     content: file.content,
     sha256: sha256Hex(file.content),
     overwrite: overwrite.get(file.path) ?? 'replace',
+    origin: 'projection',
   }));
+  for (const file of owned?.files ?? []) {
+    files.push({
+      path: file.path,
+      kind: file.kind ?? 'other',
+      targets: [...(file.targets ?? [])],
+      mode: file.mode ?? 0o644,
+      content: file.content,
+      sha256: sha256Hex(file.content),
+      overwrite: 'replace',
+      origin: file.origin ?? 'installer',
+      source: file.source,
+    });
+  }
+  return files;
 }
 
 function sameIdentity(receipt, { projection, bundleId, version, irDigest: digest, irPath }) {
@@ -142,7 +158,8 @@ function receiptEntries(projectRoot, incoming) {
     targets: entry.targets,
     sha256: sha256File(projectPath(projectRoot, entry.path)),
     mode: modeString(entry.mode),
-    origin: 'projection',
+    origin: entry.origin ?? 'projection',
+    source: entry.source ?? entry.path,
   }));
 }
 
@@ -318,7 +335,22 @@ export function installProjection(input = {}) {
   const irAbsolute = projectPath(projectRoot, irRel);
   const ownRel = receiptRelPath(projectionId, bundleId);
   const ownAbsolute = projectPath(projectRoot, ownRel);
-  const incoming = incomingFiles(result);
+  const owned = input.installerOwned ?? null;
+  const declared = new Set(result.files.map((file) => file.path));
+  const ownedProblems = [];
+  for (const file of owned?.files ?? []) {
+    if (declared.has(file.path)) {
+      ownedProblems.push({ code: 'INSTALLER_FILE_CONFLICT', path: file.path, message: `${file.path} is declared by both the projection result and the installer` });
+      continue;
+    }
+    if (!isInstallPath(file.path) || projectPath(projectRoot, file.path) === null) {
+      ownedProblems.push({ code: 'INSTALLER_FILE_INVALID', path: file.path, message: `${file.path} is not a project-relative install path` });
+    }
+  }
+  if (ownedProblems.length > 0) {
+    return failure('INSTALLER_FILE_INVALID', `${ownedProblems.length} installer-owned path problem(s)`, { problems: ownedProblems });
+  }
+  const incoming = incomingFiles(result, owned);
   const options = receiptOptions(result);
 
   let loaded;
@@ -387,6 +419,7 @@ export function installProjection(input = {}) {
   }
 
   const irDiskSha = lstatOrNull(irAbsolute)?.isFile() ? sha256File(irAbsolute) : null;
+  const hostTargets = [...(owned?.hostTargets ?? [])].sort();
   const unchanged = own !== null
     && sameIdentity(own.receipt, {
       projection: projectionId,
@@ -397,6 +430,7 @@ export function installProjection(input = {}) {
     })
     && sameOptions(own.receipt, options)
     && JSON.stringify(own.receipt.projection?.targets) === JSON.stringify([...result.targets].sort())
+    && JSON.stringify(own.receipt.host_targets ?? []) === JSON.stringify(hostTargets)
     && sameFileSet(own.receipt.files, incoming)
     && check.decisions.every((decision) => decision.action === 'keep')
     && check.stale.length === 0
@@ -413,7 +447,7 @@ export function installProjection(input = {}) {
       receipt: own.receipt,
       receiptPath: ownRel,
       files: incoming.length,
-      warnings: coexistWarnings,
+      warnings: [...(owned?.warnings ?? []), ...coexistWarnings],
       manualSteps,
       diff,
     };
@@ -428,7 +462,7 @@ export function installProjection(input = {}) {
       dryRun,
       decisions: check.decisions,
       stale: check.stale,
-      warnings: [...check.warnings, ...coexistWarnings],
+      warnings: [...(owned?.warnings ?? []), ...check.warnings, ...coexistWarnings],
       files: incoming.length,
       mode: own === null ? (migration?.receipts.length ? 'migrated' : 'fresh') : 'upgrade',
       migration: migration?.receipts.length ? migrationSummary(migration) : null,
@@ -552,7 +586,16 @@ export function installProjection(input = {}) {
       }
 
       const receiptFiles = receiptEntries(projectRoot, incoming);
-      const installWarnings = [...(result.warnings ?? []), ...recheck.warnings, ...coexistWarnings];
+      const installWarnings = [
+        ...(result.warnings ?? []),
+        ...(owned?.warnings ?? []),
+        ...recheck.warnings,
+        ...coexistWarnings,
+      ];
+      const installDegradations = [
+        ...(result.degradations ?? []),
+        ...(owned?.degradations ?? []),
+      ];
       const migrated = migrationFacts !== null && migrationFacts.retired.length > 0;
       const backups = journal.operations
         .filter((operation) => operation.backup !== null && operation.path !== ownRel)
@@ -567,13 +610,13 @@ export function installProjection(input = {}) {
         bundle: { id: bundleId, version },
         ir: { path: irRel, digest: irDigest, contentSha256: result.ir?.contentSha256 ?? null },
         mode: migrated ? 'migrated' : fresh.own === null ? 'fresh' : 'upgrade',
-        hostTargets: [],
+        hostTargets,
         options,
         requiresEngine: ir.requires?.engine ?? null,
         files: receiptFiles,
         metadata: result.metadata,
         capabilityReport: result.capabilityReport,
-        degradations: result.degradations,
+        degradations: installDegradations,
         warnings: installWarnings,
         createdDirs,
         backups,

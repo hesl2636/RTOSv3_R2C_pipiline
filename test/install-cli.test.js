@@ -63,7 +63,10 @@ test('installs from a result directory and reports one envelope', (t) => {
   assert.equal(envelope.ok, true);
   assert.equal(envelope.data.action, 'installed');
   assert.equal(envelope.data.receipt_path, `.r2c/install/receipts/r2c/${result.ir.id}.json`);
-  assert.equal(envelope.data.files, result.files.length);
+  const receipt = JSON.parse(readFileSync(join(projectRoot, ...envelope.data.receipt_path.split('/')), 'utf8'));
+  assert.equal(envelope.data.files, receipt.files.length);
+  assert.ok(envelope.data.files > result.files.length, 'r2c installs add installer-owned host roles');
+  assert.ok(receipt.files.some((file) => file.origin === 'installer'));
   assert.equal(existsSync(join(projectRoot, ...envelope.data.receipt_path.split('/'))), true);
 
   const again = cli(['--result', resultDir, '--project', projectRoot, '--json']);

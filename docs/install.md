@@ -268,10 +268,11 @@ Next: `git status --short` in the project root, to review the layout files the u
 A project that still carries the old `r2c.install/v1` receipts — one
 `.r2c/install/<agent>.json` per adapter — cannot receive a bundle install: the
 new channel refuses with `LEGACY_INSTALL_PRESENT` before it writes anything.
-Take the project over explicitly:
+Take the project over explicitly with the bundle installer's `--migrate-legacy`
+switch (`installer/cli.js` in the framework package):
 
-```bash
-node installer/cli.js --result <projection-result-dir> --project . --migrate-legacy
+```text
+installer/cli.js --result <projection-result-dir> --project <dir> --migrate-legacy
 ```
 
 The takeover is one transaction, and it only proceeds after every recorded

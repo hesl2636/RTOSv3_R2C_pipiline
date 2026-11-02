@@ -15,11 +15,14 @@
  *   same bundle id on both projections warns `DUPLICATE_BACKEND`, and
  *   `--migrate-legacy` verifies/backs up/retires a `r2c.install/v1` install
  *   inside the same journal.
- * - #104 r2c host copies + `roles.json`: extend `incomingFiles` in install.js
- *   with installer-owned entries and set `hostTargets`; `fileEntry` already
- *   records `origin`/`source`, so the receipt shape does not change.
+ * - #104 r2c host copies + `roles.json`: `installR2cProject` renders the four
+ *   host role definitions through `runtime/shared/render-role.js`; the generic
+ *   `installProjection` accepts them as `installerOwned` so its BC surface is
+ *   unchanged. `installRuntime`, `installStatus` and `doctor` own the runtime
+ *   receipt, launcher, host commands/hooks/pointers and diagnostics.
  * - #106 release install: feed the release IR bytes + pre-projected payload
- *   through the same `installProjection({result, irBytes})`.
+ *   through the same `installR2cProject({result, irBytes})` (or
+ *   `installProjection` for agent-native).
  */
 export { installProjection, receiptOptions } from './install.js';
 export { checkR2cRoot, duplicateBackendWarnings } from './coexist.js';
@@ -31,6 +34,22 @@ export {
   revokeMergedPointers,
 } from './legacy.js';
 export { diffFileSets, previousRecord } from './upgrade.js';
+export { installR2cProject, renderR2cRoles, R2C_ROLE_TARGETS, ROLES_JSON_PATH } from './r2c.js';
+export {
+  ENGINE_ROOT,
+  LAUNCHER_PATH,
+  LAUNCHER_SHA256,
+  LAUNCHER_TEXT,
+  RUNTIME_HOST_TARGETS,
+  RUNTIME_RECEIPT_PATH,
+  RUNTIME_SCHEMA,
+  buildRuntimeReceipt,
+  installRuntime,
+  isRuntimeReceipt,
+  readRuntimeReceipt,
+} from './runtime.js';
+export { formatStatus, installStatus, manifestSelection, STATUS_SCHEMA } from './status.js';
+export { DOCTOR_SCHEMA, doctor, formatDoctor } from './doctor.js';
 export { planUninstall, uninstallProjection } from './uninstall.js';
 export { readJournal, recoverPending, STALE_LOCK_MS } from './transaction.js';
 export {

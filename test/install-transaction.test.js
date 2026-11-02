@@ -192,7 +192,13 @@ test('two concurrent installs in one project: exactly one writes', async (t) => 
   const outcomes = replies.map((reply) => JSON.parse(reply.stdout));
   assert.equal(outcomes.filter((outcome) => outcome.action === 'installed').length, 1);
   const loser = outcomes.find((outcome) => outcome.action !== 'installed');
-  assert.ok(['LOCK_CONFLICT', 'INSTALL_CONFLICTS'].includes(loser.code), `unexpected loser: ${loser.code}`);
+  // #103: once the winner's receipt is visible the loser is refused at the
+  // r2c root before the conflict matrix runs; both are pre-write refusals.
+  assert.ok(
+    ['LOCK_CONFLICT', 'INSTALL_CONFLICTS', 'R2C_ROOT_OCCUPIED'].includes(loser.code),
+    `unexpected loser: ${loser.code}`,
+  );
+
 
   const receipts = readdirSync(absolute(projectRoot, '.r2c/install/receipts/r2c'));
   assert.equal(receipts.length, 1, 'exactly one identity committed');

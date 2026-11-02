@@ -224,7 +224,7 @@ test('a changed bundle id is a new identity, never an in-place migration', (t) =
   // #103 / #76 §4.2: the r2c roots hold one bundle, so a second r2c identity is
   // refused at the root before the path-level conflict matrix runs.
   assert.equal(refused.code, 'R2C_ROOT_OCCUPIED');
-  assert.equal(refused.occupied.bundle, 'rtosv3-drvport');
+  assert.equal(refused.occupier.bundle, 'rtosv3-drvport');
   assert.deepEqual(snapshot(projectRoot), before, 'nothing of the old identity is rewritten');
 });
 
