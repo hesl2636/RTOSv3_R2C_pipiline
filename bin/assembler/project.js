@@ -209,6 +209,8 @@ export function run(argv) {
     process.stderr.write(`${formatDiagnostic({ severity: 'warning', code: warning.code, path: '', line: null, pointer: warning.pointer ?? null, message: warning.message })}\n`);
   }
   process.stdout.write(`${result.projection.id}[${result.targets.join(',')}]: ${data.counts.files} files (${data.counts.bytes} bytes), ${data.counts.degradations} degradations, ${data.counts.capabilities} capability rows\n`);
-  process.stdout.write(`roles.json: ${result.metadata.artifacts['roles-json']}\n`);
+  if (result.metadata.artifacts['roles-json'] !== undefined) {
+    process.stdout.write(`roles.json: ${result.metadata.artifacts['roles-json']}\n`);
+  }
   return EXIT_CODES.OK;
 }

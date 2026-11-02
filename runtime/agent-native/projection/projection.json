@@ -14,7 +14,10 @@
     ".agents/skills",
     ".claude/agents",
     ".claude/skills",
-    ".omp/agents"
+    ".codex/agents",
+    ".dsh/agent-native",
+    ".omp/agents",
+    ".opencode/agents"
   ],
   "targets": [
     {
@@ -57,6 +60,84 @@
       }
     },
     {
+      "id": "codex",
+      "name": "Codex",
+      "default": true,
+      "capabilities": {
+        "state": {
+          "level": "unavailable",
+          "note": "无 runner：没有状态文件，进度与续跑由执行者维护"
+        },
+        "gates": {
+          "level": "degraded",
+          "note": "命令原文 + 超时写入阶段技能；执行者运行并自证，机器不强制"
+        },
+        "outputs": {
+          "level": "degraded",
+          "note": "glob 原样列出自检清单；回执逐项写存在/缺失，机器不检查"
+        },
+        "subagents": {
+          "level": "native",
+          "note": "角色 TOML 落在 .codex/agents，Codex 自动发现；无法表达的字段逐字段记降级"
+        },
+        "skills": {
+          "level": "adapted",
+          "note": "技能安装到 .agents/skills；名字加 bundle 前缀，语义不变"
+        },
+        "preload": {
+          "level": "unavailable",
+          "note": "Codex 自定义 agent 继承父会话技能，没有按 agent 预载接缝"
+        },
+        "stage-invocation": {
+          "level": "adapted",
+          "note": "阶段技能可由 Codex 技能选择器加载；无稳定命令行 token"
+        },
+        "skill-invocation": {
+          "level": "adapted",
+          "note": "技能副本可由技能选择器加载；无稳定命令行 token"
+        }
+      }
+    },
+    {
+      "id": "dsh",
+      "name": "DeepSeek Harness",
+      "default": true,
+      "capabilities": {
+        "state": {
+          "level": "unavailable",
+          "note": "无 runner：没有状态文件，进度与续跑由执行者维护"
+        },
+        "gates": {
+          "level": "degraded",
+          "note": "命令原文 + 超时写入阶段技能；执行者运行并自证，机器不强制"
+        },
+        "outputs": {
+          "level": "degraded",
+          "note": "glob 原样列出自检清单；回执逐项写存在/缺失，机器不检查"
+        },
+        "subagents": {
+          "level": "unavailable",
+          "note": "v1 不生成 dsh 原生 preset；角色正文进项目内角色目录，由主会话按同名段落执行"
+        },
+        "skills": {
+          "level": "adapted",
+          "note": "技能安装到 .agents/skills（dsh 项目级技能根）；名字加 bundle 前缀，语义不变"
+        },
+        "preload": {
+          "level": "unavailable",
+          "note": "dsh 无按角色预载技能的接缝；v1 也不按角色挂 skill provider"
+        },
+        "stage-invocation": {
+          "level": "native",
+          "note": "阶段技能可单独加载"
+        },
+        "skill-invocation": {
+          "level": "native",
+          "note": "技能工具可按需加载单个技能"
+        }
+      }
+    },
+    {
       "id": "omp",
       "name": "Oh My Pi (omp)",
       "default": true,
@@ -92,6 +173,45 @@
         "skill-invocation": {
           "level": "native",
           "note": "技能副本可单独加载；/skill:<name> 需开启 skills.enableSkillCommands"
+        }
+      }
+    },
+    {
+      "id": "opencode",
+      "name": "opencode (V1)",
+      "default": true,
+      "capabilities": {
+        "state": {
+          "level": "unavailable",
+          "note": "无 runner：没有状态文件，进度与续跑由执行者维护"
+        },
+        "gates": {
+          "level": "degraded",
+          "note": "命令原文 + 超时写入阶段技能；执行者运行并自证，机器不强制"
+        },
+        "outputs": {
+          "level": "degraded",
+          "note": "glob 原样列出自检清单；回执逐项写存在/缺失，机器不检查"
+        },
+        "subagents": {
+          "level": "native",
+          "note": "角色定义落在 .opencode/agents，opencode 按文件名自动发现；Task 工具按名派发"
+        },
+        "skills": {
+          "level": "adapted",
+          "note": "技能安装到 .agents/skills；名字加 bundle 前缀，语义不变"
+        },
+        "preload": {
+          "level": "unavailable",
+          "note": "opencode agent md 无按角色预载字段，预载正文没有落点"
+        },
+        "stage-invocation": {
+          "level": "native",
+          "note": "阶段技能可经 skill 工具单独加载"
+        },
+        "skill-invocation": {
+          "level": "native",
+          "note": "技能副本可经 skill 工具单独加载"
         }
       }
     }

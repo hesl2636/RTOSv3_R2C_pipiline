@@ -7,11 +7,17 @@
  */
 import { AGENT_NATIVE_MANIFEST } from '../runtime/agent-native/projection/manifest.js';
 import { projectAgentNative } from '../runtime/agent-native/projection/project.js';
+import { R2C_MANIFEST } from '../runtime/r2c/projection/manifest.js';
+import { projectR2c } from '../runtime/r2c/projection/project.js';
 
 export const PROJECTIONS = Object.freeze([
   Object.freeze({
     ...AGENT_NATIVE_MANIFEST,
     project: projectAgentNative,
+  }),
+  Object.freeze({
+    ...R2C_MANIFEST,
+    project: projectR2c,
   }),
 ]);
 

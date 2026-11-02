@@ -203,7 +203,7 @@ test('renderRole resolves the closed registry when ctx omits a target table', ()
 test('renderRole honours exposure and rejects unknown targets', () => {
   assert.equal(renderRole({ ...SAMPLE_ROLE, mode: 'any' }, 'claude-code', ctx()).exposure, 'both');
   assert.equal(renderRole({ ...SAMPLE_ROLE, mode: 'primary' }, 'claude-code', ctx()).exposure, 'primary');
-  assert.throws(() => renderRole(SAMPLE_ROLE, 'codex', ctx()), /PROJECTION_TARGET_UNKNOWN/);
+  assert.throws(() => renderRole(SAMPLE_ROLE, 'unknown-target', ctx()), /PROJECTION_TARGET_UNKNOWN/);
   assert.equal(getTarget('claude-code'), claudeCodeTarget);
   assert.deepEqual(Object.keys(claudeCodeTarget.capabilities), [
     'state', 'gates', 'outputs', 'subagents', 'skills', 'preload',
