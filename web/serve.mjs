@@ -1,0 +1,703 @@
+#!/usr/bin/env node
+/**
+ * Local read-only web surface (spec #83 §14, decision #75, ticket #108).
+ *
+ * One process, static ESM, zero build:
+ *   node web/serve.mjs [--port <n>] [--no-open]
+ *
+ * The server binds loopback only (there is deliberately no `--host`), serves a
+ * fixed whitelist of source directories, and exposes exactly one authoritative
+ * operation: upload one zip, receive the shared `Report` plus the compiled IR.
+ * Uploads are handled entirely in memory; the only filesystem writes are the
+ * 0700 session directory under `os.tmpdir()`.
+ *
+ * Everything under `web/` except this file is browser-loadable ESM and runs
+ * the same shared modules (`core/`, `ir/`, `assembler/`) as the CLI.
+ */
+import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
+import { createServer } from 'node:http';
+import {
+  chmod,
+  lstat,
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  rm,
+  writeFile,
+} from 'node:fs/promises';
+import { rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, extname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { compileBundle } from '../assembler/compile.js';
+import { LIMITS } from '../assembler/limits.js';
+import { inflateRaw } from '../core/node/inflate.js';
+import { sha256Hex } from '../core/node/sha256.js';
+import { isInside } from '../core/paths.js';
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+const ROOT = resolve(HERE, '..');
+
+const BIND_HOST = '127.0.0.1';
+const ALLOWED_HOSTS = ['127.0.0.1', 'localhost'];
+
+const URL_MAX_BYTES = 2 * 1024;
+const HEADER_MAX_BYTES = 16 * 1024;
+const UPLOAD_MAX_BYTES = LIMITS.MAX_ZIP_BYTES + 4 * 1024;
+const HEADERS_TIMEOUT_MS = 10 * 1000;
+const BODY_TIMEOUT_MS = 30 * 1000;
+const RATE_WINDOW_MS = 60 * 1000;
+const DEFAULT_RATE_LIMIT = 600;
+
+const UPLOAD_TTL_MS = 30 * 60 * 1000;
+const BUILD_TTL_MS = 60 * 60 * 1000;
+const SWEEP_INTERVAL_MS = 5 * 60 * 1000;
+const STALE_SESSION_MS = 24 * 60 * 60 * 1000;
+
+const CSP = [
+  "default-src 'none'",
+  "script-src 'self'",
+  "style-src 'self'",
+  "img-src 'self' data:",
+  "connect-src 'self'",
+  "font-src 'none'",
+  "object-src 'none'",
+  "media-src 'none'",
+  "base-uri 'none'",
+  "form-action 'none'",
+  "frame-ancestors 'none'",
+].join('; ');
+
+const SECURITY_HEADERS = Object.freeze({
+  'Content-Security-Policy': CSP,
+  'X-Content-Type-Options': 'nosniff',
+  'X-Frame-Options': 'DENY',
+  'Referrer-Policy': 'no-referrer',
+  'Cross-Origin-Opener-Policy': 'same-origin',
+  'Cross-Origin-Resource-Policy': 'same-origin',
+  'Permissions-Policy': 'accelerometer=(), camera=(), geolocation=(), microphone=(), payment=(), usb=()',
+  'Cache-Control': 'no-store',
+});
+
+/** Only these trees are public (decision #75 §10.6). */
+const STATIC_PREFIXES = new Set(['web', 'core', 'ir', 'assembler', 'projection', 'runtime']);
+const DENIED_TOP_LEVEL = new Set([
+  '.git', 'node_modules', 'src', 'test', 'docs', 'examples', 'scripts', 'bin',
+  'installer', 'adapters', 'pack', 'shims', 'plugins',
+]);
+const MIME = Object.freeze({
+  '.js': 'text/javascript; charset=utf-8',
+  '.mjs': 'text/javascript; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.html': 'text/html; charset=utf-8',
+  '.md': 'text/plain; charset=utf-8',
+  '.txt': 'text/plain; charset=utf-8',
+  '.tpl': 'text/plain; charset=utf-8',
+  '.yml': 'text/plain; charset=utf-8',
+  '.yaml': 'text/plain; charset=utf-8',
+  '.svg': 'image/svg+xml',
+});
+const STATIC_MAX_BYTES = 8 * 1024 * 1024;
+
+function parsePort(argv) {
+  const options = { port: 0, open: true, help: false };
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
+    if (arg === '--port') {
+      const value = argv[index + 1];
+      index += 1;
+      if (value === undefined) throw new Error('--port requires a number');
+      options.port = Number(value);
+    } else if (arg.startsWith('--port=')) {
+      options.port = Number(arg.slice('--port='.length));
+    } else if (arg === '--no-open') {
+      options.open = false;
+    } else if (arg === '--help' || arg === '-h') {
+      options.help = true;
+    } else if (arg === '--host' || arg.startsWith('--host=')) {
+      throw new Error('loopback only: --host is not supported');
+    } else {
+      throw new Error(`unknown option: ${arg}`);
+    }
+  }
+  if (!Number.isInteger(options.port) || options.port < 0 || options.port > 65535) {
+    throw new Error('--port must be an integer between 0 and 65535');
+  }
+  return options;
+}
+
+function rateLimitFromEnv() {
+  const raw = process.env.R2C_WEB_RATE_LIMIT;
+  if (raw === undefined || raw === '') return DEFAULT_RATE_LIMIT;
+  const value = Number(raw);
+  return Number.isInteger(value) && value > 0 ? value : DEFAULT_RATE_LIMIT;
+}
+
+function bytesOf(text) {
+  return Buffer.byteLength(text, 'utf8');
+}
+
+function isAlive(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return error?.code === 'EPERM';
+  }
+}
+
+function securityHeaders(extra = {}) {
+  return { ...SECURITY_HEADERS, ...extra };
+}
+
+function sendJson(response, status, payload, extra = {}) {
+  const body = Buffer.from(`${JSON.stringify(payload)}\n`, 'utf8');
+  response.writeHead(status, securityHeaders({
+    'Content-Type': 'application/json; charset=utf-8',
+    'Content-Length': String(body.length),
+    ...extra,
+  }));
+  response.end(body);
+}
+
+function sendWebError(response, status, code, message, extra = {}) {
+  sendJson(response, status, { ok: false, error: { code, message, details: null } }, extra);
+}
+
+function foreignHost(request, port) {
+  const header = request.headers.host;
+  if (typeof header !== 'string') return true;
+  return !ALLOWED_HOSTS.some((host) => header === `${host}:${port}`);
+}
+
+function allowedOrigins(port) {
+  return new Set(ALLOWED_HOSTS.map((host) => `http://${host}:${port}`));
+}
+
+function timingSafeEqualText(left, right) {
+  if (typeof left !== 'string' || typeof right !== 'string') return false;
+  // Hash both sides first: equal-length digests let timingSafeEqual run even
+  // when an attacker sends a differently sized token.
+  const a = createHash('sha256').update(left, 'utf8').digest();
+  const b = createHash('sha256').update(right, 'utf8').digest();
+  return timingSafeEqual(a, b);
+}
+
+function rawPathOf(request) {
+  const url = request.url ?? '/';
+  const query = url.indexOf('?');
+  return query === -1 ? url : url.slice(0, query);
+}
+
+/**
+ * Decode the URL exactly once and reject anything non-canonical. A residual
+ * `%` means double encoding; `..` after decoding means traversal.
+ */
+function decodeStaticPath(rawPath) {
+  if (typeof rawPath !== 'string' || !rawPath.startsWith('/')) return null;
+  let decoded;
+  try {
+    decoded = rawPath.includes('%') ? decodeURIComponent(rawPath) : rawPath;
+  } catch {
+    return null;
+  }
+  if (decoded.includes('%') || decoded.includes('\\') || decoded.includes('\0')) return null;
+  if (!decoded.startsWith('/')) return null;
+  if (decoded === '/') return [];
+  const segments = decoded.slice(1).split('/');
+  for (const segment of segments) {
+    if (segment === '' || segment === '.' || segment === '..') return null;
+    if (segment.startsWith('.')) return null;
+    if (segment.includes(':') || /[\x00-\x1f\x7f]/.test(segment)) return null;
+  }
+  return segments;
+}
+
+function staticCandidate(segments) {
+  if (segments.length === 0) return { relative: 'web/index.html' };
+  const [top, ...rest] = segments;
+  if (!STATIC_PREFIXES.has(top)) return null;
+  if (DENIED_TOP_LEVEL.has(top)) return null;
+  if (top === 'web' && rest.length === 1 && rest[0].toLowerCase() === 'serve.mjs') return null;
+  // `runtime/<target>/engine/**` is never distributed (spec #83 §14).
+  if (top === 'runtime' && rest.length >= 2 && rest[1].toLowerCase() === 'engine') return null;
+  const relative = segments.join('/');
+  if (/(^|\/)package[^/]*\.json$/i.test(relative)) return null;
+  return { relative };
+}
+
+async function collectBody(request, declared, limit) {
+  return new Promise((resolveBody, rejectBody) => {
+    const chunks = [];
+    let total = 0;
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      const error = new Error('request body timed out');
+      error.code = 'WEB_TIMEOUT';
+      request.destroy();
+      rejectBody(error);
+    }, BODY_TIMEOUT_MS);
+    const finish = (value, error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (error) rejectBody(error);
+      else resolveBody(value);
+    };
+    request.on('data', (chunk) => {
+      total += chunk.length;
+      if (total > declared || total > limit) {
+        finish(null, Object.assign(new Error('body exceeds the declared length'), { code: 'WEB_BODY_TOO_LARGE' }));
+        request.destroy();
+        return;
+      }
+      chunks.push(chunk);
+    });
+    request.on('end', () => {
+      if (total !== declared) {
+        finish(null, Object.assign(new Error('body length does not match Content-Length'), { code: 'WEB_BODY_INVALID' }));
+        return;
+      }
+      finish(new Uint8Array(Buffer.concat(chunks, total)));
+    });
+    request.on('error', (error) => finish(null, error));
+    request.on('aborted', () => finish(null, Object.assign(new Error('request aborted'), { code: 'WEB_BODY_INVALID' })));
+  });
+}
+
+function isValidUploadContentType(value) {
+  if (value === undefined) return true;
+  const type = String(value).split(';', 1)[0].trim().toLowerCase();
+  return type === '' || type === 'application/zip' || type === 'application/x-zip-compressed'
+    || type === 'application/octet-stream';
+}
+
+function base64(bytes) {
+  return Buffer.from(bytes).toString('base64');
+}
+
+async function runValidation(bytes) {
+  const primitives = { inflateRaw, sha256: sha256Hex };
+  const compiled = compileBundle(bytes, primitives, { path: 'bundle.zip' });
+  let ir = null;
+  if (compiled.ok && compiled.irBytes !== null) {
+    let contentSha256 = null;
+    try {
+      const parsed = JSON.parse(new TextDecoder().decode(compiled.irBytes));
+      contentSha256 = parsed?.source?.bundle?.contentSha256 ?? null;
+    } catch {
+      contentSha256 = null;
+    }
+    ir = {
+      id: compiled.irReport?.id ?? null,
+      version: compiled.irReport?.version ?? null,
+      digest: compiled.digest,
+      bytes: compiled.irBytes.length,
+      contentSha256,
+      encoding: 'base64',
+      data: base64(compiled.irBytes),
+    };
+  }
+  return { report: compiled.report, ir };
+}
+
+async function existsFile(path) {
+  try {
+    const stats = await lstat(path);
+    return stats.isFile();
+  } catch {
+    return false;
+  }
+}
+
+async function locateStatic(segments) {
+  const candidate = staticCandidate(segments);
+  if (candidate === null) return null;
+  const target = resolve(ROOT, ...candidate.relative.split('/'));
+  if (target === ROOT || !isInside(ROOT, target)) return null;
+  let stats;
+  try {
+    stats = await lstat(target);
+  } catch {
+    return null;
+  }
+  if (stats.isSymbolicLink() || !stats.isFile()) return null;
+  if (stats.size > STATIC_MAX_BYTES) return null;
+  const extension = extname(target).toLowerCase();
+  const type = MIME[extension];
+  if (type === undefined) return null;
+  return { target, size: stats.size, type };
+}
+
+async function sweepStaleSessions(ownTempRoot) {
+  let entries;
+  try {
+    entries = await readdir(tmpdir(), { withFileTypes: true });
+  } catch {
+    return;
+  }
+  for (const entry of entries) {
+    if (!entry.isDirectory() || !entry.name.startsWith('r2c-web-')) continue;
+    const candidate = resolve(tmpdir(), entry.name);
+    if (candidate === ownTempRoot) continue;
+    let marker;
+    try {
+      marker = JSON.parse(await readFile(resolve(candidate, 'session.json'), 'utf8'));
+    } catch {
+      continue; // Only directories carrying our marker are ours to delete.
+    }
+    const old = Number.isFinite(marker?.startedAt) && Date.now() - marker.startedAt > STALE_SESSION_MS;
+    if (old || !isAlive(marker?.pid)) {
+      await rm(candidate, { recursive: true, force: true }).catch(() => {});
+    }
+  }
+}
+
+async function sweepIdle(tempRoot) {
+  for (const [name, ttl] of [['uploads', UPLOAD_TTL_MS], ['builds', BUILD_TTL_MS]]) {
+    const directory = resolve(tempRoot, name);
+    let entries;
+    try {
+      entries = await readdir(directory, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      const target = resolve(directory, entry.name);
+      let stats;
+      try {
+        stats = await lstat(target);
+      } catch {
+        continue;
+      }
+      if (Date.now() - stats.mtimeMs > ttl) {
+        await rm(target, { recursive: true, force: true }).catch(() => {});
+      }
+    }
+  }
+}
+
+async function main() {
+  let options;
+  try {
+    options = parsePort(process.argv.slice(2));
+  } catch (error) {
+    process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+    process.exitCode = 2;
+    return;
+  }
+  if (options.help) {
+    process.stdout.write('Usage: node web/serve.mjs [--port <n>] [--no-open]\nLoopback only; no --host.\n');
+    return;
+  }
+
+  const version = await readFile(resolve(ROOT, 'package.json'), 'utf8')
+    .then((text) => JSON.parse(text).version ?? '0.0.0')
+    .catch(() => '0.0.0');
+
+  const tempRoot = await mkdtemp(resolve(tmpdir(), `r2c-web-${process.pid}-`));
+  await chmod(tempRoot, 0o700);
+  await writeFile(
+    resolve(tempRoot, 'session.json'),
+    `${JSON.stringify({ pid: process.pid, startedAt: Date.now(), frameworkVersion: version })}\n`,
+    { mode: 0o600 },
+  );
+  await mkdir(resolve(tempRoot, 'uploads'), { mode: 0o700 });
+  await mkdir(resolve(tempRoot, 'builds'), { mode: 0o700 });
+  await sweepStaleSessions(tempRoot);
+
+  const csrf = randomBytes(32).toString('hex');
+  const rateLimit = rateLimitFromEnv();
+  const uploadLimit = UPLOAD_MAX_BYTES;
+  const modules = {
+    projection: await existsFile(resolve(ROOT, 'projection', 'registry.js')),
+    runtimeShared: await existsFile(resolve(ROOT, 'runtime', 'shared', 'constitution.js')),
+  };
+  const rate = { windowStart: Date.now(), count: 0 };
+
+  let port = options.port;
+  let shutdownStarted = false;
+  let server;
+
+  const shutdown = async (code) => {
+    if (shutdownStarted) return;
+    shutdownStarted = true;
+    clearInterval(sweeper);
+    try {
+      server?.close();
+      server?.closeAllConnections?.();
+    } catch {
+      // The listener may never have been created.
+    }
+    await rm(tempRoot, { recursive: true, force: true }).catch(() => {});
+    process.exit(code);
+  };
+
+  const sweeper = setInterval(() => {
+    void sweepIdle(tempRoot);
+  }, SWEEP_INTERVAL_MS);
+  sweeper.unref();
+
+  const handler = async (request, response) => {
+    const started = Date.now();
+    const path = rawPathOf(request);
+    let status = 500;
+    const finish = () => {
+      process.stdout.write(`${request.method} ${path} ${status} ${Date.now() - started}ms\n`);
+    };
+    response.on('finish', finish);
+
+    if (foreignHost(request, port)) {
+      status = 403;
+      sendWebError(response, status, 'WEB_HOST_INVALID', 'host is not allowed');
+      return;
+    }
+
+    let rawHeaderBytes = 0;
+    for (const value of request.rawHeaders ?? []) rawHeaderBytes += bytesOf(value);
+    if (rawHeaderBytes > HEADER_MAX_BYTES) {
+      status = 413;
+      sendWebError(response, status, 'WEB_HEADER_TOO_LARGE', 'request headers exceed the limit');
+      return;
+    }
+    if (bytesOf(String(request.url ?? '/')) > URL_MAX_BYTES) {
+      status = 413;
+      sendWebError(response, status, 'WEB_URL_TOO_LONG', 'request URL exceeds the limit');
+      return;
+    }
+
+    const now = Date.now();
+    if (now - rate.windowStart >= RATE_WINDOW_MS) {
+      rate.windowStart = now;
+      rate.count = 0;
+    }
+    rate.count += 1;
+    if (rate.count > rateLimit) {
+      const retryAfter = Math.max(1, Math.ceil((rate.windowStart + RATE_WINDOW_MS - now) / 1000));
+      status = 429;
+      sendWebError(response, status, 'WEB_RATE_LIMITED', 'too many requests', { 'Retry-After': String(retryAfter) });
+      return;
+    }
+
+    const method = request.method ?? 'GET';
+    if (method === 'OPTIONS') {
+      status = 405;
+      sendWebError(response, status, 'WEB_METHOD_NOT_ALLOWED', 'method is not allowed', { Allow: 'GET, HEAD, POST' });
+      return;
+    }
+    if (!['GET', 'HEAD', 'POST'].includes(method)) {
+      status = 405;
+      sendWebError(response, status, 'WEB_METHOD_NOT_ALLOWED', 'method is not allowed', { Allow: 'GET, HEAD, POST' });
+      return;
+    }
+
+    if (method === 'POST') {
+      const origin = request.headers.origin;
+      if (typeof origin !== 'string' || !allowedOrigins(port).has(origin)) {
+        status = 403;
+        sendWebError(response, status, 'WEB_ORIGIN_INVALID', 'origin is not allowed');
+        return;
+      }
+      const site = request.headers['sec-fetch-site'];
+      if (site !== undefined && site !== 'same-origin' && site !== 'none') {
+        status = 403;
+        sendWebError(response, status, 'WEB_FETCH_SITE_INVALID', 'cross-site requests are not allowed');
+        return;
+      }
+      if (!timingSafeEqualText(request.headers['x-r2c-csrf'], csrf)) {
+        status = 403;
+        sendWebError(response, status, 'WEB_CSRF_INVALID', 'CSRF token is missing or invalid');
+        return;
+      }
+    }
+
+    if (path === '/api/session') {
+      if (method === 'POST') {
+        status = 405;
+        sendWebError(response, status, 'WEB_METHOD_NOT_ALLOWED', 'method is not allowed', { Allow: 'GET, HEAD' });
+        return;
+      }
+      status = 200;
+      const payload = {
+        ok: true,
+        data: {
+          csrf,
+          mode: 'read-only',
+          repo: null,
+          publish: { enabled: false, reason: 'read-only' },
+          frameworkVersion: version,
+          modules,
+          limits: {
+            zipBytes: LIMITS.MAX_ZIP_BYTES,
+            uploadBodyBytes: uploadLimit,
+            entries: LIMITS.MAX_ENTRIES,
+            uncompressedBytes: LIMITS.MAX_UNCOMPRESSED_BYTES,
+            entryBytes: LIMITS.MAX_ENTRY_BYTES,
+            pathBytes: LIMITS.MAX_PATH_BYTES,
+            pathDepth: LIMITS.MAX_PATH_DEPTH,
+            taskBytes: LIMITS.MAX_TASK_BYTES,
+            constitutionBytes: LIMITS.MAX_CONSTITUTION_BYTES,
+          },
+        },
+      };
+      if (method === 'HEAD') {
+        response.writeHead(status, securityHeaders({
+          'Content-Type': 'application/json; charset=utf-8',
+          'Content-Length': String(bytesOf(JSON.stringify(payload)) + 1),
+        }));
+        response.end();
+        return;
+      }
+      sendJson(response, status, payload);
+      return;
+    }
+
+    if (path === '/api/validate') {
+      if (method !== 'POST') {
+        status = 405;
+        sendWebError(response, status, 'WEB_METHOD_NOT_ALLOWED', 'method is not allowed', { Allow: 'POST' });
+        return;
+      }
+      if (!isValidUploadContentType(request.headers['content-type'])) {
+        status = 415;
+        sendWebError(response, status, 'WEB_CONTENT_TYPE_INVALID', 'upload must be a zip byte stream');
+        return;
+      }
+      const declaredHeader = request.headers['content-length'];
+      if (declaredHeader === undefined) {
+        status = 411;
+        sendWebError(response, status, 'WEB_BODY_MISSING', 'Content-Length is required');
+        return;
+      }
+      const declared = Number(declaredHeader);
+      if (!Number.isInteger(declared) || declared < 0) {
+        status = 400;
+        sendWebError(response, status, 'WEB_BODY_INVALID', 'Content-Length is invalid');
+        return;
+      }
+      if (declared > uploadLimit) {
+        status = 413;
+        sendWebError(response, status, 'WEB_BODY_TOO_LARGE', 'upload exceeds the size limit');
+        return;
+      }
+      let bytes;
+      try {
+        bytes = await collectBody(request, declared, uploadLimit);
+      } catch (error) {
+        status = error?.code === 'WEB_BODY_TOO_LARGE' ? 413 : error?.code === 'WEB_TIMEOUT' ? 408 : 400;
+        sendWebError(response, status, error?.code ?? 'WEB_BODY_INVALID', 'upload could not be read');
+        return;
+      }
+      status = 200;
+      const data = await runValidation(bytes);
+      sendJson(response, status, { ok: data.report.ok, data });
+      return;
+    }
+
+    if (path.startsWith('/api/')) {
+      status = 404;
+      sendWebError(response, status, 'WEB_NOT_FOUND', 'not found');
+      return;
+    }
+
+    if (method === 'POST') {
+      status = 405;
+      sendWebError(response, status, 'WEB_METHOD_NOT_ALLOWED', 'method is not allowed', { Allow: 'GET, HEAD' });
+      return;
+    }
+
+    const segments = decodeStaticPath(path);
+    if (segments === null) {
+      status = 404;
+      sendWebError(response, status, 'WEB_PATH_INVALID', 'not found');
+      return;
+    }
+    const located = await locateStatic(segments);
+    if (located === null) {
+      status = 404;
+      sendWebError(response, status, 'WEB_NOT_FOUND', 'not found');
+      return;
+    }
+    let body;
+    try {
+      body = await readFile(located.target);
+    } catch {
+      status = 404;
+      sendWebError(response, status, 'WEB_NOT_FOUND', 'not found');
+      return;
+    }
+    status = 200;
+    response.writeHead(status, securityHeaders({
+      'Content-Type': located.type,
+      'Content-Length': String(body.length),
+    }));
+    if (method === 'HEAD') response.end();
+    else response.end(body);
+  };
+
+  server = createServer({ maxHeaderSize: HEADER_MAX_BYTES, headersTimeout: HEADERS_TIMEOUT_MS }, (request, response) => {
+    handler(request, response).catch(() => {
+      if (!response.headersSent) {
+        sendWebError(response, 500, 'WEB_INTERNAL', 'internal error');
+      } else {
+        response.end();
+      }
+    });
+  });
+  server.requestTimeout = BODY_TIMEOUT_MS;
+  server.headersTimeout = HEADERS_TIMEOUT_MS;
+  server.on('clientError', (error, socket) => {
+    if (!socket.writable) return;
+    const status = error?.code === 'ERR_HTTP_REQUEST_TIMEOUT' ? 408 : 400;
+    socket.end(`HTTP/1.1 ${status} Bad Request\r\nConnection: close\r\n\r\n`);
+  });
+
+  await new Promise((resolveListen, rejectListen) => {
+    server.once('error', rejectListen);
+    server.listen(options.port, BIND_HOST, () => {
+      server.off('error', rejectListen);
+      port = server.address().port;
+      resolveListen();
+    });
+  });
+
+  process.on('SIGINT', () => void shutdown(0));
+  process.on('SIGTERM', () => void shutdown(0));
+  process.on('uncaughtException', (error) => {
+    process.stderr.write(`uncaught: ${error instanceof Error ? error.message : String(error)}\n`);
+    void shutdown(1);
+  });
+  process.on('unhandledRejection', (error) => {
+    process.stderr.write(`unhandled: ${error instanceof Error ? error.message : String(error)}\n`);
+    void shutdown(1);
+  });
+  process.on('exit', () => {
+    try {
+      rmSync(tempRoot, { recursive: true, force: true });
+    } catch {
+      // Best effort during abrupt termination.
+    }
+  });
+  // Piped stdin is an auxiliary graceful-stop channel (tests/wrappers):
+  // `shutdown\n` exits through the same cleanup path as SIGTERM. EOF alone
+  // does nothing, so `stdio: ['ignore']` launches keep serving.
+  if (process.stdin && typeof process.stdin.on === 'function' && process.stdin.isTTY !== true) {
+    process.stdin.setEncoding('utf8');
+    process.stdin.on('data', (chunk) => {
+      if (String(chunk).trim() === 'shutdown') void shutdown(0);
+    });
+    process.stdin.resume();
+  }
+
+  process.stdout.write(`http://${BIND_HOST}:${port}/\n`);
+}
+
+void main().catch((error) => {
+  process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+  process.exitCode = 2;
+});

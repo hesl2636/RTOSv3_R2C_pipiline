@@ -1,0 +1,165 @@
+:root {
+  color-scheme: light dark;
+  --bg: #f6f7f9;
+  --panel: #ffffff;
+  --text: #1d232c;
+  --muted: #5c6878;
+  --line: #d6dce4;
+  --accent: #1a5fb4;
+  --error: #a51d2d;
+  --warning: #8f5b00;
+  --ok: #1b6e3c;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #16191e;
+    --panel: #1e232a;
+    --text: #e4e8ee;
+    --muted: #9aa7b8;
+    --line: #333c48;
+    --accent: #7cb0ff;
+    --error: #ff8a8a;
+    --warning: #ffc45c;
+    --ok: #74d69a;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  padding: 0 0 3rem;
+  background: var(--bg);
+  color: var(--text);
+  font: 15px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+h1, h2, h3 { line-height: 1.25; margin: 0 0 0.5rem; }
+h1 { font-size: 1.25rem; }
+h2 { font-size: 1.05rem; }
+h3 { font-size: 0.95rem; color: var(--muted); margin-top: 1.25rem; }
+
+code, pre, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+
+.bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 1rem 1.5rem;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+}
+
+.subtitle { margin: 0; color: var(--muted); font-size: 0.85rem; }
+
+.badges { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+
+.badge {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 0.15rem 0.6rem;
+  font-size: 0.75rem;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.badge-muted { color: var(--muted); }
+.badge-warn { color: var(--warning); border-color: var(--warning); }
+.badge-ok { color: var(--ok); border-color: var(--ok); }
+.badge-error { color: var(--error); border-color: var(--error); }
+
+main { max-width: 72rem; margin: 0 auto; padding: 0 1.5rem; }
+
+.panel {
+  margin-top: 1.25rem;
+  padding: 1.25rem;
+  border: 1px solid var(--line);
+  border-radius: 0.6rem;
+  background: var(--panel);
+}
+
+.hint, .status { color: var(--muted); font-size: 0.9rem; }
+.status { min-height: 1.5em; }
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+  margin: 0.75rem 0;
+}
+
+button, select, input[type="text"], input[type="file"] {
+  font: inherit;
+  color: inherit;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 0.35rem;
+  padding: 0.4rem 0.65rem;
+}
+
+button { cursor: pointer; }
+button:disabled { cursor: not-allowed; opacity: 0.55; }
+button:not(:disabled):hover { border-color: var(--accent); }
+
+.banner {
+  margin-top: 1rem;
+  padding: 1rem 1.25rem;
+  border: 1px solid var(--line);
+  border-left-width: 4px;
+  border-radius: 0.4rem;
+  background: var(--panel);
+}
+
+.banner p { margin: 0.4rem 0; }
+.banner-error { border-left-color: var(--error); }
+.banner-error strong { color: var(--error); }
+.banner pre { overflow-x: auto; padding: 0.6rem; background: var(--bg); border-radius: 0.35rem; }
+
+.summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1.5rem;
+  padding: 0.6rem 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 0.9rem;
+}
+
+.summary .ok { color: var(--ok); }
+.summary .bad { color: var(--error); }
+
+.diagnostics { list-style: none; margin: 0.75rem 0 0; padding: 0; }
+.diagnostics li {
+  display: grid;
+  grid-template-columns: 5.5rem 11rem 12rem 1fr;
+  gap: 0.5rem 0.75rem;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 0.85rem;
+}
+
+.diagnostics .severity-error { color: var(--error); font-weight: 600; }
+.diagnostics .severity-warning { color: var(--warning); font-weight: 600; }
+.diagnostics .location { overflow-wrap: anywhere; color: var(--muted); }
+.diagnostics .message { overflow-wrap: anywhere; }
+
+.stages, .entities { margin: 0.4rem 0 0; padding-left: 1.25rem; }
+.stages li, .entities li { margin: 0.45rem 0; }
+.stages .step-list { margin: 0.25rem 0 0.5rem; padding-left: 1.1rem; color: var(--muted); font-size: 0.88rem; }
+
+.raw {
+  max-height: 28rem;
+  overflow: auto;
+  padding: 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 0.35rem;
+  background: var(--bg);
+  font-size: 0.8rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.fallback pre, .banner pre { white-space: pre-wrap; overflow-wrap: anywhere; }

@@ -9,7 +9,7 @@ import { buildReport } from '../core/diagnostics.js';
 import { createContext, flushDiagnostics } from './checks/context.js';
 import { runChecks } from './checks/index.js';
 import { BUNDLE_SCHEMA } from './checks/manifest.js';
-import { readZip } from './zip.js';
+import { readZip, readZipAsync } from './zip.js';
 
 export const BUNDLE_SUMMARY_CODE = 'BUNDLE_INVALID';
 
@@ -19,16 +19,7 @@ function asBytes(input) {
   return new Uint8Array(0);
 }
 
-/**
- * @param {Uint8Array} input zip bytes
- * @param {{ inflateRaw?: Function, sha256?: Function }} primitives
- * @param {{ path?: string }} [options] display name for `artifact.path`
- * @returns {{ report: object, model: object }}
- */
-export function analyzeBundle(input, primitives = {}, options = {}) {
-  const bytes = asBytes(input);
-  const artifactPath = options.path ?? 'bundle.zip';
-  const zip = readZip(bytes, primitives);
+function finishAnalysis({ bytes, zip, primitives, artifactPath }) {
   const context = createContext({ bytes, zip, primitives, artifactPath });
   context.diagnostics.push(...zip.diagnostics);
   // A cumulative-inflation abort leaves the archive only partially decoded:
@@ -55,7 +46,43 @@ export function analyzeBundle(input, primitives = {}, options = {}) {
   return { report, model: context };
 }
 
+/**
+ * @param {Uint8Array} input zip bytes
+ * @param {{ inflateRaw?: Function, sha256?: Function }} primitives
+ * @param {{ path?: string }} [options] display name for `artifact.path`
+ * @returns {{ report: object, model: object }}
+ */
+export function analyzeBundle(input, primitives = {}, options = {}) {
+  const bytes = asBytes(input);
+  const artifactPath = options.path ?? 'bundle.zip';
+  const zip = readZip(bytes, primitives);
+  return finishAnalysis({ bytes, zip, primitives, artifactPath });
+}
+
+/**
+ * Async twin of `analyzeBundle` for hosts whose primitives return promises
+ * (`crypto.subtle`, `DecompressionStream`). Same checks, same report.
+ *
+ * @returns {Promise<{ report: object, model: object }>}
+ */
+export async function analyzeBundleAsync(input, primitives = {}, options = {}) {
+  const bytes = asBytes(input);
+  const artifactPath = options.path ?? 'bundle.zip';
+  const zip = await readZipAsync(bytes, primitives);
+  let memo = primitives;
+  if (typeof primitives.sha256 === 'function') {
+    const digest = await primitives.sha256(bytes);
+    memo = { ...primitives, sha256: () => digest };
+  }
+  return finishAnalysis({ bytes, zip, primitives: memo, artifactPath });
+}
+
 /** Validate a zip and return only the report. */
 export function validateBundle(input, primitives = {}, options = {}) {
   return analyzeBundle(input, primitives, options).report;
+}
+
+/** Async twin of `validateBundle` (browser/host promises). */
+export async function validateBundleAsync(input, primitives = {}, options = {}) {
+  return (await analyzeBundleAsync(input, primitives, options)).report;
 }
