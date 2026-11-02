@@ -38,7 +38,12 @@ function fileHash(primitives, model, path) {
   return primitives.sha256(model.entries.get(path).data);
 }
 
-function contentSha256(primitives, model) {
+/**
+ * `contentSha256` of a bundle model (step 5): the digest of the declared
+ * member hashes. Exported so an installer can re-derive the zip ↔ IR binding
+ * without compiling (#106).
+ */
+export function bundleContentSha256(primitives, model) {
   const manifest = model.manifest;
   const paths = ['bundle.json'];
   for (const id of manifest.stages) paths.push(`stages/${id}.json`);
@@ -139,7 +144,7 @@ function buildIr(primitives, model) {
         schema: IR_BUNDLE_SCHEMA,
         id: manifest.id,
         version: manifest.version,
-        contentSha256: contentSha256(primitives, model),
+        contentSha256: bundleContentSha256(primitives, model),
       },
       manifest: { path: 'bundle.json', sha256: fileHash(primitives, model, 'bundle.json') },
     },
