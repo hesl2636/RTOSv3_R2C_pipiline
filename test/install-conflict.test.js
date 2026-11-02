@@ -253,3 +253,243 @@ test('all conflicts are aggregated in one pass, not first-error-wins', (t) => {
   assert.deepEqual(outcome.conflicts.map((conflict) => conflict.path), [first, second]);
   assert.equal(outcome.conflicts.every((conflict) => conflict.code === 'UNOWNED_PATH'), true);
 });
+
+/**
+ * The whole #76 §6.2 table in one place: each row is an isolated project and
+ * asserts only the observable decision (`code`/`action`), so a matrix change
+ * fails the row instead of silently picking another branch.
+ */
+const MATRIX = [
+  {
+    name: 'another receipt owns the path',
+    arrange(projectRoot) {
+      const sampleSet = sample('r2c');
+      writeReceipt(projectRoot, { paths: [targetOf(sampleSet.result, 1)] });
+      return { ...sampleSet, force: false };
+    },
+    expect: { code: 'INSTALL_CONFLICTS', codes: ['INSTALL_PATH_CONFLICT'] },
+  },
+  {
+    name: 'another receipt owns the path and --force still refuses',
+    arrange(projectRoot) {
+      const sampleSet = sample('r2c');
+      writeReceipt(projectRoot, { paths: [targetOf(sampleSet.result, 1)] });
+      return { ...sampleSet, force: true };
+    },
+    expect: { code: 'INSTALL_CONFLICTS', codes: ['INSTALL_PATH_CONFLICT'] },
+  },
+  {
+    name: 'fail-if-exists is not bypassed by --force',
+    arrange(projectRoot) {
+      const sampleSet = sample('r2c');
+      const path = targetOf(sampleSet.result);
+      const absolute = join(projectRoot, ...path.split('/'));
+      mkdirSync(dirname(absolute), { recursive: true });
+      writeFileSync(absolute, 'preexisting\n');
+      const result = cloneResult(sampleSet.result);
+      result.installPlan.steps.find((step) => step.path === path).overwrite = 'fail-if-exists';
+      return { ...sampleSet, result, force: true };
+    },
+    expect: { code: 'INSTALL_CONFLICTS', codes: ['PATH_EXISTS'] },
+  },
+  {
+    name: 'own untouched file is backed up and replaced',
+    arrange(projectRoot) {
+      const sampleSet = sample('r2c');
+      assert.equal(installProjection({ ...sampleSet, projectRoot, clock: CLOCK }).code, 'OK');
+      const path = targetOf(sampleSet.result, 1);
+      const result = cloneResult(sampleSet.result);
+      result.files.find((file) => file.path === path).content += 'v2\n';
+      return { ...sampleSet, result, force: false, path };
+    },
+    expect: { code: 'OK', mode: 'upgrade' },
+    check(outcome, { path }) {
+      assert.equal(outcome.decisions.find((decision) => decision.path === path)?.action, 'replace');
+      assert.ok(outcome.backups.some((backup) => backup.path === path));
+    },
+  },
+  {
+    name: 'own modified file is refused without --force',
+    arrange(projectRoot) {
+      const sampleSet = sample('r2c');
+      assert.equal(installProjection({ ...sampleSet, projectRoot, clock: CLOCK }).code, 'OK');
+      const path = targetOf(sampleSet.result, 1);
+      writeFileSync(join(projectRoot, ...path.split('/')), 'hand edited\n');
+      return { ...sampleSet, force: false };
+    },
+    expect: { code: 'INSTALL_CONFLICTS', codes: ['MODIFIED_OWNED_FILE'] },
+  },
+  {
+    name: 'own modified file is replaced with --force and backed up',
+    arrange(projectRoot) {
+      const sampleSet = sample('r2c');
+      assert.equal(installProjection({ ...sampleSet, projectRoot, clock: CLOCK }).code, 'OK');
+      const path = targetOf(sampleSet.result, 1);
+      writeFileSync(join(projectRoot, ...path.split('/')), 'hand edited\n');
+      return { ...sampleSet, force: true, path };
+    },
+    expect: { code: 'OK' },
+    check(outcome, { path }) {
+      assert.ok(outcome.backups.some((backup) => backup.path === path));
+    },
+  },
+  {
+    name: 'unowned identical bytes are adopted without a write',
+    arrange(projectRoot) {
+      const sampleSet = sample('r2c');
+      const path = targetOf(sampleSet.result);
+      const file = sampleSet.result.files.find((entry) => entry.path === path);
+      const absolute = join(projectRoot, ...path.split('/'));
+      mkdirSync(dirname(absolute), { recursive: true });
+      writeFileSync(absolute, file.content);
+      return { ...sampleSet, force: false, path };
+    },
+    expect: { code: 'OK' },
+    check(outcome, { path }) {
+      assert.equal(outcome.decisions.find((decision) => decision.path === path)?.action, 'adopt');
+      assert.equal(outcome.wrote.includes(path), false);
+    },
+  },
+  {
+    name: 'unowned different bytes are refused',
+    arrange(projectRoot) {
+      const sampleSet = sample('r2c');
+      const path = targetOf(sampleSet.result);
+      const absolute = join(projectRoot, ...path.split('/'));
+      mkdirSync(dirname(absolute), { recursive: true });
+      writeFileSync(absolute, 'user content\n');
+      return { ...sampleSet, force: false };
+    },
+    expect: { code: 'INSTALL_CONFLICTS', codes: ['UNOWNED_PATH'] },
+  },
+  {
+    name: 'unowned different bytes are replaced with --force and backed up',
+    arrange(projectRoot) {
+      const sampleSet = sample('r2c');
+      const path = targetOf(sampleSet.result);
+      const absolute = join(projectRoot, ...path.split('/'));
+      mkdirSync(dirname(absolute), { recursive: true });
+      writeFileSync(absolute, 'user content\n');
+      return { ...sampleSet, force: true, path };
+    },
+    expect: { code: 'OK' },
+    check(outcome, { path }) {
+      assert.ok(outcome.backups.some((backup) => backup.path === path));
+    },
+  },
+  {
+    name: 'a symbolic link at the target is refused, never followed',
+    arrange(projectRoot, t) {
+      const sampleSet = sample('r2c');
+      const outside = tempProject(t);
+      const path = targetOf(sampleSet.result, 1);
+      const absolute = join(projectRoot, ...path.split('/'));
+      const victim = join(outside, ...path.split('/'));
+      mkdirSync(dirname(victim), { recursive: true });
+      writeFileSync(victim, 'outside\n');
+      try {
+        mkdirSync(dirname(absolute), { recursive: true });
+        symlinkSync(victim, absolute, 'file');
+      } catch {
+        try {
+          rmSync(dirname(absolute), { recursive: true, force: true });
+          symlinkSync(dirname(victim), dirname(absolute), 'junction');
+        } catch (error) {
+          return { skip: `symlinks unavailable: ${error?.code}` };
+        }
+      }
+      return { ...sampleSet, force: true };
+    },
+    expect: { code: 'INSTALL_CONFLICTS', codes: ['SYMLINK_AT_TARGET'] },
+  },
+  {
+    name: 'a case-folded collision with another receipt is refused',
+    arrange(projectRoot) {
+      const sampleSet = sample('r2c');
+      const path = targetOf(sampleSet.result, 1);
+      writeReceipt(projectRoot, { paths: [path.replace(/^./, (char) => char.toUpperCase())] });
+      return { ...sampleSet, force: true };
+    },
+    expect: { code: 'INSTALL_CONFLICTS', codes: ['PATH_CASE_COLLISION'] },
+  },
+  {
+    name: 'a file/directory prefix collision with another receipt is refused',
+    arrange(projectRoot) {
+      const sampleSet = sample('r2c');
+      writeReceipt(projectRoot, { paths: [targetOf(sampleSet.result).split('/')[0]] });
+      return { ...sampleSet, force: true };
+    },
+    expect: { code: 'INSTALL_CONFLICTS', codes: ['PATH_PREFIX_CONFLICT'] },
+  },
+  {
+    name: 'an escaping path is refused before any write',
+    arrange() {
+      const sampleSet = sample('r2c');
+      const result = cloneResult(sampleSet.result);
+      result.files[0].path = '../r2c-escape-victim.md';
+      result.installPlan.steps[0].path = '../r2c-escape-victim.md';
+      return { ...sampleSet, result, force: true };
+    },
+    expect: { code: 'PROJECTION_RESULT_INVALID' },
+  },
+  {
+    name: 'different conflict codes are aggregated in one pass',
+    arrange(projectRoot) {
+      const sampleSet = sample('r2c');
+      writeReceipt(projectRoot, { paths: [targetOf(sampleSet.result, 0)] });
+      const absolute = join(projectRoot, ...targetOf(sampleSet.result, 1).split('/'));
+      mkdirSync(dirname(absolute), { recursive: true });
+      writeFileSync(absolute, 'different\n');
+      return { ...sampleSet, force: false };
+    },
+    expect: { code: 'INSTALL_CONFLICTS', codes: ['INSTALL_PATH_CONFLICT', 'UNOWNED_PATH'] },
+  },
+];
+
+for (const row of MATRIX) {
+  test(`conflict matrix: ${row.name}`, (t) => {
+    const projectRoot = tempProject(t);
+    const arranged = row.arrange(projectRoot, t);
+    if (arranged.skip !== undefined) {
+      t.skip(arranged.skip);
+      return;
+    }
+    const outcome = installProjection({
+      result: arranged.result,
+      irBytes: arranged.irBytes,
+      projectRoot,
+      force: arranged.force,
+      clock: CLOCK,
+    });
+    assert.equal(outcome.code, row.expect.code);
+    if (row.expect.codes !== undefined) assert.deepEqual(codes(outcome), row.expect.codes);
+    if (row.expect.mode !== undefined) assert.equal(outcome.mode, row.expect.mode);
+    row.check?.(outcome, arranged);
+  });
+}
+
+test('a conflict that appears after the pre-lock check is caught by the TOCTOU recheck', (t) => {
+  const projectRoot = tempProject(t);
+  const { result, irBytes } = sample('r2c');
+  const path = targetOf(result);
+  const absolute = join(projectRoot, ...path.split('/'));
+  let calls = 0;
+  // The installer stamps the transaction immediately after taking the lock;
+  // this clock simulates another writer landing a file in that window.
+  const clock = () => {
+    calls += 1;
+    if (calls === 1) {
+      mkdirSync(dirname(absolute), { recursive: true });
+      writeFileSync(absolute, 'intruder\n');
+    }
+    return new Date('2026-01-01T00:00:00.000Z');
+  };
+
+  const outcome = installProjection({ result, irBytes, projectRoot, clock });
+  assert.equal(outcome.code, 'INSTALL_CONFLICTS');
+  assert.match(outcome.message, /while waiting for the lock/);
+  assert.deepEqual(outcome.conflicts.map((conflict) => conflict.path), [path]);
+  assert.deepEqual(codes(outcome), ['UNOWNED_PATH']);
+  assert.equal(readFileSync(absolute, 'utf8'), 'intruder\n');
+  assert.equal(existsSync(join(projectRoot, '.r2c/install/receipts')), false);
+});
