@@ -156,6 +156,14 @@ const VALUE_FLAGS = new Set([
   '--bundle', '--projection', '--target',
 ]);
 const FLAG_FLAGS = new Set(['--force']);
+/**
+ * Projection options are Release inputs, not install options: a Release ships
+ * one already-projected payload. Refusing them here (with a pointer to the
+ * re-projection tools) is the install-time half of "never project" (#106).
+ */
+const PROJECTION_OPTION_FLAGS = new Set([
+  '--stage-order', '--stageOrder', '--skills', '--skill', '--targets', '--options', '--exclude-skills',
+]);
 
 class BootstrapError extends Error {
   constructor(code, message, exitCode) {
@@ -183,7 +191,16 @@ function parseArgs(argv) {
     }
     const equals = arg.startsWith('--') ? arg.indexOf('=') : -1;
     const name = equals === -1 ? arg : arg.slice(0, equals);
-    if (!VALUE_FLAGS.has(name)) fail('USAGE', `unknown argument: ${arg}\n${USAGE}`, 2);
+    if (!VALUE_FLAGS.has(name)) {
+      if (PROJECTION_OPTION_FLAGS.has(name)) {
+        fail(
+          'RELEASE_OPTION_CONFLICT',
+          `custom projection options are not accepted at install (${name}): the Release payload is already projected. Re-project the published IR with the framework CLI (bin/r2c-assembler.js project) or the web front end, then install that result`,
+          2,
+        );
+      }
+      fail('USAGE', `unknown argument: ${arg}\n${USAGE}`, 2);
+    }
     let value = equals === -1 ? undefined : arg.slice(equals + 1);
     if (value === undefined) {
       value = argv[index + 1];

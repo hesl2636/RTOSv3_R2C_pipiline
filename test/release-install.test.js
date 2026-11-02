@@ -512,6 +512,16 @@ test('a wrong --version or unknown --target refuses before writing', (t) => {
   assert.equal(conflict.status, 2, `${conflict.stdout}\n${conflict.stderr}`);
   assert.match(conflict.stderr, /RELEASE_OPTION_CONFLICT/);
   assert.equal(walk(target).length, 0);
+
+  const custom = install(
+    ['--bundle', ID, '--version', VERSION, '--projection', 'r2c', '--stage-order', 'reverse',
+      '--project', target, '--release-base', release],
+    { env },
+  );
+  assert.equal(custom.status, 2, `${custom.stdout}\n${custom.stderr}`);
+  assert.match(custom.stderr, /already projected/);
+  assert.match(custom.stderr, /Re-project/i);
+  assert.equal(walk(target).length, 0, 'a rejected projection option writes nothing');
 });
 
 test('the bootstrap keeps the legacy surface byte-compatible', (t) => {
