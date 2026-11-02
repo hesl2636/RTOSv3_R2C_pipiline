@@ -419,7 +419,7 @@ export function installProjection(input = {}) {
   }
 
   const irDiskSha = lstatOrNull(irAbsolute)?.isFile() ? sha256File(irAbsolute) : null;
-  const hostTargets = [...(owned?.hostTargets ?? [])].sort();
+  const hostTargets = [...(owned?.hostTargets ?? result.targets ?? [])].sort();
   const unchanged = own !== null
     && sameIdentity(own.receipt, {
       projection: projectionId,

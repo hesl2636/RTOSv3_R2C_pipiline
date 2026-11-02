@@ -11,6 +11,7 @@ import { readJournal } from './transaction.js';
 import { readReceipts } from './receipt.js';
 import { LAUNCHER_PATH, LAUNCHER_SHA256, readRuntimeReceipt } from './runtime.js';
 import { manifestSelection } from './status.js';
+import { TARGETS } from '../runtime/agent-native/projection/targets/index.js';
 import { sha256File } from './util.js';
 
 export const DOCTOR_SCHEMA = 'r2c.doctor/v1';
@@ -212,6 +213,87 @@ function extraFilesCheck(projectRoot, receipts, runtime) {
   });
 }
 
+/**
+ * Target smoke: every selected host's installed file groups still satisfy the
+ * descriptor's structural expectation (skills have frontmatter, agents carry a
+ * name/description, the roles.json metadata parses). This is the replacement
+ * for the retired `r2c acceptance` agent face: model-free, project-local.
+ */
+function targetSmokeCheck(projectRoot, receipts) {
+  const results = [];
+  for (const item of receipts) {
+    const receipt = item.receipt;
+    if (receipt.projection?.id !== 'agent-native') continue;
+    const namespace = receipt.bundle?.id;
+    if (typeof namespace !== 'string' || namespace === '') continue;
+    const targets = new Set(receipt.host_targets ?? []);
+    for (const file of receipt.files ?? []) {
+      for (const target of file.targets ?? []) targets.add(target);
+    }
+    for (const target of [...targets].sort(compareCodePoints)) {
+      const descriptor = TARGETS[target];
+      if (descriptor?.smoke === undefined) continue;
+      const missing = [];
+      for (const expectation of descriptor.smoke(namespace)) {
+        if (expectation.kind === 'metadata') {
+          const absolute = join(projectRoot, ...`${expectation.root}/${expectation.prefix}`.split('/'));
+          if (!existsSync(absolute)) missing.push(`metadata:${expectation.root}/${expectation.prefix}`);
+          else {
+            try {
+              JSON.parse(readFileSync(absolute, 'utf8'));
+            } catch {
+              missing.push(`metadata-json:${expectation.root}/${expectation.prefix}`);
+            }
+          }
+          continue;
+        }
+        const dir = join(projectRoot, ...expectation.root.split('/'));
+        let names = [];
+        try {
+          names = readdirSync(dir).filter((name) => name.startsWith(expectation.prefix));
+        } catch {
+          names = [];
+        }
+        if (names.length === 0) {
+          missing.push(`${expectation.kind}:${expectation.root}/${expectation.prefix}*`);
+          continue;
+        }
+        for (const name of names) {
+          const absolute = join(dir, name);
+          let text;
+          try {
+            if (!statSync(absolute).isFile()) continue;
+            text = readFileSync(absolute, 'utf8');
+          } catch {
+            missing.push(`unreadable:${expectation.root}/${name}`);
+            continue;
+          }
+          if (text.trim() === '') {
+            missing.push(`empty:${expectation.root}/${name}`);
+            continue;
+          }
+          if (expectation.format === 'toml') {
+            if (!/^\s*name\s*=\s*"/m.test(text) || !/^\s*description\s*=\s*"/m.test(text)) {
+              missing.push(`toml-metadata:${expectation.root}/${name}`);
+            }
+          } else if (expectation.format === 'skill' || expectation.format === 'md') {
+            const frontmatter = /^---\r?\n([\s\S]*?)\r?\n---/.exec(text);
+            if (frontmatter === null || !/^name\s*:/m.test(frontmatter[1]) || !/^description\s*:/m.test(frontmatter[1])) {
+              missing.push(`md-metadata:${expectation.root}/${name}`);
+            }
+          }
+        }
+      }
+      results.push(
+        missing.length === 0
+          ? pass(`target.smoke:${target}`, `${target} discovery files are present and readable`, { namespace })
+          : fail(`target.smoke:${target}`, `${target} discovery files are missing or invalid`, { namespace, missing }),
+      );
+    }
+  }
+  return results;
+}
+
 function hostDetectionCheck(projectRoot, receipts, runtime) {
   const targets = new Set([...(runtime?.host_targets ?? []), ...receipts.flatMap((item) => item.receipt.host_targets ?? [])]);
   const entries = [...targets].sort(compareCodePoints).map((target) => {
@@ -304,6 +386,7 @@ export function doctor(projectRootInput) {
   checks.push(manifestCheck(projectRoot, receipts));
   checks.push(extraFilesCheck(projectRoot, receipts, runtime));
   checks.push(hostDetectionCheck(projectRoot, receipts, runtime));
+  checks.push(...targetSmokeCheck(projectRoot, receipts));
   checks.push(transactionCheck(projectRoot));
   checks.push(summaryCheck(receipts));
 

@@ -51,8 +51,7 @@ import { canonicalInputOptions, isCanonicalOptions, normalizeOptions, payloadInp
 import { project } from '../../projection/project.js';
 import { getProjection } from '../../projection/registry.js';
 import { validateResult } from '../../projection/validate-result.js';
-import { collectEngine } from '../../src/engine.js';
-import { createTarGz } from '../../src/plugin.js';
+import { collectEngine, engineEntryBytes } from './engine-archive.mjs';
 import { collectBundleFiles } from './file-set.mjs';
 import { createReleaseTarGz, readReleaseTarGz, releasePathProblem } from './release-tar.mjs';
 import { writeZip } from './zip-writer.mjs';
@@ -249,47 +248,17 @@ function engineSourceProblems(rels) {
 }
 
 /**
- * Engine version and file set. #111 moves the engine to
- * `runtime/r2c/engine/`; until then the root package is the engine home and
- * the root version is E (documented fallback, ticket #105).
+ * Engine version and file set.
+ *
+ * Both channels ship the same bytes: `scripts/lib/engine-archive.mjs` owns
+ * the P6 layout (root launcher + `runtime/r2c/engine/**` + `core/**` +
+ * vendored `yaml`), and the version is the engine package version E, not the
+ * framework version.
  */
 export function readEngine(root) {
-  const nested = join(root, 'runtime/r2c/engine/package.json');
-  if (existsSync(nested)) {
-    const pkg = readJsonFile(nested);
-    const engineRoot = join(root, 'runtime/r2c/engine');
-    const dirs = ['bin', 'src', 'schema', 'node_modules/yaml']
-      .filter((dir) => existsSync(join(engineRoot, dir)))
-      .map((dir) => ({ from: dir, rel: dir }));
-    const files = [];
-    const problems = [];
-    const walk = (dir, prefix) => {
-      for (const name of readdirSync(dir).sort(compareCodePoints)) {
-        const absolute = join(dir, name);
-        const rel = `${prefix}/${name}`;
-        const stat = lstatSync(absolute, { throwIfNoEntry: false });
-        if (stat === undefined) continue;
-        if (stat.isSymbolicLink()) {
-          problems.push(`symlink not allowed in engine archive: ${rel}`);
-        } else if (stat.isDirectory()) walk(absolute, rel);
-        else if (stat.isFile()) files.push({ rel, absolute });
-        else problems.push(`unsupported file type in engine archive: ${rel}`);
-      }
-    };
-    for (const dir of dirs) walk(join(engineRoot, dir.from), dir.rel);
-    for (const name of ['package.json', 'LICENSE']) {
-      const absolute = join(engineRoot, name);
-      if (!existsSync(absolute)) problems.push(`missing engine archive file: ${name}`);
-      else files.push({ rel: name, absolute });
-    }
-    files.sort((left, right) => compareCodePoints(left.rel, right.rel));
-    return { version: pkg?.version ?? null, files, problems };
-  }
-
-  const rootPkg = readJsonFile(join(root, 'package.json'));
   const collected = collectEngine(root);
   return {
-    version: rootPkg?.version ?? null,
+    version: collected.version,
     files: collected.files,
     problems: collected.problems,
   };
@@ -473,9 +442,11 @@ function frameworkArchive(collection) {
 }
 
 function engineArchive(files) {
-  // The engine asset is byte-identical in both channels (#74 §2.3), so it
-  // uses the legacy deterministic writer unchanged.
-  return createTarGz(files.map((file) => ({ path: file.rel, data: readFileSync(file.absolute) })));
+  // The engine asset is byte-identical in both channels (#74 §2.3) and uses
+  // the same deterministic writer as the payload archives.
+  return createReleaseTarGz(
+    files.map((file) => ({ path: file.rel, data: engineEntryBytes(file), mode: 0o644 })),
+  );
 }
 
 function sumsBuffer(assets) {

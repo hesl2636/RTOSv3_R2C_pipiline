@@ -1,20 +1,15 @@
 /**
- * Lazy bridge to the shared projection/runtime modules.
+ * Static bridge to the shared projection/runtime modules.
  *
- * The read-only slice (#108) only needs validation and IR; projection preview
- * and role rendering arrive with #93/#95. Those trees are served by the same
- * whitelist, and this module imports them by relative ESM URL (no bundler, no
- * dynamic discovery: the file names are fixed by the interface contract).
- * Missing modules degrade to `null` until their tickets land.
+ * The browser and the CLI run the same implementations, so these are plain
+ * relative ESM imports — no bundler, no dynamic discovery, no optional
+ * modules. `loadSharedModules` only decides which of the already-loaded
+ * exports this page uses, based on the server's module availability flags.
  */
-
-async function attempt(specifier) {
-  try {
-    return await import(specifier);
-  } catch {
-    return null;
-  }
-}
+import * as registryModule from '../projection/registry.js';
+import { constitutionState } from '../runtime/shared/constitution.js';
+import { renderRole } from '../runtime/shared/render-role.js';
+import { submitReplacement } from '../runtime/shared/submit.js';
 
 /**
  * @param {{ projection?: boolean, runtimeShared?: boolean }} [availability]
@@ -26,16 +21,10 @@ async function attempt(specifier) {
  * }>}
  */
 export async function loadSharedModules(availability = {}) {
-  const [registry, renderRole, constitution, submit] = await Promise.all([
-    availability.projection === true ? attempt('../projection/registry.js') : null,
-    availability.runtimeShared === true ? attempt('../runtime/shared/render-role.js') : null,
-    availability.runtimeShared === true ? attempt('../runtime/shared/constitution.js') : null,
-    availability.runtimeShared === true ? attempt('../runtime/shared/submit.js') : null,
-  ]);
   return {
-    registry: registry ?? null,
-    renderRole: typeof renderRole?.renderRole === 'function' ? renderRole.renderRole : null,
-    constitutionState: typeof constitution?.constitutionState === 'function' ? constitution.constitutionState : null,
-    submitReplacement: typeof submit?.submitReplacement === 'function' ? submit.submitReplacement : null,
+    registry: availability.projection === true ? registryModule : null,
+    renderRole: availability.runtimeShared === true ? renderRole : null,
+    constitutionState: availability.runtimeShared === true ? constitutionState : null,
+    submitReplacement: availability.runtimeShared === true ? submitReplacement : null,
   };
 }

@@ -22,6 +22,7 @@ import {
   statSync,
 } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { canonicalJson } from '../core/canonical-json.js';
 import { compareCodePoints } from '../core/code-point.js';
 import { comparePaths } from '../core/paths.js';
@@ -50,6 +51,8 @@ import {
   writeAbsoluteAtomic,
   writeFileAtomic,
 } from './util.js';
+
+const FRAMEWORK_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 export const RUNTIME_SCHEMA = 'r2c.runtime/v1';
 
@@ -99,27 +102,27 @@ const COMMAND_TARGETS = Object.freeze({
 
 const HOST_LAYOUT = Object.freeze({
   'claude-code': Object.freeze([
-    Object.freeze({ from: 'hosts/claude-code/settings.hooks.json', merge: Object.freeze({ path: '.claude/settings.json', pointer: 'hooks' }) }),
-    Object.freeze({ from: 'hosts/claude-code/mcp.json', merge: Object.freeze({ path: '.mcp.json', pointer: 'mcpServers' }) }),
+    Object.freeze({ from: 'runtime/agent-native/targets/claude-code/assets/hooks.json', merge: Object.freeze({ path: '.claude/settings.json', pointer: 'hooks' }) }),
+    Object.freeze({ from: 'runtime/agent-native/targets/claude-code/assets/mcp.json', merge: Object.freeze({ path: '.mcp.json', pointer: 'mcpServers' }) }),
   ]),
   codex: Object.freeze([
-    Object.freeze({ from: 'hosts/codex/hooks.json', to: '.codex/hooks.json', kind: 'hook' }),
-    Object.freeze({ dir: 'hosts/codex', filter: /^r2c-hook-.*\.(cmd|sh)$/, to: '.codex', kind: 'hook', executable: true }),
+    Object.freeze({ from: 'runtime/agent-native/targets/codex/assets/hooks.json', to: '.codex/hooks.json', kind: 'hook' }),
+    Object.freeze({ dir: 'runtime/agent-native/targets/codex/assets', filter: /^r2c-hook-.*\.(cmd|sh)$/, to: '.codex', kind: 'hook', executable: true }),
   ]),
   omp: Object.freeze([
-    Object.freeze({ from: 'hosts/omp/mcp.json', merge: Object.freeze({ path: '.omp/mcp.json', pointer: 'mcpServers' }) }),
-    Object.freeze({ dir: 'hosts/omp/hooks', to: '.omp/hooks', kind: 'hook' }),
+    Object.freeze({ from: 'runtime/agent-native/targets/omp/assets/mcp.json', merge: Object.freeze({ path: '.omp/mcp.json', pointer: 'mcpServers' }) }),
+    Object.freeze({ dir: 'runtime/agent-native/targets/omp/assets/hooks', to: '.omp/hooks', kind: 'hook' }),
   ]),
   opencode: Object.freeze([
-    Object.freeze({ from: 'hosts/opencode/mcp.json', merge: Object.freeze({ path: 'opencode.json', pointer: 'mcp' }) }),
-    Object.freeze({ from: 'hosts/opencode/r2c.ts', to: '.opencode/plugins/r2c.ts', kind: 'hook' }),
-    Object.freeze({ dir: 'hosts/opencode/plugins', to: '.opencode/plugins', kind: 'hook' }),
+    Object.freeze({ from: 'runtime/agent-native/targets/opencode/assets/mcp.json', merge: Object.freeze({ path: 'opencode.json', pointer: 'mcp' }) }),
+    Object.freeze({ from: 'runtime/agent-native/targets/opencode/assets/plugins/r2c.ts', to: '.opencode/plugins/r2c.ts', kind: 'hook' }),
+    Object.freeze({ dir: 'runtime/agent-native/targets/opencode/assets/plugins', to: '.opencode/plugins', kind: 'hook' }),
   ]),
   dsh: Object.freeze([
-    Object.freeze({ from: 'hosts/dsh/runtime.cordis.patch.yml', to: '.dsh/r2c/runtime.cordis.patch.yml', kind: 'patch' }),
+    Object.freeze({ from: 'runtime/agent-native/targets/dsh/assets/dsh.patch.yml', to: '.dsh/r2c/runtime.cordis.patch.yml', kind: 'patch' }),
+    Object.freeze({ dir: 'runtime/agent-native/targets/dsh/assets', filter: /^(index\.mjs|package\.json|hooks\.json)$/, to: '.r2c/host/dsh', kind: 'patch' }),
   ]),
 });
-
 function failure(code, message, details = {}) {
   return { ok: false, code, message, ...details };
 }
@@ -139,13 +142,15 @@ function normalizeTargets(targets) {
 }
 
 /** Render engine-owned text for a host: placeholders and `<runner>`. */
-export function renderHostText(text) {
+export function renderHostText(text, { version = '' } = {}) {
   return String(text)
     .replaceAll('<runner>', ROOT_COMMAND)
     .replaceAll('${RUNNER_CMD_DQ}', ROOT_COMMAND)
     .replaceAll('${RUNNER_CMD}', ROOT_COMMAND)
     .replaceAll('$RUNNER_CMD', ROOT_COMMAND)
-    .replaceAll('${PROJECT_ROOT}', '.');
+    .replaceAll('${PROJECT_ROOT}', '.')
+    .replaceAll('${PAYLOAD_HOME}', '.r2c')
+    .replaceAll('${VERSION}', version);
 }
 
 function splitFrontmatter(text) {
@@ -166,8 +171,8 @@ function wrapSkill(stem, text) {
   return ensureTrailingLf(`---\nname: ${JSON.stringify(stem)}\ndescription: ${JSON.stringify(description)}\n---\n\n${body.replace(/^\n+/, '')}`);
 }
 
-function commandFiles(sourceRoot, targets) {
-  const dir = join(sourceRoot, 'commands');
+function commandFiles(sourceRoot, targets, version) {
+  const dir = join(sourceRoot, 'runtime/r2c/assets/commands');
   let names = [];
   try {
     names = readdirSync(dir, { withFileTypes: true })
@@ -183,7 +188,7 @@ function commandFiles(sourceRoot, targets) {
     if (layout === undefined) continue;
     for (const name of names) {
       const stem = name.slice(0, -3);
-      const text = renderHostText(readFileSync(join(dir, name), 'utf8'));
+      const text = renderHostText(readFileSync(join(dir, name), 'utf8'), { version });
       if (layout.style === 'skill') {
         files.push({ path: `${layout.root}/${stem}/SKILL.md`, kind: 'command', targets: [target], mode: 0o644, content: wrapSkill(stem, text) });
       } else {
@@ -208,14 +213,14 @@ function listDirFiles(root, rel, filter) {
   return out.sort((left, right) => compareCodePoints(left.path, right.path));
 }
 
-function hostFiles(sourceRoot, target) {
+function hostFiles(sourceRoot, target, version) {
   const files = [];
   const merged = [];
   for (const rule of HOST_LAYOUT[target] ?? []) {
     if (rule.from !== undefined) {
       const absolute = join(sourceRoot, ...rule.from.split('/'));
       if (!existsSync(absolute)) continue;
-      const text = renderHostText(readFileSync(absolute, 'utf8'));
+      const text = renderHostText(readFileSync(absolute, 'utf8'), { version });
       if (rule.merge !== undefined) {
         merged.push({ path: rule.merge.path, pointer: rule.merge.pointer, text });
       } else {
@@ -237,7 +242,7 @@ function hostFiles(sourceRoot, target) {
           kind: rule.kind ?? 'other',
           targets: [target],
           mode: rule.executable === true ? 0o755 : 0o644,
-          content: ensureTrailingLf(renderHostText(readFileSync(entry.absolute, 'utf8'))),
+          content: ensureTrailingLf(renderHostText(readFileSync(entry.absolute, 'utf8'), { version })),
         });
       }
     }
@@ -304,14 +309,21 @@ function mergeHostPointers(projectRoot, merges) {
   };
 }
 
-function collectRuntimeFiles(sourceRoot, targets) {
-  const files = commandFiles(sourceRoot, targets);
+function collectRuntimeFiles(sourceRoot, targets, version) {
+  const files = commandFiles(sourceRoot, targets, version);
   const merges = [];
   for (const target of targets) {
-    const host = hostFiles(sourceRoot, target);
+    const host = hostFiles(sourceRoot, target, version);
     files.push(...host.files);
     merges.push(...host.merged);
   }
+  files.push({
+    path: '.r2c/shims/hook.mjs',
+    kind: 'hook',
+    targets: sorted(targets),
+    mode: 0o644,
+    content: readFileSync(join(sourceRoot, 'runtime/r2c/assets/shims/hook.mjs'), 'utf8'),
+  });
   files.push({
     path: LAUNCHER_PATH,
     kind: 'launcher',
@@ -505,7 +517,10 @@ export function installRuntime(input = {}) {
     entry,
   };
 
-  const { files: planned, merges } = collectRuntimeFiles(engineSource, targets);
+  const assetRoot = input.assetRoot === undefined || input.assetRoot === null
+    ? FRAMEWORK_ROOT
+    : resolve(input.assetRoot);
+  const { files: planned, merges } = collectRuntimeFiles(assetRoot, targets, version);
   let mergedPlan;
   try {
     mergedPlan = mergeHostPointers(projectRoot, merges);

@@ -17,7 +17,7 @@
  * installer. It never compiles a bundle and never projects one.
  *
  * Self-contained by design: node built-ins only (plus the global `fetch`), no
- * imports from `src/`, so this file runs both from the repository and as the
+ * imports from the framework tree, so this file runs both from the repository and as the
  * `install.mjs` release asset. The bundle path imports only the framework
  * archive it just verified.
  */
@@ -51,19 +51,19 @@ const BUNDLE_ID_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const BUNDLE_ID_MAX = 40;
 const FRAMEWORK_ASSET_RE = /^r2c-framework-(.+).tgz$/;
 const ENGINE_ASSET_RE = /^r2c-engine-(.+).tgz$/;
-/** Mirrors `ENGINE_ENTRY` in `src/engine.js`; the bootstrap may not import `src/` (C5). */
+/** Mirrors `ENGINE_ENTRY` in `scripts/lib/engine-archive.mjs`; the bootstrap may not import framework modules (C5). */
 const ENGINE_ENTRY = 'bin/r2c.js';
 const BLOCK = 512;
 const VERSION_RE = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z][0-9A-Za-z.-]*)?$/;
 const SCOPES = Object.freeze(['project', 'user']);
 /**
- * `engines.node` from package.json, mirrored from `src/cli.js` because the
- * bootstrap may not import `src/` (C5). Checked before anything is fetched:
+ * `engines.node` from the engine package, mirrored from the engine CLI because the
+ * bootstrap may not import the engine (C5). Checked before anything is fetched:
  * an unsupported Node would otherwise download and extract an engine it cannot
  * run, only to hand off into a child that refuses to start.
  */
 export const NODE_RANGE = '>=22.19.0 <23 || >=24.0.0';
-/** The archive path bound `plugin.js`/`engine.js` enforce for every asset. */
+/** The archive path bound `engine-archive.mjs` enforces for every asset. */
 const MAX_PATH_BYTES = 100;
 
 /** True when `version` (as reported by process.versions.node) is in NODE_RANGE. */
@@ -447,7 +447,7 @@ function tarString(header, start, length) {
 
 /**
  * The engine archive path contract, re-stated because the bootstrap may not
- * import `src/` (C5). It must not be laxer than `plugin.js`/`engine.js`:
+ * import the framework (C5). It must not be laxer than `engine-archive.mjs`:
  * non-empty, relative, POSIX, canonical and at most `MAX_PATH_BYTES` bytes.
  */
 export function archivePathProblem(path) {
@@ -771,7 +771,7 @@ function verifyAssetDigest(name, bytes, sums) {
 
 /**
  * Read the framework archive. The bootstrap cannot import `scripts/` or
- * `src/`, and framework paths reach 200 bytes, so this is a local ustar
+ * the engine tree, and framework paths reach 200 bytes, so this is a local ustar
  * reader with the projection path budget instead of the engine one.
  */
 function readFrameworkArchive(buffer) {

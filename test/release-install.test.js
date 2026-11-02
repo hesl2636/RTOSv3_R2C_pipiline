@@ -219,7 +219,8 @@ test('r2c installs the runtime and the pre-projected tree without compiling', (t
   assert.equal(projected.length, 45);
 
   // The five roots carry exactly the projected files, byte for byte.
-  const outside = walk(target).filter((path) => !path.startsWith('.r2c/') && !path.startsWith('.claude/')
+  const outside = walk(target).filter((path) => path !== '.mcp.json' && path !== 'opencode.json'
+    && !path.startsWith('.r2c/') && !path.startsWith('.claude/')
     && !path.startsWith('.agents/') && !path.startsWith('.codex/') && !path.startsWith('.omp/')
     && !path.startsWith('.opencode/') && !path.startsWith('.dsh/'));
   const roots = projected.filter((path) => /^(workflows|tasks|skills|roles|constitution)\//.test(path));

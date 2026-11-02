@@ -11,7 +11,12 @@
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { installProjection } from '../../installer/install.js';
-import { prepareJournal, writeJournal } from '../../installer/transaction.js';
+import {
+  acquireProjectLock,
+  prepareJournal,
+  releaseProjectLock,
+  writeJournal,
+} from '../../installer/transaction.js';
 import { customSample, fixedClock } from './install-fixture.js';
 
 const [scenario, projectRoot, argument, gateFile] = process.argv.slice(2);
@@ -40,6 +45,19 @@ if (scenario === 'install') {
     clock: CLOCK,
   });
   process.stdout.write(JSON.stringify({ ok: outcome.ok, code: outcome.code, action: outcome.action }));
+  process.exit(0);
+}
+
+if (scenario === 'hold') {
+  // Hold the project lock until the test releases it: the contender must see
+  // LOCK_CONFLICT while the lock is demonstrably held, with no sleep window.
+  const [root, marker, release] = process.argv.slice(3);
+  const lock = acquireProjectLock(root, { now: () => CLOCK().getTime() });
+  writeFileSync(marker, 'held');
+  const sleeper = new Int32Array(new SharedArrayBuffer(4));
+  while (!existsSync(release)) Atomics.wait(sleeper, 0, 0, 10);
+  releaseProjectLock(root, lock);
+  process.stdout.write(JSON.stringify({ ok: true, action: 'held' }));
   process.exit(0);
 }
 

@@ -131,10 +131,10 @@ test('installs the engine under .r2c/engine/<V> with a fixed resolver launcher',
 
   const merged = runtime.merged.map((item) => `${item.path}|${item.pointer}`).sort();
   assert.deepEqual(merged, ['.claude/settings.json|hooks', '.mcp.json|mcpServers', '.omp/mcp.json|mcpServers', 'opencode.json|mcp']);
-  assert.equal(JSON.parse(read(projectRoot, '.mcp.json')).mcpServers.demo.command, 'demo');
+  assert.deepEqual(JSON.parse(read(projectRoot, '.mcp.json')).mcpServers, {});
   assert.deepEqual(JSON.parse(read(projectRoot, '.claude/settings.json')).hooks.Stop[0].hooks[0].type, 'command');
-  assert.equal(JSON.parse(read(projectRoot, '.omp/mcp.json')).mcpServers.demo.command, 'demo');
-  assert.equal(JSON.parse(read(projectRoot, 'opencode.json')).mcp.demo.type, 'local');
+  assert.deepEqual(JSON.parse(read(projectRoot, '.omp/mcp.json')).mcpServers, {});
+  assert.deepEqual(JSON.parse(read(projectRoot, 'opencode.json')).mcp, {});
 
   const run = spawnSync(process.execPath, [LAUNCHER_PATH, '--version'], { cwd: projectRoot, encoding: 'utf8' });
   assert.equal(run.status, 0, run.stderr);

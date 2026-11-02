@@ -180,30 +180,43 @@ function runWorker(args) {
 
 test('two concurrent installs in one project: exactly one writes', async (t) => {
   const projectRoot = tempProject(t);
-  const gate = join(projectRoot, '..', `${projectRoot.split(/[\\/]/).pop()}-gate`);
-  t.after(() => rmSync(gate, { force: true }));
+  const marker = join(projectRoot, '..', `${projectRoot.split(/[\\/]/).pop()}-held`);
+  const release = join(projectRoot, '..', `${projectRoot.split(/[\\/]/).pop()}-release`);
+  t.after(() => {
+    rmSync(marker, { force: true });
+    rmSync(release, { force: true });
+  });
 
-  const first = runWorker(['install', projectRoot, 'bundle-a', gate]);
-  const second = runWorker(['install', projectRoot, 'bundle-b', gate]);
-  writeFileSync(gate, 'go\n');
-  const replies = await Promise.all([first, second]);
+  // Deterministic single-writer proof: one process demonstrates that it holds
+  // the project lock (it wrote the marker after acquiring it); a second
+  // process must be refused while it does. No timing assumption anywhere.
+  const holder = runWorker(['hold', projectRoot, marker, release]);
+  const deadline = Date.now() + 20_000;
+  while (!existsSync(marker)) {
+    if (Date.now() > deadline) throw new Error('lock holder did not start');
+    await new Promise((resolvePromise) => setTimeout(resolvePromise, 20));
+  }
 
-  for (const reply of replies) assert.equal(reply.status, 0, reply.stderr);
-  const outcomes = replies.map((reply) => JSON.parse(reply.stdout));
-  assert.equal(outcomes.filter((outcome) => outcome.action === 'installed').length, 1);
-  const loser = outcomes.find((outcome) => outcome.action !== 'installed');
-  // #103: once the winner's receipt is visible the loser is refused at the
-  // r2c root before the conflict matrix runs; both are pre-write refusals.
-  assert.ok(
-    ['LOCK_CONFLICT', 'INSTALL_CONFLICTS', 'R2C_ROOT_OCCUPIED'].includes(loser.code),
-    `unexpected loser: ${loser.code}`,
-  );
+  const refused = await runWorker(['install', projectRoot, 'bundle-a', marker]);
+  assert.equal(refused.status, 0, refused.stderr);
+  assert.equal(JSON.parse(refused.stdout).ok, false, 'a second writer must be refused');
+  assert.equal(JSON.parse(refused.stdout).code, 'LOCK_CONFLICT');
+  assert.equal(existsSync(absolute(projectRoot, '.r2c/install/receipts')), false, 'the loser wrote nothing');
 
+  writeFileSync(release, 'go');
+  const held = await holder;
+  assert.equal(held.status, 0, held.stderr);
+  assert.equal(JSON.parse(held.stdout).action, 'held');
+
+  const winner = await runWorker(['install', projectRoot, 'bundle-a', marker]);
+  assert.equal(winner.status, 0, winner.stderr);
+  const outcome = JSON.parse(winner.stdout);
+  assert.equal(outcome.ok, true);
+  assert.equal(outcome.action, 'installed');
 
   const receipts = readdirSync(absolute(projectRoot, '.r2c/install/receipts/r2c'));
-  assert.equal(receipts.length, 1, 'exactly one identity committed');
-  const winner = receipts[0].replace(/\.json$/, '');
-  assert.equal(existsSync(absolute(projectRoot, `workflows/${winner}.yaml`)), true);
+  assert.deepEqual(receipts, ['bundle-a.json']);
+  assert.equal(existsSync(absolute(projectRoot, 'workflows/bundle-a.yaml')), true);
   assert.equal(existsSync(absolute(projectRoot, '.r2c/install/pending.json')), false);
   assert.equal(existsSync(absolute(projectRoot, '.r2c/install/.lock')), false);
 });

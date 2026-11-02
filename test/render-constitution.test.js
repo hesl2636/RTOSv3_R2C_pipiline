@@ -14,7 +14,7 @@ import { fileURLToPath } from 'node:url';
 import { TWO_STEP_YAML, writeTwoStepProject } from './helpers/two-step.js';
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const BIN = join(REPO, 'bin', 'r2c.js');
+const BIN = join(REPO, 'runtime', 'r2c', 'engine', 'bin', 'r2c.js');
 const RUNNER = 'node .r2c/bin/r2c.js';
 const SESSION = 'sid-render';
 

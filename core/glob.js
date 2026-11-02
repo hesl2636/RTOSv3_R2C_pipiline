@@ -32,6 +32,15 @@ export function isValidGlob(pattern) {
   return braces === 0 && brackets === 0;
 }
 
+/** `expect.outputs` must never point into the read-only skill payload. */
+export function targetsSkillPayload(pattern) {
+  if (typeof pattern !== 'string') return false;
+  const segments = pattern.replaceAll('\\', '/').split('/');
+  return segments.some(
+    (segment) => segment.toLowerCase() === 'skills' || segment.toLowerCase() === 'skill.md',
+  );
+}
+
 const REGEX_SPECIAL = /[.*+?^${}()|[\]\\]/g;
 
 function escapeLiteral(char) {

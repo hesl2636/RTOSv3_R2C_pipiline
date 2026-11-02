@@ -10,11 +10,11 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { stringify } from 'yaml';
-import { STATE_SCHEMA, loadRun } from '../src/state.js';
+
+import { STATE_SCHEMA, loadRun } from '../runtime/r2c/engine/src/state.js';
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const BIN = join(REPO, 'bin', 'r2c.js');
+const BIN = join(REPO, 'runtime', 'r2c', 'engine', 'bin', 'r2c.js');
 
 function promptStep(id, name = `步骤 ${id}`) {
   return { id, name, type: 'prompt', prompt: `执行 ${id}。` };
@@ -32,7 +32,8 @@ function manifest(steps, { stageName = '阶段一' } = {}) {
 
 function writeManifest(root, steps, options) {
   mkdirSync(join(root, 'workflows'), { recursive: true });
-  writeFileSync(join(root, 'workflows', 'guard.yaml'), stringify(manifest(steps, options)));
+  writeFileSync(join(root, 'workflows', 'guard.yaml'), `${JSON.stringify(manifest(steps, options), null, 2)}
+`);
 }
 
 function tempProject(t) {

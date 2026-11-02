@@ -10,6 +10,7 @@
  * shared `.agents/skills` root.
  */
 import { perRoleRoleFiles } from '../role-files.js';
+import { layoutSmoke, hostProfile } from './host.js';
 
 const TOKENS = ['read', 'write', 'edit', 'glob', 'grep', 'bash', 'task', 'web'];
 
@@ -141,6 +142,14 @@ export const opencodeTarget = Object.freeze({
   mirrorsSharedSkills: true,
   capabilities: CAPABILITIES,
   capabilityNotes: CAPABILITY_NOTES,
+  ...hostProfile({
+    detect: {"commands":[["opencode","--version"]],"paths":["~/.config/opencode"]},
+    assets: [
+    Object.freeze({ path: 'runtime/agent-native/targets/opencode/assets/mcp.json', sha256: '70cadc8acdced125361a637eac5816a7f3d77912020c00d5a63f34b106292858' }),
+    Object.freeze({ path: 'runtime/agent-native/targets/opencode/assets/plugins/r2c.ts', sha256: '3d028aedd877bb51593e4cb2faf0f184037d6822cb72c1a598ab3fa3e4b73941' }),
+    ],
+    smoke: (namespace) => layoutSmoke(namespace, { skillsRoot: '.agents/skills', agentsRoot: '.opencode/agents', agentFormat: 'md' }),
+  }),
   layout: Object.freeze({
     skillsRoot: '.agents/skills',
     agentsRoot: '.opencode/agents',

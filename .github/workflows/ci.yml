@@ -35,16 +35,15 @@ jobs:
         run: npm ci
       - name: Test
         run: npm test
-      - name: Validate workflow manifest
-        shell: bash
-        run: node bin/r2c.js validate --manifest "${{ github.workspace }}/pack/workflows/hm2B_drvport_pipiline.yaml"
+      - name: Sample bundle is reproducible
+        run: node scripts/build-bundle.mjs examples/rtosv3/bundle --check
       - name: Release contract check
         run: node scripts/release.mjs --check
-      - name: Tracked workflow count
+      - name: Tracked bundle artifact count
         shell: bash
         run: |
-          count=$(git ls-files '*/workflows/*.yaml' | wc -l | tr -d ' ')
+          count=$(git ls-files 'examples/*/dist/*.zip' | wc -l | tr -d ' ')
           if [ "$count" -ne 1 ]; then
-            echo "::error::expected exactly one tracked workflows/*.yaml, found $count"
+            echo "::error::expected exactly one tracked examples/*/dist/*.zip, found $count"
             exit 1
           fi

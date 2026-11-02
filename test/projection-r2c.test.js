@@ -36,7 +36,7 @@ import { R2C_MANIFEST } from '../runtime/r2c/projection/manifest.js';
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const ZIP = join(ROOT, 'examples/rtosv3/dist/bundle-rtosv3-drvport-v1.0.0.zip');
 const ASSEMBLER = join(ROOT, 'bin', 'r2c-assembler.js');
-const ENGINE = join(ROOT, 'bin', 'r2c.js');
+const ENGINE = join(ROOT, 'runtime', 'r2c', 'engine', 'bin', 'r2c.js');
 const MANIFEST = getProjection('r2c');
 const sha256 = (text) => createHash('sha256').update(Buffer.from(text, 'utf8')).digest('hex');
 const CAPABILITIES = [
