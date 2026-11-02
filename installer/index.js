@@ -33,6 +33,31 @@ export {
   retireLegacyReceipts,
   revokeMergedPointers,
 } from './legacy.js';
+export { GH_TOKEN_ENV, GH_TOKEN_HINT, publishAvailability, readGithubToken, redactSecret } from './release-auth.js';
+export { GITHUB_API_BASE, GithubClientError, createGithubClient } from './release-client.js';
+export { PUBLISH_STATES, publishBundle } from './release-publish.js';
+export {
+  DEFAULT_RELEASE_REPO,
+  ReleaseSourceError,
+  assetMissingCode,
+  downloadAsset,
+  parseSums,
+  releaseDownloadBase,
+  resolveLatest,
+  resolveVersion,
+  verifySums,
+} from './release-source.js';
+export {
+  INSTALL_ASSET,
+  IR_ASSET,
+  SUMS_ASSET,
+  bundleAssetNames,
+  bundleTag,
+  isLegacyEngineTag,
+  isValidBundleId,
+  legacyAssetNames,
+  parseBundleTag,
+} from './release-tags.js';
 export { diffFileSets, previousRecord } from './upgrade.js';
 export { installR2cProject, renderR2cRoles, R2C_ROLE_TARGETS, ROLES_JSON_PATH } from './r2c.js';
 export {

@@ -31,6 +31,10 @@
  * `v<engine>` asset set. `--options FILE` packs a custom local selection (the
  * payload manifests record the actual options; only canonical builds are
  * publishable) and `--json` emits JSON-lines progress for the web child.
+ *
+ * `--bundle <zip|dir> --publish` builds the same assets, then drives the draft
+ * → upload → verify → publish state machine (#107). Publishing reads
+ * GH_TOKEN/GITHUB_TOKEN from the launch environment only and never prompts.
  */
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
@@ -54,6 +58,10 @@ import {
   checkBundleRelease,
   describeBundleCheck,
 } from './lib/bundle-release.mjs';
+import { GH_TOKEN_HINT, readGithubToken } from '../installer/release-auth.js';
+import { GITHUB_API_BASE, createGithubClient } from '../installer/release-client.js';
+import { publishBundle } from '../installer/release-publish.js';
+import { DEFAULT_RELEASE_REPO } from '../installer/release-source.js';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const ADAPTER_IDS = Object.freeze(['claude-code', 'codex', 'dsh', 'omp', 'opencode']);
@@ -78,7 +86,9 @@ function usage(message) {
   process.stderr.write(
     'usage: node scripts/release.mjs [--out DIR] | --check [--out DIR] | --compat\n'
     + '       node scripts/release.mjs --bundle <zip|dir> --out DIR [--tag TAG] [--options FILE] [--json]\n'
-    + '       node scripts/release.mjs --bundle <zip|dir> --check [--out DIR] [--tag TAG]\n',
+    + '       node scripts/release.mjs --bundle <zip|dir> --check [--out DIR] [--tag TAG]\n'
+    + '       node scripts/release.mjs --bundle <zip|dir> --publish [--out DIR] [--tag TAG] [--commit SHA]\n'
+    + '       --publish reads GH_TOKEN/GITHUB_TOKEN from the launch environment; it never prompts.\n',
   );
   process.exit(2);
 }
@@ -93,6 +103,8 @@ function parseArgs(argv) {
     tag: null,
     optionsFile: null,
     json: false,
+    publish: false,
+    commit: null,
   };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
@@ -107,6 +119,12 @@ function parseArgs(argv) {
       const value = argv[index + 1];
       if (value === undefined || value.startsWith('--')) usage('--tag requires a tag name');
       options.tag = value;
+      index += 1;
+    } else if (arg === '--publish') options.publish = true;
+    else if (arg === '--commit') {
+      const value = argv[index + 1];
+      if (value === undefined || value.startsWith('--')) usage('--commit requires a commit sha');
+      options.commit = value;
       index += 1;
     } else if (arg === '--out') {
       const value = argv[index + 1];
@@ -128,10 +146,14 @@ function parseArgs(argv) {
   if (options.tag !== null && options.bundle === null) usage('--tag only applies to --bundle');
   if (options.optionsFile !== null && options.bundle === null) usage('--options only applies to --bundle');
   if (options.optionsFile !== null && options.check) usage('--options is a build input, not a --check input');
-  if (options.json && (options.bundle === null || options.check)) {
+  if (options.optionsFile !== null && options.publish) usage('--options does not apply to --publish');
+  if (options.json && (options.bundle === null || options.check || options.publish)) {
     usage('--json only applies to a --bundle build');
   }
-  if (options.bundle !== null && !options.check && !options.outSet) {
+  if (options.commit !== null && !options.publish) usage('--commit only applies to --publish');
+  if (options.publish && options.check) usage('--publish and --check are mutually exclusive');
+  if (options.publish && options.bundle === null) usage('--publish requires --bundle');
+  if (options.bundle !== null && !options.check && !options.publish && !options.outSet) {
     usage('--bundle requires --out DIR (a bundle Release never shares the legacy dist directory)');
   }
   return options;
@@ -611,6 +633,12 @@ function readRequestedOptions(options) {
   return { ok: true, options: parsed };
 }
 
+/** Write the built assets into `--out`. */
+function writeBundleAssets(result, outDir) {
+  mkdirSync(outDir, { recursive: true });
+  for (const asset of result.assets) writeFileSync(join(outDir, asset.name), asset.data);
+}
+
 function buildBundle(options) {
   const requested = readRequestedOptions(options);
   const result = requested.ok
@@ -630,10 +658,7 @@ function buildBundle(options) {
     }
     process.exit(1);
   }
-  mkdirSync(options.out, { recursive: true });
-  for (const asset of result.assets) {
-    writeFileSync(join(options.out, asset.name), asset.data);
-  }
+  writeBundleAssets(result, options.out);
   if (options.json) {
     for (const projection of result.projections) {
       emitJsonLine({
@@ -680,6 +705,67 @@ function buildBundle(options) {
   for (const note of result.notes) process.stdout.write(`note: ${note}\n`);
 }
 
+function headCommit() {
+  const result = spawnSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8', windowsHide: true });
+  if (result.status !== 0 || typeof result.stdout !== 'string') return null;
+  const sha = result.stdout.trim();
+  return /^[0-9a-f]{40}$/.test(sha) ? sha : null;
+}
+
+const RECOVERY_HINT = Object.freeze({
+  retry: 're-run --publish; the draft was deleted and the version is still unused',
+  'new-patch': 'the version is consumed; publish a new patch version',
+  'mark-prerelease-or-new-patch': 'mark the release prerelease, or publish a new patch version; never rewrite its assets',
+});
+
+/**
+ * Publish a bundle Release (#107). The token comes only from the launch
+ * environment; it is never printed, asked for or written to disk.
+ */
+async function publishBundleCli(options) {
+  const credential = readGithubToken(process.env);
+  if (credential.token === null) {
+    process.stderr.write(`release: publish disabled — ${GH_TOKEN_HINT} in the launch environment\n`);
+    process.exit(2);
+  }
+  const result = buildBundleRelease({
+    root: ROOT,
+    bundlePath: options.bundle,
+    tag: options.tag,
+  });
+  if (!result.ok) {
+    process.stderr.write(`bundle release failed for ${options.bundle}:\n`);
+    for (const failure of result.failures) process.stderr.write(`- ${failure}\n`);
+    process.exit(1);
+  }
+  if (options.outSet) writeBundleAssets(result, options.out);
+
+  const commit = options.commit ?? headCommit();
+  if (commit === null) {
+    process.stderr.write('release: --commit <sha> is required when git HEAD is unavailable\n');
+    process.exit(2);
+  }
+  const client = createGithubClient({ base: GITHUB_API_BASE, token: credential.token });
+  const published = await publishBundle({
+    client,
+    repo: DEFAULT_RELEASE_REPO,
+    plan: result.plan,
+    assets: result.assets,
+    targetCommitish: commit,
+  });
+  for (const note of published.notes) process.stdout.write(`note: ${note}\n`);
+  if (!published.ok) {
+    process.stderr.write(`release: publish failed for ${published.tag} (${published.state}):\n`);
+    for (const failure of published.failures) process.stderr.write(`- ${failure}\n`);
+    const hint = RECOVERY_HINT[published.recovery];
+    if (hint !== undefined) process.stderr.write(`recovery: ${hint}\n`);
+    process.exit(1);
+  }
+  process.stdout.write(
+    `published ${published.tag}: ${result.plan.assets.length} assets (release ${String(published.releaseId)})\n`,
+  );
+}
+
 function checkBundle(options) {
   const result = checkBundleRelease({
     root: ROOT,
@@ -705,6 +791,7 @@ if (options.compat) {
   process.stdout.write(`wrote ${file}\n`);
 } else if (options.bundle !== null) {
   if (options.check) checkBundle(options);
+  else if (options.publish) await publishBundleCli(options);
   else buildBundle(options);
 } else {
   const ctx = load({ root: ROOT, out: options.out });

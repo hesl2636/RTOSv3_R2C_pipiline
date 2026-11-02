@@ -633,8 +633,23 @@ async function verifyChildBuild({ result, projectionEvents, expected, outDir, up
     if (JSON.stringify(manifest.bundle) !== JSON.stringify({ id: upload.bundleId, version: upload.version })) {
       problems.push(`${entry.id}: payload bundle identity differs`);
     }
-    if (JSON.stringify(manifest.files) !== JSON.stringify(manifestFiles(entry.result))) {
-      problems.push(`${entry.id}: payload file set differs from the projection result`);
+    // Compare only the contract fields; later payload manifests add fields
+    // (e.g. `files[].origin`, a top-level `result`) without changing bytes.
+    const declared = Array.isArray(manifest.files) ? manifest.files : [];
+    const projected = manifestFiles(entry.result);
+    if (declared.length !== projected.length) {
+      problems.push(`${entry.id}: payload file count differs from the projection result`);
+    } else {
+      for (let index = 0; index < declared.length; index += 1) {
+        const actual = declared[index] ?? {};
+        const want = projected[index];
+        if (actual.path !== want.path || actual.mode !== want.mode || actual.sha256 !== want.sha256
+          || actual.kind !== want.kind
+          || JSON.stringify(actual.targets) !== JSON.stringify(want.targets)) {
+          problems.push(`${entry.id}: payload file ${want.path} differs from the projection result`);
+          break;
+        }
+      }
     }
   }
   return problems;
