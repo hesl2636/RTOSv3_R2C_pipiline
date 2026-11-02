@@ -1,0 +1,30 @@
+{
+  "id": "verification",
+  "name": "验证检视",
+  "steps": [
+    {
+      "id": "verification",
+      "name": "验证检视编排",
+      "role": "bys-release-lead",
+      "task": "verification-orchestration",
+      "skills": [
+        "v3-personal-pipeline",
+        "r2c-build-redblue",
+        "r2c-verify-rb",
+        "r2c-push-mr",
+        "red-blue",
+        "all-build-single-package",
+        "cleancode-scanfix",
+        "all-cleancode",
+        "all-securec-replace",
+        "huawei-c-coding-standard",
+        "r2c-review",
+        "all-multirepo-upload",
+        "workflow-core",
+        "using-workflow",
+        "v3-commit",
+        "aceharness-rag"
+      ]
+    }
+  ]
+}

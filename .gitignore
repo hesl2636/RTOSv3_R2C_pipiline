@@ -6,3 +6,6 @@
 .r2c/engine/
 node_modules/
 dist/
+# The sample bundle zip is a committed, byte-reproducible build product.
+!examples/rtosv3/dist/
+!examples/rtosv3/dist/*.zip
