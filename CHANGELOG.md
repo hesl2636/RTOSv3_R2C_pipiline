@@ -4,6 +4,27 @@ All notable changes to `r2c-runner` are recorded here. The version is locked
 step-by-step across the engine, the payload, and all five agent adapters; see
 `docs/compat.md`.
 
+## [Unreleased]
+
+### Added
+
+- r2c runtime install surface: one `r2c.runtime/v1` receipt per project owns
+  the versioned engine (`.r2c/engine/<V>/`), the fixed resolver launcher
+  `.r2c/bin/r2c.js`, the `/r2c-*` host commands, hook carriers, pointer-level
+  `settings.json`/`opencode.json`/mcp merges and the dsh runtime patch. Engine
+  upgrades rewrite only `runtime.json` and the engine directory; bundle
+  receipts never record an engine version.
+- Install-time `render-roles`: the installer renders `claude-code`, `codex`,
+  `omp` and `opencode` agent definitions from the IR through
+  `runtime/shared/render-role.js` as `r2c-<id>`, records them (with field-level
+  degradations) in the receipt and writes `.r2c/projection/roles.json`; dsh
+  renders no roles.
+- Installer `status` (works without a run) and `doctor` (receipt hashes,
+  missing/extra files, engine entry/launcher/version, manifest selection, host
+  detection, degradation/placeholder summary, transaction residue); engine
+  `r2c status` gains `installs[]` and trailing install lines without changing
+  exit codes or existing lines.
+
 ## [0.1.0] - 2026-10-28
 
 ### Added
