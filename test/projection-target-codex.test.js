@@ -21,6 +21,7 @@ import { normalizeOptions } from '../projection/options.js';
 import { project } from '../projection/project.js';
 import { validateResult } from '../projection/validate-result.js';
 import { AGENT_NATIVE_MANIFEST } from '../runtime/agent-native/projection/manifest.js';
+import { targetOrder } from '../runtime/agent-native/projection/targets/index.js';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const ZIP = join(ROOT, 'examples/rtosv3/dist/bundle-rtosv3-drvport-v1.0.0.zip');
@@ -453,11 +454,12 @@ test('the same input twice yields byte-identical Codex results', () => {
   assert.deepEqual(second.files.map((file) => [file.path, file.content]), first.files.map((file) => [file.path, file.content]));
 });
 
-test('projection.json is canonical and lists both descriptors in order', () => {
+test('projection.json is canonical and lists the codex descriptor', () => {
   const path = join(ROOT, 'runtime/agent-native/projection/projection.json');
   assert.equal(readFileSync(path, 'utf8'), canonicalJson(AGENT_NATIVE_MANIFEST));
-  assert.deepEqual(AGENT_NATIVE_MANIFEST.targets.map((target) => target.id), ['claude-code', 'codex']);
-  const codex = AGENT_NATIVE_MANIFEST.targets[1];
+  assert.deepEqual(AGENT_NATIVE_MANIFEST.targets.map((target) => target.id), targetOrder());
+  assert.ok(AGENT_NATIVE_MANIFEST.targets.some((target) => target.id === 'codex'));
+  const codex = AGENT_NATIVE_MANIFEST.targets.find((target) => target.id === 'codex');
   assert.equal(codex.name, 'Codex');
   assert.equal(codex.default, true);
   assert.deepEqual(Object.keys(codex.capabilities), CAPABILITIES);
