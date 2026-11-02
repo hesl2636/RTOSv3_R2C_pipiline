@@ -57,7 +57,8 @@ function errorLine(error) {
 /**
  * @param {{client: {token: string|null, request: Function}, repo: string,
  *          plan: object, assets: Array<{name: string, data: Buffer|Uint8Array}>,
- *          targetCommitish?: string|null, releaseBody?: string|null}} input
+ *          targetCommitish?: string|null, releaseBody?: string|null,
+ *          onPhase?: (phase: string) => void}} input
  * @returns {Promise<object>} `{ok, state, published, tag, releaseId,
  *   transitions, trace, failures, notes, cleanup, recovery}`
  */
@@ -68,6 +69,7 @@ export async function publishBundle({
   assets,
   targetCommitish = null,
   releaseBody = null,
+  onPhase = null,
 } = {}) {
   if (client === null || typeof client !== 'object' || typeof client.request !== 'function') {
     throw new TypeError('a GitHub client ({base, token, fetch}) is required');
@@ -133,7 +135,11 @@ export async function publishBundle({
   }
 
   // ---- PRECHECK ----------------------------------------------------------
-  transitions.push('PRECHECK');
+  const enter = (phase) => {
+    transitions.push(phase);
+    if (typeof onPhase === 'function') onPhase(phase);
+  };
+  enter('PRECHECK');
   if (secret === null) {
     failures.push('RELEASE_AUTH_REQUIRED: publishing requires GH_TOKEN with Contents: Write; install and preview are unaffected');
     return finish({ ok: false, state: 'FAILED' });
@@ -267,7 +273,7 @@ export async function publishBundle({
       failures.push(errorLine(new Error(`lookup ${plan.tag}: HTTP ${existing.status}`)));
       return finish({ ok: false, state: 'FAILED' });
     }
-    transitions.push('DRAFT_CREATED');
+    enter('DRAFT_CREATED');
 
     const uploadBase = typeof release.upload_url === 'string'
       ? release.upload_url.replace(/\{.*\}$/, '')
@@ -278,7 +284,7 @@ export async function publishBundle({
     }
 
     // ---- UPLOADING -------------------------------------------------------
-    transitions.push('UPLOADING');
+    enter('UPLOADING');
     for (const asset of [...local.values()].sort((left, right) => compareCodePoints(left.name, right.name))) {
       const separator = uploadBase.includes('?') ? '&' : '?';
       const target = `${uploadBase}${separator}name=${encodeURIComponent(asset.name)}`;
@@ -304,7 +310,7 @@ export async function publishBundle({
     }
 
     // ---- VERIFYING -------------------------------------------------------
-    transitions.push('VERIFYING');
+    enter('VERIFYING');
     const listed = await call('VERIFYING', 'GET', `/repos/${repo}/releases/${releaseId}/assets?per_page=100`);
     if (!listed.ok || !Array.isArray(listed.data)) {
       failures.push(`RELEASE_DRAFT_VERIFY_FAILED: cannot list the draft assets (HTTP ${listed.status})`);
@@ -376,7 +382,7 @@ export async function publishBundle({
     }
 
     // ---- PUBLISHING ------------------------------------------------------
-    transitions.push('PUBLISHING');
+    enter('PUBLISHING');
     const patched = await call('PUBLISHING', 'PATCH', `/repos/${repo}/releases/${releaseId}`, {
       body: { draft: false, make_latest: 'false' },
     });
@@ -385,7 +391,7 @@ export async function publishBundle({
       return await failBeforePublish();
     }
     published = true;
-    transitions.push('PUBLISHED');
+    enter('PUBLISHED');
 
     const readBack = await call('PUBLISHED', 'GET', `/repos/${repo}/releases/${releaseId}`);
     if (!readBack.ok || readBack.data?.draft !== false) {

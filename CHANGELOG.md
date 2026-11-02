@@ -37,6 +37,20 @@ step-by-step across the engine, the payload, and all five agent adapters; see
 - `scripts/release.mjs --bundle <zip|dir> --out DIR --options FILE --json`:
   the bundle packager accepts resolved options (recording the actual selection
   in each payload manifest) and emits JSON-lines progress for the web child.
+- Local web publish: `POST /api/builds/:id/publish` runs
+  `scripts/release.mjs --publish --out <session build dir> --json` as the only
+  credentialed child (300 s kill, JSON-lines phases, capped/redacted stderr,
+  crash → `WEB_CHILD_FAILED`); the token stays in server memory, so the page
+  never sees it and never calls GitHub. Jobs expose
+  draft → upload → verify → publish, published tags are never rewritten, and
+  the session reports `publish:{enabled,reason,repo}` (no token → a disabled
+  button and a 403). Publishing is limited to 10/h with concurrency 1
+  (429 + `Retry-After`), rejects a client/server digest mismatch, and the
+  published release's frozen install commands are shown for the installer.
+- `scripts/release.mjs --publish --out <built-dir> [--tag TAG] --json`:
+  publish an existing build without re-projecting or re-packing; `GH_REPO` and
+  the operator-only `R2C_GITHUB_API` select the target, and every asset is
+  checked against its own `SHA256SUMS.txt` before the draft is created.
 
 ## [0.1.0] - 2026-10-28
 

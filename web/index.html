@@ -12,7 +12,7 @@
   <header class="bar">
     <div>
       <h1>r2c bundle inspector</h1>
-      <p class="subtitle">Local surface: read-only bundle and IR, editable projection options, local build. Nothing is installed, written to a project, or published.</p>
+      <p class="subtitle">Local surface: read-only bundle and IR, editable projection options, local build, server-side publish. Nothing is installed or written to a project, and the browser never sees the GitHub token.</p>
     </div>
     <div class="badges">
       <span class="badge" id="mode-badge">starting</span>
@@ -115,6 +115,16 @@ node bin/r2c-assembler.js compile ./bundle.zip --out ./dist</code></pre>
         <span id="build-status" class="status" role="status"></span>
       </div>
       <div id="build-body" hidden></div>
+    </section>
+
+    <section class="panel" aria-labelledby="publish-title">
+      <h2 id="publish-title">6. Publish release</h2>
+      <p class="hint">Publishing runs on the server only: it calls the release tool as a child process, keeps the GitHub token in server memory, and never sends the token (or talks to GitHub) from this page. A published release is never rewritten — a bad version gets a new patch.</p>
+      <div class="row">
+        <button id="publish-button" type="button" disabled>Publish release</button>
+        <span id="publish-status" class="status" role="status"></span>
+      </div>
+      <div id="publish-body" hidden></div>
     </section>
   </main>
 

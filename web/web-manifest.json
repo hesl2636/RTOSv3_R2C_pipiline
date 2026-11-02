@@ -7,6 +7,7 @@
     "web/style.css",
     "web/primitives-browser.js",
     "web/shared-imports.js",
+    "web/publish-state.js",
     "web/boot-check.js"
   ],
   "imports": [

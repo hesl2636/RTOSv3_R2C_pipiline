@@ -14,7 +14,7 @@
  * Everything under `web/` except this file is browser-loadable ESM and runs
  * the same shared modules (`core/`, `ir/`, `assembler/`) as the CLI.
  */
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { createServer } from 'node:http';
 import {
@@ -44,7 +44,7 @@ import { isCanonicalOptions, normalizeOptions, payloadInputOptions } from '../pr
 import { project } from '../projection/project.js';
 import { allowedProjections, getProjection } from '../projection/registry.js';
 import { validateResult } from '../projection/validate-result.js';
-import { buildChildEnv, redactSecrets } from './env.js';
+import { buildChildEnv, publishChildEnv, redactSecrets } from './env.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, '..');
@@ -75,6 +75,14 @@ const BUILD_TIMEOUT_MS = 120 * 1000;
 const BUILD_RATE_LIMIT = 60;
 const BUILD_RATE_WINDOW_MS = 60 * 60 * 1000;
 const BUILD_CONCURRENCY = 2;
+const PUBLISH_TIMEOUT_MS = 300 * 1000;
+const PUBLISH_RATE_LIMIT = 10;
+const PUBLISH_RATE_WINDOW_MS = 60 * 60 * 1000;
+const PUBLISH_JOB_LOG_MAX = 200;
+const PUBLISH_LOG_LINE_MAX = 2000;
+const GH_REPO_RE = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
+const BUNDLE_TAG_RE = /^bundle-[a-z0-9][a-z0-9-]*-v\d+\.\d+\.\d+(?:-[0-9A-Za-z][0-9A-Za-z.-]*)?$/;
+const DEFAULT_GITHUB_API = 'https://api.github.com';
 const STDERR_MAX_BYTES = 16 * 1024;
 const STDOUT_LINE_MAX_BYTES = 4 * 1024 * 1024;
 const RELEASE_SCRIPT = resolve(ROOT, 'scripts', 'release.mjs');
@@ -355,6 +363,103 @@ function startupSecrets() {
     .filter((value) => typeof value === 'string' && value !== '');
 }
 
+/** The publish credential lives in this closure only (decision #75 §8.1). */
+function startupToken() {
+  for (const key of ['GH_TOKEN', 'GITHUB_TOKEN']) {
+    const value = process.env[key];
+    if (typeof value === 'string' && value !== '') return value;
+  }
+  return null;
+}
+
+/** Parse `https://host/owner/repo(.git)` or `git@host:owner/repo(.git)`. */
+function parseGitRemote(url) {
+  const text = String(url).trim();
+  const https = /^https?:\/\/[^/]+\/([^/]+)\/([^/]+?)(?:\.git)?\/?$/.exec(text);
+  if (https !== null) return `${https[1]}/${https[2]}`;
+  const ssh = /^(?:ssh:\/\/)?[^@/]+@[^:/]+[:/]([^/]+)\/([^/]+?)(?:\.git)?\/?$/.exec(text);
+  if (ssh !== null) return `${ssh[1]}/${ssh[2]}`;
+  return null;
+}
+
+/**
+ * Target repository (decision #75 §8.2): `GH_REPO` wins, otherwise the
+ * origin remote. The page can never choose a repository.
+ */
+function resolvePublishRepo() {
+  const explicit = process.env.GH_REPO;
+  if (typeof explicit === 'string' && explicit.trim() !== '') {
+    const value = explicit.trim();
+    return GH_REPO_RE.test(value) ? value : null;
+  }
+  const result = spawnSync('git', ['remote', 'get-url', 'origin'], {
+    cwd: ROOT,
+    encoding: 'utf8',
+    windowsHide: true,
+    timeout: 5000,
+  });
+  if (result.status !== 0 || typeof result.stdout !== 'string') return null;
+  const repo = parseGitRemote(result.stdout);
+  return repo !== null && GH_REPO_RE.test(repo) ? repo : null;
+}
+
+/** `R2C_GITHUB_API` is operator-only (local fixture or mirror), never browser-settable. */
+function resolveGithubApi() {
+  const raw = process.env.R2C_GITHUB_API;
+  if (raw === undefined || raw.trim() === '') return DEFAULT_GITHUB_API;
+  try {
+    const url = new URL(raw.trim());
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return null;
+    return raw.trim().replace(/\/+$/, '');
+  } catch {
+    return null;
+  }
+}
+
+function redactValue(value, secrets) {
+  if (value === null || value === undefined) return value;
+  try {
+    return JSON.parse(redactSecrets(JSON.stringify(value), secrets));
+  } catch {
+    return null;
+  }
+}
+
+/** `{confirmTag, resume?, irDigest?, resultDigests?}` (decision #75 §8.4/§8.5). */
+function parsePublishBody(body) {
+  if (!isPlainObject(body)) return webError(400, 'WEB_BODY_INVALID', 'publish body must be a JSON object');
+  for (const key of Object.keys(body)) {
+    if (!['confirmTag', 'resume', 'irDigest', 'resultDigests'].includes(key)) {
+      return webError(400, 'WEB_BODY_INVALID', `unknown field ${key}`);
+    }
+  }
+  if (typeof body.confirmTag !== 'string' || body.confirmTag === '') {
+    return webError(400, 'WEB_BODY_INVALID', 'confirmTag is required');
+  }
+  if (body.resume !== undefined && typeof body.resume !== 'boolean') {
+    return webError(400, 'WEB_BODY_INVALID', 'resume must be a boolean');
+  }
+  if (body.irDigest !== undefined && (typeof body.irDigest !== 'string' || !/^[0-9a-f]{64}$/.test(body.irDigest))) {
+    return webError(400, 'WEB_BODY_INVALID', 'irDigest must be a sha256 digest');
+  }
+  if (body.resultDigests !== undefined && body.resultDigests !== null) {
+    if (!isPlainObject(body.resultDigests)) {
+      return webError(400, 'WEB_BODY_INVALID', 'resultDigests must be an object keyed by projection id');
+    }
+    for (const [key, value] of Object.entries(body.resultDigests)) {
+      if (typeof value !== 'string' || !/^[0-9a-f]{64}$/.test(value)) {
+        return webError(400, 'WEB_BODY_INVALID', `resultDigests.${key} must be a sha256 digest`);
+      }
+    }
+  }
+  return {
+    confirmTag: body.confirmTag,
+    resume: body.resume === true,
+    irDigest: body.irDigest,
+    resultDigests: body.resultDigests ?? null,
+  };
+}
+
 function isPlainObject(value) {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -407,6 +512,37 @@ function parseBuildBody(body) {
   return { uploadId: body.uploadId, options: body.options ?? null, irDigest: body.irDigest };
 }
 
+/** Read one bounded JSON request body; errors are `webError` values. */
+async function readJsonBody(request, limit = JSON_MAX_BYTES) {
+  const type = String(request.headers['content-type'] ?? '').split(';', 1)[0].trim().toLowerCase();
+  if (type !== 'application/json') {
+    return { error: webError(415, 'WEB_CONTENT_TYPE_INVALID', 'this endpoint takes JSON') };
+  }
+  const declaredHeader = request.headers['content-length'];
+  if (declaredHeader === undefined) {
+    return { error: webError(411, 'WEB_BODY_MISSING', 'Content-Length is required') };
+  }
+  const declared = Number(declaredHeader);
+  if (!Number.isInteger(declared) || declared < 0) {
+    return { error: webError(400, 'WEB_BODY_INVALID', 'Content-Length is invalid') };
+  }
+  if (declared > limit) {
+    return { error: webError(413, 'WEB_BODY_TOO_LARGE', 'the request body exceeds the JSON limit') };
+  }
+  let raw;
+  try {
+    raw = await collectBody(request, declared, limit);
+  } catch (error) {
+    const status = error?.code === 'WEB_BODY_TOO_LARGE' ? 413 : error?.code === 'WEB_TIMEOUT' ? 408 : 400;
+    return { error: webError(status, error?.code ?? 'WEB_BODY_INVALID', 'the request body could not be read') };
+  }
+  try {
+    return { body: JSON.parse(Buffer.from(raw).toString('utf8')) };
+  } catch {
+    return { error: webError(400, 'WEB_BODY_INVALID', 'the body is not JSON') };
+  }
+}
+
 function installCommand({ id, version, projection, target, publishable }) {
   if (!isValidId(id, BUNDLE_ID_MAX) || !isValidVersion(version) || String(version).includes('+')) return null;
   const descriptor = getProjection(projection);
@@ -453,7 +589,7 @@ function installCommands({ id, version, projections, publishable }) {
  * lose the GitHub credentials, stdout is JSON-lines, stderr is capped and
  * redacted, and a timeout kills the child without touching the server.
  */
-function runReleaseChild({ script, args, env, cwd, timeoutMs, secrets }) {
+function runReleaseChild({ script, args, env, cwd, timeoutMs, secrets, onEvent = null }) {
   return new Promise((resolveChild) => {
     let child;
     try {
@@ -504,8 +640,16 @@ function runReleaseChild({ script, args, env, cwd, timeoutMs, secrets }) {
         logLines.push(redactSecrets(line, secrets));
         return;
       }
-      if (isPlainObject(parsed) && typeof parsed.event === 'string') events.push(parsed);
-      else logLines.push(redactSecrets(line, secrets));
+      if (isPlainObject(parsed) && typeof parsed.event === 'string') {
+        events.push(parsed);
+        if (typeof onEvent === 'function') {
+          try {
+            onEvent(parsed);
+          } catch {
+            // A consumer error must never take down the child or the server.
+          }
+        }
+      } else logLines.push(redactSecrets(line, secrets));
     };
 
     child.stdout.setEncoding('utf8');
@@ -763,13 +907,35 @@ async function main() {
   const engineVersion = version;
   const secrets = startupSecrets();
   const buildTimeoutMs = envInteger('R2C_WEB_BUILD_TIMEOUT_MS', BUILD_TIMEOUT_MS);
+  const publishTimeoutMs = envInteger('R2C_WEB_PUBLISH_TIMEOUT_MS', PUBLISH_TIMEOUT_MS);
   const releaseScript = process.env.R2C_WEB_RELEASE_SCRIPT === undefined
     ? RELEASE_SCRIPT
     : resolve(process.env.R2C_WEB_RELEASE_SCRIPT);
+  // Operator-only override for the publish child (child-isolation tests and
+  // wrappers); the browser can never choose a script.
+  const publishScript = process.env.R2C_WEB_PUBLISH_SCRIPT === undefined
+    ? releaseScript
+    : resolve(process.env.R2C_WEB_PUBLISH_SCRIPT);
   const uploads = new Map();
   const builds = new Map();
   const buildRate = { windowStart: Date.now(), count: 0 };
   let activeBuilds = 0;
+
+  // Publish credentials stay in this closure: never serialized, never logged,
+  // never placed in a URL or an argv (decision #75 §8).
+  const publishToken = startupToken();
+  const publishRepo = resolvePublishRepo();
+  const publishApi = resolveGithubApi();
+  const publishConfig = Object.freeze({
+    token: publishToken,
+    repo: publishRepo,
+    apiBase: publishApi,
+    enabled: publishToken !== null && publishRepo !== null && publishApi !== null,
+    reason: publishToken === null ? 'no-token' : publishRepo === null ? 'no-repo' : publishApi === null ? 'no-api' : null,
+  });
+  const publishRate = { windowStart: Date.now(), count: 0 };
+  const publishJobs = new Map();
+  let activePublish = null;
 
   const touchUpload = (upload) => {
     upload.lastUsed = Date.now();
@@ -791,6 +957,195 @@ async function main() {
       builds.delete(key);
       await rm(value.dir, { recursive: true, force: true }).catch(() => {});
     }
+  };
+
+  /* ---- publish ---------------------------------------------------------- */
+
+  const recordPublishLog = (job, text) => {
+    const line = redactSecrets(String(text), secrets).slice(0, PUBLISH_LOG_LINE_MAX);
+    if (line === '') return;
+    job.log.push(line);
+    if (job.log.length > PUBLISH_JOB_LOG_MAX) job.log.splice(0, job.log.length - PUBLISH_JOB_LOG_MAX);
+  };
+
+  /** Release-form install commands for a published build (§13 frozen shape). */
+  const publishedInstall = (build) => installCommands({
+    id: build.summary.ir.id,
+    version: build.summary.ir.version,
+    projections: build.summary.projections,
+    publishable: true,
+  });
+
+  const publishResultView = (job) => ({
+    jobId: job.jobId,
+    buildId: job.buildId,
+    tag: job.tag,
+    state: job.state,
+    phase: job.phase,
+    log: [...job.log],
+    error: job.error,
+    result: job.result,
+    startedAt: job.startedAt,
+    finishedAt: job.finishedAt,
+  });
+
+  const failPublishJob = (job, code, message, details = null) => {
+    job.state = 'FAILED';
+    job.error = { code, message, details: redactValue(details, secrets) };
+    job.finishedAt = Date.now();
+    recordPublishLog(job, `${code}: ${message}`);
+  };
+
+  /**
+   * The publish tool is the only child that keeps the credentials
+   * (decision #75 §10.8). `--out` is the server's own build directory inside
+   * the session temp root; the child gets a 300 s budget, its stdout is
+   * JSON-lines, and a crash or timeout never touches the server.
+   */
+  const runPublishJob = async (build, tag, jobId = randomBytes(8).toString('hex')) => {
+    const job = {
+      jobId,
+      buildId: build.summary.buildId,
+      tag,
+      state: 'RUNNING',
+      phase: 'BUILD_READY',
+      log: [],
+      error: null,
+      result: null,
+      startedAt: Date.now(),
+      finishedAt: null,
+    };
+    publishJobs.set(jobId, job);
+    activePublish = job;
+    recordPublishLog(job, `BUILD_READY: ${tag}`);
+
+    const outDir = resolve(build.dir, 'assets');
+    const tmpDir = resolve(build.dir, 'publish-tmp');
+    let child;
+    try {
+      await mkdir(tmpDir, { recursive: true, mode: 0o700 });
+      const env = publishChildEnv({
+        ...process.env,
+        TMPDIR: tmpDir,
+        TEMP: tmpDir,
+        TMP: tmpDir,
+        GH_REPO: publishConfig.repo,
+      });
+      if (publishConfig.apiBase === DEFAULT_GITHUB_API) delete env.R2C_GITHUB_API;
+      else env.R2C_GITHUB_API = publishConfig.apiBase;
+
+      child = await runReleaseChild({
+        script: publishScript,
+        args: ['--publish', '--out', outDir, '--tag', tag, '--json'],
+        env,
+        cwd: ROOT,
+        timeoutMs: publishTimeoutMs,
+        secrets,
+        onEvent: (event) => {
+          if (event.event === 'phase' && typeof event.phase === 'string') {
+            job.phase = event.phase;
+            recordPublishLog(job, `phase ${event.phase}`);
+          } else if (event.event === 'note' && typeof event.message === 'string') {
+            recordPublishLog(job, `note: ${event.message}`);
+          }
+        },
+      });
+    } catch (error) {
+      activePublish = null;
+      failPublishJob(job, 'WEB_CHILD_FAILED', 'the publish child could not start', {
+        stderr: String(error?.message ?? error),
+      });
+      return job;
+    } finally {
+      activePublish = null;
+    }
+
+    for (const line of child.logLines.slice(0, 50)) recordPublishLog(job, line);
+    const resultEvent = child.events.filter((event) => event.event === 'result').pop();
+    const releaseView = resultEvent === undefined
+      ? null
+      : {
+        state: resultEvent.state ?? null,
+        published: resultEvent.published === true,
+        releaseId: resultEvent.releaseId ?? null,
+        recovery: resultEvent.recovery ?? null,
+        failures: Array.isArray(resultEvent.failures) ? resultEvent.failures.slice(0, 20) : [],
+        cleanup: resultEvent.cleanup ?? null,
+      };
+
+    if (child.status === 'timeout') {
+      failPublishJob(job, 'WEB_CHILD_TIMEOUT', 'the publish child was killed after the timeout', {
+        timeoutMs: publishTimeoutMs,
+        stderr: child.stderr,
+        stderrTruncated: child.stderrTruncated,
+      });
+      return job;
+    }
+    if (child.status !== 'exited' || resultEvent === undefined || resultEvent.ok !== true) {
+      failPublishJob(job, 'WEB_CHILD_FAILED', 'the publish child failed', {
+        exitCode: child.code,
+        signal: child.signal,
+        stderr: child.stderr,
+        stderrTruncated: child.stderrTruncated,
+        release: releaseView,
+      });
+      return job;
+    }
+
+    job.state = 'PUBLISHED';
+    job.phase = 'PUBLISHED';
+    job.result = {
+      tag: typeof resultEvent.tag === 'string' ? resultEvent.tag : tag,
+      state: 'PUBLISHED',
+      releaseId: typeof resultEvent.releaseId === 'number' ? resultEvent.releaseId : null,
+      published: true,
+      assets: build.summary.artifacts.map((asset) => ({
+        name: asset.name,
+        bytes: asset.bytes,
+        sha256: asset.sha256,
+        url: asset.url,
+      })),
+      install: publishedInstall(build),
+    };
+    job.finishedAt = Date.now();
+    recordPublishLog(job, `PUBLISHED: ${job.result.tag} (release ${String(job.result.releaseId)})`);
+    return job;
+  };
+
+  /** `GET /api/releases/:tag` — read-only remote state for recovery. */
+  const lookupRelease = async (tag) => {
+    const headers = {
+      Accept: 'application/vnd.github+json',
+      'X-GitHub-Api-Version': '2022-11-28',
+      'User-Agent': 'r2c-web',
+    };
+    headers.Authorization = `Bearer ${publishConfig.token}`;
+    const request = async (path) => {
+      const response = await fetch(`${publishConfig.apiBase}/repos/${publishConfig.repo}${path}`, {
+        headers,
+        redirect: 'error',
+      });
+      return response;
+    };
+    const byTag = await request(`/releases/tags/${encodeURIComponent(tag)}`);
+    if (byTag.status === 200) {
+      const data = await byTag.json().catch(() => null);
+      const assets = Array.isArray(data?.assets)
+        ? data.assets.map((asset) => ({
+          name: typeof asset?.name === 'string' ? asset.name : null,
+          size: typeof asset?.size === 'number' ? asset.size : null,
+          sha256: typeof asset?.digest === 'string' ? asset.digest.replace(/^sha256:/, '') : null,
+        }))
+        : [];
+      return { state: data?.draft === true ? 'draft' : 'published', releaseId: data?.id ?? null, assets };
+    }
+    if (byTag.status !== 404) {
+      return { error: byTag.status };
+    }
+    const ref = await request(`/git/ref/tags/${encodeURIComponent(tag)}`);
+    if (ref.status === 200) return { state: 'tag-only', releaseId: null, assets: [] };
+    if (ref.status === 404) return { state: 'absent', releaseId: null, assets: [] };
+    return { error: ref.status };
   };
 
   const persistUpload = async (bytes, data) => {
@@ -1107,6 +1462,11 @@ async function main() {
         void rm(value.dir, { recursive: true, force: true }).catch(() => {});
       }
     }
+    for (const [key, job] of publishJobs) {
+      if (job.state !== 'RUNNING' && now - (job.finishedAt ?? job.startedAt) > BUILD_TTL_MS) {
+        publishJobs.delete(key);
+      }
+    }
   };
 
   let port = options.port;
@@ -1218,8 +1578,12 @@ async function main() {
         data: {
           csrf,
           mode: 'build',
-          repo: null,
-          publish: { enabled: false, reason: 'read-only' },
+          repo: publishConfig.repo,
+          publish: {
+            enabled: publishConfig.enabled,
+            reason: publishConfig.reason,
+            repo: publishConfig.repo,
+          },
           frameworkVersion: version,
           engineVersion,
           modules,
@@ -1425,6 +1789,186 @@ async function main() {
       }));
       if (method === 'HEAD') response.end();
       else response.end(bytes);
+      return;
+    }
+
+    const publishMatch = /^\/api\/builds\/([0-9a-f]{16})\/publish$/.exec(path);
+    if (publishMatch !== null) {
+      if (method !== 'POST') {
+        status = 405;
+        sendWebError(response, status, 'WEB_METHOD_NOT_ALLOWED', 'method is not allowed', { Allow: 'POST' });
+        return;
+      }
+      if (!publishConfig.enabled) {
+        status = 403;
+        sendWebError(response, status, 'WEB_PUBLISH_DISABLED', 'publishing is disabled on this server', {}, {
+          reason: publishConfig.reason,
+        });
+        return;
+      }
+      const parsedBody = await readJsonBody(request);
+      if (parsedBody.error !== undefined) {
+        status = parsedBody.error.status;
+        sendWebError(response, status, parsedBody.error.code, parsedBody.error.message);
+        return;
+      }
+      const body = parsePublishBody(parsedBody.body);
+      if (body.status !== undefined) {
+        status = body.status;
+        sendWebError(response, status, body.code, body.message);
+        return;
+      }
+
+      const nowMs = Date.now();
+      if (nowMs - publishRate.windowStart >= PUBLISH_RATE_WINDOW_MS) {
+        publishRate.windowStart = nowMs;
+        publishRate.count = 0;
+      }
+      publishRate.count += 1;
+      if (publishRate.count > PUBLISH_RATE_LIMIT) {
+        const retryAfter = Math.max(1, Math.ceil((publishRate.windowStart + PUBLISH_RATE_WINDOW_MS - nowMs) / 1000));
+        status = 429;
+        sendWebError(response, status, 'WEB_RATE_LIMITED', 'too many publishes in the current window', {
+          'Retry-After': String(retryAfter),
+        });
+        return;
+      }
+      if (activePublish !== null) {
+        status = 409;
+        sendWebError(response, status, 'WEB_PUBLISH_BUSY', 'a publish job is already running');
+        return;
+      }
+
+      const build = builds.get(publishMatch[1]);
+      if (build === undefined) {
+        status = 404;
+        sendWebError(response, status, 'WEB_BUILD_UNKNOWN', 'the build is unknown or expired');
+        return;
+      }
+      if (build.summary.publishable !== true || build.summary.canonical !== true) {
+        status = 409;
+        sendWebError(response, status, 'WEB_PUBLISH_NOT_CANONICAL', 'only a canonical build can be published');
+        return;
+      }
+      if (body.confirmTag !== build.summary.tag) {
+        status = 400;
+        sendWebError(response, status, 'WEB_TAG_MISMATCH', 'confirmTag does not match the release tag', {}, {
+          tag: build.summary.tag,
+        });
+        return;
+      }
+      if (body.irDigest !== undefined && body.irDigest !== build.summary.ir.digest) {
+        status = 409;
+        sendWebError(response, status, 'WEB_CLIENT_SERVER_MISMATCH', 'the browser and the server disagree about the IR digest');
+        return;
+      }
+      if (body.resultDigests !== null) {
+        for (const projection of build.summary.projections) {
+          const supplied = body.resultDigests[projection.id];
+          if (supplied !== undefined && supplied !== projection.digest) {
+            status = 409;
+            sendWebError(
+              response,
+              status,
+              'WEB_CLIENT_SERVER_MISMATCH',
+              `the browser and the server disagree about the ${projection.id} result digest`,
+            );
+            return;
+          }
+        }
+      }
+
+      const jobId = randomBytes(8).toString('hex');
+      void runPublishJob(build, build.summary.tag, jobId).catch((error) => {
+        const job = publishJobs.get(jobId);
+        if (job !== undefined && job.state === 'RUNNING') {
+          failPublishJob(job, 'WEB_CHILD_FAILED', 'the publish job crashed', {
+            message: String(error?.message ?? error),
+          });
+        }
+        activePublish = null;
+      });
+      status = 202;
+      sendJson(response, status, {
+        ok: true,
+        data: { jobId, tag: build.summary.tag, state: 'RUNNING', phase: 'BUILD_READY' },
+      });
+      return;
+    }
+
+    const jobMatch = /^\/api\/publish\/([0-9a-f]{16})$/.exec(path);
+    if (jobMatch !== null) {
+      if (method === 'POST') {
+        status = 405;
+        sendWebError(response, status, 'WEB_METHOD_NOT_ALLOWED', 'method is not allowed', { Allow: 'GET, HEAD' });
+        return;
+      }
+      const job = publishJobs.get(jobMatch[1]);
+      if (job === undefined) {
+        status = 404;
+        sendWebError(response, status, 'WEB_JOB_UNKNOWN', 'the publish job is unknown or expired');
+        return;
+      }
+      status = 200;
+      const payload = { ok: true, data: publishResultView(job) };
+      if (method === 'HEAD') {
+        response.writeHead(status, securityHeaders({
+          'Content-Type': 'application/json; charset=utf-8',
+          'Content-Length': String(bytesOf(JSON.stringify(payload)) + 1),
+        }));
+        response.end();
+        return;
+      }
+      sendJson(response, status, payload);
+      return;
+    }
+
+    const releaseMatch = /^\/api\/releases\/([^/]+)$/.exec(path);
+    if (releaseMatch !== null) {
+      if (method === 'POST') {
+        status = 405;
+        sendWebError(response, status, 'WEB_METHOD_NOT_ALLOWED', 'method is not allowed', { Allow: 'GET, HEAD' });
+        return;
+      }
+      let tag;
+      try {
+        tag = decodeURIComponent(releaseMatch[1]);
+      } catch {
+        status = 404;
+        sendWebError(response, status, 'WEB_NOT_FOUND', 'not found');
+        return;
+      }
+      if (!BUNDLE_TAG_RE.test(tag)) {
+        status = 404;
+        sendWebError(response, status, 'WEB_NOT_FOUND', 'not found');
+        return;
+      }
+      if (!publishConfig.enabled) {
+        status = 403;
+        sendWebError(response, status, 'WEB_PUBLISH_DISABLED', 'publishing is disabled on this server', {}, {
+          reason: publishConfig.reason,
+        });
+        return;
+      }
+      let remote;
+      try {
+        remote = await lookupRelease(tag);
+      } catch (error) {
+        status = 502;
+        sendWebError(response, status, 'RELEASE_LOOKUP_FAILED', 'the release state could not be read', {}, {
+          message: redactSecrets(String(error?.message ?? error), secrets),
+        });
+        return;
+      }
+      if (remote.error !== undefined) {
+        status = 502;
+        sendWebError(response, status, 'RELEASE_LOOKUP_FAILED', 'the release state could not be read', {}, {
+          status: remote.error,
+        });
+        return;
+      }
+      status = 200;
+      sendJson(response, status, { ok: true, data: { tag, ...remote } });
       return;
     }
 
