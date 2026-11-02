@@ -263,6 +263,42 @@ load.
 
 Next: `git status --short` in the project root, to review the layout files the uninstall reverted before you commit.
 
+## Legacy migration
+
+A project that still carries the old `r2c.install/v1` receipts — one
+`.r2c/install/<agent>.json` per adapter — cannot receive a bundle install: the
+new channel refuses with `LEGACY_INSTALL_PRESENT` before it writes anything.
+Take the project over explicitly:
+
+```bash
+node installer/cli.js --result <projection-result-dir> --project . --migrate-legacy
+```
+
+The takeover is one transaction, and it only proceeds after every recorded
+`sha256` matches the file on disk:
+
+1. every path the legacy install touched is copied to
+   `.r2c/install/backup/<projection>/<bundle>/<stamp>/<path>`;
+2. merged JSON entries (`settings.json` hooks, `opencode.json`/`.mcp.json`
+   pointers) are revoked one pointer at a time and never rewritten wholesale;
+3. the old layout files and links are deleted, empty `dirs_created`
+   directories are pruned, and unreferenced `.r2c/payload/<V>/` trees go;
+4. each receipt moves to `.r2c/install/legacy/<agent>.json.retired` (kept for
+   audit, never read again), and the new `r2c.install/v2` receipt records it in
+   `migrated_from`;
+5. the new projection is written in the same journal, so any failure restores
+   the legacy bytes and receipts.
+
+A file modified after the legacy install is a `LEGACY_HASH_MISMATCH` conflict;
+`--force` backs that file up and continues instead. A receipt with an
+unsupported `r2c.install/*` schema aborts the migration untouched.
+
+User-scope leftovers — `~/.r2c/install/<agent>.json` and the engine/payload
+under `~/.r2c/` — are outside the project and are **never** touched. The
+install summary prints them as manual steps, together with the note that rows
+the legacy channel merged into `$DSH_HOME/profiles/<profile>/cordis.patch.yml`
+must be removed by hand. Only project-scope receipts are migrated.
+
 ## Offline and private downloads
 
 ### Credentials

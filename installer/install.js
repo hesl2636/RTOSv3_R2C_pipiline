@@ -6,13 +6,22 @@
  * idempotency → lock → re-check (TOCTOU) → journal + backups → writes sorted by
  * path → verify hashes from disk → receipt last → remove journal.
  */
-import { existsSync, statSync } from 'node:fs';
+import { existsSync, rmSync, statSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { canonicalJson } from '../core/canonical-json.js';
 import { comparePaths } from '../core/paths.js';
 import { getProjection } from '../projection/registry.js';
 import { validateResult } from '../projection/validate-result.js';
 import { checkConflicts } from './conflict.js';
+import { checkR2cRoot, duplicateBackendWarnings } from './coexist.js';
+import {
+  applyLegacyDeletions,
+  detectLegacyInstall,
+  legacyJournalOperations,
+  planLegacyMigration,
+  retireLegacyReceipts,
+  revokeMergedPointers,
+} from './legacy.js';
 import {
   ancestorDirs,
   irPath as irRelPath,
@@ -24,7 +33,6 @@ import {
   fileEntry,
   modeString,
   readReceipts,
-  scanLegacyInstallDir,
   serializeReceipt,
 } from './receipt.js';
 import {
@@ -40,6 +48,7 @@ import { diffFileSets, previousRecord } from './upgrade.js';
 import {
   ensureProjectDirs,
   lstatOrNull,
+  pruneEmptyDir,
   sha256File,
   sha256Hex,
   symlinkComponent,
@@ -156,6 +165,15 @@ function loadReceipts(projectRoot, ownRel) {
   return { own, others: receipts.filter((item) => item.path !== ownRel) };
 }
 
+/** The `migrated_from` block a receipt records (#76 §5.2). */
+function migrationSummary(migration) {
+  return {
+    receipts: migration.receipts.map((item) => item.from),
+    retired: migration.receipts.map((item) => item.to),
+    manual_leftovers: migration.manualLeftovers,
+  };
+}
+
 function computeCreatedDirs(projectRoot, paths) {
   const created = new Set();
   for (const path of paths) {
@@ -169,11 +187,36 @@ function computeCreatedDirs(projectRoot, paths) {
   return [...created].sort(comparePaths);
 }
 
+/** Post-commit legacy cleanup: empty dirs the old install created, then payload home. */
+function pruneLegacyDirs(projectRoot, migration) {
+  if (migration === null) return [];
+  const pruned = [];
+  for (const dir of migration.dirs) {
+    try {
+      if (pruneEmptyDir(projectRoot, dir)) pruned.push(dir);
+    } catch {
+      // best effort: an occupied directory simply stays
+    }
+  }
+  for (const dir of migration.payloadHomes) {
+    const absolute = projectPath(projectRoot, dir);
+    if (absolute === null || !existsSync(absolute)) continue;
+    try {
+      rmSync(absolute, { recursive: true, force: true });
+      pruned.push(dir);
+    } catch {
+      // best effort: the payload is legacy state, not ownership
+    }
+  }
+  return pruned;
+}
+
 /**
  * Install one projection result.
  *
- * Input: `{result, irBytes, projectRoot, force, dryRun, clock, options, assets}`.
- * Returns `{ok, code, action, ...}`; expected failures are values, not throws.
+ * Input: `{result, irBytes, projectRoot, force, dryRun, clock, options, assets,
+ * migrateLegacy, userHome}`. Returns `{ok, code, action, ...}`; expected
+ * failures are values, not throws.
  */
 export function installProjection(input = {}) {
   const clock = input.clock ?? (() => new Date());
@@ -194,13 +237,37 @@ export function installProjection(input = {}) {
   }
   const recoveryNote = recovery.recovered ? { recovered: true } : {};
 
-  const legacy = scanLegacyInstallDir(projectRoot);
-  if (legacy.length > 0) {
-    return failure('LEGACY_INSTALL_PRESENT', 'a r2c.install/v1 receipt exists; the new channel refuses to mix with it', {
-      legacy,
-      hint: 'remove the legacy install (r2c adapter uninstall) before installing bundles; --migrate-legacy lands in #103',
-    });
+  const migrateLegacy = input.migrateLegacy === true;
+  const legacyState = detectLegacyInstall({
+    projectRoot,
+    userHome: input.userHome,
+    scanUser: migrateLegacy,
+  });
+  let migration = null;
+  if (!migrateLegacy) {
+    if (legacyState.project.length > 0) {
+      return failure('LEGACY_INSTALL_PRESENT', 'a r2c.install/v1 receipt exists; the new channel refuses to mix with it', {
+        legacy: legacyState.project,
+        hint: 'rerun with --migrate-legacy to verify, back up, retire the old receipts and take over',
+      });
+    }
+  } else {
+    if (legacyState.unsupported.length > 0) {
+      return failure('LEGACY_RECEIPT_UNSUPPORTED', 'a legacy receipt uses an unsupported schema; nothing was changed', {
+        unsupported: legacyState.unsupported,
+      });
+    }
+    migration = planLegacyMigration({ projectRoot, legacy: legacyState });
+    if (migration.conflicts.length > 0 && !force) {
+      return failure('LEGACY_HASH_MISMATCH', 'legacy files were modified after their install; --force backs them up and continues', {
+        conflicts: migration.conflicts,
+        manualSteps: migration.manualLeftovers,
+        dryRun,
+      });
+    }
   }
+  const takeoverPaths = new Set(migration?.deletions.map((entry) => entry.path) ?? []);
+  const manualSteps = migration?.manualLeftovers ?? [];
 
   const result = input.result;
   if (result === null || typeof result !== 'object') {
@@ -279,7 +346,34 @@ export function installProjection(input = {}) {
     };
   }
 
-  const check = checkConflicts({ projectRoot, incoming, previous: own, others, force });
+  const occupied = checkR2cRoot({
+    projectRoot,
+    projectionId,
+    bundleId,
+    incoming,
+    previous: own,
+    others,
+    takeoverPaths,
+  });
+  if (occupied !== null) {
+    return {
+      ok: false,
+      ...occupied,
+      conflicts: [],
+      manualSteps,
+      dryRun,
+    };
+  }
+  const coexistWarnings = duplicateBackendWarnings({ projectionId, bundleId, others });
+
+  const check = checkConflicts({
+    projectRoot,
+    incoming,
+    previous: own,
+    others,
+    force,
+    takeoverPaths,
+  });
   const diff = diffFileSets(own?.receipt?.files ?? [], incoming);
   if (check.conflicts.length > 0) {
     return {
@@ -287,6 +381,7 @@ export function installProjection(input = {}) {
       code: 'INSTALL_CONFLICTS',
       message: `${check.conflicts.length} path conflict(s); nothing was written`,
       conflicts: check.conflicts,
+      manualSteps,
       dryRun,
     };
   }
@@ -318,6 +413,8 @@ export function installProjection(input = {}) {
       receipt: own.receipt,
       receiptPath: ownRel,
       files: incoming.length,
+      warnings: coexistWarnings,
+      manualSteps,
       diff,
     };
   }
@@ -331,9 +428,11 @@ export function installProjection(input = {}) {
       dryRun,
       decisions: check.decisions,
       stale: check.stale,
-      warnings: check.warnings,
+      warnings: [...check.warnings, ...coexistWarnings],
       files: incoming.length,
-      mode: own === null ? 'fresh' : 'upgrade',
+      mode: own === null ? (migration?.receipts.length ? 'migrated' : 'fresh') : 'upgrade',
+      migration: migration?.receipts.length ? migrationSummary(migration) : null,
+      manualSteps,
       diff,
     };
   }
@@ -350,7 +449,15 @@ export function installProjection(input = {}) {
     const stamp = timestampSlug(clock);
     // TOCTOU: receipts and disk may have changed between check and lock.
     const fresh = loadReceipts(projectRoot, ownRel);
-    const recheck = checkConflicts({ projectRoot, incoming, previous: fresh.own, others: fresh.others, force });
+    const recheck = checkConflicts({
+      projectRoot,
+      incoming,
+      previous: fresh.own,
+      others: fresh.others,
+      force,
+      takeoverPaths,
+    });
+
     if (recheck.conflicts.length > 0) {
       return {
         ok: false,
@@ -366,6 +473,7 @@ export function installProjection(input = {}) {
       ...incoming.map((entry) => entry.path),
       irRel,
       ownRel,
+      ...(migration?.receipts.map((item) => item.to) ?? []),
     ];
     const createdDirs = computeCreatedDirs(projectRoot, targetPaths);
     const operations = [];
@@ -379,6 +487,9 @@ export function installProjection(input = {}) {
     }
     for (const entry of recheck.stale) {
       operations.push({ op: 'delete', path: entry.path, backup: entry.backup });
+    }
+    if (migration !== null && migration.receipts.length > 0) {
+      operations.push(...legacyJournalOperations(migration, new Set(incoming.map((entry) => entry.path))));
     }
     const receiptExisted = lstatOrNull(ownAbsolute) !== null;
     operations.push({ op: receiptExisted ? 'replace' : 'create', path: ownRel, backup: receiptExisted });
@@ -395,9 +506,20 @@ export function installProjection(input = {}) {
     });
 
     const wrote = [];
+    let migrationFacts = null;
     try {
       writeJournal(projectRoot, journal);
       for (const dir of createdDirs) ensureProjectDirs(projectRoot, dir);
+      if (migration !== null && migration.receipts.length > 0) {
+        const revoked = revokeMergedPointers({ projectRoot, merged: migration.merged, force });
+        const deleted = applyLegacyDeletions({
+          projectRoot,
+          plan: migration,
+          skip: new Set(incoming.map((entry) => entry.path)),
+        });
+        const retired = retireLegacyReceipts({ projectRoot, plan: migration });
+        migrationFacts = { ...revoked, deleted, retired };
+      }
       for (const decision of recheck.decisions) {
         if (decision.action === 'adopt' || decision.action === 'keep') continue;
         const entry = incoming.find((item) => item.path === decision.path);
@@ -430,7 +552,8 @@ export function installProjection(input = {}) {
       }
 
       const receiptFiles = receiptEntries(projectRoot, incoming);
-      const installWarnings = [...(result.warnings ?? []), ...recheck.warnings];
+      const installWarnings = [...(result.warnings ?? []), ...recheck.warnings, ...coexistWarnings];
+      const migrated = migrationFacts !== null && migrationFacts.retired.length > 0;
       const backups = journal.operations
         .filter((operation) => operation.backup !== null && operation.path !== ownRel)
         .map((operation) => ({
@@ -443,7 +566,7 @@ export function installProjection(input = {}) {
         projection: { id: projectionId, version: result.projection.version, targets: result.targets },
         bundle: { id: bundleId, version },
         ir: { path: irRel, digest: irDigest, contentSha256: result.ir?.contentSha256 ?? null },
-        mode: fresh.own === null ? 'fresh' : 'upgrade',
+        mode: migrated ? 'migrated' : fresh.own === null ? 'fresh' : 'upgrade',
         hostTargets: [],
         options,
         requiresEngine: ir.requires?.engine ?? null,
@@ -455,7 +578,7 @@ export function installProjection(input = {}) {
         createdDirs,
         backups,
         previous: previousRecord(fresh.own, ownRel),
-        migratedFrom: null,
+        migratedFrom: migrated ? migrationSummary(migration) : null,
         createdAt: fresh.own?.receipt?.created_at ?? now,
         updatedAt: now,
       });
@@ -465,6 +588,7 @@ export function installProjection(input = {}) {
       journal.receipts_written = [ownRel];
       writeJournal(projectRoot, journal);
       removeJournal(projectRoot);
+      const pruned = pruneLegacyDirs(projectRoot, migration);
       return {
         ok: true,
         code: 'OK',
@@ -480,6 +604,9 @@ export function installProjection(input = {}) {
         createdDirs,
         backups,
         warnings: installWarnings,
+        manualSteps,
+        migration: migrated ? migrationSummary(migration) : null,
+        pruned,
         diff: appliedDiff,
         ignoreSuggestions: ['.r2c/bin/', '.r2c/bundles/', '.r2c/projection/'],
       };
