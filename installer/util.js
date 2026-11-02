@@ -1,0 +1,157 @@
+/**
+ * Filesystem primitives for the installer (composition root: `node:*` allowed).
+ *
+ * All content writes go through `core/node/atomic-write.js`; reads are
+ * symlink-aware so a link planted between the conflict check and the write
+ * cannot redirect a project-relative path outside the project.
+ */
+import { createHash } from 'node:crypto';
+import {
+  chmodSync,
+  closeSync,
+  copyFileSync,
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  readdirSync,
+  rmdirSync,
+  unlinkSync,
+  writeSync,
+} from 'node:fs';
+import { dirname, join } from 'node:path';
+import { atomicWriteFile as coreAtomicWrite } from '../core/node/atomic-write.js';
+import { isSharedRoot, projectPath, toPosix } from './paths.js';
+
+export function sha256Hex(data) {
+  return createHash('sha256').update(typeof data === 'string' ? Buffer.from(data, 'utf8') : Buffer.from(data)).digest('hex');
+}
+
+export function sha256File(file) {
+  return sha256Hex(readFileSync(file));
+}
+
+/** `lstat` without throwing; `null` when the path does not exist. */
+export function lstatOrNull(path) {
+  try {
+    return lstatSync(path);
+  } catch (error) {
+    if (error?.code === 'ENOENT' || error?.code === 'ENOTDIR') return null;
+    throw error;
+  }
+}
+
+export function readJsonFile(file) {
+  try {
+    return { ok: true, value: JSON.parse(readFileSync(file, 'utf8')), error: null };
+  } catch (error) {
+    const missing = error?.code === 'ENOENT' || error?.code === 'ENOTDIR';
+    return {
+      ok: false,
+      value: null,
+      error: { code: missing ? 'ENOENT' : 'EJSON', message: `${file}: ${error?.message ?? 'unreadable'}` },
+    };
+  }
+}
+
+export function relativeInside(projectRoot, absolute) {
+  return toPosix(absolute.slice(projectRoot.length).replace(/^[/\\]+/, ''));
+}
+
+/** Create every missing directory of `relDir`, recording the created ones. */
+export function ensureProjectDirs(projectRoot, relDir, created = new Set()) {
+  if (relDir === '') return created;
+  const absolute = projectPath(projectRoot, relDir);
+  if (absolute === null) throw new Error(`path escapes project: ${relDir}`);
+  const missing = [];
+  let current = absolute;
+  while (!existsSync(current)) {
+    missing.push(current);
+    const parent = dirname(current);
+    if (parent === current) break;
+    current = parent;
+  }
+  for (const dir of missing.reverse()) {
+    mkdirSync(dir);
+    created.add(relativeInside(projectRoot, dir));
+  }
+  return created;
+}
+
+/** The first symlink component of `relPath` (including the leaf), or `null`. */
+export function symlinkComponent(projectRoot, relPath) {
+  const segments = relPath.split('/');
+  let current = projectRoot;
+  for (let index = 0; index < segments.length; index += 1) {
+    current = join(current, segments[index]);
+    const info = lstatOrNull(current);
+    if (info === null) return null;
+    if (info.isSymbolicLink()) return segments.slice(0, index + 1).join('/');
+  }
+  return null;
+}
+
+/** Write content through a same-directory temporary file and rename. */
+export function writeFileAtomic(absolute, content, mode) {
+  coreAtomicWrite(absolute, content, {});
+  if (mode === 0o755) {
+    try {
+      chmodSync(absolute, 0o755);
+    } catch {
+      // Windows has no executable bit; the mode stays advisory.
+    }
+  }
+}
+
+export function writeAbsoluteAtomic(absolute, content) {
+  coreAtomicWrite(absolute, content, {});
+}
+
+export function ensureAbsoluteDir(dir) {
+  mkdirSync(dir, { recursive: true });
+}
+
+/** Copy `source` to `backup`; returns the backup hash. */
+export function copyBackup(source, backup) {
+  mkdirSync(dirname(backup), { recursive: true });
+  copyFileSync(source, backup);
+  return sha256File(backup);
+}
+
+export function unlinkIfExists(path) {
+  try {
+    unlinkSync(path);
+    return true;
+  } catch (error) {
+    if (error?.code === 'ENOENT') return false;
+    throw error;
+  }
+}
+
+/** Remove `dir` only when it exists, is empty and is not a shared root. */
+export function pruneEmptyDir(projectRoot, relDir) {
+  if (isSharedRoot(relDir)) return false;
+  const absolute = projectPath(projectRoot, relDir);
+  if (absolute === null) return false;
+  const info = lstatOrNull(absolute);
+  if (info === null || !info.isDirectory()) return false;
+  if (readdirSync(absolute).length > 0) return false;
+  rmdirSync(absolute);
+  return true;
+}
+
+/** Exclusive-create a lock file; returns `false` when it already exists. */
+export function createExclusive(file, token) {
+  let handle;
+  try {
+    handle = openSync(file, 'wx');
+    writeSync(handle, token);
+    return true;
+  } catch (error) {
+    if (error?.code === 'EEXIST') return false;
+    throw error;
+  } finally {
+    if (handle !== undefined) closeSync(handle);
+  }
+}
