@@ -82,7 +82,10 @@ function checkRole(context, id, record) {
           details: { declared: id, stem: id, actual: fields.id },
         });
       }
-      if (fields.id === 'main' || fields.id === 'sub') {
+      // The manifest declaration already owns the reserved-id diagnostic for
+      // declared roles; only report it here when the file disagrees.
+      if ((fields.id === 'main' || fields.id === 'sub')
+        && !context.declared.roles.includes(fields.id)) {
         context.fail(path, 'BUNDLE_ROLE_ID_RESERVED', 'role id is reserved', { details: { value: fields.id } });
       }
     }
@@ -230,7 +233,10 @@ function checkSkills(context) {
             details: { declared: id, stem: id, actual: fields.name },
           });
         }
-        if (fields.name === 'synced' || fields.name === 'anthropic-skills') {
+        // The manifest declaration already owns the reserved-id diagnostic for
+        // declared skills; only report it here when the file disagrees.
+        if ((fields.name === 'synced' || fields.name === 'anthropic-skills')
+          && !context.declared.skills.includes(fields.name)) {
           context.fail(path, 'BUNDLE_SKILL_ID_RESERVED', 'skill id is reserved', { details: { value: fields.name } });
         }
       }

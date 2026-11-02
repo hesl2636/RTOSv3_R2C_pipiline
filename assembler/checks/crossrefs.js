@@ -6,8 +6,11 @@
  * stage set is complete (S8): a missing stage would otherwise claim that every
  * later asset is unused.
  */
+import { ID_MAX, isValidId } from '../ids.js';
+
 export function check(context) {
   if (context.skipped.crossrefs) return;
+  if (context.declaredValid.stages === false) return;
   if (context.stages === null) return;
 
   const declared = context.declared;
@@ -20,9 +23,10 @@ export function check(context) {
 
   for (const stage of context.stages) {
     for (const step of stage.steps) {
+      if (step.references === false) continue;
       if (typeof step.task === 'string') {
         usedTasks.add(step.task);
-        if (taskDeclared && !declared.tasks.includes(step.task)) {
+        if (isValidId(step.task, ID_MAX) && taskDeclared && !declared.tasks.includes(step.task)) {
           context.fail(stage.path, 'BUNDLE_STEP_TASK_UNDECLARED', `step references an undeclared task: ${step.task}`, {
             pointer: `${step.pointer}/task`,
             details: { pointer: `${step.pointer}/task`, field: 'task', id: step.task },
@@ -31,7 +35,7 @@ export function check(context) {
       }
       if (typeof step.role === 'string') {
         usedRoles.add(step.role);
-        if (roleDeclared && !declared.roles.includes(step.role)) {
+        if (isValidId(step.role, ID_MAX) && roleDeclared && !declared.roles.includes(step.role)) {
           context.fail(stage.path, 'BUNDLE_STEP_ROLE_UNDECLARED', `step references an undeclared role: ${step.role}`, {
             pointer: `${step.pointer}/role`,
             details: { pointer: `${step.pointer}/role`, field: 'role', id: step.role },
@@ -41,7 +45,7 @@ export function check(context) {
       step.skills.forEach((skill, index) => {
         if (typeof skill !== 'string') return;
         usedSkills.add(skill);
-        if (skillDeclared && !declared.skills.includes(skill)) {
+        if (isValidId(skill, ID_MAX) && skillDeclared && !declared.skills.includes(skill)) {
           context.fail(stage.path, 'BUNDLE_STEP_SKILL_UNDECLARED', `step references an undeclared skill: ${skill}`, {
             pointer: `${step.pointer}/skills/${index}`,
             details: { pointer: `${step.pointer}/skills/${index}`, field: 'skills', id: skill },

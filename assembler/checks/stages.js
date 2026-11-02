@@ -4,11 +4,11 @@
  * Stages iterate in `bundle.json.stages` order; steps in the stage file's
  * array order. Nothing is sorted here: order is the execution order.
  */
-import { canonicalJson, firstDifferenceOffset } from '../../core/canonical-json.js';
 import { codePointLength } from '../../core/code-point.js';
 import { isValidGlob } from '../../core/glob.js';
 import { ID_MAX, isValidId } from '../ids.js';
 import { isPlainObject } from '../util.js';
+import { readJsonDocument, findKeyOrderViolation } from './json.js';
 import { checkUnknownKeys } from './manifest.js';
 
 const STAGE_KEYS = ['id', 'name', 'description', 'steps'];
@@ -31,9 +31,28 @@ function isIdString(value) {
   return typeof value === 'string' && isValidId(value, ID_MAX);
 }
 
+function stageKeyOrder(value) {
+  if (!isPlainObject(value)) return null;
+  const top = findKeyOrderViolation(value, STAGE_KEYS);
+  if (top !== null) return top;
+  if (!Array.isArray(value.steps)) return null;
+  for (const step of value.steps) {
+    if (!isPlainObject(step)) continue;
+    const stepViolation = findKeyOrderViolation(step, STEP_KEYS);
+    if (stepViolation !== null) return stepViolation;
+    if (!Array.isArray(step.gates)) continue;
+    for (const gate of step.gates) {
+      if (!isPlainObject(gate)) continue;
+      const gateViolation = findKeyOrderViolation(gate, GATE_KEYS);
+      if (gateViolation !== null) return gateViolation;
+    }
+  }
+  return null;
+}
+
 function outputPathReason(output) {
   if (typeof output !== 'string') return 'type';
-  if (output === '') return 'empty';
+  if (output === '') return null;
   if (output.startsWith('/') || /^[A-Za-z]:/.test(output)) return 'absolute';
   if (output.includes('\\')) return 'backslash';
   if (output.split('/').includes('..')) return 'traversal';
@@ -170,6 +189,21 @@ function checkStep(context, stageRecord, step, index) {
     }
   }
 
+  // S10: without `task` the step is not a valid execution unit, so its
+  // output/gate and reference checks are suppressed instead of cascading.
+  if (step.task === undefined) {
+    context.complete.stages = false;
+    return {
+      id: step.id,
+      name: step.name,
+      role: step.role,
+      task: undefined,
+      skills: Array.isArray(step.skills) ? [...step.skills] : [],
+      pointer: base,
+      references: false,
+    };
+  }
+
   const outputs = step.outputs === undefined ? [] : step.outputs;
   checkOutputs(context, path, `${base}/outputs`, outputs);
   const gates = step.gates === undefined ? [] : step.gates;
@@ -182,11 +216,13 @@ function checkStep(context, stageRecord, step, index) {
     task: step.task,
     skills: Array.isArray(step.skills) ? [...step.skills] : [],
     pointer: base,
+    references: true,
   };
 }
 
 export function check(context) {
   if (context.skipped.stages) return;
+  if (context.declaredValid.stages === false) return;
   const stageFiles = [];
   for (const entry of context.entries.values()) {
     if (entry.path.startsWith('stages/')) stageFiles.push(entry.path);
@@ -230,21 +266,12 @@ export function check(context) {
       context.complete.stages = false;
       continue;
     }
-    let value;
-    try {
-      value = JSON.parse(text);
-    } catch {
-      context.fail(path, 'BUNDLE_JSON_PARSE', 'stage file is not valid JSON', {
-        details: { reason: 'syntax' },
-      });
+    const document = readJsonDocument(context, path, text, { order: stageKeyOrder });
+    if (document === null) {
       context.complete.stages = false;
       continue;
     }
-    if (canonicalJson(value) !== text) {
-      context.fail(path, 'BUNDLE_JSON_NOT_CANONICAL', 'stage file is not canonical JSON', {
-        details: { offset: firstDifferenceOffset(canonicalJson(value), text) },
-      });
-    }
+    const { value } = document;
     if (!isPlainObject(value)) {
       schemaInvalid(context, path, '', 'type', 'stage file must be a JSON object');
       context.complete.stages = false;
