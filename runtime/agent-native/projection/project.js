@@ -391,6 +391,8 @@ export function projectAgentNative(input) {
         }
       }
     }
+    const targetDegradations = TARGETS[target].capabilityDegradations?.({ ir, roleIds }) ?? [];
+    for (const record of targetDegradations) degradations.push({ ...record, target });
     const preloadLevel = TARGETS[target].capabilities.preload;
     for (const roleId of roleIds) {
       const role = ir.roles[roleId];

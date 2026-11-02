@@ -323,8 +323,9 @@ test('gates and outputs degrade per use point and stay visible in the stage skil
 test('projection.json is the canonical manifest and derives from the target registry', () => {
   const path = join(ROOT, 'runtime/agent-native/projection/projection.json');
   assert.equal(readFileSync(path, 'utf8'), canonicalJson(AGENT_NATIVE_MANIFEST));
-  assert.deepEqual(AGENT_NATIVE_MANIFEST.targets.map((target) => target.id), ['claude-code']);
-  const target = AGENT_NATIVE_MANIFEST.targets[0];
+  const ids = AGENT_NATIVE_MANIFEST.targets.map((target) => target.id);
+  assert.ok(ids.includes('claude-code'));
+  const target = AGENT_NATIVE_MANIFEST.targets.find((item) => item.id === 'claude-code');
   assert.equal(target.capabilities.state.level, 'unavailable');
   assert.equal(typeof target.capabilities.state.note, 'string');
   for (const root of ['.agents/agent-native', '.agents/skills', '.claude/agents', '.claude/skills']) {
