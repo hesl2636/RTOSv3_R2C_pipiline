@@ -181,7 +181,7 @@ export function renderRole(role, targetId, ctx) {
   for (const field of SETTABLE_FIELDS) {
     if (Object.hasOwn(role, field)) fields.set(field, baseState(field));
   }
-  const overrides = descriptor.role.fieldStates?.(role, tools) ?? {};
+  const overrides = descriptor.role.fieldStates?.(role, tools, ctx) ?? {};
   for (const [field, state] of Object.entries(overrides)) {
     if (field === 'id') {
       fields.set('id', state);

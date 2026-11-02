@@ -7,12 +7,14 @@
 import { claudeCodeTarget } from './claude-code.js';
 import { codexTarget } from './codex.js';
 import { dshTarget } from './dsh.js';
+import { ompTarget } from './omp.js';
 import { opencodeTarget } from './opencode.js';
 
 export const TARGETS = Object.freeze({
   'claude-code': claudeCodeTarget,
   codex: codexTarget,
   dsh: dshTarget,
+  omp: ompTarget,
   opencode: opencodeTarget,
 });
 
