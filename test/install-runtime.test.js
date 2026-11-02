@@ -296,3 +296,15 @@ test('an engine install does not create a bundle receipt or record the engine ve
   assert.equal(receiptText.includes('3.1.4'), false);
   assert.equal(readRuntimeReceipt(projectRoot).engine.version, '3.1.4');
 });
+
+test('an r2c install refuses a foreign workflows/*.yaml', (t) => {
+  const projectRoot = tempDir(t, 'r2c-project-');
+  mkdirSync(join(projectRoot, 'workflows'), { recursive: true });
+  writeFileSync(join(projectRoot, 'workflows', 'other.yaml'), 'schema: r2c.workflow/v1\nid: other\nversion: 0.1.0\nstages: []\n');
+  const { result, irBytes } = sample('r2c');
+  const outcome = installR2cProject({ result, irBytes, projectRoot, clock: CLOCK, force: true });
+  assert.equal(outcome.code, 'R2C_ROOT_OCCUPIED');
+  assert.deepEqual(outcome.occupied, ['workflows/other.yaml']);
+  assert.equal(existsSync(join(projectRoot, '.r2c/install/receipts')), false);
+  assert.deepEqual(readdirSync(join(projectRoot, 'workflows')), ['other.yaml']);
+});

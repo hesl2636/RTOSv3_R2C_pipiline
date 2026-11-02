@@ -6,7 +6,7 @@
  * idempotency → lock → re-check (TOCTOU) → journal + backups → writes sorted by
  * path → verify hashes from disk → receipt last → remove journal.
  */
-import { existsSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, statSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { canonicalJson } from '../core/canonical-json.js';
 import { comparePaths } from '../core/paths.js';
@@ -309,6 +309,29 @@ export function installProjection(input = {}) {
         details: {},
       }],
     };
+  }
+
+  // r2c is a singleton root: exactly one `workflows/*.yaml` must remain after
+  // the write, so a foreign manifest is refused before any conflict/write.
+  if (projectionId === 'r2c') {
+    const incomingWorkflows = new Set(incoming.filter((entry) => entry.kind === 'workflow').map((entry) => entry.path));
+    let names = [];
+    try {
+      names = readdirSync(resolve(projectRoot, 'workflows'), { withFileTypes: true })
+        .filter((entry) => entry.isFile() && /\.ya?ml$/.test(entry.name))
+        .map((entry) => `workflows/${entry.name}`);
+    } catch {
+      names = [];
+    }
+    const foreign = names.filter((path) => !incomingWorkflows.has(path));
+    const ownedByOthers = new Set((others ?? []).flatMap((item) => (item.receipt.files ?? []).map((file) => file.path)));
+    const unowned = foreign.filter((path) => !ownedByOthers.has(path));
+    if (unowned.length > 0) {
+      return failure('R2C_ROOT_OCCUPIED', 'an r2c install must leave exactly one workflows/*.yaml', {
+        occupied: unowned,
+        hint: 'remove or migrate the foreign workflow before installing the r2c bundle',
+      });
+    }
   }
 
   const check = checkConflicts({ projectRoot, incoming, previous: own, others, force });
