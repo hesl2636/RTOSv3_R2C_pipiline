@@ -19,7 +19,7 @@ import { test } from 'node:test';
 import { isCanonicalJson } from '../core/canonical-json.js';
 import { installProjection } from '../installer/install.js';
 import { irPath as irRelPath } from '../installer/paths.js';
-import { fixedClock, sample } from './helpers/install-fixture.js';
+import { cloneResult, fixedClock, sample } from './helpers/install-fixture.js';
 
 const CLOCK = fixedClock();
 
@@ -164,4 +164,18 @@ test('an IR whose bytes do not match the result digest is refused without writes
   });
   assert.equal(outcome.code, 'PROJECTION_RESULT_INVALID');
   assert.deepEqual(walk(projectRoot), []);
+});
+
+test('executable modes survive to the receipt and the disk', (t) => {
+  const projectRoot = tempProject(t);
+  const { result, irBytes } = sample('r2c');
+  const mutated = cloneResult(result);
+  mutated.files[0].mode = 0o755;
+  const outcome = installProjection({ result: mutated, irBytes, projectRoot, clock: CLOCK });
+  assert.equal(outcome.code, 'OK');
+  const entry = outcome.receipt.files.find((file) => file.path === mutated.files[0].path);
+  assert.equal(entry.mode, '0755');
+  if (process.platform !== 'win32') {
+    assert.equal(statSync(join(projectRoot, ...mutated.files[0].path.split('/'))).mode & 0o777, 0o755);
+  }
 });
