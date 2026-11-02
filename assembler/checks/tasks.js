@@ -7,7 +7,7 @@
  */
 import { codePointLength } from '../../core/code-point.js';
 import { parseFrontmatter } from '../frontmatter.js';
-import { scanTaskBody } from '../markdown.js';
+import { scanTaskBody, FENCE_RE, TASK_HEADINGS } from '../markdown.js';
 import { nonEmptyLines } from '../util.js';
 
 const TASK_FRONTMATTER_KEYS = ['id', 'title', 'description'];
@@ -65,19 +65,26 @@ function checkFields(context, path, fields, stem) {
   }
 }
 
-/** Lines outside the `## 提交` section, so the submit block cannot leak-warn. */
+/** Body with the `## 提交` section blanked line-for-line (leak scan scope). */
 function bodyOutsideSubmit(body) {
   const lines = body.split('\n');
-  const start = lines.findIndex((line) => line.trimEnd() === '## 提交');
-  if (start < 0) return body;
-  let end = lines.length;
-  for (let index = start + 1; index < lines.length; index += 1) {
-    if (/^## /.test(lines[index])) {
-      end = index;
-      break;
+  let fenced = false;
+  let inSubmit = false;
+  const scanned = [];
+  for (const line of lines) {
+    if (FENCE_RE.test(line)) {
+      fenced = !fenced;
+      scanned.push(inSubmit ? '' : line);
+      continue;
     }
+    if (!fenced && /^## /.test(line)) {
+      inSubmit = line.trimEnd() === '## 提交';
+      scanned.push('');
+      continue;
+    }
+    scanned.push(inSubmit ? '' : line);
   }
-  return [...lines.slice(0, start), ...lines.slice(end)].join('\n');
+  return scanned.join('\n');
 }
 
 function checkLeak(context, path, body, lineOffset) {
@@ -101,7 +108,7 @@ function mapIssue(context, path, issue, lineOffset) {
   if (issue.rule === 'section-order') {
     context.fail(path, 'BUNDLE_TASK_SECTION_ORDER', 'task sections are out of order', {
       line: issue.line ?? null,
-      details: { expected: ['Agent 角色设定', '任务', '约束条件', '提交'] },
+      details: { expected: [...TASK_HEADINGS], found: issue.found ?? [] },
     });
     return;
   }
@@ -114,7 +121,7 @@ function mapIssue(context, path, issue, lineOffset) {
   if (issue.rule === 'h2-unexpected') {
     context.fail(path, 'BUNDLE_TASK_H2_UNEXPECTED', 'unexpected H2 heading in task book', {
       line: issue.line ?? null,
-      details: { heading: issue.heading },
+      details: { heading: issue.heading, line: issue.line ?? null },
     });
     return;
   }
@@ -163,7 +170,9 @@ export function check(context) {
 
     const parsed = parseFrontmatter(text, { path });
     context.diagnostics.push(...parsed.diagnostics);
-    checkFields(context, path, parsed.fields, id);
+    // S6: a frontmatter parse failure suppresses every frontmatter-derived
+    // check (id/title/description/placeholder); the body is independent.
+    if (parsed.diagnostics.length === 0) checkFields(context, path, parsed.fields, id);
 
     const lineOffset = parsed.bodyLine - 1;
     if (nonEmptyLines(parsed.body).length === 0) {

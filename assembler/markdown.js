@@ -7,7 +7,7 @@
  */
 export const TASK_HEADINGS = Object.freeze(['Agent 角色设定', '任务', '约束条件', '提交']);
 
-const FENCE_RE = /^```/;
+export const FENCE_RE = /^```/;
 const H2_RE = /^## (.*)$/;
 export const SUBMIT_TOKEN = '{{submit}}';
 
@@ -57,8 +57,7 @@ function checkSubmitSection(sectionLines, headingLine) {
     issue = { rule: 'submit-marker', reason: 'block-content', line: outside[0] };
   }
 
-  const tokenInsideBlock = issue === null;
-  return { issue, tokenInsideBlock };
+  return { issue };
 }
 
 /**
@@ -116,7 +115,7 @@ export function scanTaskBody(body, options = {}) {
     .map((found) => found.heading);
   const expectedOrder = expected.filter((heading) => seen.has(heading));
   if (order.length > 0 && order.join('\u0000') !== expectedOrder.join('\u0000')) {
-    issues.push({ rule: 'section-order', line: firstIndex.get(order[0])?.line });
+    issues.push({ rule: 'section-order', line: firstIndex.get(order[0])?.line, found: order });
   }
 
   for (const heading of expected) {
@@ -141,7 +140,6 @@ export function scanTaskBody(body, options = {}) {
     } else {
       const tokenCount = (typeof body === 'string' ? body.match(/\{\{submit\}\}/g) : null)?.length ?? 0;
       if (tokenCount !== 1) issues.push({ rule: 'submit-marker', reason: 'token-count' });
-      else if (!submit.tokenInsideBlock) issues.push({ rule: 'submit-marker', reason: 'token-outside-block' });
     }
   }
 
