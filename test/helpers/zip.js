@@ -3,6 +3,9 @@
  *
  * The assembler only consumes bytes, so fixtures are built in-process instead
  * of committing binary blobs. Output is stable for the same input map order.
+ *
+ * Options exist only to reproduce container violations; every default matches
+ * a well-formed archive so existing fixtures keep their exact bytes.
  */
 import { deflateRawSync } from 'node:zlib';
 
@@ -40,28 +43,85 @@ function u32(value) {
 const DOS_TIME = 0;
 const DOS_DATE = (1 << 5) | 1;
 
+function optionFor(value, name) {
+  if (typeof value === 'function') return value(name);
+  if (value !== null && typeof value === 'object') return value[name];
+  return value;
+}
+
+function normalizeEntries(entries) {
+  if (Array.isArray(entries)) return entries;
+  if (entries instanceof Map) return [...entries];
+  return Object.entries(entries);
+}
+
+function extraFieldBytes(fields) {
+  if (!fields || fields.length === 0) return Buffer.alloc(0);
+  const chunks = [];
+  for (const field of fields) {
+    const data = Buffer.from(field.data ?? '');
+    chunks.push(Buffer.concat([u16(field.id), u16(data.length), data]));
+  }
+  return Buffer.concat(chunks);
+}
+
 /**
  * Build a zip archive.
  *
- * @param {Map<string, string|Uint8Array>|Record<string, string|Uint8Array>} entries
- * @param {{ method?: 'store'|'deflate', directory?: string[], dataDescriptor?: boolean }} [options]
+ * @param {Map<string, string|Uint8Array>|Record<string, string|Uint8Array>|Array<[string, string|Uint8Array]>} entries
+ * @param {{
+ *   method?: 'store'|'deflate',
+ *   methodFor?: (name: string) => 'store'|'deflate'|number,
+ *   directory?: string[],
+ *   dataDescriptor?: boolean,
+ *   flags?: number|((name: string) => number),
+ *   madeBy?: number|((name: string) => number),
+ *   externalAttributes?: number|((name: string) => number),
+ *   extraFields?: Array<{id: number, data?: string|Uint8Array}>|((name: string) => Array<object>),
+ *   declaredSizes?: Record<string, number>|((name: string) => number|undefined),
+ *   zip64?: boolean,
+ *   hardLinks?: Record<string, string>,
+ *   eocd?: { disk?: number, centralDisk?: number, entriesOnDisk?: number, totalEntries?: number, centralSize?: number, centralOffset?: number },
+ * }} [options]
  * @returns {Buffer}
  */
 export function buildZip(entries, options = {}) {
-  const method = options.method === 'deflate' ? 8 : 0;
+  const defaultMethod = options.method === 'deflate' ? 8 : 0;
   const dataDescriptor = options.dataDescriptor === true;
-  const files = entries instanceof Map ? [...entries] : Object.entries(entries);
+  const files = normalizeEntries(entries);
   const directories = options.directory ?? [];
+  const hardLinks = options.hardLinks ?? {};
   const local = [];
   const central = [];
+  const offsets = new Map();
   let offset = 0;
+
+  const methodOf = (name) => {
+    const value = options.methodFor === undefined ? defaultMethod : optionFor(options.methodFor, name);
+    if (value === 'deflate') return 8;
+    if (value === 'store') return 0;
+    return value;
+  };
 
   const push = (name, data, isDirectory) => {
     const nameBytes = Buffer.from(name, 'utf8');
+    const shared = hardLinks[name];
+    if (shared !== undefined) {
+      const target = records.get(shared);
+      if (target === undefined) throw new Error(`hard link target is not earlier: ${shared}`);
+      central.push(centralRecord(nameBytes, target));
+      return;
+    }
     const raw = isDirectory ? Buffer.alloc(0) : Buffer.from(utf8(data));
+    const method = isDirectory ? 0 : methodOf(name);
     const body = method === 8 && !isDirectory ? deflateRawSync(raw) : raw;
     const checksum = crc32(raw);
-    const flags = dataDescriptor ? 0x0008 : 0;
+    const flags = optionFor(options.flags, name) ?? (dataDescriptor ? 0x0008 : 0);
+    const madeBy = optionFor(options.madeBy, name) ?? 0x0314;
+    const external = optionFor(options.externalAttributes, name)
+      ?? (isDirectory ? (0o040755 << 16) >>> 0 : (0o100644 << 16) >>> 0);
+    const extra = extraFieldBytes(optionFor(options.extraFields, name));
+    const declaredSize = optionFor(options.declaredSizes, name);
     const localHeader = Buffer.concat([
       u32(0x04034b50),
       u16(20),
@@ -73,34 +133,58 @@ export function buildZip(entries, options = {}) {
       u32(dataDescriptor ? 0 : body.length),
       u32(dataDescriptor ? 0 : raw.length),
       u16(nameBytes.length),
-      u16(0),
+      u16(extra.length),
       nameBytes,
+      extra,
     ]);
     local.push(localHeader, body);
     if (dataDescriptor) local.push(u32(0x08074b50), u32(checksum), u32(body.length), u32(raw.length));
-    const external = isDirectory ? (0o040755 << 16) >>> 0 : (0o100644 << 16) >>> 0;
-    central.push(Buffer.concat([
-      u32(0x02014b50),
-      u16(0x0314),
-      u16(20),
-      u16(flags),
-      u16(method),
-      u16(DOS_TIME),
-      u16(DOS_DATE),
-      u32(checksum),
-      u32(body.length),
-      u32(raw.length),
-      u16(nameBytes.length),
-      u16(0),
-      u16(0),
-      u16(0),
-      u16(0),
-      u32(external),
-      u32(offset),
+    const record = {
+      name,
       nameBytes,
-    ]));
+      flags,
+      method,
+      checksum,
+      compressedSize: body.length,
+      size: raw.length,
+      declaredSize,
+      extra,
+      madeBy,
+      external,
+    };
+    records.set(name, record);
+    offsets.set(name, offset);
+    central.push(centralRecord(nameBytes, record, { localOffset: offset }));
     offset += localHeader.length + body.length
       + (dataDescriptor ? 16 : 0);
+  };
+
+  const records = new Map();
+
+  const centralRecord = (nameBytes, record, overrides = {}) => {
+    const zip64 = options.zip64 === true;
+    const size = record.declaredSize ?? record.size;
+    return Buffer.concat([
+      u32(0x02014b50),
+      u16(record.madeBy),
+      u16(20),
+      u16(record.flags),
+      u16(record.method),
+      u16(DOS_TIME),
+      u16(DOS_DATE),
+      u32(record.checksum),
+      u32(zip64 ? 0xffffffff : record.compressedSize),
+      u32(zip64 ? 0xffffffff : size),
+      u16(nameBytes.length),
+      u16(record.extra.length),
+      u16(0),
+      u16(0),
+      u16(0),
+      u32(record.external),
+      u32(zip64 ? 0xffffffff : overrides.localOffset ?? offsets.get(record.name)),
+      nameBytes,
+      record.extra,
+    ]);
   };
 
   for (const name of directories) push(name.endsWith('/') ? name : `${name}/`, '', true);
@@ -108,15 +192,17 @@ export function buildZip(entries, options = {}) {
 
   const centralBytes = Buffer.concat(central);
   const localBytes = Buffer.concat(local);
-  const eocd = Buffer.concat([
+  const eocd = options.eocd ?? {};
+  const totalEntries = eocd.totalEntries ?? central.length;
+  const eocdBytes = Buffer.concat([
     u32(0x06054b50),
-    u16(0),
-    u16(0),
-    u16(central.length),
-    u16(central.length),
-    u32(centralBytes.length),
-    u32(localBytes.length),
+    u16(eocd.disk ?? 0),
+    u16(eocd.centralDisk ?? 0),
+    u16(eocd.entriesOnDisk ?? totalEntries),
+    u16(totalEntries),
+    u32(eocd.centralSize ?? centralBytes.length),
+    u32(eocd.centralOffset ?? localBytes.length),
     u16(0),
   ]);
-  return Buffer.concat([localBytes, centralBytes, eocd]);
+  return Buffer.concat([localBytes, centralBytes, eocdBytes]);
 }
