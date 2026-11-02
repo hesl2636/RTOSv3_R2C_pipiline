@@ -299,16 +299,16 @@ test('a zero-byte non-constitution text keeps its owning code', () => {
 // Exhaustive path whitelist (#67 §7.11)
 // ---------------------------------------------------------------------------
 
-test('every extra path is BUNDLE_UNEXPECTED_PATH exactly once', async (t) => {
+test('extra paths use the frozen layout codes exactly once', async (t) => {
   const cases = [
-    ['extra skill file', () => minimalFiles({ 'skills/helper/README.md': 'notes\n' }), 'skills/helper/README.md'],
-    ['unexpected stage file', () => minimalFiles({ 'stages/extra.md': 'x\n' }), 'stages/extra.md'],
-    ['repository metadata', () => minimalFiles({ '.github/workflows/ci.yml': 'x\n' }), '.github/workflows/ci.yml'],
-    ['package manifest', () => minimalFiles({ 'package.json': '{}\n' }), 'package.json'],
+    ['extra skill file keeps its dedicated code', () => minimalFiles({ 'skills/helper/README.md': 'notes\n' }), 'BUNDLE_SKILL_EXTRA_FILE@skills/helper/README.md'],
+    ['unexpected stage file', () => minimalFiles({ 'stages/extra.md': 'x\n' }), 'BUNDLE_UNEXPECTED_PATH@stages/extra.md'],
+    ['repository metadata', () => minimalFiles({ '.github/workflows/ci.yml': 'x\n' }), 'BUNDLE_UNEXPECTED_PATH@.github/workflows/ci.yml'],
+    ['package manifest', () => minimalFiles({ 'package.json': '{}\n' }), 'BUNDLE_UNEXPECTED_PATH@package.json'],
   ];
-  for (const [name, build, badPath] of cases) {
+  for (const [name, build, expected] of cases) {
     await t.test(name, () => {
-      expectErrors(buildZip(build()), [`BUNDLE_UNEXPECTED_PATH@${badPath}`]);
+      expectErrors(buildZip(build()), [expected]);
     });
   }
 });
@@ -318,9 +318,9 @@ test('directory entries outside the whitelist are unexpected', () => {
   expectErrors(zip, ['BUNDLE_UNEXPECTED_PATH@docs/']);
 });
 
-test('a constitution directory without a manifest item is unexpected', () => {
+test('a constitution directory without a manifest item is undeclared', () => {
   const zip = buildZip(minimalFiles(), { directory: ['constitution'] });
-  expectErrors(zip, ['BUNDLE_UNEXPECTED_PATH@constitution/']);
+  expectErrors(zip, ['BUNDLE_CONSTITUTION_UNDECLARED@constitution/CONSTITUTION.md']);
 });
 
 test('the optional README and directory entries stay allowed', () => {
