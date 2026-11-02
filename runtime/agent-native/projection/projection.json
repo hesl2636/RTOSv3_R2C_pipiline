@@ -15,6 +15,7 @@
     ".claude/agents",
     ".claude/skills",
     ".codex/agents",
+    ".dsh/agent-native",
     ".opencode/agents"
   ],
   "targets": [
@@ -93,6 +94,45 @@
         "skill-invocation": {
           "level": "adapted",
           "note": "技能副本可由技能选择器加载；无稳定命令行 token"
+        }
+      }
+    },
+    {
+      "id": "dsh",
+      "name": "DeepSeek Harness",
+      "default": true,
+      "capabilities": {
+        "state": {
+          "level": "unavailable",
+          "note": "无 runner：没有状态文件，进度与续跑由执行者维护"
+        },
+        "gates": {
+          "level": "degraded",
+          "note": "命令原文 + 超时写入阶段技能；执行者运行并自证，机器不强制"
+        },
+        "outputs": {
+          "level": "degraded",
+          "note": "glob 原样列出自检清单；回执逐项写存在/缺失，机器不检查"
+        },
+        "subagents": {
+          "level": "unavailable",
+          "note": "v1 不生成 dsh 原生 preset；角色正文进项目内角色目录，由主会话按同名段落执行"
+        },
+        "skills": {
+          "level": "adapted",
+          "note": "技能安装到 .agents/skills（dsh 项目级技能根）；名字加 bundle 前缀，语义不变"
+        },
+        "preload": {
+          "level": "unavailable",
+          "note": "dsh 无按角色预载技能的接缝；v1 也不按角色挂 skill provider"
+        },
+        "stage-invocation": {
+          "level": "native",
+          "note": "阶段技能可单独加载"
+        },
+        "skill-invocation": {
+          "level": "native",
+          "note": "技能工具可按需加载单个技能"
         }
       }
     },

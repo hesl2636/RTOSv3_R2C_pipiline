@@ -6,11 +6,13 @@
  */
 import { claudeCodeTarget } from './claude-code.js';
 import { codexTarget } from './codex.js';
+import { dshTarget } from './dsh.js';
 import { opencodeTarget } from './opencode.js';
 
 export const TARGETS = Object.freeze({
   'claude-code': claudeCodeTarget,
   codex: codexTarget,
+  dsh: dshTarget,
   opencode: opencodeTarget,
 });
 
