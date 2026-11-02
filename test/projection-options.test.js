@@ -7,6 +7,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { normalizeOptions } from '../projection/options.js';
+import { getProjection } from '../projection/registry.js';
 
 const DIGEST = 'a'.repeat(64);
 
@@ -95,4 +96,68 @@ test('invalid stage order, skills, targets and extra are rejected', () => {
   assert.deepEqual(codes(normalize({ extra: { roleModels: {} } })), ['PROJECTION_OPTIONS_INVALID']);
   assert.deepEqual(codes(normalize({ schema: 'r2c.projection-options/v2' })), ['PROJECTION_OPTIONS_INVALID']);
   assert.deepEqual(codes(normalize({ projection: 'r2c' })), ['PROJECTION_OPTIONS_INVALID']);
+});
+
+test('extra follows the declared closed schema and is echoed recursively sorted', () => {
+  const schemaManifest = {
+    ...MANIFEST,
+    optionsSchema: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        retries: { type: 'integer', minimum: 0, maximum: 3 },
+        roleModels: {
+          type: 'object',
+          additionalProperties: false,
+          properties: { omp: { type: 'string' } },
+        },
+      },
+    },
+  };
+  const run = (raw) => normalizeOptions({
+    projectionId: 'agent-native',
+    ir: IR,
+    irDigest: DIGEST,
+    raw,
+    manifest: schemaManifest,
+  });
+
+  const accepted = run({ extra: { roleModels: { omp: 'x/y' }, retries: 2 } });
+  assert.equal(accepted.ok, true, JSON.stringify(accepted.errors));
+  assert.deepEqual(accepted.options.extra, { retries: 2, roleModels: { omp: 'x/y' } });
+  assert.deepEqual(Object.keys(accepted.options.extra), ['retries', 'roleModels']);
+
+  const unknownTop = run({ extra: { nope: 1 } });
+  assert.deepEqual(codes(unknownTop), ['PROJECTION_OPTIONS_INVALID']);
+  assert.equal(unknownTop.errors[0].pointer, '/extra/nope');
+
+  const unknownNested = run({ extra: { roleModels: { nope: 'x' } } });
+  assert.deepEqual(codes(unknownNested), ['PROJECTION_OPTIONS_INVALID']);
+  assert.equal(unknownNested.errors[0].pointer, '/extra/roleModels/nope');
+
+  const wrongType = run({ extra: { retries: '2' } });
+  assert.deepEqual(codes(wrongType), ['PROJECTION_OPTIONS_INVALID']);
+  assert.equal(wrongType.errors[0].pointer, '/extra/retries');
+
+  const outOfBounds = run({ extra: { retries: 9 } });
+  assert.deepEqual(codes(outOfBounds), ['PROJECTION_OPTIONS_INVALID']);
+});
+
+test('both real manifests declare the closed empty extra schema', () => {
+  for (const id of ['agent-native', 'r2c']) {
+    const manifest = getProjection(id);
+    assert.equal(manifest.optionsSchema.type, 'object');
+    assert.equal(manifest.optionsSchema.additionalProperties, false);
+    assert.deepEqual(manifest.optionsSchema.properties, {});
+    const outcome = normalizeOptions({
+      projectionId: id,
+      ir: IR,
+      irDigest: DIGEST,
+      raw: { extra: { nope: true } },
+      manifest,
+    });
+    assert.equal(outcome.ok, false);
+    assert.deepEqual(codes(outcome), ['PROJECTION_OPTIONS_INVALID']);
+    assert.equal(outcome.errors[0].pointer, '/extra/nope');
+  }
 });

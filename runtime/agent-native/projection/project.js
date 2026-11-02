@@ -394,11 +394,15 @@ export function projectAgentNative(input) {
     const targetDegradations = TARGETS[target].capabilityDegradations?.({ ir, roleIds }) ?? [];
     for (const record of targetDegradations) degradations.push({ ...record, target });
     const preloadLevel = TARGETS[target].capabilities.preload;
+    // Only a target with an intact preload seam can lose a preload to option
+    // exclusion; below `adapted` the declared loss is already recorded per use.
+    const hasPreloadSeam = LEVEL_RANK[preloadLevel] <= LEVEL_RANK.adapted;
     for (const roleId of roleIds) {
       const role = ir.roles[roleId];
       const skillRefs = role.skills ?? [];
       for (const [index, skillId] of skillRefs.entries()) {
         if (!selectedSkills.has(skillId)) {
+          if (!hasPreloadSeam) continue;
           degradations.push({
             code: 'CAP_PRELOAD_EXCLUDED',
             target,
@@ -409,7 +413,7 @@ export function projectAgentNative(input) {
             reason: '按投影选项 options.skills 排除',
             effect: '预载正文丢弃；技能本身也未安装',
           });
-        } else if (LEVEL_RANK[preloadLevel] >= LEVEL_RANK.degraded) {
+        } else if (!hasPreloadSeam) {
           degradations.push({
             code: 'CAP_PRELOAD_UNAVAILABLE',
             target,

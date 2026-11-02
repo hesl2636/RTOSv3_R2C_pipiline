@@ -73,4 +73,10 @@ export const R2C_MANIFEST = Object.freeze({
     }),
   ]),
   assets: Object.freeze([]),
+  // Closed: r2c declares no custom options, so `extra` must be `{}`.
+  optionsSchema: Object.freeze({
+    type: 'object',
+    additionalProperties: false,
+    properties: Object.freeze({}),
+  }),
 });
