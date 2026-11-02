@@ -5,9 +5,11 @@
  * is adding one descriptor here plus its capability row in `projection.json`.
  */
 import { claudeCodeTarget } from './claude-code.js';
+import { opencodeTarget } from './opencode.js';
 
 export const TARGETS = Object.freeze({
   'claude-code': claudeCodeTarget,
+  opencode: opencodeTarget,
 });
 
 export const TARGET_ORDER = Object.freeze(Object.keys(TARGETS));
