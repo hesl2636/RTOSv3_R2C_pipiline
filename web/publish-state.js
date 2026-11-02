@@ -12,7 +12,7 @@
  *          build: {publishable?: boolean}|null, mismatch: boolean}} input
  * @returns {{enabled: boolean, reason: string|null, note: string|null}}
  */
-export function publishAvailability({ publish = null, build = null, mismatch = false } = {}) {
+export function publishButtonState({ publish = null, build = null, mismatch = false } = {}) {
   if (mismatch) {
     return { enabled: false, reason: 'client-server-mismatch', note: 'publish disabled: client/server mismatch' };
   }

@@ -47,6 +47,19 @@ const PURE_MODULES = [
   'web',
 ];
 
+/**
+ * JSON Schema documents that live with the module owning the contract. They
+ * are documentation: the hand-written validators stay authoritative.
+ */
+const SCHEMA_DOCUMENTS = [
+  ['assembler/schema/bundle.schema.json', 'assembler/validate-bundle.js'],
+  ['assembler/schema/stage.schema.json', 'assembler/checks/stages.js'],
+  ['ir/schema/ir.schema.json', 'assembler/validate-ir.js'],
+  ['projection/schema/options.schema.json', 'projection/options.js'],
+  ['projection/schema/result.schema.json', 'projection/validate-result.js'],
+  ['projection/schema/roles.schema.json', 'runtime/shared/render-role.js'],
+];
+
 function walkModule(dir) {
   const out = [];
   const walk = (current) => {
@@ -317,6 +330,29 @@ test('release source sets are disjoint and exclude retired trees', () => {
     assert.equal([...engineRels].some((rel) => rel.startsWith(forbidden) || rel === forbidden.slice(0, -1)), false, `engine ships ${forbidden}`);
   }
   assert.equal(engine.version, JSON.parse(readFileSync(join(ROOT, 'runtime/r2c/engine/package.json'), 'utf8')).version);
+});
+
+test('schema documents live with their owner as canonical JSON', () => {
+  const layout = readFileSync(join(ROOT, 'docs', 'layout.md'), 'utf8');
+  const ids = [];
+  for (const [rel, owner] of SCHEMA_DOCUMENTS) {
+    const absolute = join(ROOT, ...rel.split('/'));
+    assert.ok(existsSync(absolute), `${rel} is missing`);
+    assert.ok(existsSync(join(ROOT, ...owner.split('/'))), `${rel}: owner ${owner} is missing`);
+
+    const text = readFileSync(absolute, 'utf8');
+    const document = JSON.parse(text);
+    assert.equal(document.$schema, 'https://json-schema.org/draft/2020-12/schema', `${rel}: draft 2020-12`);
+    assert.match(String(document.$id), /^https:\/\/r2c\.runner\/schema\//, `${rel}: $id family`);
+    assert.equal(typeof document.title, 'string', `${rel}: title`);
+    assert.ok(document.title.length > 0, `${rel}: empty title`);
+    ids.push(document.$id);
+    assert.equal(JSON.stringify(document, null, 2) + '\n', text, `${rel} is not canonical JSON`);
+
+    assert.ok(layout.includes(rel), `docs/layout.md does not name ${rel}`);
+    assert.ok(layout.includes(owner), `docs/layout.md does not name the owner ${owner}`);
+  }
+  assert.equal(new Set(ids).size, ids.length, 'schema documents share an $id');
 });
 
 test('the framework CLI --json output is exactly one envelope line', () => {

@@ -19,7 +19,7 @@
  * Failures are values `{ok:false, code, message, exitCode}` and happen before
  * the first syscall that writes into the project.
  */
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { analyzeBundle } from '../assembler/index.js';
@@ -27,8 +27,9 @@ import { bundleContentSha256 } from '../assembler/compile.js';
 import { compareCodePoints } from '../core/code-point.js';
 import { inflateRaw } from '../core/node/inflate.js';
 import { sha256Hex } from '../core/node/sha256.js';
-import { isValidRange, isValidVersion, satisfiesRange } from '../core/semver.js';
+import { isValidVersion } from '../core/semver.js';
 import { canonicalInputOptions, normalizeOptions } from '../projection/options.js';
+import { checkEngineRequirement as evaluateEngineRequirement } from '../projection/engine-requirement.js';
 import { getProjection } from '../projection/registry.js';
 import { validateResult } from '../projection/validate-result.js';
 import {
@@ -45,8 +46,11 @@ import {
 import { parseSums, verifySums } from './release-source.js';
 import { installProjection } from './install.js';
 import { installR2cProject } from './r2c.js';
-import { installRuntime } from './runtime.js';
+import { ENGINE_ROOT, RUNTIME_RECEIPT_PATH, installRuntime } from './runtime.js';
 import { readReleaseTarGz } from './release-tar.js';
+import { projectPath } from './paths.js';
+import { lstatOrNull, pruneEmptyDir, unlinkIfExists } from './util.js';
+import { sorted } from '../core/sort.js';
 
 /** Exit codes of the release-install surface (decision #74 §5.2). */
 export const RELEASE_EXIT = Object.freeze({ OK: 0, INTEGRITY: 2 });
@@ -57,10 +61,6 @@ const ENGINE_ASSET = /^r2c-engine-(.+)\.tgz$/;
 
 function failure(code, message, { exitCode = RELEASE_EXIT.INTEGRITY, details = null } = {}) {
   return { ok: false, code, message: `${code}: ${message}`, exitCode, details };
-}
-
-function sorted(values) {
-  return [...values].sort(compareCodePoints);
 }
 
 /** `requires.projections` with its default, or `null` when it is malformed. */
@@ -106,24 +106,14 @@ export function selectProjection({ allowed, requested } = {}) {
 }
 
 /**
- * `requires.engine` only constrains r2c (spec §13). An absent range is no
- * constraint; an unknown engine or an unsatisfied range refuses with exit 2.
+ * `requires.engine` only constrains r2c (spec §13). The evaluation lives in
+ * `projection/engine-requirement.js` so the web build applies exactly the
+ * same rule; this wrapper adds the Release exit code.
  */
-export function checkEngineRequirement({ range, engineVersion } = {}) {
-  if (range === undefined || range === null) return { ok: true };
-  if (typeof range !== 'string' || !isValidRange(range)) {
-    return failure('PROJECTION_ENGINE_UNKNOWN', `requires.engine is not a valid range: ${JSON.stringify(range)}`);
-  }
-  if (typeof engineVersion !== 'string' || !isValidVersion(engineVersion)) {
-    return failure('PROJECTION_ENGINE_UNKNOWN', `cannot read the engine version the Release ships; requires.engine ${range}`);
-  }
-  if (!satisfiesRange(range, engineVersion)) {
-    return failure(
-      'PROJECTION_ENGINE_UNSATISFIED',
-      `requires.engine ${range} is not satisfied by the Release engine ${engineVersion}`,
-    );
-  }
-  return { ok: true };
+export function checkEngineRequirement(input = {}) {
+  const result = evaluateEngineRequirement(input);
+  if (result.ok) return result;
+  return failure(result.code, result.message);
 }
 
 /** The last path segment of an asset name, for messages. */
@@ -511,6 +501,86 @@ export function narrowResult(result, requested) {
   };
 }
 
+
+/** Every regular file under `rootRel`, project-relative. */
+function listTree(projectRoot, rootRel) {
+  const out = [];
+  const walk = (rel) => {
+    const absolute = projectPath(projectRoot, rel);
+    if (absolute === null) return;
+    for (const entry of readdirSync(absolute, { withFileTypes: true })) {
+      const child = `${rel}/${entry.name}`;
+      if (entry.isDirectory()) walk(child);
+      else if (entry.isFile()) out.push(child);
+    }
+  };
+  const absolute = projectPath(projectRoot, rootRel);
+  if (absolute !== null && lstatOrNull(absolute)?.isDirectory()) walk(rootRel);
+  return out;
+}
+
+/**
+ * Snapshot every path the runtime install may touch, plus the engine tree it
+ * replaces. The Release transaction restores this if the bundle half fails.
+ */
+function captureReleaseState(projectRoot, paths) {
+  const engineRoot = projectPath(projectRoot, ENGINE_ROOT);
+  const wanted = [...new Set([
+    ...paths,
+    RUNTIME_RECEIPT_PATH,
+    ...listTree(projectRoot, ENGINE_ROOT),
+  ])].sort(compareCodePoints);
+  const entries = wanted.map((path) => {
+    const absolute = projectPath(projectRoot, path);
+    const info = absolute === null ? null : lstatOrNull(absolute);
+    if (info === null || !info.isFile()) return { path, missing: true };
+    return { path, data: readFileSync(absolute), mode: info.mode & 0o777 };
+  });
+  return { entries, engineRoot };
+}
+
+/** Restore a `captureReleaseState` snapshot; returns the paths that failed. */
+function restoreReleaseState(projectRoot, snapshot) {
+  const failures = [];
+  if (snapshot.engineRoot !== null && existsSync(snapshot.engineRoot)) {
+    try {
+      rmSync(snapshot.engineRoot, { recursive: true, force: true });
+    } catch (error) {
+      failures.push({ path: ENGINE_ROOT, reason: error?.code ?? 'ROLLBACK_IO' });
+    }
+  }
+  for (const entry of snapshot.entries) {
+    const absolute = projectPath(projectRoot, entry.path);
+    if (absolute === null) {
+      failures.push({ path: entry.path, reason: 'PATH_ESCAPE' });
+      continue;
+    }
+    try {
+      if (entry.missing) {
+        unlinkIfExists(absolute);
+        continue;
+      }
+      mkdirSync(dirname(absolute), { recursive: true });
+      writeFileSync(absolute, entry.data);
+      if (entry.mode === 0o755) chmodSync(absolute, 0o755);
+    } catch (error) {
+      failures.push({ path: entry.path, reason: error?.code ?? 'ROLLBACK_IO' });
+    }
+  }
+  for (const entry of snapshot.entries) {
+    if (!entry.missing) continue;
+    const parts = entry.path.split('/');
+    for (let index = parts.length - 1; index > 0; index -= 1) {
+      try {
+        pruneEmptyDir(projectRoot, parts.slice(0, index).join('/'));
+      } catch {
+        // A non-empty directory is still used; leave it.
+      }
+    }
+  }
+  return failures;
+}
+
 /** Unpack a release tgz into a fresh temp directory; caller removes it. */
 export function extractReleaseArchive(bytes, { prefix = 'r2c-release-' } = {}) {
   const { entries, problems } = readReleaseTarGz(bytes);
@@ -566,7 +636,33 @@ export function installRelease(input = {}) {
     result = narrowResult(result, verified.targets);
   }
 
+  const install = verified.projection === 'r2c' ? installR2cProject : installProjection;
+
+  // Read-only preflight: legacy receipts, r2c occupancy, V1–V12, receipts and
+  // conflicts all run before the runtime transaction, so a refused Release
+  // never writes an engine or launcher file.
+  const preflight = install({
+    result,
+    irBytes: verified.irBytes,
+    projectRoot,
+    dryRun: true,
+    force,
+    clock,
+  });
+  if (preflight.ok === false) {
+    return {
+      ok: false,
+      code: preflight.code,
+      message: preflight.message,
+      exitCode: exitCodeFor(preflight),
+      details: preflight.conflicts ?? preflight.diagnostics ?? preflight.failures ?? null,
+      stage: 'bundle',
+      runtime: null,
+    };
+  }
+
   let runtime = null;
+  let snapshot = null;
   const cleanup = [];
   try {
     if (verified.projection === 'r2c') {
@@ -575,6 +671,28 @@ export function installRelease(input = {}) {
       });
       if (extracted.ok === false) return extracted;
       cleanup.push(extracted.root);
+      const plan = installRuntime({
+        projectRoot,
+        engineSource: extracted.root,
+        engineVersion: verified.engineVersion,
+        dryRun: true,
+        force,
+        clock,
+      });
+      if (plan.ok === false) {
+        return {
+          ok: false,
+          code: plan.code,
+          message: plan.message,
+          exitCode: exitCodeFor(plan),
+          details: plan.conflicts ?? plan.failures ?? null,
+          stage: 'runtime',
+        };
+      }
+      // One all-or-rollback release transaction: snapshot everything the
+      // runtime half may touch, then install both halves; a bundle failure
+      // restores the snapshot (the bundle install rolls back its own journal).
+      snapshot = captureReleaseState(projectRoot, plan.writes ?? []);
       const outcome = installRuntime({
         projectRoot,
         engineSource: extracted.root,
@@ -584,6 +702,7 @@ export function installRelease(input = {}) {
         clock,
       });
       if (outcome.ok === false) {
+        if (!dryRun && snapshot !== null) restoreReleaseState(projectRoot, snapshot);
         return {
           ok: false,
           code: outcome.code,
@@ -591,12 +710,12 @@ export function installRelease(input = {}) {
           exitCode: exitCodeFor(outcome),
           details: outcome.conflicts ?? outcome.failures ?? null,
           stage: 'runtime',
+          rolledBack: !dryRun,
         };
       }
       runtime = outcome;
     }
 
-    const install = verified.projection === 'r2c' ? installR2cProject : installProjection;
     const outcome = install({
       result,
       irBytes: verified.irBytes,
@@ -606,6 +725,19 @@ export function installRelease(input = {}) {
       clock,
     });
     if (outcome.ok === false) {
+      let rollbackFailures = [];
+      if (!dryRun && snapshot !== null) rollbackFailures = restoreReleaseState(projectRoot, snapshot);
+      if (rollbackFailures.length > 0) {
+        return {
+          ok: false,
+          code: 'ROLLBACK_FAILED',
+          message: 'the bundle install failed and the runtime rollback could not restore every path',
+          exitCode: 1,
+          details: { failures: rollbackFailures },
+          stage: 'bundle',
+          runtime: null,
+        };
+      }
       return {
         ok: false,
         code: outcome.code,
@@ -613,7 +745,8 @@ export function installRelease(input = {}) {
         exitCode: exitCodeFor(outcome),
         details: outcome.conflicts ?? outcome.diagnostics ?? outcome.failures ?? null,
         stage: 'bundle',
-        runtime,
+        runtime: null,
+        rolledBack: !dryRun && snapshot !== null,
       };
     }
     return {

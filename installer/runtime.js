@@ -51,6 +51,7 @@ import {
   writeAbsoluteAtomic,
   writeFileAtomic,
 } from './util.js';
+import { sorted } from '../core/sort.js';
 
 const FRAMEWORK_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -125,10 +126,6 @@ const HOST_LAYOUT = Object.freeze({
 });
 function failure(code, message, details = {}) {
   return { ok: false, code, message, ...details };
-}
-
-function sorted(values) {
-  return [...values].sort(compareCodePoints);
 }
 
 function ensureTrailingLf(text) {

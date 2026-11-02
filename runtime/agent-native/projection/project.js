@@ -7,30 +7,13 @@
  * descriptors and their capability rows.
  */
 import { canonicalJson } from '../../../core/canonical-json.js';
-import { compareCodePoints } from '../../../core/code-point.js';
+import { CAPABILITIES, ID_PATTERN as ID_RE, LEVEL_RANK, SEMANTIC_CAPABILITIES as SEMANTIC } from '../../../projection/contract.js';
 import { constitutionBlock, constitutionState } from '../../shared/constitution.js';
 import { ensureText, renderRole, ROLE_FIELD_ORDER, yamlScalar } from '../../shared/render-role.js';
 import { sha256Hex } from '../../shared/sha256.js';
 import { replaceSubmitToken, submitReplacement } from '../../shared/submit.js';
 import { TARGETS, TARGET_ORDER } from './targets/index.js';
-
-const ID_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
-const CAPABILITIES = [
-  'state',
-  'gates',
-  'outputs',
-  'subagents',
-  'skills',
-  'preload',
-  'stage-invocation',
-  'skill-invocation',
-];
-const SEMANTIC = new Set(['state', 'gates', 'outputs', 'subagents', 'skills', 'preload']);
-const LEVEL_RANK = { native: 0, adapted: 1, degraded: 2, unavailable: 3 };
-
-function sorted(values) {
-  return [...values].sort(compareCodePoints);
-}
+import { sorted } from '../../../core/sort.js';
 
 function failure(errors) {
   return { ok: false, errors };

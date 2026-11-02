@@ -11,12 +11,9 @@ import { RECEIPT_SCHEMA, RECEIPTS_DIR } from './paths.js';
 import { readJournal } from './transaction.js';
 import { readReceipts } from './receipt.js';
 import { readRuntimeReceipt } from './runtime.js';
+import { sorted } from '../core/sort.js';
 
 export const STATUS_SCHEMA = 'r2c.install-status/v1';
-
-function sorted(values) {
-  return [...values].sort(compareCodePoints);
-}
 
 /** Cross-receipt ownership conflicts (literal, case-folded and prefix). */
 function receiptConflicts(receipts) {

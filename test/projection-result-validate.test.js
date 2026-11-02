@@ -12,7 +12,9 @@ import { fileURLToPath } from 'node:url';
 import { compileBundle } from '../assembler/compile.js';
 import { inflateRaw } from '../core/node/inflate.js';
 import { sha256Hex } from '../core/node/sha256.js';
+import { payloadResultBlock, RESULT_BLOCK_FIELDS, RESULT_FIELDS } from '../installer/release-payload.js';
 import { normalizeOptions } from '../projection/options.js';
+import { RESULT_FIELDS as CONTRACT_RESULT_FIELDS } from '../projection/result-fields.js';
 import { project } from '../projection/project.js';
 import { getProjection } from '../projection/registry.js';
 import { validateResult } from '../projection/validate-result.js';
@@ -122,6 +124,14 @@ test('V8 rejects capability rows out of order or better than declared', () => {
   })).includes('V8'));
   assert.ok(checksOf(mutate((result) => { result.capabilityReport[0].level = 'native'; })).includes('V8'));
   assert.ok(checksOf(mutate((result) => { result.capabilityReport[1].uses = ['/stages/99']; })).includes('V8'));
+
+  // Worse than declared is a defect unless the option selection explains it.
+  const overDegraded = mutate((result) => { result.capabilityReport[3].level = 'unavailable'; });
+  assert.ok(checksOf(overDegraded).includes('V8'));
+  assert.ok(overDegraded.diagnostics.some((item) => item.message.includes('worse than declared')));
+  // Excluding skills is the one legitimate reason: the projection records a
+  // CAP_SKILL_EXCLUDED degradation for the worst use point.
+  assert.equal(validate(baseline().result).ok, true);
 });
 
 test('V9 rejects a semantic use point without its degradation record', () => {
@@ -167,4 +177,57 @@ test('diagnostics use the stable PROJECTION_RESULT_INVALID code', () => {
     assert.equal(diagnostic.code, 'PROJECTION_RESULT_INVALID');
     assert.equal(diagnostic.severity, 'error');
   }
+});
+
+test('the result field order has one source for the validator and the payload', () => {
+  // V12 enforces this order; the payload manifest rebuilds results in it.
+  assert.equal(RESULT_FIELDS, CONTRACT_RESULT_FIELDS);
+  assert.deepEqual(Object.keys(baseline().result), [...CONTRACT_RESULT_FIELDS]);
+  assert.deepEqual(Object.keys(payloadResultBlock(baseline().result)), [...RESULT_BLOCK_FIELDS]);
+  assert.deepEqual(RESULT_BLOCK_FIELDS, CONTRACT_RESULT_FIELDS.filter((field) => field !== 'files'));
+});
+
+test('V8 accepts a worse level only when option exclusion explains the worst use', () => {
+  const base = baseline();
+  const selected = Object.keys(base.ir.skills).slice(0, 1);
+  const { options } = normalizeOptions({
+    projectionId: 'agent-native',
+    ir: base.ir,
+    irDigest: base.irDigest,
+    raw: { targets: ['claude-code'], skills: selected },
+    manifest: MANIFEST,
+  });
+  const projected = project({
+    projectionId: 'agent-native',
+    ir: base.ir,
+    irDigest: base.irDigest,
+    options,
+    environment: {},
+    assets: {},
+  });
+  const row = projected.capabilityReport.find((entry) => entry.target === 'claude-code' && entry.capability === 'skills');
+  const declared = MANIFEST.targets.find((target) => target.id === 'claude-code').capabilities.skills.level;
+  assert.ok(row.level !== declared, 'the excluded selection must lower the aggregate level');
+  assert.ok(projected.degradations.some((record) => record.code === 'CAP_SKILL_EXCLUDED'
+    && record.capability === 'skills' && record.level === row.level));
+
+  const outcome = validateResult(projected, {
+    ir: base.ir,
+    irDigest: base.irDigest,
+    options,
+    manifest: MANIFEST,
+  });
+  assert.equal(outcome.ok, true, JSON.stringify(outcome.diagnostics, null, 2));
+});
+
+test('the capability vocabulary and level ranks have one source', async () => {
+  const { CAPABILITIES, LEVEL_RANK, SEMANTIC_CAPABILITIES } = await import('../projection/contract.js');
+  const { CAPABILITIES: producerCapabilities, LEVEL_RANK: producerRanks } = await import('../runtime/agent-native/projection/project.js');
+  const { R2C_CAPABILITIES } = await import('../runtime/r2c/projection/manifest.js');
+  assert.deepEqual(producerCapabilities, CAPABILITIES);
+  assert.deepEqual(R2C_CAPABILITIES, CAPABILITIES);
+  assert.equal(producerRanks, LEVEL_RANK);
+  assert.deepEqual(SEMANTIC_CAPABILITIES, ['state', 'gates', 'outputs', 'subagents', 'skills', 'preload']);
+  // The validator consumes the same list, so report order cannot drift.
+  assert.deepEqual(baseline().result.capabilityReport.slice(0, CAPABILITIES.length).map((row) => row.capability), [...CAPABILITIES]);
 });

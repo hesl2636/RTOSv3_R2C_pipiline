@@ -1,0 +1,169 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://r2c.runner/schema/bundle/v1",
+  "title": "r2c.bundle/v1",
+  "description": "Bundle manifest (bundle.json at the zip root). Documentation only: the hand-written validator in assembler/validate-bundle.js and assembler/checks/ is authoritative and adds no JSON Schema runtime dependency.",
+  "$comment": "Rules the validator enforces and this document does not express: the declared id sets and the archive directory contents must be equal in both directions; every step id is unique across the whole bundle; stages order and steps order are execution order; id must equal the id parsed from the release tag bundle-<id>-v<version>; requires.engine is a restricted semver range evaluated by core/semver.js; the manifest must be canonical JSON (two-space indent, trailing LF, UTF-8, no BOM, no CR).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "id",
+    "name",
+    "version",
+    "description",
+    "stages",
+    "tasks"
+  ],
+  "properties": {
+    "schema": {
+      "const": "r2c.bundle/v1",
+      "description": "Manifest schema revision; any other value stops validation with BUNDLE_SCHEMA_UNSUPPORTED."
+    },
+    "id": {
+      "$ref": "#/$defs/bundleId",
+      "description": "Bundle and workflow id."
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120,
+      "description": "Display name, counted in code points."
+    },
+    "version": {
+      "$ref": "#/$defs/version",
+      "description": "Strict semver without build metadata."
+    },
+    "description": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2000
+    },
+    "stages": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/id"
+      },
+      "description": "Stage ids in execution order."
+    },
+    "roles": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/roleId"
+      },
+      "description": "Declared role ids; omitting it or writing [] both mean no roles."
+    },
+    "tasks": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/id"
+      }
+    },
+    "skills": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/skillId"
+      }
+    },
+    "constitution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path"
+      ],
+      "properties": {
+        "path": {
+          "const": "constitution/CONSTITUTION.md"
+        },
+        "placeholder": {
+          "type": "boolean",
+          "default": false,
+          "description": "Declared placeholder; the constitution file may then be 0 bytes."
+        }
+      }
+    },
+    "requires": {
+      "$ref": "#/$defs/requires"
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+      "maxLength": 64
+    },
+    "bundleId": {
+      "description": "The release namespace reserves the literal id r2c.",
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+      "maxLength": 40,
+      "not": {
+        "const": "r2c"
+      }
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z][0-9A-Za-z.-]*)?$"
+    },
+    "roleId": {
+      "description": "The renderer owns main and sub, so a bundle role may not claim them.",
+      "allOf": [
+        {
+          "$ref": "#/$defs/id"
+        },
+        {
+          "not": {
+            "enum": [
+              "main",
+              "sub"
+            ]
+          }
+        }
+      ]
+    },
+    "skillId": {
+      "description": "Host skill namespaces reserve these two names.",
+      "allOf": [
+        {
+          "$ref": "#/$defs/id"
+        },
+        {
+          "not": {
+            "enum": [
+              "synced",
+              "anthropic-skills"
+            ]
+          }
+        }
+      ]
+    },
+    "requires": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "engine": {
+          "type": "string",
+          "minLength": 1
+        },
+        "projections": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "r2c",
+              "agent-native"
+            ]
+          }
+        }
+      }
+    }
+  }
+}

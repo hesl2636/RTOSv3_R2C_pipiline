@@ -31,9 +31,9 @@ import { getProjection } from '../projection/registry.js';
 import { validateResult } from '../projection/validate-result.js';
 import { readReceipt } from '../installer/receipt.js';
 import { PAYLOAD_MANIFEST_NAME } from '../scripts/lib/bundle-release.mjs';
-import { readReleaseTarGz } from '../scripts/lib/release-tar.mjs';
+import { readReleaseTarGz } from '../installer/release-tar.js';
 import { buildChildEnv, publishChildEnv } from '../web/env.js';
-import { publishAvailability } from '../web/publish-state.js';
+import { publishButtonState } from '../web/publish-state.js';
 import { jsonResponse, startGithubFixture } from './helpers/release-fixture.js';
 import {
   ROOT,
@@ -145,7 +145,7 @@ test('no token: the session says why, the API answers 403 and the button stays d
 
   // The same rule drives the browser button (decision #75 §8.3).
   assert.deepEqual(
-    publishAvailability({ publish: session.publish, build: buildData, mismatch: false }),
+    publishButtonState({ publish: session.publish, build: buildData, mismatch: false }),
     { enabled: false, reason: 'no-token', note: 'publish disabled (no-token)' },
   );
 
@@ -239,12 +239,12 @@ test('a client/server digest mismatch disables publishing without spawning the c
   assert.equal(existsSync(record), false, 'a rejected request must not start the publish child');
 
   assert.deepEqual(
-    publishAvailability({ publish: session.publish, build: buildData, mismatch: true }),
+    publishButtonState({ publish: session.publish, build: buildData, mismatch: true }),
     { enabled: false, reason: 'client-server-mismatch', note: 'publish disabled: client/server mismatch' },
   );
-  assert.equal(publishAvailability({ publish: session.publish, build: buildData, mismatch: false }).enabled, true);
+  assert.equal(publishButtonState({ publish: session.publish, build: buildData, mismatch: false }).enabled, true);
   assert.equal(
-    publishAvailability({ publish: session.publish, build: { ...buildData, publishable: false }, mismatch: false }).reason,
+    publishButtonState({ publish: session.publish, build: { ...buildData, publishable: false }, mismatch: false }).reason,
     'not-canonical',
   );
 });

@@ -78,6 +78,9 @@ export function buildReceipt({
       targets: [...projection.targets].sort(compareCodePoints),
     },
     bundle: { id: bundle.id, version: bundle.version },
+    // Spec §12 spells the IR copy at the top level; the nested object stays
+    // for readers that already bind `ir.digest`/`ir.contentSha256`.
+    ir_path: ir.path,
     ir: { path: ir.path, digest: ir.digest, contentSha256: ir.contentSha256 },
     root: 'project',
     scope: 'project',

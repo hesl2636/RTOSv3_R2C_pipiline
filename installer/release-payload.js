@@ -10,40 +10,21 @@
  *
  * Everything here is pure verification: reading bytes, hashing, comparing.
  */
+import { jsonEqual as sameValue } from '../core/json.js';
 import { isCanonicalJson } from '../core/canonical-json.js';
 import { compareCodePoints } from '../core/code-point.js';
 import { sha256Hex } from '../core/node/sha256.js';
 import { foldCase, hasFileDirPrefixConflict } from '../core/paths.js';
 import { isValidVersion } from '../core/semver.js';
+import { RESULT_BLOCK_FIELDS, RESULT_FIELDS } from '../projection/result-fields.js';
 import { readReleaseTarGz } from './release-tar.js';
 
 export const RELEASE_PAYLOAD_SCHEMA = 'r2c.release-payload/v1';
 export const PAYLOAD_MANIFEST_NAME = 'manifest.json';
 
-/** Top-level result members, in the order `V12` requires. */
-export const RESULT_FIELDS = Object.freeze([
-  'schema',
-  'ok',
-  'projection',
-  'ir',
-  'options',
-  'environment',
-  'targets',
-  'coverage',
-  'files',
-  'installPlan',
-  'capabilityReport',
-  'degradations',
-  'warnings',
-  'metadata',
-]);
-
-/** Result members the manifest records verbatim (everything but `files`). */
-export const RESULT_BLOCK_FIELDS = Object.freeze(RESULT_FIELDS.filter((field) => field !== 'files'));
-
-function sameValue(left, right) {
-  return JSON.stringify(left) === JSON.stringify(right);
-}
+// The top-level member order is the projection-result contract; the manifest
+// and the validator must agree, so both import `projection/result-fields.js`.
+export { RESULT_BLOCK_FIELDS, RESULT_FIELDS };
 
 /**
  * The manifest's `result` block: the projection result without file content,

@@ -98,7 +98,7 @@ test('invalid stage order, skills, targets and extra are rejected', () => {
   assert.deepEqual(codes(normalize({ projection: 'r2c' })), ['PROJECTION_OPTIONS_INVALID']);
 });
 
-test('extra follows the declared closed schema and is echoed recursively sorted', () => {
+test('extra follows the declared closed schema and is echoed verbatim', () => {
   const schemaManifest = {
     ...MANIFEST,
     optionsSchema: {
@@ -124,8 +124,9 @@ test('extra follows the declared closed schema and is echoed recursively sorted'
 
   const accepted = run({ extra: { roleModels: { omp: 'x/y' }, retries: 2 } });
   assert.equal(accepted.ok, true, JSON.stringify(accepted.errors));
-  assert.deepEqual(accepted.options.extra, { retries: 2, roleModels: { omp: 'x/y' } });
-  assert.deepEqual(Object.keys(accepted.options.extra), ['retries', 'roleModels']);
+  // The echo preserves the caller's key order; it is not re-sorted.
+  assert.deepEqual(accepted.options.extra, { roleModels: { omp: 'x/y' }, retries: 2 });
+  assert.deepEqual(Object.keys(accepted.options.extra), ['roleModels', 'retries']);
 
   const unknownTop = run({ extra: { nope: 1 } });
   assert.deepEqual(codes(unknownTop), ['PROJECTION_OPTIONS_INVALID']);

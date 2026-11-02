@@ -16,29 +16,15 @@ import {
   utf8Length,
 } from '../core/paths.js';
 import { constitutionState } from '../runtime/shared/constitution.js';
+import { CAPABILITIES, ID_PATTERN as ID_RE, LEVEL_RANK, SEMANTIC_CAPABILITIES } from './contract.js';
+import { RESULT_FIELDS as TOP_LEVEL_ORDER } from './result-fields.js';
 
 const RESULT_SCHEMA = 'r2c.projection-result/v1';
 const INSTALL_PLAN_SCHEMA = 'r2c.install-plan/v1';
 const OPTIONS_SCHEMA = 'r2c.projection-options/v1';
-const CAPABILITIES = [
-  'state',
-  'gates',
-  'outputs',
-  'subagents',
-  'skills',
-  'preload',
-  'stage-invocation',
-  'skill-invocation',
-];
-const SEMANTIC = new Set(['state', 'gates', 'outputs', 'subagents', 'skills', 'preload']);
-const LEVEL_RANK = { native: 0, adapted: 1, degraded: 2, unavailable: 3 };
-const ID_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const SEMANTIC = new Set(SEMANTIC_CAPABILITIES);
 const SEGMENT_RE = /^[A-Za-z0-9._-]+$/;
 const CODE_RE = /^[A-Z][A-Z0-9_]{2,63}$/;
-const TOP_LEVEL_ORDER = [
-  'schema', 'ok', 'projection', 'ir', 'options', 'environment', 'targets', 'coverage',
-  'files', 'installPlan', 'capabilityReport', 'degradations', 'warnings', 'metadata',
-];
 const MAX_FILES = 4096;
 const MAX_TOTAL_BYTES = 64 * 1024 * 1024;
 const MAX_FILE_BYTES = 4 * 1024 * 1024;
@@ -89,6 +75,30 @@ function declaredLevel(manifest, target, capability) {
   const entry = manifest?.targets?.find((item) => item.id === target);
   const value = entry?.capabilities?.[capability];
   return typeof value === 'object' && value !== null ? value.level : value;
+}
+
+/**
+ * Skill ids the option selection excludes. A capability that is worse than
+ * the manifest level is legitimate only when the worst use point is one of
+ * these (a selection loss, not a projection defect).
+ */
+function excludedSkillIds(ir, options) {
+  const selected = Array.isArray(options?.skills) ? new Set(options.skills) : null;
+  if (selected === null) return new Set();
+  return new Set(Object.keys(ir?.skills ?? {}).filter((id) => !selected.has(id)));
+}
+
+/** True when a degradation pointer lands on a skill the options excluded. */
+function pointsAtExcludedSkill(ir, pointer, excluded) {
+  if (excluded.size === 0 || typeof pointer !== 'string' || !pointer.startsWith('/')) return false;
+  const parts = pointer.slice(1).split('/').map((part) => part.replaceAll('~1', '/').replaceAll('~0', '~'));
+  for (let index = 0; index < parts.length; index += 1) {
+    if (parts[index] !== 'skills' || parts[index + 1] === undefined) continue;
+    const resolved = resolvePointer(ir, `/${parts.slice(0, index + 2).join('/')}`);
+    const id = typeof resolved === 'string' ? resolved : parts[index + 1];
+    if (excluded.has(id)) return true;
+  }
+  return false;
 }
 
 function expectedTargets(manifest, options) {
@@ -254,6 +264,18 @@ export function validateResult(result, input) {
         if (LEVEL_RANK[declared] === undefined || LEVEL_RANK[entry?.level] === undefined
           || LEVEL_RANK[entry.level] < LEVEL_RANK[declared]) {
           fail('V8', `${target}/${capability} level ${entry?.level} is better than declared ${declared}`);
+        } else if (LEVEL_RANK[entry.level] > LEVEL_RANK[declared]) {
+          // Worse than declared is only legitimate when the worst use point is
+          // a skill the options excluded (a selection loss); any other
+          // over-degradation is a projection defect.
+          const excluded = excludedSkillIds(ir, options);
+          const explained = (result.degradations ?? []).some((record) => record.target === target
+            && record.capability === capability
+            && LEVEL_RANK[record.level] === LEVEL_RANK[entry.level]
+            && pointsAtExcludedSkill(ir, record.pointer, excluded));
+          if (!explained) {
+            fail('V8', `${target}/${capability} level ${entry.level} is worse than declared ${declared} with no option exclusion`);
+          }
         }
         if (!Array.isArray(entry?.uses)) fail('V8', `${target}/${capability} uses is not an array`);
         else {

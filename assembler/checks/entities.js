@@ -15,8 +15,12 @@ const SKILL_KEYS = ['name', 'description', 'placeholder'];
 const PLACEHOLDER_BANNER = /^> \*\*占位（placeholder）\*\*/m;
 const ROLE_LEAK = /\{\{submit\}\}|\.r2c\//;
 
-function frontmatterInvalid(context, path, line, reason, message) {
-  context.fail(path, 'BUNDLE_FRONTMATTER_INVALID', message, { line, details: { reason } });
+function frontmatterInvalid(context, path, line, reason, message, pointer = null) {
+  context.fail(path, 'BUNDLE_FRONTMATTER_INVALID', message, {
+    line,
+    pointer,
+    details: pointer === null ? { reason } : { reason, pointer },
+  });
 }
 
 /**
@@ -52,6 +56,7 @@ function checkUnknownFrontmatterKeys(context, path, fields, allowed) {
   for (const key of Object.keys(fields)) {
     if (!allowed.includes(key)) {
       context.fail(path, 'BUNDLE_FRONTMATTER_UNKNOWN_KEY', `unknown frontmatter key: ${key}`, {
+        pointer: `/${key}`,
         details: { key },
       });
     }
@@ -72,7 +77,7 @@ function checkRole(context, id, record) {
     const fields = parsed.fields;
     checkUnknownFrontmatterKeys(context, path, fields, ROLE_KEYS);
     for (const key of ['id', 'description']) {
-      if (fields[key] === undefined) frontmatterInvalid(context, path, 1, 'required', `role frontmatter is missing '${key}'`);
+      if (fields[key] === undefined) frontmatterInvalid(context, path, 1, 'required', `role frontmatter is missing '${key}'`, `/${key}`);
     }
     if (fields.id !== undefined) {
       if (typeof fields.id !== 'string' || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(fields.id) || fields.id.length > 64) {
@@ -108,6 +113,7 @@ function checkRole(context, id, record) {
     for (const key of ['mode', 'model', 'effort']) {
       if (fields[key] !== undefined && !ROLE_ENUMS[key].includes(fields[key])) {
         context.fail(path, 'BUNDLE_ROLE_ENUM_INVALID', `role ${key} is not a supported value`, {
+          pointer: `/${key}`,
           details: { key, value: fields[key] },
         });
       }
@@ -115,21 +121,23 @@ function checkRole(context, id, record) {
     for (const key of ['tools', 'tools_deny']) {
       if (fields[key] === undefined) continue;
       if (!Array.isArray(fields[key])) {
-        frontmatterInvalid(context, path, 1, 'shape', `'${key}' must be a list`);
+        frontmatterInvalid(context, path, 1, 'shape', `'${key}' must be a list`, `/${key}`);
         continue;
       }
-      for (const token of fields[key]) {
+      fields[key].forEach((token, index) => {
         if (!TOOL_TOKENS.includes(token)) {
+          const pointer = `/${key}/${index}`;
           context.fail(path, 'BUNDLE_ROLE_TOOL_UNKNOWN', `unknown role tool token: ${token}`, {
-            details: { token },
+            pointer,
+            details: { token, pointer },
           });
         }
-      }
+      });
       checkSortedArray(context, path, key, fields[key]);
     }
     if (fields.skills !== undefined) {
       if (!Array.isArray(fields.skills)) {
-        frontmatterInvalid(context, path, 1, 'shape', "'skills' must be a list");
+        frontmatterInvalid(context, path, 1, 'shape', "'skills' must be a list", '/skills');
       } else {
         checkSortedArray(context, path, 'skills', fields.skills);
         if (context.declaredValid.skills !== false) {
@@ -144,7 +152,7 @@ function checkRole(context, id, record) {
       }
     }
     if (fields.placeholder !== undefined && typeof fields.placeholder !== 'boolean') {
-      frontmatterInvalid(context, path, 1, 'boolean', "'placeholder' must be true or false");
+      frontmatterInvalid(context, path, 1, 'boolean', "'placeholder' must be true or false", '/placeholder');
     }
     if (fields.placeholder !== true && nonEmptyLines(parsed.body).length === 0) {
       context.fail(path, 'BUNDLE_ROLE_BODY_EMPTY', 'role instructions are empty');
@@ -221,7 +229,7 @@ function checkSkills(context) {
       checkUnknownFrontmatterKeys(context, path, fields, SKILL_KEYS);
       for (const key of ['name', 'description']) {
         if (fields[key] === undefined) {
-          frontmatterInvalid(context, path, 1, 'required', `skill frontmatter is missing '${key}'`);
+          frontmatterInvalid(context, path, 1, 'required', `skill frontmatter is missing '${key}'`, `/${key}`);
         }
       }
       if (fields.name !== undefined) {
@@ -250,7 +258,7 @@ function checkSkills(context) {
         }
       }
       if (fields.placeholder !== undefined && typeof fields.placeholder !== 'boolean') {
-        frontmatterInvalid(context, path, 1, 'boolean', "'placeholder' must be true or false");
+        frontmatterInvalid(context, path, 1, 'boolean', "'placeholder' must be true or false", '/placeholder');
       }
       if (fields.placeholder === true && !PLACEHOLDER_BANNER.test(preamble(parsed.body))) {
         context.fail(path, 'BUNDLE_SKILL_PLACEHOLDER_BANNER', 'placeholder skill is missing the visible banner');

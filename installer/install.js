@@ -483,6 +483,27 @@ export function installProjection(input = {}) {
     const stamp = timestampSlug(clock);
     // TOCTOU: receipts and disk may have changed between check and lock.
     const fresh = loadReceipts(projectRoot, ownRel);
+    // TOCTOU: the r2c singleton decision is only valid under the lock. Two
+    // bundles that passed the pre-lock check with disjoint paths would both
+    // claim one r2c root; the loser must be refused here, before any write.
+    const occupiedNow = checkR2cRoot({
+      projectRoot,
+      projectionId,
+      bundleId,
+      incoming,
+      previous: fresh.own,
+      others: fresh.others,
+      takeoverPaths,
+    });
+    if (occupiedNow !== null) {
+      return {
+        ok: false,
+        ...occupiedNow,
+        conflicts: [],
+        manualSteps,
+        dryRun,
+      };
+    }
     const recheck = checkConflicts({
       projectRoot,
       incoming,

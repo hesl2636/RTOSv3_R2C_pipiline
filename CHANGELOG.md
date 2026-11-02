@@ -79,6 +79,32 @@ step-by-step across the engine, the payload, and all five agent adapters; see
   the operator-only `R2C_GITHUB_API` select the target, and every asset is
   checked against its own `SHA256SUMS.txt` before the draft is created.
 
+### Fixed
+
+- Review pass on the spec-83 integration: the Release install is one
+  all-or-rollback transaction (legacy/occupancy/V1–V12 preflight before any
+  runtime write, and a bundle failure restores the runtime snapshot); the r2c
+  singleton is re-checked under the install lock; `--publish --out` re-opens
+  the built zip and refuses a zip/IR/tag mismatch or a non-canonical payload
+  (`WEB_PUBLISH_NOT_CANONICAL`) before the first remote call.
+- Correctness: V8 now rejects over-degradation not explained by an exclusive
+  skill option; `BUNDLE_STEP_NO_SKILLS` respects S8 and never doubles a
+  `BUNDLE_SCHEMA_INVALID`; distinct frontmatter/tool violations keep distinct
+  pointers; `options.extra` is echoed verbatim; r2c host roles render only the
+  selected skills and record the #82 preload loss at the seam.
+- Shared contracts: one module for result field order, capability vocabulary
+  and level ranks, and one `requires.engine` evaluator (projection, web,
+  installer); receipts also carry top-level `ir_path`; the agent-native
+  manifest declares its static target assets (id/path/sha256).
+- Web hardening: missing `Sec-Fetch-Site` is refused and an oversized header
+  returns 413; the engine version (not the framework version) feeds web build
+  and `requires.engine`; `serve.mjs` is split into HTTP/build/publish modules
+  without response changes.
+- Removed duplicated helpers (`sorted`, JSON equality, sha256, atomic write),
+  the `scripts/lib/release-tar.mjs` alias, and unused shared-import members;
+  compile `--json` reports the report at `data`; the installer CLI accepts
+  repeatable `--target`.
+
 ## [0.1.0] - 2026-10-28
 
 ### Added

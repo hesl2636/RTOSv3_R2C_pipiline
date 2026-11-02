@@ -199,6 +199,7 @@ function checkStep(context, stageRecord, step, index) {
       role: step.role,
       task: undefined,
       skills: Array.isArray(step.skills) ? [...step.skills] : [],
+      skillsValid: Array.isArray(step.skills),
       pointer: base,
       references: false,
     };
@@ -215,6 +216,7 @@ function checkStep(context, stageRecord, step, index) {
     role: step.role,
     task: step.task,
     skills: Array.isArray(step.skills) ? [...step.skills] : [],
+    skillsValid: Array.isArray(step.skills),
     pointer: base,
     references: true,
   };

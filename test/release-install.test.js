@@ -28,10 +28,11 @@ import { fileURLToPath } from 'node:url';
 import { canonicalJson } from '../core/canonical-json.js';
 import { compareCodePoints } from '../core/code-point.js';
 import { sha256Hex } from '../core/node/sha256.js';
-import { installRelease, selectProjection, checkEngineRequirement } from '../installer/release-install.js';
+import { installRelease, selectProjection } from '../installer/release-install.js';
 import { serializeIr } from '../ir/serialize.js';
 import { LAUNCHER_TEXT, RUNTIME_RECEIPT_PATH } from '../installer/runtime.js';
-import { createReleaseTarGz, readReleaseTarGz } from '../scripts/lib/release-tar.mjs';
+import { irPath as irRelPath } from '../installer/paths.js';
+import { createReleaseTarGz, readReleaseTarGz } from '../installer/release-tar.js';
 import { rawResponse, startGithubFixture, startHttpFixture } from './helpers/release-fixture.js';
 import { toolSentinels } from './helpers/tools.js';
 import { withPath } from './support/env.js';
@@ -618,10 +619,8 @@ test('projection and engine requirement evaluation is the release contract', () 
   assert.equal(selectProjection({ allowed: ['r2c', 'agent-native'], requested: undefined }).code, 'RELEASE_PROJECTION_REQUIRED');
   assert.equal(selectProjection({ allowed: ['agent-native'], requested: 'nope' }).code, 'RELEASE_PROJECTION_NOT_ALLOWED');
 
-  assert.deepEqual(checkEngineRequirement({ range: undefined, engineVersion: null }), { ok: true });
-  assert.deepEqual(checkEngineRequirement({ range: '^0.1.0', engineVersion: ENGINE_VERSION }), { ok: true });
-  assert.equal(checkEngineRequirement({ range: '^9.0.0', engineVersion: ENGINE_VERSION }).code, 'PROJECTION_ENGINE_UNSATISFIED');
-  assert.equal(checkEngineRequirement({ range: '^0.1.0', engineVersion: null }).code, 'PROJECTION_ENGINE_UNKNOWN');
+  // `checkEngineRequirement` itself is covered by the CLI seam and its own
+  // unit test; this test stays on projection selection.
 });
 
 /** The release assets as an in-memory map, with sums regenerated after edits. */
@@ -803,4 +802,56 @@ test('a payload built with custom projection options is refused with a reproject
   assert.match(result.stderr, /custom projection options/);
   assert.match(result.stderr, /Re-project/);
   assert.equal(walk(target).length, 0);
+});
+
+test('a legacy receipt refuses before the first runtime write', (t) => {
+  const release = buildRelease(t);
+  const target = project(t);
+  const { env } = isolatedEnv(t);
+  mkdirSync(join(target, '.r2c', 'install'), { recursive: true });
+  const legacy = canonicalJson({
+    schema: 'r2c.install/v1',
+    agent: 'claude-code',
+    scope: 'project',
+    installed_at: '2026-01-01T00:00:00.000Z',
+    files: [],
+  });
+  writeFileSync(join(target, '.r2c', 'install', 'legacy.json'), legacy);
+  const before = walk(target);
+  const beforeBytes = new Map(before.map((path) => [path, sha256File(join(target, ...path.split('/'))) ]));
+
+  const result = install(
+    ['--bundle', ID, '--version', VERSION, '--projection', 'r2c', '--project', target, '--release-base', release],
+    { env },
+  );
+  assert.equal(result.status, 2, `${result.stdout}\n${result.stderr}`);
+  assert.match(result.stderr, /LEGACY_INSTALL_PRESENT/);
+  assert.deepEqual(walk(target), before, 'the project is byte-identical after refusal');
+  for (const path of before) {
+    assert.equal(sha256File(join(target, ...path.split('/'))), beforeBytes.get(path), path);
+  }
+  assert.equal(existsSync(join(target, '.r2c', 'engine')), false);
+  assert.equal(existsSync(join(target, '.r2c', 'bin', 'r2c.js')), false);
+  assert.equal(existsSync(join(target, RUNTIME_RECEIPT_PATH)), false);
+});
+
+test('a bundle failure after the runtime rolls the runtime back (one transaction)', (t) => {
+  const release = buildRelease(t);
+  const target = project(t);
+  const { env } = isolatedEnv(t);
+  // The preflight cannot see this: the IR slot is a directory, so the bundle
+  // half fails only after the runtime has been written.
+  const irDir = join(target, ...irRelPath(ID, VERSION).split('/'));
+  mkdirSync(irDir, { recursive: true });
+  const before = walk(target);
+
+  const result = install(
+    ['--bundle', ID, '--version', VERSION, '--projection', 'r2c', '--project', target, '--release-base', release],
+    { env },
+  );
+  assert.equal(result.status, 2, `${result.stdout}\n${result.stderr}`);
+  assert.deepEqual(walk(target), before, 'the bundle half rolled back without leaving runtime files');
+  assert.equal(existsSync(join(target, '.r2c', 'engine')), false);
+  assert.equal(existsSync(join(target, '.r2c', 'bin', 'r2c.js')), false);
+  assert.equal(existsSync(join(target, RUNTIME_RECEIPT_PATH)), false);
 });

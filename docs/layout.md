@@ -71,3 +71,21 @@ Notes:
 - `web/serve.mjs` is the single Node entry of the front end; the browser
   imports the same `core/`, `ir/`, `assembler/`, `projection/` and
   `runtime/shared/` modules by relative URL.
+
+## Schema documents
+
+The JSON Schema documents sit next to the module that owns the contract. They
+are descriptive: the hand-written validators stay authoritative and no schema
+runtime dependency is added.
+
+| Document | Owner |
+| --- | --- |
+| `assembler/schema/bundle.schema.json` | `assembler/validate-bundle.js` |
+| `assembler/schema/stage.schema.json` | `assembler/checks/stages.js` |
+| `ir/schema/ir.schema.json` | `assembler/validate-ir.js` |
+| `projection/schema/options.schema.json` | `projection/options.js` |
+| `projection/schema/result.schema.json` | `projection/validate-result.js` |
+| `projection/schema/roles.schema.json` | `runtime/shared/render-role.js` |
+
+Every document is canonical JSON, uses the `https://r2c.runner/schema/` `$id`
+family and carries the schema revision it describes as its title.

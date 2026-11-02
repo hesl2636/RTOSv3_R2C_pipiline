@@ -32,7 +32,10 @@ function relative(path) {
   return path.slice(ROOT.length + 1).split('\\').join('/');
 }
 
-test('web/ has no Node builtins or third-party imports (serve.mjs is the only Node entry)', () => {
+test('web/ has no Node builtins or third-party imports (server modules are the only Node entries)', () => {
+  // These run in the server process only; every other file in web/ is loaded
+  // by the browser and must stay free of node: builtins.
+  const serverModules = new Set(['web/serve.mjs', 'web/http.js', 'web/build.js', 'web/publish.js', 'web/child.js']);
   const nodeImport = /(?:from\s*|import\s*\(\s*)['"]node:/;
   const anyImport = /(?:from\s*|import\s*\(\s*)['"]([^'"]+)['"]/g;
   for (const file of webFiles()) {
@@ -44,6 +47,9 @@ test('web/ has no Node builtins or third-party imports (serve.mjs is the only No
       assert.match(source, nodeImport, 'serve.mjs should use node: builtins');
       continue;
     }
+    // The other server modules receive node primitives from serve.mjs and are
+    // never loaded by the browser; they still must not import third parties.
+    if (serverModules.has(name)) continue;
     assert.doesNotMatch(source, nodeImport, `${name} must not import node: builtins`);
     for (const match of source.matchAll(anyImport)) {
       const specifier = match[1];

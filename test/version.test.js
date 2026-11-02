@@ -91,3 +91,43 @@ test('parses and validates strictly', () => {
   assert.throws(() => satisfiesRange('>=x', '1.0.0'), SemverError);
   assert.throws(() => satisfiesRange('^1.0.0', 'not-a-version'), SemverError);
 });
+
+test('framework and engine versions are independent everywhere they are read', async (t) => {
+  const { mkdtempSync, mkdirSync, writeFileSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const { readEngine } = await import('../scripts/lib/bundle-release.mjs');
+  const { installRuntime } = await import('../installer/runtime.js');
+  const { installStatus } = await import('../installer/status.js');
+  const { checkEngineRequirement } = await import('../projection/engine-requirement.js');
+
+  const root = mkdtempSync(join(tmpdir(), 'r2c-version-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'r2c-framework', version: '9.9.9' }));
+  mkdirSync(join(root, 'runtime/r2c/engine'), { recursive: true });
+  writeFileSync(
+    join(root, 'runtime/r2c/engine/package.json'),
+    JSON.stringify({ name: 'r2c-runner', version: '1.2.3' }),
+  );
+
+  // The release reads the engine package, never the root package.
+  assert.equal(readEngine(root).version, '1.2.3');
+
+  // The installer records the engine source's own version.
+  mkdirSync(join(root, 'engine-source/bin'), { recursive: true });
+  writeFileSync(join(root, 'engine-source/bin/r2c.js'), '#!/usr/bin/env node\n');
+  writeFileSync(join(root, 'engine-source/package.json'), JSON.stringify({ name: 'r2c-runner', version: '4.5.6' }));
+  const projectRoot = join(root, 'project');
+  mkdirSync(projectRoot);
+  const installed = installRuntime({ projectRoot, engineSource: join(root, 'engine-source') });
+  assert.equal(installed.ok, true);
+  assert.equal(installed.engine.version, '4.5.6');
+
+  // `status` reports the runtime receipt's engine version, not the framework's.
+  assert.equal(installStatus(projectRoot).engine.version, '4.5.6');
+
+  // `requires.engine` is evaluated against the engine, so the framework
+  // version could never satisfy or refuse it.
+  assert.equal(checkEngineRequirement({ range: '^4.0.0', engineVersion: installed.engine.version }).ok, true);
+  assert.equal(checkEngineRequirement({ range: '^4.0.0', engineVersion: '9.9.9' }).code, 'PROJECTION_ENGINE_UNSATISFIED');
+});

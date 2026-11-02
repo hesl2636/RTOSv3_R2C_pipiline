@@ -28,7 +28,7 @@ import { sha256Hex as sha256 } from '../core/node/sha256.js';
 import { isValidVersion } from '../core/semver.js';
 import { IR_BUNDLE_SCHEMA, IR_SCHEMA } from '../ir/schema.js';
 import { listProjections } from '../projection/registry.js';
-import { createReleaseTarGz, readReleaseTarGz } from './lib/release-tar.mjs';
+import { createReleaseTarGz, readReleaseTarGz } from '../installer/release-tar.js';
 import {
   ENGINE_ENTRY,
   collectEngine,
@@ -43,8 +43,9 @@ import {
 import { GH_TOKEN_HINT, readGithubToken } from '../installer/release-auth.js';
 import { GITHUB_API_BASE, createGithubClient } from '../installer/release-client.js';
 import { publishBundle } from '../installer/release-publish.js';
-import { DEFAULT_RELEASE_REPO, verifySums } from '../installer/release-source.js';
-import { IR_ASSET, bundleTag, isValidBundleId } from '../installer/release-tags.js';
+import { DEFAULT_RELEASE_REPO } from '../installer/release-source.js';
+import { IR_ASSET } from '../installer/release-tags.js';
+import { readBuiltRelease } from './lib/built-release.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 /** The bootstrap ships verbatim; `scripts/install.mjs` is its only source (#41). */
@@ -626,84 +627,6 @@ function publishApiBase() {
  * IR and payloads are exactly the bytes the build produced, and the manifest
  * (`SHA256SUMS.txt`) must cover every file and nothing else.
  */
-function readBuiltRelease(dir) {
-  const failures = [];
-  const fail = (message) => {
-    failures.push(message);
-    return { ok: false, failures, notes: [], plan: null, assets: null };
-  };
-  if (!existsSync(dir)) return fail(`RELEASE_ASSET_SET_MISMATCH: ${dir} does not exist`);
-  let entries;
-  try {
-    entries = readdirSync(dir, { withFileTypes: true });
-  } catch (error) {
-    return fail(`RELEASE_ASSET_SET_MISMATCH: ${dir} is unreadable: ${error.message}`);
-  }
-  const names = entries
-    .filter((entry) => entry.isFile())
-    .map((entry) => entry.name)
-    .sort(compareCodePoints);
-  if (names.length === 0) return fail(`RELEASE_ASSET_SET_MISMATCH: ${dir} holds no assets`);
-  if (!names.includes(SUMS_ASSET)) return fail(`RELEASE_ASSET_SET_MISMATCH: ${SUMS_ASSET} is missing`);
-  if (!names.includes(IR_ASSET)) return fail(`RELEASE_ASSET_SET_MISMATCH: ${IR_ASSET} is missing`);
-
-  let ir;
-  try {
-    ir = JSON.parse(readFileSync(join(dir, IR_ASSET), 'utf8'));
-  } catch (error) {
-    return fail(`RELEASE_PAYLOAD_INVALID: ${IR_ASSET} is not valid JSON: ${error.message}`);
-  }
-  const id = ir?.id;
-  const version = ir?.version;
-  if (!isValidBundleId(id)) return fail(`RELEASE_TAG_MISMATCH: ${IR_ASSET} id ${String(id)} is not a bundle id`);
-  if (!isValidVersion(version) || String(version).includes('+')) {
-    return fail(`RELEASE_VERSION_MISMATCH: ${IR_ASSET} version ${String(version)} is not a semver without build metadata`);
-  }
-  const zipName = `bundle-${id}-v${version}.zip`;
-  if (!names.includes(zipName)) return fail(`RELEASE_ASSET_SET_MISMATCH: ${zipName} is missing`);
-
-  const assets = [];
-  for (const name of names) {
-    if (name === SUMS_ASSET) continue;
-    const data = readFileSync(join(dir, name));
-    assets.push({ name, data, size: data.length, sha256: sha256(data) });
-  }
-  const sumsBytes = readFileSync(join(dir, SUMS_ASSET));
-  const sums = verifySums(sumsBytes, assets, { requireAll: true });
-  if (!sums.ok) {
-    for (const failure of sums.failures) failures.push(failure);
-    return { ok: false, failures, notes: [], plan: null, assets: null };
-  }
-  const diskNames = names.filter((name) => name !== SUMS_ASSET);
-  const sumsNames = [...assets.map((asset) => asset.name)].sort(compareCodePoints);
-  if (JSON.stringify(diskNames) !== JSON.stringify(sumsNames)) {
-    return fail(`RELEASE_ASSET_SET_MISMATCH: ${SUMS_ASSET} does not cover exactly [${diskNames.join(', ')}]`);
-  }
-  // The publish state machine verifies remote SHA256SUMS.txt again, so the
-  // sums file travels with the assets (it is never listed inside itself).
-  assets.push({ name: SUMS_ASSET, data: sumsBytes, size: sumsBytes.length, sha256: sha256(sumsBytes) });
-  assets.sort((left, right) => compareCodePoints(left.name, right.name));
-
-  return {
-    ok: true,
-    failures: [],
-    notes: [],
-    plan: {
-      tag: bundleTag(id, version),
-      bundleId: id,
-      version,
-      name: `${id} v${version}`,
-      makeLatest: false,
-      prerelease: false,
-      draft: true,
-      assets: assets
-        .map((asset) => ({ name: asset.name, size: asset.size, sha256: asset.sha256 }))
-        .sort((left, right) => compareCodePoints(left.name, right.name)),
-    },
-    assets,
-  };
-}
-
 function publishFailureLines(failures) {
   return failures.map((failure) => failure.replace(/^([A-Z_]+): (.*)$/, (whole, code, message) => `${code}: ${message}`));
 }

@@ -20,7 +20,7 @@ import { project } from '../projection/project.js';
 import { getProjection } from '../projection/registry.js';
 import { validateResult } from '../projection/validate-result.js';
 import { AGENT_NATIVE_MANIFEST } from '../runtime/agent-native/projection/manifest.js';
-import { targetOrder } from '../runtime/agent-native/projection/targets/index.js';
+import { TARGETS, targetOrder } from '../runtime/agent-native/projection/targets/index.js';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const ZIP = join(ROOT, 'examples/rtosv3/dist/bundle-rtosv3-drvport-v1.0.0.zip');
@@ -332,6 +332,21 @@ test('projection.json is the canonical manifest and derives from the target regi
   for (const root of ['.agents/agent-native', '.agents/skills', '.claude/agents', '.claude/skills']) {
     assert.ok(AGENT_NATIVE_MANIFEST.writeRoots.includes(root), root);
   }
+
+  // Static host assets are declared, not hidden: every descriptor asset is
+  // listed once with a stable id and the digest of its bytes on disk.
+  const descriptors = targetOrder().flatMap((id) => TARGETS[id].assets ?? []);
+  assert.equal(AGENT_NATIVE_MANIFEST.assets.length, descriptors.length);
+  assert.equal(new Set(AGENT_NATIVE_MANIFEST.assets.map((asset) => asset.id)).size, descriptors.length);
+  for (const asset of AGENT_NATIVE_MANIFEST.assets) {
+    assert.match(asset.id, /^[a-z0-9]+(?:-[a-z0-9]+)*$/);
+    assert.match(asset.sha256, /^[0-9a-f]{64}$/);
+    assert.equal(asset.sha256, sha256Hex(readFileSync(join(ROOT, ...asset.path.split('/')))), asset.path);
+  }
+  assert.deepEqual(
+    AGENT_NATIVE_MANIFEST.assets.map((asset) => asset.path).sort(),
+    descriptors.map((asset) => asset.path).sort(),
+  );
 });
 
 test('name collisions fail with PROJECTION_ID_COLLISION instead of silently renaming', () => {

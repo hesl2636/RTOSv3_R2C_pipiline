@@ -1,0 +1,118 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://r2c.runner/schema/projection-options/v1",
+  "title": "r2c.projection-options/v1",
+  "description": "Resolved projection options, echoed into a projection result. Documentation only: projection/options.js is authoritative (normalizeOptions / validateOptions). Raw input may omit fields or pass null for stageOrder, skills and targets; the resolved echo always carries concrete arrays.",
+  "$comment": "Rules the caller enforces and this document does not express: options.ir.digest/id/version must equal the input IR and its digest; stageOrder is a permutation of the IR stage ids; skills is a unique subset of the IR skill ids, sorted by code point; targets is a non-empty unique subset of the manifest targets in manifest order; extra keys are sorted recursively and validated against the manifest optionsSchema (empty extra when none is declared); options bind the IR and are never written back to the bundle or IR.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "projection",
+    "ir",
+    "stageOrder",
+    "skills",
+    "targets",
+    "extra"
+  ],
+  "properties": {
+    "schema": {
+      "const": "r2c.projection-options/v1"
+    },
+    "projection": {
+      "enum": [
+        "r2c",
+        "agent-native"
+      ],
+      "description": "Must equal the projection being called."
+    },
+    "ir": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "digest",
+        "id",
+        "version"
+      ],
+      "properties": {
+        "digest": {
+          "$ref": "#/$defs/sha256"
+        },
+        "id": {
+          "$ref": "#/$defs/bundleId"
+        },
+        "version": {
+          "$ref": "#/$defs/version"
+        }
+      }
+    },
+    "stageOrder": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/id"
+      },
+      "description": "Applied stage order; the resolved echo never uses null."
+    },
+    "skills": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/skillId"
+      },
+      "description": "Installed/registered skill ids; the empty array is legal."
+    },
+    "targets": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/id"
+      },
+      "description": "Selected manifest target ids in manifest order."
+    },
+    "extra": {
+      "type": "object",
+      "description": "Projection-defined options, validated against the manifest optionsSchema; {} when none is declared."
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+      "maxLength": 64
+    },
+    "bundleId": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+      "maxLength": 40,
+      "not": {
+        "const": "r2c"
+      }
+    },
+    "skillId": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/id"
+        },
+        {
+          "not": {
+            "enum": [
+              "synced",
+              "anthropic-skills"
+            ]
+          }
+        }
+      ]
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z][0-9A-Za-z.-]*)?$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}

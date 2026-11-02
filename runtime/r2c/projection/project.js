@@ -5,24 +5,20 @@
  * `writeRoots` are produced; engine assets (`commands/`, `adapters/`,
  * `schema/`, `shims/`, `r2c-payload.json`) belong to the installer.
  */
-import { compareCodePoints } from '../../../core/code-point.js';
-import { satisfiesRange } from '../../../core/semver.js';
+import { checkEngineRequirement } from '../../../projection/engine-requirement.js';
 import { constitutionBlock, constitutionState } from '../../shared/constitution.js';
 import { placeholderInstructions } from '../../shared/placeholder.js';
 import { countSubmitTokens, replaceSubmitToken, submitReplacement } from '../../shared/submit.js';
 import { ensureText } from '../../shared/render-role.js';
 import { dumpWorkflowYaml } from '../../shared/yaml.js';
 import { R2C_CAPABILITIES, R2C_MANIFEST } from './manifest.js';
+import { sorted } from '../../../core/sort.js';
 
 const TARGET = 'r2c';
 const RUNNER_COMMAND = 'node .r2c/bin/r2c.js';
 const ROLE_NAME_MAX = 64;
 const ROLE_ID_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const MANIFEST_TARGET = R2C_MANIFEST.targets[0];
-
-function sorted(values) {
-  return [...values].sort(compareCodePoints);
-}
 
 function failure(errors) {
   return { ok: false, errors };
@@ -96,16 +92,11 @@ function engineFailure(ir, environment) {
   if (typeof version !== 'string' || version === '') {
     return nameError('PROJECTION_ENGINE_UNKNOWN', `requires.engine ${range} is declared but environment.engineVersion is unknown`);
   }
-  let satisfied = false;
-  try {
-    satisfied = satisfiesRange(range, version);
-  } catch {
-    satisfied = false;
-  }
-  if (!satisfied) {
-    return nameError('PROJECTION_ENGINE_UNSATISFIED', `requires.engine ${range} is not satisfied by engine ${version}`);
-  }
-  return null;
+  // One evaluation (projection/engine-requirement.js) for projection, web and
+  // installer; unknown/invalid inputs are reported as the projection code.
+  const checked = checkEngineRequirement({ range, engineVersion: version });
+  if (checked.ok) return null;
+  return nameError(checked.code, checked.message);
 }
 
 export function projectR2c(input) {

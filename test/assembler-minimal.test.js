@@ -11,7 +11,7 @@ import { sha256Hex } from '../core/node/sha256.js';
 import { compileBundle } from '../assembler/compile.js';
 import { validateBundle } from '../assembler/validate-bundle.js';
 import { validateIr } from '../assembler/validate-ir.js';
-import { IR_FILENAME } from '../ir/schema.js';
+import { IR_FILENAME, irCollectionPath } from '../ir/schema.js';
 import {
   MINIMAL_MANIFEST,
   MINIMAL_TASK,
@@ -185,6 +185,12 @@ test('the CLI --json envelope is one line for bundle and ir validate', () => {
     const out = join(dir, 'out');
     const compileResult = cli(['compile', zipPath, '--out', out, '--json']);
     assert.equal(compileResult.status, 0);
+    // The report is the `data` object itself (like bundle/ir validate), with
+    // the written artifact appended; there is no `data.report` wrapper.
+    assert.equal(compileResult.envelope.data.ok, true);
+    assert.equal(compileResult.envelope.data.target, 'bundle');
+    assert.equal(compileResult.envelope.data.report, undefined);
+    assert.equal(compileResult.envelope.data.ir.path, irCollectionPath(compileResult.envelope.data.id, compileResult.envelope.data.version));
     const irPath = join(out, IR_FILENAME);
     const irResult = cli(['ir', 'validate', irPath, '--json']);
     assert.equal(irResult.status, 0);

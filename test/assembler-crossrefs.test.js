@@ -222,3 +222,25 @@ test('cross-reference reports are deterministic', () => {
   assert.deepEqual(first, report(options));
   assert.ok(first.errors.length >= 3, JSON.stringify(first.errors));
 });
+
+test('BUNDLE_STEP_NO_SKILLS is suppressed when the stage set is incomplete (S8)', () => {
+  const reportValue = report({
+    manifest: { stages: ['only', 'missing'] },
+    overrides: {
+      [STAGE_PATH]: stageValue((stage) => { stage.steps[0].skills = []; }),
+    },
+  });
+  assert.ok(codes(reportValue).includes('BUNDLE_STAGE_FILE_MISSING'));
+  assert.ok(!codes(reportValue, 'warnings').includes('BUNDLE_STEP_NO_SKILLS'));
+});
+
+test('a malformed skills field is one BUNDLE_SCHEMA_INVALID, not a no-skills warning too', () => {
+  const reportValue = report({
+    overrides: {
+      [STAGE_PATH]: stageValue((stage) => { stage.steps[0].skills = 'helper'; }),
+    },
+  });
+  const errors = codes(reportValue);
+  assert.ok(errors.includes('BUNDLE_SCHEMA_INVALID'));
+  assert.ok(!codes(reportValue, 'warnings').includes('BUNDLE_STEP_NO_SKILLS'));
+});

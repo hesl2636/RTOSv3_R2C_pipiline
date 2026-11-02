@@ -1,0 +1,144 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://r2c.runner/schema/stage/v1",
+  "title": "r2c.bundle/v1 stage file (stages/<id>.json)",
+  "description": "One declared stage. Documentation only: assembler/checks/stages.js is authoritative and reports BUNDLE_SCHEMA_INVALID / BUNDLE_STEP_* / BUNDLE_GATE_INVALID.",
+  "$comment": "Rules the validator enforces and this document does not express: the file id must equal both the file stem and a bundle.json.stages entry; step ids are unique across the whole bundle (not only within a stage); steps order is execution order and gates run in order until a non-zero exit; outputs are project-root-relative globs that must not target skills/ or SKILL.md; stage files must be canonical JSON (two-space indent, trailing LF).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "name",
+    "steps"
+  ],
+  "properties": {
+    "id": {
+      "$ref": "#/$defs/id"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120
+    },
+    "description": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2000
+    },
+    "steps": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/step"
+      },
+      "description": "Execution order."
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+      "maxLength": 64
+    },
+    "roleId": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/id"
+        },
+        {
+          "not": {
+            "enum": [
+              "main",
+              "sub"
+            ]
+          }
+        }
+      ]
+    },
+    "skillId": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/id"
+        },
+        {
+          "not": {
+            "enum": [
+              "synced",
+              "anthropic-skills"
+            ]
+          }
+        }
+      ]
+    },
+    "step": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "task"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "role": {
+          "$ref": "#/$defs/roleId",
+          "description": "Must be declared in bundle.json.roles; absent means the main session executes the step."
+        },
+        "task": {
+          "$ref": "#/$defs/id",
+          "description": "Must be declared in bundle.json.tasks; the task file is the step's only instruction source."
+        },
+        "skills": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/skillId"
+          }
+        },
+        "outputs": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          }
+        },
+        "gates": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/gate"
+          }
+        }
+      }
+    },
+    "gate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "command"
+      ],
+      "properties": {
+        "command": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000,
+          "description": "Run by the runtime at the project root, never by the model."
+        },
+        "timeout": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 86400,
+          "description": "Seconds."
+        }
+      }
+    }
+  }
+}

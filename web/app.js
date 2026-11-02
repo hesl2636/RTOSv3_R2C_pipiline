@@ -9,6 +9,7 @@
 import { validateBundleAsync } from '../assembler/validate-bundle.js';
 import { LIMITS } from '../assembler/limits.js';
 import { canonicalJson } from '../core/canonical-json.js';
+import { compareCodePoints } from '../core/code-point.js';
 import { isCanonicalOptions, normalizeOptions } from '../projection/options.js';
 import { project } from '../projection/project.js';
 import { allowedProjections, defaultTargets, getProjection } from '../projection/registry.js';
@@ -20,7 +21,7 @@ import {
   sha256Hex,
 } from './primitives-browser.js';
 import { loadSharedModules } from './shared-imports.js';
-import { publishAvailability } from './publish-state.js';
+import { publishButtonState } from './publish-state.js';
 import webManifest from './web-manifest.json' with { type: 'json' };
 
 const state = {
@@ -361,7 +362,7 @@ function stageIdsOf(ir) {
 }
 
 function skillIdsOf(ir) {
-  return Object.keys(ir.skills ?? {}).sort();
+  return Object.keys(ir.skills ?? {}).sort(compareCodePoints);
 }
 
 function defaultOptionsFor(ir) {
@@ -461,7 +462,7 @@ function renderSkillPicker(container, projectionId) {
       const selected = new Set(current.skills);
       if (box.checked) selected.add(id);
       else selected.delete(id);
-      current.skills = [...selected].sort();
+      current.skills = [...selected].sort(compareCodePoints);
       schedulePreview();
     });
     label.append(box, element('span', 'mono', id));
@@ -478,7 +479,7 @@ function renderSkillPicker(container, projectionId) {
       const box = row.label.querySelector('input');
       box.checked = predicate(row.id);
     }
-    current.skills = rows.filter((row) => predicate(row.id)).map((row) => row.id).sort();
+    current.skills = rows.filter((row) => predicate(row.id)).map((row) => row.id).sort(compareCodePoints);
     schedulePreview();
   };
   search.addEventListener('input', applyFilter);
@@ -796,7 +797,7 @@ function copyable(text) {
  * canonical build, and no client/server mismatch (decision #75 §8.3).
  */
 function refreshPublish(message) {
-  const view = publishAvailability({
+  const view = publishButtonState({
     publish: state.publish,
     build: state.build,
     mismatch: state.mismatch,
@@ -1186,7 +1187,7 @@ async function bootstrap() {
   state.csrf = session.data.csrf;
   state.limits = session.data.limits;
   state.engineVersion = session.data.engineVersion ?? null;
-  state.shared = await loadSharedModules(session.data.modules ?? {});
+  state.shared = await loadSharedModules();
   state.publish = session.data.publish ?? null;
   refreshPublish(session.data.publish?.enabled === true
     ? `Publishing to ${session.data.publish.repo} runs on this server; this page never sees the token.`

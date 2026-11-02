@@ -27,12 +27,9 @@ import {
 import { serializeIr } from '../ir/serialize.js';
 import { analyzeBundle } from './validate-bundle.js';
 import { validateIr } from './validate-ir.js';
+import { sorted } from '../core/sort.js';
 
 const encoder = new TextEncoder();
-
-function sorted(values) {
-  return [...values].sort(compareCodePoints);
-}
 
 function fileHash(primitives, model, path) {
   return primitives.sha256(model.entries.get(path).data);
