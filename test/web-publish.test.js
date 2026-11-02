@@ -8,8 +8,10 @@
  * frozen release contract, never copied from a server response.
  */
 import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
 import {
   existsSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   readdirSync,
@@ -17,7 +19,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve, sep } from 'node:path';
+import { dirname, join, resolve, sep } from 'node:path';
 import test from 'node:test';
 
 import { compileBundle } from '../assembler/compile.js';
@@ -27,7 +29,6 @@ import { normalizeOptions } from '../projection/options.js';
 import { project } from '../projection/project.js';
 import { getProjection } from '../projection/registry.js';
 import { validateResult } from '../projection/validate-result.js';
-import { installProjection } from '../installer/install.js';
 import { readReceipt } from '../installer/receipt.js';
 import { PAYLOAD_MANIFEST_NAME } from '../scripts/lib/bundle-release.mjs';
 import { readReleaseTarGz } from '../scripts/lib/release-tar.mjs';
@@ -635,7 +636,7 @@ test('end-to-end: publish once, take the generated command and install the Relea
   }
 
   // 3. The payload archive matches its manifest and the projection result.
-  const { ir, irBytes, digest } = compiled();
+  const { ir, digest } = compiled();
   assert.equal(digest, IR_DIGEST);
   const manifest = getProjection('r2c');
   const normalized = normalizeOptions({ projectionId: 'r2c', ir, irDigest: digest, raw: null, manifest });
@@ -678,10 +679,37 @@ test('end-to-end: publish once, take the generated command and install the Relea
     assert.equal(declared.mode, file.mode);
   }
 
-  // 4. Install the release payload into a temp project via the installer.
+  // 4. Take the generated command, fetch the frozen bootstrap exactly as the
+  //    curl step would, and run it from the target project root. `--release-base`
+  //    is the loopback mirror of GitHub (decision #75 §9.3); everything else is
+  //    verbatim from the published command.
   const projectRoot = tempDir(t, 'project');
-  const installed = installProjection({ projectRoot, result, irBytes, irDigest: digest });
-  assert.equal(installed.ok, true, JSON.stringify(installed));
+  const bootstrap = join(projectRoot, '.r2c', 'bootstrap', 'install.mjs');
+  mkdirSync(dirname(bootstrap), { recursive: true });
+  writeFileSync(bootstrap, downloaded.get('install.mjs'));
+
+  const installArgs = tokens.slice(2).concat(['--release-base', `${fixture.origin}/download`]);
+  const env = { ...process.env };
+  for (const key of [
+    'R2C_SESSION_ID', 'R2C_PROJECT_ROOT', 'R2C_PLUGIN_SOURCE', 'R2C_RELEASE_BASE', 'R2C_ENGINE_HOME',
+    'R2C_HOME', 'GH_TOKEN', 'GITHUB_TOKEN', 'DSH_SESSION_ID', 'DSH_HOME', 'R2C_GITHUB_API',
+  ]) {
+    delete env[key];
+  }
+  const installed = await new Promise((resolveInstall, rejectInstall) => {
+    const child = spawn(process.execPath, [join('.r2c', 'bootstrap', 'install.mjs'), ...installArgs], {
+      cwd: projectRoot,
+      env,
+      windowsHide: true,
+    });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', (chunk) => { stdout += chunk; });
+    child.stderr.on('data', (chunk) => { stderr += chunk; });
+    child.on('error', rejectInstall);
+    child.on('close', (status) => resolveInstall({ status, stdout, stderr }));
+  });
+  assert.equal(installed.status, 0, `${installed.stdout}\n${installed.stderr}`);
 
   // 5. Every receipt hash recomputes, and the installed bytes equal the payload.
   const stored = readReceipt(projectRoot, 'r2c', BUNDLE);
@@ -690,7 +718,6 @@ test('end-to-end: publish once, take the generated command and install the Relea
   assert.equal(receipt.bundle.id, BUNDLE);
   assert.equal(receipt.bundle.version, VERSION);
   assert.equal(receipt.ir.digest, digest);
-  assert.equal(receipt.files.length, payloadManifest.files.length);
   const payloadByPath = new Map(payloadManifest.files.map((file) => [file.path, file]));
   for (const file of receipt.files) {
     const absolute = join(projectRoot, ...file.path.split('/'));
@@ -698,17 +725,21 @@ test('end-to-end: publish once, take the generated command and install the Relea
     const bytes = readFileSync(absolute);
     assert.equal(sha256Hex(bytes), file.sha256, `${file.path} receipt hash recomputes`);
     const declared = payloadByPath.get(file.path);
-    assert.ok(declared, `${file.path} comes from the payload manifest`);
+    if (declared === undefined) continue; // installer-owned files (host roles, roles.json, engine)
     assert.equal(sha256Hex(bytes), declared.sha256, `${file.path} matches the payload`);
     const archived = payload.entries.find((entry) => entry.path === `files/${file.path}`);
     assert.ok(archived, `${file.path} is in the payload archive`);
     assert.equal(Buffer.compare(bytes, Buffer.from(archived.data)), 0, `${file.path} bytes equal the payload`);
   }
   for (const file of payloadManifest.files) {
-    assert.ok(receipt.files.some((entry) => entry.path === file.path), `${file.path} is in the receipt`);
+    const entry = receipt.files.find((candidate) => candidate.path === file.path);
+    assert.ok(entry, `${file.path} is in the receipt`);
+    assert.equal(entry.sha256, file.sha256, `${file.path} receipt hash equals the payload manifest`);
   }
 
-  // Nothing in the install wrote outside the project root.
+  // The runtime came from the same Release and the installer wrote only under
+  // the project root.
+  assert.ok(existsSync(join(projectRoot, '.r2c', 'bin', 'r2c.js')), 'the release engine and launcher were installed');
   const entries = readdirSync(projectRoot).sort();
   assert.ok(entries.includes('.r2c'), 'the installer wrote its own state under the project root');
 });
