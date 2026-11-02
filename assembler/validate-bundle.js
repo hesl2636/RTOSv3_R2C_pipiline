@@ -31,8 +31,10 @@ export function analyzeBundle(input, primitives = {}, options = {}) {
   const zip = readZip(bytes, primitives);
   const context = createContext({ bytes, zip, primitives, artifactPath });
   context.diagnostics.push(...zip.diagnostics);
+  // A cumulative-inflation abort leaves the archive only partially decoded:
+  // content phases cannot trust the entry set, so only container checks run.
+  if (!zip.readable || zip.container.aborted === true) context.skipContent();
   if (zip.readable) runChecks(context);
-  else context.skipContent();
   const { errors, warnings } = flushDiagnostics(context);
   const manifest = context.manifest;
   const schema = manifest !== null && manifest.schema === BUNDLE_SCHEMA ? manifest.schema : null;

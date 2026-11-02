@@ -148,7 +148,9 @@ function checkSkills(context) {
     const path = `skills/${id}/SKILL.md`;
     const files = directories.get(id) ?? [];
     for (const file of files) {
-      if (file.file !== 'SKILL.md') {
+      // The container's exhaustive whitelist already reports any non-SKILL.md
+      // path as BUNDLE_UNEXPECTED_PATH; keep one diagnostic per violation.
+      if (file.file !== 'SKILL.md' && context.unexpectedPaths?.has(file.path) !== true) {
         context.fail(file.path, 'BUNDLE_SKILL_EXTRA_FILE', 'a skill directory may only contain SKILL.md');
       }
     }
