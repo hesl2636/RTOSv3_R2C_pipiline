@@ -82,70 +82,83 @@ export function parseFrontmatter(text, options = {}) {
 
   const frontmatter = source.slice(4, close);
   const body = source.slice(close + CLOSING.length);
-  const bodyLine = 1 + 1 + frontmatter.split('\n').length + 1;
+  const bodyLine = source.slice(0, close + CLOSING.length).split('\n').length;
   const diagnostics = [];
   const fields = {};
-  let listKey = null;
-  let listLine = 0;
+  // An open block-list header: `key:` waiting for `  - item` lines.
+  let list = null;
+
+  const closeList = () => {
+    if (list !== null && list.items === 0 && !list.superseded) {
+      diagnostics.push(invalid(path, list.line, 'empty-value', `list '${list.key}' has no items`));
+    }
+    list = null;
+  };
 
   const lines = frontmatter.split('\n');
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index];
     const lineNumber = index + 2;
     if (line === '') {
-      listKey = null;
+      closeList();
       continue;
     }
 
     const itemMatch = /^  - (.*)$/.exec(line);
     if (itemMatch !== null) {
-      if (listKey === null) {
+      if (list === null) {
         diagnostics.push(invalid(path, lineNumber, 'shape', 'list item without a list key'));
         continue;
       }
       const item = itemMatch[1];
       if (item === '') {
-        diagnostics.push(invalid(path, lineNumber, 'empty-value', `list item is empty for '${listKey}'`));
+        diagnostics.push(invalid(path, lineNumber, 'empty-value', `list item is empty for '${list.key}'`));
+        list.superseded = true;
         continue;
       }
       const forbidden = FORBIDDEN_SCALAR_START.get(item[0]);
       if (forbidden !== undefined || item.includes(' #')) {
         diagnostics.push(unsupported(path, lineNumber, forbidden ?? 'comment', 'list items are plain scalars'));
+        list.superseded = true;
         continue;
       }
-      fields[listKey].push(item);
+      fields[list.key].push(item);
+      list.items += 1;
+      continue;
+    }
+
+    if (line.trimStart().startsWith('#')) {
+      diagnostics.push(unsupported(path, lineNumber, 'comment', 'comments are not supported'));
+      if (list !== null) list.superseded = true;
       continue;
     }
 
     if (/^\s/.test(line)) {
       diagnostics.push(unsupported(path, lineNumber, 'nested', 'indented content is not supported'));
-      listKey = null;
+      if (list !== null) list.superseded = true;
       continue;
     }
 
+    closeList();
     const colon = line.indexOf(':');
     if (colon <= 0) {
       diagnostics.push(invalid(path, lineNumber, 'shape', 'line is not `key: value`'));
-      listKey = null;
       continue;
     }
     const key = line.slice(0, colon);
     if (!KEY_RE.test(key)) {
       diagnostics.push(invalid(path, lineNumber, 'key', `invalid frontmatter key: ${key}`));
-      listKey = null;
       continue;
     }
     if (Object.prototype.hasOwnProperty.call(fields, key)) {
       diagnostics.push(invalid(path, lineNumber, 'duplicate-key', `duplicate frontmatter key: ${key}`));
-      listKey = null;
       continue;
     }
 
     const rest = line.slice(colon + 1);
     if (rest.trim() === '') {
       fields[key] = [];
-      listKey = key;
-      listLine = lineNumber;
+      list = { key, line: lineNumber, items: 0, superseded: false };
       continue;
     }
 
@@ -153,30 +166,21 @@ export function parseFrontmatter(text, options = {}) {
     const forbidden = FORBIDDEN_SCALAR_START.get(value[0]);
     if (forbidden !== undefined) {
       diagnostics.push(unsupported(path, lineNumber, forbidden, `unsupported value shape for '${key}'`));
-      listKey = null;
       continue;
     }
     if (value.includes(' #') || value.endsWith(':')) {
       diagnostics.push(unsupported(path, lineNumber, 'comment', `unsupported value for '${key}'`));
-      listKey = null;
       continue;
     }
     if (/^(null|Null|NULL|~)$/.test(value)) {
       diagnostics.push(unsupported(path, lineNumber, 'null', `null is not supported for '${key}'`));
-      listKey = null;
       continue;
     }
     if (value === 'true') fields[key] = true;
     else if (value === 'false') fields[key] = false;
     else fields[key] = value;
-    listKey = null;
   }
-
-  for (const [key, value] of Object.entries(fields)) {
-    if (Array.isArray(value) && value.length === 0) {
-      diagnostics.push(invalid(path, listLine, 'empty-value', `list '${key}' has no items`));
-    }
-  }
+  closeList();
 
   return { fields, body, diagnostics, bodyLine };
 }
