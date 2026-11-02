@@ -91,7 +91,7 @@ export const ompTarget = Object.freeze({
   layout: Object.freeze({
     skillsRoot: '.agents/skills',
     agentsRoot: '.omp/agents',
-    group: 'shared',
+    group: 'shared-skills',
   }),
   renderTargetFiles: (args) => perRoleRoleFiles(args),
   role: Object.freeze({

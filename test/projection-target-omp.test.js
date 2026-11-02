@@ -411,6 +411,8 @@ test('the omp capability matrix is fixed: preload/subagents native, skills adapt
   assert.deepEqual(result.metadata.placeholders.roles, ['bys-architect', 'bys-designer', 'bys-impl-lead', 'bys-release-lead']);
   assert.equal(result.metadata.placeholders.skills.length, 35);
   assert.equal(result.metadata.placeholders.roles.length, 4);
+  assert.deepEqual(result.metadata.runtime.targetGroups, { 'shared-skills': ['omp'] });
+  assert.deepEqual(result.metadata.runtime.skillsRoots, { omp: '.agents/skills' });
   const roleFiles = result.files.filter((file) => file.kind === 'agent');
   assert.equal(roleFiles.length, 4);
   for (const file of roleFiles) assert.match(file.content, /r2c:placeholder role=/);
