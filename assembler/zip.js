@@ -1,23 +1,28 @@
 /**
  * ZIP container reader for `r2c.bundle/v1` (decision #65 §2, #67 §7.1/§10).
  *
- * The central directory is parsed and checked *before* any inflation: paths,
- * entry types, encryption, Zip64, duplicates, declared sizes and the compression
- * method are all decided from the directory. Only accepted plain files are
- * inflated, and a second set of limits applies to the actual output, so a
- * "declared 0, expands to a bomb" archive is still stopped.
+ * Two explicit phases keep the contract "container checks before inflation"
+ * true:
+ *
+ * 1. the central directory is parsed and every structural rule is decided —
+ *    paths, entry types, encryption, Zip64, duplicates, declared sizes,
+ *    compression method, special task/constitution limits, local headers;
+ * 2. only the files that survived phase 1 are inflated, under a per-entry and
+ *    a cumulative output cap, so a "declared 0, expands to a bomb" archive is
+ *    stopped before it can consume memory.
  *
  * Pure module: raw-deflate is injected (`core/node/inflate.js` in Node,
- * `DecompressionStream` in the browser).
+ * `DecompressionStream` in the browser). The optional `maxOutputLength` hint
+ * lets a host stop inflation early; hosts that ignore it are still bounded by
+ * the post-inflation checks.
  */
 import { makeDiagnostic, SEVERITY } from '../core/diagnostics.js';
 import { foldCase, MAX_PATH_BYTES, utf8Length } from '../core/paths.js';
-import { LIMITS } from './limits.js';
+import { LIMITS, entryLimitFor } from './limits.js';
 
 const SIG_LOCAL = 0x04034b50;
 const SIG_CENTRAL = 0x02014b50;
 const SIG_EOCD = 0x06054b50;
-const SIG_EOCD64 = 0x06064b50;
 const SIG_LOCATOR64 = 0x07064b50;
 
 const FLAG_ENCRYPTED = 0x0001;
@@ -81,8 +86,8 @@ function pathReason(path, { directory = false } = {}) {
   const segments = value.split('/');
   if (segments.some((segment) => segment === '' || segment === '.' || segment === '..')) return 'not-canonical';
   if (!/^[\x20-\x7E]+$/.test(value)) return 'not-ascii';
-  if (segments.some((segment) => !/^[A-Za-z0-9._-]+$/.test(segment))) return 'charset';
   if (segments.some((segment) => /[ .]$/.test(segment))) return 'trailing-space-or-dot';
+  if (segments.some((segment) => !/^[A-Za-z0-9._-]+$/.test(segment))) return 'charset';
   if (segments.length > LIMITS.MAX_PATH_DEPTH) return 'too-deep';
   return null;
 }
@@ -116,7 +121,7 @@ function readExtraFields(bytes, offset, length) {
  * Read a zip archive.
  *
  * @param {Uint8Array|ArrayBuffer} input
- * @param {{ inflateRaw?: (bytes: Uint8Array) => Uint8Array }} [primitives]
+ * @param {{ inflateRaw?: (bytes: Uint8Array, options?: {maxOutputLength?: number}) => Uint8Array }} [primitives]
  * @returns {{
  *   readable: boolean,
  *   ok: boolean,
@@ -134,6 +139,7 @@ export function readZip(input, primitives = {}) {
   const directories = [];
   const rejected = [];
   const rejectedPaths = new Set();
+  const accepted = [];
   const container = {
     bytes: bytes.length,
     entryCount: 0,
@@ -153,22 +159,29 @@ export function readZip(input, primitives = {}) {
       details: extra.details,
     }));
   };
+  const markRejected = (path, code) => {
+    if (path === '' || rejectedPaths.has(path)) return;
+    rejectedPaths.add(path);
+    rejected.push({ path, code });
+  };
   const reject = (path, code, message, extra = {}) => {
     fail(path, code, message, extra);
-    if (path !== '' && !rejectedPaths.has(path)) {
-      rejectedPaths.add(path);
-      rejected.push({ path, code });
-    }
+    markRejected(path, code);
   };
-  const result = (readable) => ({
-    readable,
-    ok: diagnostics.length === 0,
-    entries,
-    directories,
-    rejected,
-    diagnostics,
-    container,
-  });
+  const result = (readable) => {
+    container.accepted = entries.size;
+    container.directories = directories.length;
+    return {
+      readable,
+      ok: diagnostics.length === 0,
+      entries,
+      filePaths: accepted.map((item) => item.record.name),
+      directories,
+      rejected,
+      diagnostics,
+      container,
+    };
+  };
 
   if (bytes.length > LIMITS.MAX_ZIP_BYTES) {
     fail('', 'BUNDLE_ZIP_TOO_LARGE', 'zip exceeds the size limit', {
@@ -217,7 +230,12 @@ export function readZip(input, primitives = {}) {
   }
   container.entryCount = totalEntries;
 
+  // -------------------------------------------------------------------------
+  // Phase 1: central directory. No entry data is read or inflated here.
+  // -------------------------------------------------------------------------
   const records = [];
+  const seenNames = new Map();
+  const seenOffsets = new Map();
   let cursor = centralOffset;
   let declaredUncompressed = 0;
   for (let index = 0; index < totalEntries; index += 1) {
@@ -249,7 +267,7 @@ export function readZip(input, primitives = {}) {
       cursor = nameStart + nameLength + extraLength + commentLength;
       continue;
     }
-    records.push({
+    const record = {
       name,
       madeBy,
       flags,
@@ -260,7 +278,27 @@ export function readZip(input, primitives = {}) {
       externalAttributes,
       localOffset,
       extraFields: readExtraFields(bytes, nameStart + nameLength, extraLength),
-    });
+      duplicate: false,
+      hardLink: false,
+    };
+    const fold = foldCase(name);
+    if (seenNames.has(fold)) {
+      record.duplicate = true;
+      reject(name, 'BUNDLE_DUPLICATE_ENTRY', 'duplicate entry name', {
+        details: { entry: name, mode: seenNames.get(fold) === name ? 'exact' : 'case-fold' },
+      });
+    } else {
+      seenNames.set(fold, name);
+      if (localOffset !== 0xffffffff && seenOffsets.has(localOffset)) {
+        record.hardLink = true;
+        reject(name, 'BUNDLE_ENTRY_TYPE', 'hard-linked entries are not allowed', {
+          details: { kind: 'hardlink' },
+        });
+      } else if (localOffset !== 0xffffffff) {
+        seenOffsets.set(localOffset, name);
+      }
+    }
+    records.push(record);
     declaredUncompressed += size;
     cursor = nameStart + nameLength + extraLength + commentLength;
   }
@@ -273,73 +311,45 @@ export function readZip(input, primitives = {}) {
     return result(false);
   }
 
-  let inflatedTotal = 0;
-  let aborted = false;
   for (const record of records) {
+    if (record.duplicate || record.hardLink) continue;
     const { name, flags, method, externalAttributes, madeBy } = record;
     const isDirectoryName = name.endsWith('/');
-    let rejectedEntry = false;
-    const rejectEntry = (code, message, extra) => {
-      reject(name, code, message, extra);
-      rejectedEntry = true;
-    };
-    container.accepted = entries.size;
-    container.directories = directories.length;
 
-    if (record.size === 0xffffffff || record.compressedSize === 0xffffffff || record.localOffset === 0xffffffff) {
-      rejectEntry('BUNDLE_ZIP64', 'zip64 entries are not supported', { details: { entry: name } });
-      continue;
-    }
-    if (record.extraFields.some((field) => field.id === 0x0001)) {
-      rejectEntry('BUNDLE_ZIP64', 'zip64 entries are not supported', { details: { entry: name } });
+    if (record.size === 0xffffffff || record.compressedSize === 0xffffffff
+      || record.localOffset === 0xffffffff
+      || record.extraFields.some((field) => field.id === 0x0001)) {
+      reject(name, 'BUNDLE_ZIP64', 'zip64 entries are not supported', { details: { entry: name } });
       continue;
     }
     if ((flags & FLAG_ENCRYPTED) !== 0 || (flags & FLAG_STRONG_ENCRYPTION) !== 0
       || record.extraFields.some((field) => field.id === 0x9901)) {
-      rejectEntry('BUNDLE_ENCRYPTED', 'encrypted entries are not allowed', { details: { entry: name } });
+      reject(name, 'BUNDLE_ENCRYPTED', 'encrypted entries are not allowed', { details: { entry: name } });
       continue;
     }
     const unknownFlags = flags & ~ALLOWED_FLAGS & ~(FLAG_ENCRYPTED | FLAG_STRONG_ENCRYPTION);
     if (unknownFlags !== 0) {
-      rejectEntry('BUNDLE_ZIP_INVALID', 'unsupported general-purpose flags', {
+      reject(name, 'BUNDLE_ZIP_INVALID', 'unsupported general-purpose flags', {
         details: { reason: 'flags', entry: name },
       });
       continue;
     }
     if (method !== 0 && method !== 8) {
-      rejectEntry('BUNDLE_COMPRESSION_UNSUPPORTED', 'unsupported compression method', {
+      reject(name, 'BUNDLE_COMPRESSION_UNSUPPORTED', 'unsupported compression method', {
         details: { method },
-      });
-      continue;
-    }
-    if (record.size > LIMITS.MAX_ENTRY_BYTES) {
-      rejectEntry('BUNDLE_ENTRY_TOO_LARGE', 'entry exceeds the size limit', {
-        details: { entry: name, limit: LIMITS.MAX_ENTRY_BYTES, actual: record.size },
       });
       continue;
     }
 
     const reason = pathReason(name, { directory: isDirectoryName });
     if (reason !== null) {
-      rejectEntry('BUNDLE_PATH_INVALID', 'entry path is not canonical', {
-        details: { reason },
-      });
-      continue;
-    }
-
-    const fold = foldCase(name);
-    const duplicate = [...entries.keys(), ...directories.map((directory) => directory.name)]
-      .find((existing) => existing === name || foldCase(existing) === fold);
-    if (duplicate !== undefined) {
-      rejectEntry('BUNDLE_DUPLICATE_ENTRY', 'duplicate entry name', {
-        details: { entry: name, mode: duplicate === name ? 'exact' : 'case-fold' },
-      });
+      reject(name, 'BUNDLE_PATH_INVALID', 'entry path is not canonical', { details: { reason } });
       continue;
     }
 
     if (isDirectoryName) {
       if (record.size !== 0 || record.compressedSize !== 0) {
-        rejectEntry('BUNDLE_ZIP_INVALID', 'directory entries must not carry data', {
+        reject(name, 'BUNDLE_ZIP_INVALID', 'directory entries must not carry data', {
           details: { reason: 'dir-with-data' },
         });
         continue;
@@ -353,15 +363,15 @@ export function readZip(input, primitives = {}) {
     const unixType = unixMode & S_IFMT;
     if (host === 3 || host === 19) {
       if (unixType === S_IFLNK) {
-        rejectEntry('BUNDLE_SYMLINK', 'symlink entries are not allowed', { details: { kind: 'symlink' } });
+        reject(name, 'BUNDLE_SYMLINK', 'symlink entries are not allowed', { details: { kind: 'symlink' } });
         continue;
       }
       if (unixType === S_IFDIR) {
-        rejectEntry('BUNDLE_ENTRY_TYPE', 'directory entry must end with a slash', { details: { kind: 'directory' } });
+        reject(name, 'BUNDLE_ENTRY_TYPE', 'directory entry must end with a slash', { details: { kind: 'directory' } });
         continue;
       }
       if (unixType !== 0 && unixType !== S_IFREG) {
-        rejectEntry('BUNDLE_ENTRY_TYPE', 'only regular files and directories are allowed', {
+        reject(name, 'BUNDLE_ENTRY_TYPE', 'only regular files and directories are allowed', {
           details: { kind: 'special' },
         });
         continue;
@@ -369,60 +379,120 @@ export function readZip(input, primitives = {}) {
     } else {
       const dosAttributes = (externalAttributes ?? 0) & 0xffff;
       if ((dosAttributes & 0x0400) !== 0) {
-        rejectEntry('BUNDLE_SYMLINK', 'reparse-point entries are not allowed', { details: { kind: 'reparse' } });
+        reject(name, 'BUNDLE_SYMLINK', 'reparse-point entries are not allowed', { details: { kind: 'reparse' } });
         continue;
       }
       if ((dosAttributes & 0x0010) !== 0) {
-        rejectEntry('BUNDLE_ENTRY_TYPE', 'directory entry must end with a slash', { details: { kind: 'directory' } });
+        reject(name, 'BUNDLE_ENTRY_TYPE', 'directory entry must end with a slash', { details: { kind: 'directory' } });
         continue;
       }
+    }
+
+    const special = entryLimitFor(name);
+    if (special !== null && record.size > special.limit) {
+      reject(name, special.code, 'entry exceeds the size limit for its kind', {
+        details: { limit: special.limit, actual: record.size },
+      });
+      continue;
+    }
+    if (record.size > LIMITS.MAX_ENTRY_BYTES) {
+      reject(name, 'BUNDLE_ENTRY_TOO_LARGE', 'entry exceeds the size limit', {
+        details: { entry: name, limit: LIMITS.MAX_ENTRY_BYTES, actual: record.size },
+      });
+      continue;
     }
 
     const localCheck = checkLocalHeader(bytes, record);
     if (localCheck.ok !== true) {
-      rejectEntry('BUNDLE_ZIP_INVALID', localCheck.message, { details: { reason: localCheck.reason, entry: name } });
+      reject(name, 'BUNDLE_ZIP_INVALID', localCheck.message, { details: { reason: localCheck.reason, entry: name } });
       continue;
     }
+    accepted.push({ record, dataStart: localCheck.dataStart });
+  }
 
+  // -------------------------------------------------------------------------
+  // Phase 2: inflate accepted files only, with a per-entry and a cumulative cap.
+  // -------------------------------------------------------------------------
+  let inflatedTotal = 0;
+  let aborted = false;
+  for (let index = 0; index < accepted.length; index += 1) {
+    const { record, dataStart } = accepted[index];
+    const { name, method } = record;
     let data;
-    try {
-      if (method === 0) {
-        data = bytes.slice(localCheck.dataStart, localCheck.dataStart + record.compressedSize);
-      } else {
-        if (typeof primitives.inflateRaw !== 'function') {
-          rejectEntry('BUNDLE_ZIP_INVALID', 'deflate support is not available', { details: { reason: 'deflate-unavailable', entry: name } });
+    if (method === 0) {
+      data = bytes.slice(dataStart, dataStart + record.compressedSize);
+    } else {
+      if (typeof primitives.inflateRaw !== 'function') {
+        reject(name, 'BUNDLE_ZIP_INVALID', 'deflate support is not available', {
+          details: { reason: 'deflate-unavailable', entry: name },
+        });
+        continue;
+      }
+      const remaining = LIMITS.MAX_UNCOMPRESSED_BYTES - inflatedTotal;
+      const bound = Math.min(LIMITS.MAX_ENTRY_BYTES, remaining);
+      const cap = bound + 1;
+      try {
+        const raw = bytes.subarray(dataStart, dataStart + record.compressedSize);
+        data = primitives.inflateRaw(raw, { maxOutputLength: cap });
+      } catch (error) {
+        if (error && error.code === 'ERR_BUFFER_TOO_LARGE') {
+          if (bound === LIMITS.MAX_ENTRY_BYTES) {
+            reject(name, 'BUNDLE_ENTRY_TOO_LARGE', 'entry exceeds the size limit', {
+              details: { entry: name, limit: LIMITS.MAX_ENTRY_BYTES, actual: cap },
+            });
+          } else {
+            fail('', 'BUNDLE_UNCOMPRESSED_TOO_LARGE', 'inflated data exceeds the limit', {
+              details: { limit: LIMITS.MAX_UNCOMPRESSED_BYTES, actual: inflatedTotal + cap },
+            });
+            for (const pending of accepted.slice(index)) {
+              markRejected(pending.record.name, 'BUNDLE_UNCOMPRESSED_TOO_LARGE');
+            }
+            aborted = true;
+          }
+          if (aborted) break;
           continue;
         }
-        const raw = bytes.subarray(localCheck.dataStart, localCheck.dataStart + record.compressedSize);
-        data = primitives.inflateRaw(raw);
+        reject(name, 'BUNDLE_ZIP_INVALID', 'entry could not be inflated', {
+          details: { reason: 'inflate', entry: name },
+        });
+        continue;
       }
-    } catch {
-      rejectEntry('BUNDLE_ZIP_INVALID', 'entry could not be inflated', { details: { reason: 'inflate', entry: name } });
-      continue;
     }
 
-    if (data.length !== record.size) {
-      rejectEntry('BUNDLE_ZIP_INVALID', 'entry size does not match the central directory', {
-        details: { reason: 'size', entry: name },
+    const actualSpecial = entryLimitFor(name);
+    if (actualSpecial !== null && data.length > actualSpecial.limit) {
+      reject(name, actualSpecial.code, 'entry exceeds the size limit for its kind', {
+        details: { limit: actualSpecial.limit, actual: data.length },
       });
       continue;
     }
-    inflatedTotal += data.length;
     if (data.length > LIMITS.MAX_ENTRY_BYTES) {
-      rejectEntry('BUNDLE_ENTRY_TOO_LARGE', 'entry exceeds the size limit', {
+      reject(name, 'BUNDLE_ENTRY_TOO_LARGE', 'entry exceeds the size limit', {
         details: { entry: name, limit: LIMITS.MAX_ENTRY_BYTES, actual: data.length },
       });
       continue;
     }
+    inflatedTotal += data.length;
     if (inflatedTotal > LIMITS.MAX_UNCOMPRESSED_BYTES) {
       fail('', 'BUNDLE_UNCOMPRESSED_TOO_LARGE', 'inflated data exceeds the limit', {
         details: { limit: LIMITS.MAX_UNCOMPRESSED_BYTES, actual: inflatedTotal },
       });
+      for (const pending of accepted.slice(index)) {
+        markRejected(pending.record.name, 'BUNDLE_UNCOMPRESSED_TOO_LARGE');
+      }
       aborted = true;
       break;
     }
+    // A deflate stream that expands past its declared size is bounded by the
+    // limits above; one that expands to less is a truncated/lying archive.
+    if (data.length < record.size) {
+      reject(name, 'BUNDLE_ZIP_INVALID', 'entry size does not match the central directory', {
+        details: { reason: 'size', entry: name },
+      });
+      continue;
+    }
     if (crc32(data) !== record.crc) {
-      rejectEntry('BUNDLE_ZIP_INVALID', 'entry CRC does not match', { details: { reason: 'crc', entry: name } });
+      reject(name, 'BUNDLE_ZIP_INVALID', 'entry CRC does not match', { details: { reason: 'crc', entry: name } });
       continue;
     }
 
@@ -431,16 +501,16 @@ export function readZip(input, primitives = {}) {
       path: name,
       data,
       method,
-      flags,
+      flags: record.flags,
       compressedSize: record.compressedSize,
       size: record.size,
       crc32: record.crc,
       externalAttributes: record.externalAttributes,
     });
   }
+  container.inflated = inflatedTotal;
+  container.aborted = aborted;
 
-  container.accepted = entries.size;
-  container.directories = directories.length;
   if (aborted) return result(true);
   return result(records.length > 0 || totalEntries === 0);
 }
