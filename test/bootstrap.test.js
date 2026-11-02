@@ -17,7 +17,7 @@ import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { withPath } from './support/env.js';
-import { releaseAuthHint, releaseCredential, releaseEndpoints } from '../src/adapter/payload.js';
+import { releaseAuthHint, releaseCredential, releaseEndpoints } from '../src/adapter/release.js';
 import { archivePathProblem, assetUnavailable, authCredential, nodeSupported } from '../scripts/install.mjs';
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -217,8 +217,12 @@ function buildRelease(t, prefix = 'release') {
   return out;
 }
 
-/** A release for another version: a copy of the checkout with a bumped manifest. */
-function releaseForVersion(t, version) {
+/**
+ * A release for another version: a copy of the checkout with a bumped
+ * manifest. `mutate` edits the copied checkout before packaging, so a test can
+ * model a payload that drops a file between versions.
+ */
+function releaseForVersion(t, version, mutate = null) {
   const copy = tempDir(t, `repo-${version}`);
   cpSync(REPO, copy, {
     recursive: true,
@@ -234,6 +238,7 @@ function releaseForVersion(t, version) {
   const pkg = JSON.parse(readFileSync(pkgFile, 'utf8'));
   pkg.version = version;
   writeFileSync(pkgFile, `${JSON.stringify(pkg, null, 2)}\n`);
+  if (mutate !== null) mutate(copy);
   const out = tempDir(t, `release-${version}`);
   const result = spawnSync(process.execPath, [join(copy, 'scripts', 'release.mjs'), '--out', out], {
     cwd: copy,
@@ -365,6 +370,53 @@ test('--version installs engine, payload and adapters at one version and removes
   const engineChecks = data.checks.filter((check) => check.name.startsWith('engine.'));
   assert.ok(engineChecks.length > 0, 'doctor checks the engine');
   for (const entry of engineChecks) assert.equal(entry.status, 'pass', `${entry.name}: ${entry.detail}`);
+});
+
+test('an upgrade removes layout files the new payload no longer ships, keeping hand edits', (t) => {
+  const droppedRel = 'skills/code-research/SKILL.md';
+  const oldRelease = buildRelease(t, 'release-old');
+  const newRelease = releaseForVersion(t, NEXT_VERSION, (copy) => {
+    rmSync(join(copy, 'pack', 'skills', 'code-research'), { recursive: true, force: true });
+  });
+
+  const makeProject = (prefix) => {
+    const project = tempDir(t, prefix);
+    const home = tempDir(t, `${prefix}-home`);
+    mkdirSync(join(home, '.claude'), { recursive: true });
+    return { project, env: cleanEnv(home), views: viewsOf(t) };
+  };
+  const doctor = (project, env) => {
+    const result = spawnSync(
+      process.execPath,
+      [
+        join(project, '.r2c', 'engine', NEXT_VERSION, 'bin', 'r2c.js'),
+        'adapter', 'doctor', 'claude-code', '--project-root', project, '--json',
+      ],
+      { cwd: project, encoding: 'utf8', env },
+    );
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+  };
+
+  // Unmodified old layout: the upgrade removes the copy and drops it from the receipt.
+  const clean = makeProject('project-clean');
+  assert.equal(install(clean.project, 'claude-code', oldRelease, VERSION, clean.env, clean.views).status, 0);
+  assert.ok(existsSync(join(clean.project, droppedRel)));
+  const upgraded = install(clean.project, 'claude-code', newRelease, NEXT_VERSION, clean.env, clean.views);
+  assert.equal(upgraded.status, 0, `${upgraded.stdout}\n${upgraded.stderr}`);
+  assert.equal(existsSync(join(clean.project, droppedRel)), false, 'the stale layout copy is gone');
+  assert.ok(!receiptOf(clean.project, 'claude-code').files.some((file) => file.path === droppedRel));
+  doctor(clean.project, clean.env);
+
+  // Hand-edited old layout: kept, reported, and no longer owned by the receipt.
+  const edited = makeProject('project-edited');
+  assert.equal(install(edited.project, 'claude-code', oldRelease, VERSION, edited.env, edited.views).status, 0);
+  writeFileSync(join(edited.project, droppedRel), 'hand edit\n');
+  const kept = install(edited.project, 'claude-code', newRelease, NEXT_VERSION, edited.env, edited.views);
+  assert.equal(kept.status, 0, `${kept.stdout}\n${kept.stderr}`);
+  assert.equal(readFileSync(join(edited.project, droppedRel), 'utf8'), 'hand edit\n');
+  assert.match(kept.stdout, /warn: layout-stale:/);
+  assert.ok(!receiptOf(edited.project, 'claude-code').files.some((file) => file.path === droppedRel));
+  doctor(edited.project, edited.env);
 });
 
 /**

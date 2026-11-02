@@ -10,8 +10,9 @@ import { existsSync, readFileSync } from 'node:fs';
 import { basename, dirname, isAbsolute, join, normalize, relative as relativePath } from 'node:path';
 import { parse as parseYaml } from 'yaml';
 import { EXIT_CODES, R2cError } from '../errors.js';
+import { isInside } from '../paths.js';
 import { runnerCommand } from '../render.js';
-import { isInside, sha256, userHome } from './util.js';
+import { sha256, userHome } from './util.js';
 
 export const ADAPTER_SCHEMA = 'r2c.adapter/v1';
 export const ADAPTER_MAP_SCHEMA = 'r2c.adapter-map/v1';
@@ -477,14 +478,14 @@ function buildMergeEntry({ entry, adapter, target, pointer, mcpAbsolute, warning
       });
     }
   }
-  let values2 = {};
+  let mergedValues = {};
   if (pointer === null) {
     if (document === null || typeof document !== 'object' || Array.isArray(document)) {
       throw usageError('MERGE_INVALID_SHAPE', 'merge-json source must be a JSON object', {
         file: sourceRel,
       });
     }
-    values2 = document;
+    mergedValues = document;
   } else {
     let node = document;
     for (const key of pointer.split('.')) {
@@ -494,7 +495,7 @@ function buildMergeEntry({ entry, adapter, target, pointer, mcpAbsolute, warning
       warnings.push(`merge-pointer-empty:${pointer}`);
       node = {};
     }
-    values2 = node;
+    mergedValues = node;
   }
   return {
     action: 'merge-json',
@@ -502,7 +503,7 @@ function buildMergeEntry({ entry, adapter, target, pointer, mcpAbsolute, warning
     sourceRel,
     target,
     pointer,
-    values: values2,
-    sha256: sha256(Buffer.from(JSON.stringify(values2))),
+    values: mergedValues,
+    sha256: sha256(Buffer.from(JSON.stringify(mergedValues))),
   };
 }

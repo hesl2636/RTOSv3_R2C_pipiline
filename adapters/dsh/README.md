@@ -2,7 +2,7 @@
 
 Installs at user scope only: it adds the `r2c-adapter-dsh` bundle to a dsh
 profile (`$DSH_HOME/profiles/<profile>`, default `web`) and renders the payload
-plugin assets into `<state>/payload/<V>/adapters/dsh/`.
+assets into `<state>/payload/<V>/adapters/dsh/`.
 
 ## Landing paths
 

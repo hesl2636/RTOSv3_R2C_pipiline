@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { releaseEndpoints } from '../src/adapter/payload.js';
+import { releaseEndpoints } from '../src/adapter/release.js';
 import { payloadAssetName } from '../src/plugin.js';
 
 test('a token routes the payload download through the GitHub API', () => {

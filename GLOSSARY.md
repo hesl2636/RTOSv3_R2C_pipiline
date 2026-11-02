@@ -9,14 +9,14 @@
 _Avoid_: 运行时、runtime、CLI 工具、npm 包
 
 **运行命令 (Runner command)**:
-写进 agent 配置的那条命令：`node <引擎入口>`。`project` 作用域写项目相对路径，项目改名、移动后 hook 仍可用；`user` 作用域写带引号的绝对路径（agent 的 cwd 与项目无关）。`--runner-cmd` 是唯一的手工覆盖。
+写进 agent 配置的那条命令：`node <引擎入口>`。`project` 作用域写项目相对路径，项目改名、移动后 hook 仍可用；`user` 作用域写绝对路径，路径含空白时加引号（agent 的 cwd 与项目无关）。`--runner-cmd` 是唯一的手工覆盖。
 _Avoid_: npx 命令、包名命令、引擎别名
 
 **载荷 (Payload)**:
 一次发布携带的工作流内容：清单、任务书、技能、命令、hook 中间层与适配器声明。
 _Avoid_: 插件、plugin、内容包
 
-保留的例外（C8）：`R2C_PLUGIN_SOURCE` 环境变量、`--plugin <V>` 选项、`r2c.plugin/v1` 清单标识与 `src/plugin.js` 模块名继续使用 plugin 字样。它们是载荷的协议名与代码入口，改名意味着同时破坏发布格式、CLI 与已装机器的回执，收益不抵成本；文档在提到这几个字面量时即为唯一允许出现 plugin 的场合。
+保留的例外（C8）：`R2C_PLUGIN_SOURCE` 环境变量、`--plugin <V>` 选项、`r2c.plugin/v1` 清单标识与 `src/plugin.js` 模块名继续使用 plugin 字样。它们是载荷的协议名与代码入口，改名意味着同时破坏发布格式、CLI 与已装机器的回执，收益不抵成本；文档在提到这几个字面量时即为唯一允许出现 plugin 的场合。`docs/blue-zone/preflight.md` 的日期化历史记录同样保留旧资产名，因为改写它等于伪造当时的探针结果；新写的文档不得再使用已退役的 plugin 资产名或安装目录。
 
 **布局 (Layout)**:
 载荷里进入项目的三棵目录：`workflows/`、`tasks/`、`skills/`。安装逐文件复制到项目根并记入回执，卸载按回执回退。

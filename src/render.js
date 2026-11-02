@@ -6,7 +6,7 @@
 import { relative, resolve } from 'node:path';
 import { R2cError, EXIT_CODES } from './errors.js';
 import { findStep, flattenSteps, hasSkillFile, readTaskFile, skillFilePath } from './manifest.js';
-import { isInside } from './adapter/util.js';
+import { isInside } from './paths.js';
 
 function quotePath(file) {
   // Forward slashes are accepted by cmd, PowerShell and POSIX shells on

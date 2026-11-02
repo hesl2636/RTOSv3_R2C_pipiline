@@ -80,9 +80,11 @@ What the command writes and prints: the engine home, the adapter line, the
 payload source, the layout line, the number of files written, and the next
 command. Re-running the same version with the same parameters writes nothing
 and exits `0`: the engine is found in place and is not downloaded again, while
-the payload is still resolved from its source and verified against
-`SHA256SUMS.txt` and `r2c-payload.json` before the no-op is reported (a
-release download is staged in a temporary directory, never cached).
+the payload is still resolved from its source and verified per file against
+`r2c-payload.json` before the no-op is reported. A release download—or a
+`.tgz` with a `SHA256SUMS.txt` beside it—is additionally checked against that
+file before extraction (a release download is staged in a temporary directory,
+never cached).
 
 Scope and quoting:
 
@@ -147,9 +149,9 @@ From a checkout the equivalent is `node scripts/install.mjs --agent <id>
 - the previous engine and payload that this receipt owned are removed once no
   other receipt still references them, so one agent upgraded alone keeps the old
   set alive for the agents still on it; `--dry-run` lists the removals;
-- layout files are written from the new payload and the receipt is rewritten,
-  so a layout file only the old payload carried is no longer owned by any
-  receipt — delete it yourself if the new version no longer ships it;
+- layout files are written from the new payload and the receipt is rewritten;
+  a file only the old payload carried is removed when it still matches the
+  receipt, and kept with a `layout-stale:` warning when you edited it;
 - `--plugin <V>` (an `adapter install` option the bootstrap does not pass) pins a
   payload version different from the engine; leave it out to move both;
 - the same version with the same parameters is a no-op: exit `0` and no writes;
@@ -180,8 +182,8 @@ The old payload resolves from `~/.r2c/cache/payload-<old-V>` when that version
 was installed from a tgz before, otherwise from release `v<old-V>`. Both the old
 engine and the old payload are verified before anything lands, the newer set is
 retired as in [Upgrade](#upgrade), and layout files that exist only in the newer
-payload stay behind because no receipt owns them any more — review the project
-root and the agent directory afterwards.
+payload are removed by the same rule: an unmodified copy is deleted, a
+hand-edited copy stays behind with a `layout-stale:` warning.
 
 If the re-install stops with `CONFLICT`, some target is a file the old receipt
 does not own (hand-edited, or written by the newer set under another name). The
@@ -302,10 +304,10 @@ node scripts\install.mjs --agent claude-code --version 0.1.0 --release-base "D:\
 For the adapter step alone, `adapter install --from <dir|tgz>` accepts an
 unpacked payload (a directory with `r2c-payload.json`, or a source checkout
 containing `package.json`, `pack/` and `adapters/`) or the release tgz. A tgz is
-verified against the `SHA256SUMS.txt` beside it and against every
-`r2c-payload.json` hash before anything is written, then cached under
-`~/.r2c/cache/payload-<V>`. `--link` is accepted only together with
-`--from <dir>`: a tgz always installs with `--copy`.
+verified against every `r2c-payload.json` hash, and against a
+`SHA256SUMS.txt` beside it when one is present, before anything is written;
+it is then cached under `~/.r2c/cache/payload-<V>`. `--link` is accepted only
+together with `--from <dir>`: a tgz always installs with `--copy`.
 
 ## Scopes and landing paths
 

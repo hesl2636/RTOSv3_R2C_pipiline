@@ -33,7 +33,7 @@ function findStep(parsed, needle) {
 
 test('package.json exposes test/release scripts and no npm publishing whitelist', () => {
   assert.deepEqual(pkg.scripts, {
-    test: 'node --test test/*.test.js',
+    test: 'node --test --test-concurrency=8 test/*.test.js',
     release: 'node scripts/release.mjs',
   });
   // #44: the package is not published to npm, so the npm `files` whitelist is

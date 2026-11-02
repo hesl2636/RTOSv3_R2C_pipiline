@@ -29,7 +29,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   PAYLOAD_MANIFEST,
-  buildPluginManifest,
+  buildPayloadManifest,
   collectPayload,
   createTarGz,
   hashPayloadFiles,
@@ -113,7 +113,7 @@ function load(ctx) {
   const engine = collectEngine(ctx.root);
   const manifest =
     typeof pkg.version === 'string'
-      ? buildPluginManifest({ version: pkg.version, files: hashPayloadFiles(payload.files) })
+      ? buildPayloadManifest({ version: pkg.version, files: hashPayloadFiles(payload.files) })
       : null;
   return { ...ctx, pkg, adapters, payload, engine, manifest };
 }

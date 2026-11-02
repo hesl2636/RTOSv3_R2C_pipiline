@@ -35,6 +35,8 @@ const RELEASE_REPO = 'hesl2636/RTOSv3_R2C_pipiline';
 const DEFAULT_RELEASE_BASE = `https://github.com/${RELEASE_REPO}/releases/download`;
 const GITHUB_API = `https://api.github.com`;
 const SUMS_ASSET = 'SHA256SUMS.txt';
+/** Mirrors `ENGINE_ENTRY` in `src/engine.js`; the bootstrap may not import `src/` (C5). */
+const ENGINE_ENTRY = 'bin/r2c.js';
 const BLOCK = 512;
 const VERSION_RE = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z][0-9A-Za-z.-]*)?$/;
 const SCOPES = Object.freeze(['project', 'user']);
@@ -348,7 +350,7 @@ async function latestVersion(source) {
 
 function digestFor(sumsText, assetName) {
   for (const line of sumsText.split(/\r?\n/)) {
-    const match = /^([0-9a-f]{64}) [ *](.+)$/.exec(line.trim());
+    const match = /^([0-9a-f]{64})\s+\*?(.+)$/.exec(line.trim());
     if (match !== null && match[2].replace(/^\.\//, '') === assetName) return match[1];
   }
   return null;
@@ -458,7 +460,7 @@ function installEngine(archive, engineHome) {
 }
 
 function engineReady(engineHome, version) {
-  if (!existsSync(join(engineHome, 'bin', 'r2c.js'))) return false;
+  if (!existsSync(join(engineHome, ENGINE_ENTRY))) return false;
   try {
     return JSON.parse(readFileSync(join(engineHome, 'package.json'), 'utf8'))?.version === version;
   } catch {
@@ -539,7 +541,7 @@ async function main(argv) {
     process.stdout.write(`engine ${version}: ${engineHome}\n`);
   }
 
-  const entry = join(engineHome, 'bin', 'r2c.js');
+  const entry = join(engineHome, ENGINE_ENTRY);
   const env = { ...process.env };
   if (explicitBase !== null) {
     env.R2C_RELEASE_BASE = source.kind === 'dir' ? source.dir : source.base;

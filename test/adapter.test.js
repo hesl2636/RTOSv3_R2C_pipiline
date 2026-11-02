@@ -538,3 +538,42 @@ ${again.stderr}`);
     `nothing diverged from the receipt: ${JSON.stringify(data.leftover)}`,
   );
 });
+
+test('a write after a rename rewrites every skipped receipt path against the live root', (t) => {
+  const { project, env } = setup(t);
+  assert.equal(install(env, project).status, 0);
+
+  const moved = `${project}-moved`;
+  renameSync(project, moved);
+
+  // Editing one receipt-owned file forces the next install to rewrite the
+  // receipt while every other file is skipped.
+  const edited = join(moved, '.claude', 'commands', 'r2c-run.md');
+  writeFileSync(edited, `${readFileSync(edited, 'utf8')}\nlocal edit\n`);
+  const again = install(env, moved);
+  assert.equal(again.status, 0, `${again.stdout}\n${again.stderr}`);
+  assert.equal(envelope(again).data.action, 'upgraded');
+
+  const receipt = readReceipt(moved);
+  assert.equal(receipt.project_root, moved);
+  const stale = receipt.files.filter((file) => (
+    file.kind !== 'layout' && !resolve(file.path).startsWith(resolve(moved))
+  ));
+  assert.deepEqual(stale, [], 'no receipt entry keeps the pre-rename root');
+
+  const doctor = cli(['adapter', 'doctor', 'claude-code', '--project-root', moved, '--json'], { env, cwd: moved });
+  assert.equal(doctor.status, 0, `${doctor.stdout}\n${doctor.stderr}`);
+  assert.equal(
+    envelope(doctor).data.checks.find((entry) => entry.name === 'receipt.files').status,
+    'pass',
+  );
+
+  const removed = cli(['adapter', 'uninstall', 'claude-code', '--project-root', moved, '--json'], { env, cwd: moved });
+  assert.equal(removed.status, 0, `${removed.stdout}\n${removed.stderr}`);
+  assert.ok(envelope(removed).data);
+  assert.equal(existsSync(join(moved, '.claude')), false, 'agent config is gone after uninstall');
+  for (const file of receipt.files) {
+    const absolute = file.kind === 'layout' ? join(moved, file.path) : file.path;
+    assert.equal(existsSync(absolute), false, `still present: ${absolute}`);
+  }
+});

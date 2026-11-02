@@ -31,16 +31,16 @@ import {
   comparePayloadPaths,
   manifestBuffer,
   readTarGz,
-  verifyPluginFiles,
+  verifyPayloadFiles,
 } from '../plugin.js';
 import { isValidRange, isValidVersion } from '../version.js';
 import { fetchPayloadArchive, hintFrom, sumsDigest } from './release.js';
 import { stateDir } from './state.js';
+import { isInside } from '../paths.js';
 import {
   atomicWriteFile,
   createDirLink,
   ensureDir,
-  isInside,
   listFiles,
   removePath,
   sha256,
@@ -48,11 +48,6 @@ import {
   toPosix,
   userHome,
 } from './util.js';
-
-export { PLUGIN_SCHEMA };
-// The release transport and credentials live in './release.js'; these
-// re-exports keep the resolver's public surface (and its tests) unchanged.
-export { releaseAuthHint, releaseCredential, releaseEndpoints } from './release.js';
 
 function payloadError(code, message, details = null, exitCode = EXIT_CODES.USAGE) {
   return new R2cError(code, message, details, exitCode);
@@ -320,7 +315,7 @@ function resolveTgzPayload(file, sourceLabel) {
     manifestEntry.data.toString('utf8'),
     `${asset}:${PAYLOAD_MANIFEST}`,
   );
-  const failures = verifyPluginFiles(manifest, entries, { strict: true });
+  const failures = verifyPayloadFiles(manifest, entries, { strict: true });
   if (failures.length > 0) {
     const first = failures[0];
     throw payloadError(first.code, first.message, { file: asset, failures });

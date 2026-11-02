@@ -10,7 +10,9 @@
 import { cpSync, existsSync, readFileSync, rmdirSync, statSync, unlinkSync } from 'node:fs';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
+import { ENGINE_ENTRY } from '../engine.js';
 import { EXIT_CODES, R2cError } from '../errors.js';
+import { isInside } from '../paths.js';
 import { isValidRange, satisfies } from '../version.js';
 import { withLock } from '../lock.js';
 import { detectAgent } from './detect.js';
@@ -33,7 +35,6 @@ import {
   createDirLink,
   ensureDir,
   isFile,
-  isInside,
   isLink,
   linkTarget,
   liveReceipt,
@@ -109,7 +110,7 @@ function resolveEngineHome(ctx, options) {
   const home = declared !== null && declared !== ''
     ? resolve(process.cwd(), declared)
     : dirname(dirname(ctx.binPath));
-  return { home, entry: join(home, 'bin', 'r2c.js') };
+  return { home, entry: join(home, ENGINE_ENTRY) };
 }
 
 function gateVersions({ ctx, resolved, adapter, mode }) {
@@ -354,13 +355,40 @@ function collectFilePlan(planEntries, prior, options, projectRoot) {
   return { conflicts, decisions };
 }
 
+/**
+ * Layout files the previous receipt owned that the new payload no longer
+ * ships. An unmodified copy is removed from the project; a hand-edited copy is
+ * kept and reported, because the receipt no longer has a hash that authorises
+ * deleting it.
+ */
+function staleLayoutPlan({ prior, decisions, projectRoot }) {
+  if (prior === null) return { removals: [], modified: [] };
+  const current = new Set(
+    decisions.filter(({ entry }) => entry.action === 'layout').map(({ entry }) => pathKey(entry.target)),
+  );
+  const recordedRoot = prior.project_root ?? null;
+  const removals = [];
+  const modified = [];
+  for (const file of prior.files ?? []) {
+    if (file.kind !== 'layout') continue;
+    const path = receiptEntryPath(file, { projectRoot, recordedRoot });
+    if (current.has(pathKey(path)) || !existsSync(path)) continue;
+    if (isFile(path) && sha256File(path) === file.sha256) removals.push(path);
+    else modified.push(path);
+  }
+  return { removals, modified };
+}
+
 function buildReceipt({ ctx, adapter, scope, mode, runnerCmd, report, decisions, merged, mergedFilesCreated, prior, state, home }) {
   const now = ctx.now().toISOString();
   const files = [];
   for (const decision of decisions) {
     const { entry, write, known } = decision;
     if (!write && known !== null) {
-      files.push(known);
+      // A skipped file keeps its recorded hash but must carry the live path:
+      // the project may have been renamed since the receipt was written, and
+      // this receipt is about to record the new root.
+      files.push(entry.action === 'layout' ? known : { ...known, path: entry.target });
       continue;
     }
     if (!write) continue;
@@ -481,6 +509,8 @@ async function installOnce({ ctx, agentId, options, state, resolved, adapter, ma
     const payloadNeeded = !payloadReady(home, resolved);
     const filePlan = plan.entries.filter((entry) => entry.action !== 'merge-json');
     const { conflicts, decisions } = collectFilePlan(filePlan, prior, options, ctx.projectRoot);
+    const staleLayout = staleLayoutPlan({ prior, decisions, projectRoot: ctx.projectRoot });
+    for (const path of staleLayout.modified) warnings.push(`layout-stale:${path}`);
     const mergeGroups = groupMerges(plan.entries.filter((entry) => entry.action === 'merge-json'));
     const mergeScans = new Map();
     for (const [target, group] of mergeGroups) mergeScans.set(target, scanMergeGroup(group));
@@ -498,7 +528,8 @@ async function installOnce({ ctx, agentId, options, state, resolved, adapter, ma
 
     const writes = decisions.filter((decision) => decision.write);
     const mergeWrites = [...mergeScans.values()].filter((scan) => scan.needsWrite);
-    const changed = payloadNeeded || writes.length > 0 || mergeWrites.length > 0;
+    const changed = payloadNeeded || writes.length > 0 || mergeWrites.length > 0
+      || staleLayout.removals.length > 0;
     const externalStepFile = stepsFile(resolved, adapter.id, home);
     const runSteps = externalStepFile !== null && (changed || prior?.steps === null || prior?.steps === undefined);
 
@@ -532,6 +563,7 @@ async function installOnce({ ctx, agentId, options, state, resolved, adapter, ma
             ...writes.map(({ entry }) => ({ action: entry.action, target: entry.target })),
             ...mergeWrites.map((scan) => ({ action: 'merge-json', target: scan.target })),
             ...(runSteps ? [{ action: 'steps', target: externalStepFile }] : []),
+            ...staleLayout.removals.map((path) => ({ action: 'remove', target: path, reason: 'layout' })),
             ...superseded.map((entry) => ({ action: 'remove', target: entry.path })),
           ],
           files: [],
@@ -651,6 +683,18 @@ async function installOnce({ ctx, agentId, options, state, resolved, adapter, ma
         }
         if (!preexisting) pending.created_files.push(entry.target);
       }
+      for (const path of staleLayout.removals) {
+        recordBackup(pending, {
+          path,
+          backup: backupTarget(state, adapter.id, timestamp, path, scope, ctx.projectRoot),
+        });
+        removePath(path);
+        try {
+          rmdirSync(dirname(path));
+        } catch {
+          // the directory still holds other files, or was not ours to remove
+        }
+      }
       atomicWriteJson(pendingPath(state, adapter.id), pending);
 
       let stepsOutcome = null;
@@ -758,6 +802,7 @@ async function installOnce({ ctx, agentId, options, state, resolved, adapter, ma
           warnings,
           manual,
           leftover: [...receipt.step_leftover],
+          removed_layout: staleLayout.removals,
           removed_version_set: cleanup.removed,
         },
       };

@@ -68,11 +68,18 @@ step-by-step across the engine, the payload, and all five agent adapters; see
   the engine does, so a hand-built archive cannot carry a longer path.
 - The bootstrap can target a non-default dsh profile with `--profile <name>`,
   which is forwarded to `adapter install`.
+- A renamed or moved project stays consistent after a later install that
+  writes anything: skipped receipt entries are recorded against the live root,
+  so `doctor` no longer reports them missing and `uninstall` no longer leaks
+  them.
+- Upgrading or rolling back removes layout files the previous payload carried
+  but the new one does not ship, after backing each one up. A hand-edited
+  stale file is kept and reported as `layout-stale:` instead of being deleted.
 
 ### Changed
 
 - The release transport and GitHub credential chain moved to
   `src/adapter/release.js`; `payload.js` keeps resolution, verification and
-  materialisation and re-exports the moved helpers. The payload and engine
-  collectors and path rules are now one parameterised implementation in
-  `plugin.js`.
+  materialisation, and tests import the release helpers from their new module.
+  The payload and engine collectors and path rules are now one parameterised
+  implementation in `plugin.js`.

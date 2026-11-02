@@ -179,7 +179,7 @@ export function hashPayloadFiles(files) {
   return hashes;
 }
 
-export function buildPluginManifest({ version, files }) {
+export function buildPayloadManifest({ version, files }) {
   const sorted = {};
   for (const rel of Object.keys(files).sort(comparePayloadPaths)) sorted[rel] = files[rel];
   return {
@@ -335,7 +335,7 @@ export function readTarGz(buffer) {
  * manifest itself is always implicit). Returns a failure list instead of
  * throwing so the installer can carry the details into its error envelope.
  */
-export function verifyPluginFiles(manifest, entries, { strict = false } = {}) {
+export function verifyPayloadFiles(manifest, entries, { strict = false } = {}) {
   const failures = [];
   const byPath = new Map(entries.map((entry) => [entry.path, entry.data]));
   for (const rel of Object.keys(manifest.files).sort(comparePayloadPaths)) {

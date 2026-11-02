@@ -23,6 +23,7 @@ import {
 } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, dirname, isAbsolute, join, relative, sep } from 'node:path';
+import { isInside } from '../paths.js';
 
 export function userHome() {
   return process.env.R2C_HOME || process.env.HOME || process.env.USERPROFILE || homedir();
@@ -94,15 +95,6 @@ function replacePath(temp, target) {
 
 export function toPosix(value) {
   return value.split(sep).join('/');
-}
-
-/**
- * True when `child` is `parent` itself or lives beneath it, on every platform.
- * The one definition of "inside the project root" in the engine.
- */
-export function isInside(parent, child) {
-  const rel = relative(parent, child);
-  return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel));
 }
 
 function readEntries(dir) {

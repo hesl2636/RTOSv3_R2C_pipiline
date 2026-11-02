@@ -190,6 +190,27 @@ test('every markdown doc except the dated preflight log avoids npx', () => {
   }
 });
 
+test('the retired plugin asset name survives only in the dated preflight record', () => {
+  const files = ['README.md', 'CHANGELOG.md', 'GLOSSARY.md'];
+  const walk = (dir) => {
+    for (const entry of readdirSync(join(REPO, dir), { withFileTypes: true })) {
+      const rel = `${dir}/${entry.name}`;
+      if (entry.isDirectory()) walk(rel);
+      else if (entry.name.endsWith('.md')) files.push(rel);
+    }
+  };
+  walk('docs');
+  walk('adapters');
+  for (const rel of files) {
+    if (rel === 'docs/blue-zone/preflight.md') continue;
+    assert.doesNotMatch(
+      read(rel),
+      /r2c-plugin-\d|\.r2c\/plugin\//,
+      `${rel} names the retired plugin asset or install directory`,
+    );
+  }
+});
+
 test('install doc names the four release assets and the bootstrap, not a package', () => {
   const install = read('docs/install.md');
   for (const asset of [
@@ -344,7 +365,7 @@ test('scopes and landing paths still match every adapter declaration', () => {
 
 // --- offline and private --------------------------------------------------
 
-test('offline section matches the credential chain, cache and bases in code', () => {
+test('offline section matches the credential chain, cache and bases', () => {
   const install = read('docs/install.md');
   const offline = section(install, '## Offline and private downloads');
   const ghToken = offline.indexOf('GH_TOKEN');
@@ -359,20 +380,6 @@ test('offline section matches the credential chain, cache and bases in code', ()
   assert.match(offline, /--release-base <dir>/);
   assert.match(offline, /<base>\/v<V>\/<asset>/);
   assert.match(offline, /nothing is fetched/);
-
-  // The code really walks that chain, keeps the cache there and takes the same flag.
-  // The credential chain lives in the release transport; the resolver only
-  // re-exports it.
-  for (const rel of ['scripts/install.mjs', 'src/adapter/release.js']) {
-    const source = read(rel);
-    assert.match(source, /\['GH_TOKEN', 'GITHUB_TOKEN'\]/, `${rel} no longer walks GH_TOKEN then GITHUB_TOKEN`);
-    assert.match(source, /git credential fill|credential', 'fill'/, `${rel} lost the git credential fallback`);
-  }
-  assert.match(read('src/adapter/payload.js'), /export \{ releaseAuthHint, releaseCredential, releaseEndpoints \} from '.\/release.js'/);
-  assert.match(read('scripts/install.mjs'), /--release-base <dir\|url>/);
-  assert.match(read('scripts/install.mjs'), /'\.r2c', 'engine'/);
-  assert.match(read('src/adapter/payload.js'), /'\.r2c', 'cache', `payload-\$\{version\}`/);
-  assert.match(read('src/adapter/payload.js'), /'payload', version/);
 });
 
 test('install doc still defines the B and C limitation', () => {

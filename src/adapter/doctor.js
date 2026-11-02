@@ -12,8 +12,9 @@ import { EXIT_CODES, R2cError } from '../errors.js';
 import { isValidRange, satisfies } from '../version.js';
 import { detectAgent } from './detect.js';
 import { runAdapterSmoke } from './smoke.js';
+import { isInside } from '../paths.js';
 import { receiptPath, stateDir } from './state.js';
-import { isFile, isInside, isLink, linkTarget, liveReceipt, readJsonIfExists, receiptEntryPath, sha256File, toPosix, userHome } from './util.js';
+import { isFile, isLink, linkTarget, liveReceipt, readJsonIfExists, receiptEntryPath, sha256File, toPosix, userHome } from './util.js';
 
 function check(name, status, detail) {
   return { name, status, detail };

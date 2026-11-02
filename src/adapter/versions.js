@@ -13,6 +13,7 @@
  */
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
+import { ENGINE_ENTRY } from '../engine.js';
 import { PAYLOAD_MANIFEST } from '../plugin.js';
 import { installDir, stateDir } from './state.js';
 import { removePath, resolveRecordedPath } from './util.js';
@@ -22,7 +23,7 @@ import { removePath, resolveRecordedPath } from './util.js';
  * throwing, which is what ownership checks want (doctor reports corruption).
  * Named apart from `util.js`'s strict `readJson` on purpose.
  */
-function readJsonOrNull(file) {
+function readJsonTolerant(file) {
   try {
     return JSON.parse(readFileSync(file, 'utf8'));
   } catch {
@@ -38,7 +39,7 @@ export function receiptsAcrossScopes(projectRoot) {
     if (!existsSync(dir)) continue;
     for (const name of readdirSync(dir)) {
       if (!name.endsWith('.json') || name.endsWith('.pending.json')) continue;
-      const receipt = readJsonOrNull(join(dir, name));
+      const receipt = readJsonTolerant(join(dir, name));
       // A corrupt receipt is doctor's problem, not ownership's.
       if (receipt !== null && typeof receipt === 'object') found.push({ state, receipt });
     }
@@ -90,8 +91,8 @@ function isVersionHome(home, version, kind, probe) {
 /** `<…>/.r2c/engine/<V>` whose `package.json` says the same version. */
 export function isEngineHome(home, version) {
   return isVersionHome(home, version, 'engine', (dir) => (
-    existsSync(join(dir, 'bin', 'r2c.js'))
-    && readJsonOrNull(join(dir, 'package.json'))?.version === version
+    existsSync(join(dir, ENGINE_ENTRY))
+    && readJsonTolerant(join(dir, 'package.json'))?.version === version
   ));
 }
 

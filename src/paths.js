@@ -2,10 +2,19 @@
  * Project-local state layout. The only runtime writes a command may perform
  * live under `<projectRoot>/.r2c/`.
  */
-import { join, resolve } from 'node:path';
+import { isAbsolute, join, relative, resolve } from 'node:path';
 
 export function projectRoot(value) {
   return resolve(value);
+}
+
+/**
+ * True when `child` is `parent` itself or lives beneath it, on every platform.
+ * The one definition of "inside a root" in the engine.
+ */
+export function isInside(parent, child) {
+  const rel = relative(parent, child);
+  return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel));
 }
 
 export function r2cDir(root) {
