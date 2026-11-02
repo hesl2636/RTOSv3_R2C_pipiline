@@ -36,6 +36,7 @@ import {
   recoverPending,
   writeJournal,
 } from './transaction.js';
+import { diffFileSets, previousRecord } from './upgrade.js';
 import {
   ensureProjectDirs,
   lstatOrNull,
@@ -279,6 +280,7 @@ export function installProjection(input = {}) {
   }
 
   const check = checkConflicts({ projectRoot, incoming, previous: own, others, force });
+  const diff = diffFileSets(own?.receipt?.files ?? [], incoming);
   if (check.conflicts.length > 0) {
     return {
       ok: false,
@@ -316,6 +318,7 @@ export function installProjection(input = {}) {
       receipt: own.receipt,
       receiptPath: ownRel,
       files: incoming.length,
+      diff,
     };
   }
 
@@ -331,6 +334,7 @@ export function installProjection(input = {}) {
       warnings: check.warnings,
       files: incoming.length,
       mode: own === null ? 'fresh' : 'upgrade',
+      diff,
     };
   }
 
@@ -343,6 +347,7 @@ export function installProjection(input = {}) {
   }
 
   try {
+    const stamp = timestampSlug(clock);
     // TOCTOU: receipts and disk may have changed between check and lock.
     const fresh = loadReceipts(projectRoot, ownRel);
     const recheck = checkConflicts({ projectRoot, incoming, previous: fresh.own, others: fresh.others, force });
@@ -355,8 +360,8 @@ export function installProjection(input = {}) {
         dryRun,
       };
     }
+    const appliedDiff = diffFileSets(fresh.own?.receipt?.files ?? [], incoming);
 
-    const stamp = timestampSlug(clock);
     const targetPaths = [
       ...incoming.map((entry) => entry.path),
       irRel,
@@ -449,7 +454,7 @@ export function installProjection(input = {}) {
         warnings: installWarnings,
         createdDirs,
         backups,
-        previous: fresh.own === null ? null : { version: fresh.own.receipt.bundle?.version ?? null, receipt: ownRel },
+        previous: previousRecord(fresh.own, ownRel),
         migratedFrom: null,
         createdAt: fresh.own?.receipt?.created_at ?? now,
         updatedAt: now,
@@ -475,6 +480,7 @@ export function installProjection(input = {}) {
         createdDirs,
         backups,
         warnings: installWarnings,
+        diff: appliedDiff,
         ignoreSuggestions: ['.r2c/bin/', '.r2c/bundles/', '.r2c/projection/'],
       };
     } catch (error) {

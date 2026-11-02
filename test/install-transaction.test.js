@@ -3,19 +3,22 @@
  * ROLLBACK_FAILED and the project lock.
  */
 import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
 import {
   existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readdirSync,
   rmSync,
   statSync,
   utimesSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { test } from 'node:test';
+import { fileURLToPath } from 'node:url';
 import { installProjection } from '../installer/install.js';
 import {
   journalExists,
@@ -160,4 +163,62 @@ test('a successful install removes the journal and unlocks the project', (t) => 
   assert.equal(journalExists(projectRoot), false);
   assert.equal(existsSync(absolute(projectRoot, '.r2c/install/.lock')), false);
   assert.equal(statSync(absolute(projectRoot, 'roles/bys-architect.md')).isFile(), true);
+});
+
+const WORKER = join(resolve(dirname(fileURLToPath(import.meta.url)), '..'), 'test/helpers/install-worker.mjs');
+
+function runWorker(args) {
+  return new Promise((resolvePromise) => {
+    const child = spawn(process.execPath, [WORKER, ...args], { stdio: ['ignore', 'pipe', 'pipe'] });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', (chunk) => { stdout += chunk; });
+    child.stderr.on('data', (chunk) => { stderr += chunk; });
+    child.on('close', (status) => resolvePromise({ status, stdout, stderr }));
+  });
+}
+
+test('two concurrent installs in one project: exactly one writes', async (t) => {
+  const projectRoot = tempProject(t);
+  const gate = join(projectRoot, '..', `${projectRoot.split(/[\\/]/).pop()}-gate`);
+  t.after(() => rmSync(gate, { force: true }));
+
+  const first = runWorker(['install', projectRoot, 'bundle-a', gate]);
+  const second = runWorker(['install', projectRoot, 'bundle-b', gate]);
+  writeFileSync(gate, 'go\n');
+  const replies = await Promise.all([first, second]);
+
+  for (const reply of replies) assert.equal(reply.status, 0, reply.stderr);
+  const outcomes = replies.map((reply) => JSON.parse(reply.stdout));
+  assert.equal(outcomes.filter((outcome) => outcome.action === 'installed').length, 1);
+  const loser = outcomes.find((outcome) => outcome.action !== 'installed');
+  assert.ok(['LOCK_CONFLICT', 'INSTALL_CONFLICTS'].includes(loser.code), `unexpected loser: ${loser.code}`);
+
+  const receipts = readdirSync(absolute(projectRoot, '.r2c/install/receipts/r2c'));
+  assert.equal(receipts.length, 1, 'exactly one identity committed');
+  const winner = receipts[0].replace(/\.json$/, '');
+  assert.equal(existsSync(absolute(projectRoot, `workflows/${winner}.yaml`)), true);
+  assert.equal(existsSync(absolute(projectRoot, '.r2c/install/pending.json')), false);
+  assert.equal(existsSync(absolute(projectRoot, '.r2c/install/.lock')), false);
+});
+
+test('a killed install is rolled back by the next command', async (t) => {
+  const projectRoot = tempProject(t);
+  const { result, irBytes, ir } = sample('r2c');
+  assert.equal(installProjection({ result, irBytes, projectRoot, clock: CLOCK }).code, 'OK');
+  const target = 'roles/bys-architect.md';
+  const original = readFileSync(absolute(projectRoot, target), 'utf8');
+
+  const killed = await runWorker(['crash', projectRoot, ir.id]);
+  assert.equal(killed.status, 9, killed.stderr);
+  assert.equal(journalExists(projectRoot), true, 'the killed process leaves its journal');
+  assert.equal(readFileSync(absolute(projectRoot, target), 'utf8'), 'half-written\n');
+  assert.equal(existsSync(absolute(projectRoot, 'roles/crashed-role.md')), true);
+
+  const outcome = installProjection({ result, irBytes, projectRoot, clock: LATER });
+  assert.equal(outcome.code, 'OK');
+  assert.equal(outcome.recovered, true);
+  assert.equal(readFileSync(absolute(projectRoot, target), 'utf8'), original);
+  assert.equal(existsSync(absolute(projectRoot, 'roles/crashed-role.md')), false);
+  assert.equal(journalExists(projectRoot), false);
 });

@@ -122,6 +122,12 @@ test('reinstalling the same result is unchanged and byte-identical', (t) => {
   const second = installProjection({ result, irBytes, projectRoot, clock: fixedClock('2026-02-02T00:00:00.000Z') });
   assert.equal(second.code, 'OK');
   assert.equal(second.action, 'unchanged');
+  assert.deepEqual(second.diff, {
+    add: [],
+    remove: [],
+    change: [],
+    keep: result.files.map((file) => file.path).sort(),
+  });
   assert.equal(readFileSync(receiptFile, 'utf8'), before);
   const afterTree = walk(projectRoot).map((path) => [path, sha256File(join(projectRoot, ...path.split('/')))]);
   assert.deepEqual(afterTree, beforeTree);
