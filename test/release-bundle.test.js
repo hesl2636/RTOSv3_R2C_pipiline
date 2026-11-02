@@ -274,6 +274,7 @@ test('payload manifests self-prove every member, mode, kind and target', () => {
   for (const [projectionId, want] of expected) {
     const payload = built.payloads.get(projectionId);
     assert.equal(payload.file, want.file);
+    assert.equal(payload.data.readUInt32LE(4), 0, 'gzip MTIME must be zero');
     assert.equal(payload.manifest.schema, RELEASE_PAYLOAD_SCHEMA);
     assert.deepEqual(payload.manifest.bundle, { id: ID, version: VERSION });
     assert.equal(payload.manifest.ir.digest, built.irDigest);
