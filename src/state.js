@@ -163,6 +163,42 @@ function flattenSteps(manifest) {
   return steps;
 }
 
+/**
+ * Resume guard (decision #70 §10.2): the run's recorded step-id sequence must
+ * still equal the manifest's. Only ids and order participate; renaming a step
+ * or stage never triggers it. A run recorded before step sequences existed has
+ * no `steps` array and is not comparable, so it is left alone.
+ */
+function assertManifestStepsUnchanged(state, manifest) {
+  if (!Array.isArray(state.steps)) return;
+  const recorded = state.steps.map((step) => step?.id);
+  const current = flattenSteps(manifest).map(({ step }) => step.id);
+  const same = recorded.length === current.length
+    && recorded.every((id, index) => id === current[index]);
+  if (same) return;
+
+  let index = 0;
+  while (index < recorded.length && index < current.length && recorded[index] === current[index]) {
+    index += 1;
+  }
+  const position = index + 1;
+  const label = (ids) => (ids[index] === undefined ? '<none>' : String(ids[index]));
+  throw new R2cError(
+    'MANIFEST_STEPS_CHANGED',
+    `manifest step sequence changed at position ${position} `
+      + `(run: ${label(recorded)}, manifest: ${label(current)}); `
+      + 'start a new run or restore the previous order',
+    {
+      position,
+      recorded,
+      manifest: current,
+      recorded_step: recorded[index] ?? null,
+      manifest_step: current[index] ?? null,
+    },
+    EXIT_CODES.USAGE,
+  );
+}
+
 function buildState({ runId, sessionId, manifest, engineVersion, startedAt, userInput }) {
   const flattened = flattenSteps(manifest);
   const stages = manifest.stages.map((stage, index) => ({
@@ -502,7 +538,12 @@ function warnRouteRepair(runId) {
 export function loadRun(
   root,
   runId,
-  { repair = true, assumeLocked = false, assumeLatestLocked = false } = {},
+  {
+    repair = true,
+    assumeLocked = false,
+    assumeLatestLocked = false,
+    manifest = null,
+  } = {},
 ) {
   const state = readState(root, runId);
   if (!state) return null;
@@ -516,6 +557,11 @@ export function loadRun(
       EXIT_CODES.USAGE,
     );
   }
+  // Resume guard (decision #70 §10.2): the run's recorded step sequence must
+  // still be the manifest's. Checked before the repair below, so a mismatch
+  // never rewrites state. A run recorded by an older engine without a `steps`
+  // array has nothing to compare and is left alone.
+  if (manifest !== null && manifest !== undefined) assertManifestStepsUnchanged(state, manifest);
   const events = readEvents(root, runId);
   if (!repair || events === null) return { runId, state, events: events ?? [] };
 
@@ -544,6 +590,9 @@ export function loadRun(
   try {
     const result = withRunWriteLock(root, runId, () => {
       const freshState = readState(root, runId) ?? state;
+      if (manifest !== null && manifest !== undefined) {
+        assertManifestStepsUnchanged(freshState, manifest);
+      }
       const freshEvents = readEvents(root, runId) ?? events;
       const freshDerived = replayDerived(freshState, freshEvents);
       const freshRoutes = claimedRoutes(freshEvents);
@@ -580,8 +629,16 @@ export function loadRun(
 /**
  * Route a session (or the latest run for read-only commands) to a run.
  * `undefined` sessionId asks for the documented read-only fallback.
+ * `manifest` enables the resume guard before any repair write; `repair: false`
+ * lets a caller read the run without persisting derived fields.
  */
-export function resolveRunForSession({ root, sessionId = undefined, fallbackToLatest = false }) {
+export function resolveRunForSession({
+  root,
+  sessionId = undefined,
+  fallbackToLatest = false,
+  manifest = null,
+  repair = true,
+}) {
   const latest = readLatest(root);
   let activeRunId = null;
   let latestRunId = null;
@@ -600,9 +657,59 @@ export function resolveRunForSession({ root, sessionId = undefined, fallbackToLa
 
   const runId = activeRunId ?? latestRunId;
   if (!runId) return null;
-  const loaded = loadRun(root, runId);
+  const loaded = loadRun(root, runId, { manifest, repair });
   if (!loaded) return null;
   return { ...loaded, latest, activeRunId, latestRunId };
+}
+
+/**
+ * The running runs in `.r2c/runs`, in run-id (= time) order. Read-only: no
+ * repair, no lock, no write.
+ */
+function runningRuns(root) {
+  let names;
+  try {
+    names = readdirSync(runsDir(root));
+  } catch (error) {
+    if (error?.code === 'ENOENT') return [];
+    throw error;
+  }
+  const running = [];
+  for (const name of names.sort()) {
+    if (!name.startsWith('R')) continue;
+    const state = readState(root, name);
+    if (state?.run_id !== name || state.status !== 'running') continue;
+    running.push({ runId: name, state });
+  }
+  return running;
+}
+
+/**
+ * Resolve `submit`'s session-less form: exactly one running run is usable.
+ * Zero or several are errors; both happen before any write, lock or gate.
+ */
+export function resolveSingleRunningRun({ root }) {
+  const running = runningRuns(root);
+  if (running.length === 0) {
+    throw new R2cError(
+      'NO_ACTIVE_RUN',
+      'no running run to submit to',
+      { candidates: [] },
+      EXIT_CODES.USAGE,
+      { candidates: [] },
+    );
+  }
+  if (running.length > 1) {
+    const candidates = running.map(({ runId }) => runId);
+    throw new R2cError(
+      'AMBIGUOUS_RUN',
+      `multiple running runs; pass --session-id to choose one: ${candidates.join(', ')}`,
+      { candidates },
+      EXIT_CODES.USAGE,
+      { candidates },
+    );
+  }
+  return running[0];
 }
 
 /** Return the session's routed run id when that run is still running. */
