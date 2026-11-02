@@ -71,7 +71,14 @@ export function ensureProjectDirs(projectRoot, relDir, created = new Set()) {
     current = parent;
   }
   for (const dir of missing.reverse()) {
-    mkdirSync(dir);
+    try {
+      mkdirSync(dir);
+    } catch (error) {
+      // A concurrent installer created it between the check and the mkdir;
+      // the directory exists, which is all this loop promises.
+      if (error?.code !== 'EEXIST') throw error;
+      continue;
+    }
     created.add(relativeInside(projectRoot, dir));
   }
   return created;

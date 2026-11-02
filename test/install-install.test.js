@@ -225,9 +225,11 @@ function runInstallerChild(env) {
       process.exitCode = outcome.ok ? 0 : 2;
     `], { env: { ...process.env, ...env }, encoding: 'utf8' });
     let stdout = '';
+    let stderr = '';
     child.stdout.on('data', (chunk) => { stdout += chunk; });
+    child.stderr.on('data', (chunk) => { stderr += chunk; });
     child.on('error', reject);
-    child.on('close', (status) => resolve({ status, outcome: stdout === '' ? null : JSON.parse(stdout) }));
+    child.on('close', (status) => resolve({ status, stderr, outcome: stdout === '' ? null : JSON.parse(stdout) }));
   });
 }
 
@@ -260,9 +262,10 @@ test('two concurrent r2c bundles with disjoint paths yield exactly one success',
   ]);
   const success = runs.filter((run) => run.status === 0);
   assert.equal(success.length, 1, JSON.stringify(runs));
+
   const refused = runs.filter((run) => run.status !== 0);
   assert.equal(refused.length, 1);
-  assert.ok(['R2C_ROOT_OCCUPIED', 'LOCK_CONFLICT'].includes(refused[0].outcome?.code), JSON.stringify(refused[0].outcome));
+  assert.ok(['R2C_ROOT_OCCUPIED', 'LOCK_CONFLICT'].includes(refused[0].outcome?.code), `${JSON.stringify(refused[0])}\n${refused[0].stderr}`);
   const receipts = readdirSync(join(projectRoot, '.r2c', 'install', 'receipts', 'r2c'));
   assert.deepEqual(receipts, [`${success[0].outcome.receipt.bundle.id}.json`]);
 });

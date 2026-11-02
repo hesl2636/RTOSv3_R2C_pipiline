@@ -105,7 +105,15 @@ export function checkR2cRoot({ projectRoot, projectionId, bundleId, incoming, pr
       );
     }
     const absolute = projectPath(projectRoot, path);
-    if (absolute === null || sha256File(absolute) !== entry.sha256) {
+    let digest = null;
+    try {
+      digest = absolute === null ? null : sha256File(absolute);
+    } catch {
+      // A concurrent writer removed/replaced the file between readdir and
+      // hash; the under-lock re-check is authoritative.
+      continue;
+    }
+    if (absolute === null || digest !== entry.sha256) {
       return occupied(
         [path],
         { projection: null, bundle: null, receipt: null, reason: 'UNOWNED_DIFFERENT' },
