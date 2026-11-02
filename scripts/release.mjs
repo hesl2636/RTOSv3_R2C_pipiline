@@ -28,7 +28,9 @@
  * `--bundle <zip|dir> --check [--out DIR] [--tag TAG]` is the pre-publish
  * gate. A bundle Release is self-contained: zip, IR, pre-projected payloads,
  * engine, framework, bootstrap and sums. `--bundle` never touches the legacy
- * `v<engine>` asset set.
+ * `v<engine>` asset set. `--options FILE` packs a custom local selection (the
+ * payload manifests record the actual options; only canonical builds are
+ * publishable) and `--json` emits JSON-lines progress for the web child.
  */
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
@@ -75,7 +77,7 @@ function usage(message) {
   if (message) process.stderr.write(`release: ${message}\n`);
   process.stderr.write(
     'usage: node scripts/release.mjs [--out DIR] | --check [--out DIR] | --compat\n'
-    + '       node scripts/release.mjs --bundle <zip|dir> --out DIR [--tag TAG]\n'
+    + '       node scripts/release.mjs --bundle <zip|dir> --out DIR [--tag TAG] [--options FILE] [--json]\n'
     + '       node scripts/release.mjs --bundle <zip|dir> --check [--out DIR] [--tag TAG]\n',
   );
   process.exit(2);
@@ -89,6 +91,8 @@ function parseArgs(argv) {
     outSet: false,
     bundle: null,
     tag: null,
+    optionsFile: null,
+    json: false,
   };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
@@ -110,11 +114,23 @@ function parseArgs(argv) {
       options.out = resolve(process.cwd(), value);
       options.outSet = true;
       index += 1;
+    } else if (arg === '--options') {
+      const value = argv[index + 1];
+      if (value === undefined || value.startsWith('--')) usage('--options requires a JSON file');
+      options.optionsFile = resolve(process.cwd(), value);
+      index += 1;
+    } else if (arg === '--json') {
+      options.json = true;
     } else usage(`unknown argument: ${arg}`);
   }
   if (options.check && options.compat) usage('--check and --compat are mutually exclusive');
   if (options.compat && options.bundle !== null) usage('--compat and --bundle are mutually exclusive');
   if (options.tag !== null && options.bundle === null) usage('--tag only applies to --bundle');
+  if (options.optionsFile !== null && options.bundle === null) usage('--options only applies to --bundle');
+  if (options.optionsFile !== null && options.check) usage('--options is a build input, not a --check input');
+  if (options.json && (options.bundle === null || options.check)) {
+    usage('--json only applies to a --bundle build');
+  }
   if (options.bundle !== null && !options.check && !options.outSet) {
     usage('--bundle requires --out DIR (a bundle Release never shares the legacy dist directory)');
   }
@@ -582,24 +598,80 @@ function build(ctx, outDir) {
   process.stdout.write(`asset ${sumsPath}\n`);
 }
 
+function emitJsonLine(value) {
+  process.stdout.write(`${JSON.stringify(value)}\n`);
+}
+
+function readRequestedOptions(options) {
+  if (options.optionsFile === null) return { ok: true, options: null };
+  const parsed = readJson(options.optionsFile);
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return { ok: false, message: `RELEASE_PAYLOAD_INVALID: --options ${options.optionsFile} is not a JSON object` };
+  }
+  return { ok: true, options: parsed };
+}
+
 function buildBundle(options) {
-  const result = buildBundleRelease({
-    root: ROOT,
-    bundlePath: options.bundle,
-    tag: options.tag,
-  });
+  const requested = readRequestedOptions(options);
+  const result = requested.ok
+    ? buildBundleRelease({
+      root: ROOT,
+      bundlePath: options.bundle,
+      tag: options.tag,
+      options: requested.options,
+    })
+    : { ok: false, failures: [requested.message], notes: [], assets: null, plan: null };
   if (!result.ok) {
-    process.stderr.write(`bundle release failed for ${options.bundle}:\n`);
-    for (const failure of result.failures) process.stderr.write(`- ${failure}\n`);
+    if (options.json) {
+      emitJsonLine({ event: 'error', ok: false, code: 'RELEASE_BUILD_FAILED', failures: result.failures });
+    } else {
+      process.stderr.write(`bundle release failed for ${options.bundle}:\n`);
+      for (const failure of result.failures) process.stderr.write(`- ${failure}\n`);
+    }
     process.exit(1);
   }
   mkdirSync(options.out, { recursive: true });
   for (const asset of result.assets) {
     writeFileSync(join(options.out, asset.name), asset.data);
   }
+  if (options.json) {
+    for (const projection of result.projections) {
+      emitJsonLine({
+        event: 'projection',
+        id: projection.id,
+        digest: projection.digest,
+        options: projection.options,
+        manifest: projection.manifest,
+      });
+    }
+    emitJsonLine({
+      event: 'result',
+      ok: true,
+      id: result.id,
+      version: result.version,
+      tag: result.plan.tag,
+      canonical: result.canonical,
+      publishable: result.publishable,
+      allowed: result.allowed,
+      engineVersion: result.engineVersion,
+      frameworkVersion: result.frameworkVersion,
+      assets: result.plan.assets.map((asset) => ({
+        name: asset.name,
+        bytes: asset.size,
+        sha256: asset.sha256,
+      })),
+      projections: result.projections.map((projection) => ({
+        id: projection.id,
+        digest: projection.digest,
+        options: projection.options,
+      })),
+    });
+    return;
+  }
   process.stdout.write(
     `bundle ${result.id}@${result.version}: ${result.frameworkFiles.length} framework files, `
-    + `${result.engineFiles.length} engine files, ${result.plan.assets.length} assets\n`,
+    + `${result.engineFiles.length} engine files, ${result.plan.assets.length} assets`
+    + `${result.canonical ? '' : ' (custom options, local only)'}\n`,
   );
   for (const asset of result.plan.assets) {
     process.stdout.write(`asset ${join(options.out, asset.name)}\n`);
