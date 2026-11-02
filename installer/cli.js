@@ -197,6 +197,7 @@ function summaryData(outcome) {
     created_dirs: outcome.createdDirs ?? undefined,
     decisions: outcome.decisions ?? undefined,
     stale: outcome.stale ?? undefined,
+    diff: outcome.diff ?? undefined,
     removed: outcome.removed ?? undefined,
     leftover: outcome.leftover ?? undefined,
     pruned: outcome.pruned ?? undefined,

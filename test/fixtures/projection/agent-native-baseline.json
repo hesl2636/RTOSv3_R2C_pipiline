@@ -1,0 +1,1969 @@
+{
+  "schema": "r2c.projection-baseline/v1",
+  "ticket": 101,
+  "projection": {
+    "id": "agent-native",
+    "version": "0.1.0"
+  },
+  "ir": {
+    "id": "rtosv3-drvport",
+    "version": "1.0.0",
+    "digest": "8a2a57593939f91117d57f9ca34c56b2fc631f6837168ef74032daa95202d395",
+    "contentSha256": "df61a4136d191a2eee1a31e6cbef83a3ccd2002e74c822c93e7b8edda4a16be3",
+    "bytes": 58827
+  },
+  "resultDigest": "9552df77e5cae3dc15b17b65feffeeb3f63651f5aef2fde2cb0ba046697f1057",
+  "counts": {
+    "files": 98,
+    "bytes": 142620,
+    "degradations": 45,
+    "warnings": 1,
+    "capabilities": 40
+  },
+  "targets": [
+    "claude-code",
+    "codex",
+    "dsh",
+    "omp",
+    "opencode"
+  ],
+  "coverage": {
+    "stages": [
+      "analysis-design",
+      "detailed-design",
+      "implementation",
+      "verification"
+    ],
+    "steps": [
+      "analysis-design",
+      "detailed-design",
+      "implementation",
+      "verification"
+    ]
+  },
+  "options": {
+    "schema": "r2c.projection-options/v1",
+    "projection": "agent-native",
+    "ir": {
+      "digest": "8a2a57593939f91117d57f9ca34c56b2fc631f6837168ef74032daa95202d395",
+      "id": "rtosv3-drvport",
+      "version": "1.0.0"
+    },
+    "stageOrder": [
+      "analysis-design",
+      "detailed-design",
+      "implementation",
+      "verification"
+    ],
+    "skills": [
+      "aceharness-rag",
+      "all-build-single-package",
+      "all-cleancode",
+      "all-multirepo-upload",
+      "all-securec-replace",
+      "ar-miner",
+      "cleancode-scanfix",
+      "code-research",
+      "codebase-search",
+      "design-gen",
+      "executing-plans",
+      "huawei-c-coding-standard",
+      "r2c-build-redblue",
+      "r2c-design",
+      "r2c-imdesign",
+      "r2c-implement-redblue",
+      "r2c-push-mr",
+      "r2c-review",
+      "r2c-verify-rb",
+      "red-blue",
+      "req-analysis",
+      "req-design",
+      "req-formal-verif",
+      "semantic-equiv",
+      "sr-miner",
+      "subagent-driven-development",
+      "using-workflow",
+      "v3-check-symbol-context",
+      "v3-commit",
+      "v3-hm-kernel",
+      "v3-kb",
+      "v3-personal-pipeline",
+      "v3-query-symbol",
+      "workflow-core",
+      "writing-plans"
+    ],
+    "targets": [
+      "claude-code",
+      "codex",
+      "dsh",
+      "omp",
+      "opencode"
+    ],
+    "extra": {}
+  },
+  "metadata": {
+    "idMap": {
+      "claude-code": {
+        "stages": {},
+        "steps": {},
+        "roles": {
+          "bys-architect": "rtosv3-drvport-bys-architect",
+          "bys-designer": "rtosv3-drvport-bys-designer",
+          "bys-impl-lead": "rtosv3-drvport-bys-impl-lead",
+          "bys-release-lead": "rtosv3-drvport-bys-release-lead"
+        },
+        "skills": {
+          "aceharness-rag": "rtosv3-drvport-skill-aceharness-rag",
+          "all-build-single-package": "rtosv3-drvport-skill-all-build-single-package",
+          "all-cleancode": "rtosv3-drvport-skill-all-cleancode",
+          "all-multirepo-upload": "rtosv3-drvport-skill-all-multirepo-upload",
+          "all-securec-replace": "rtosv3-drvport-skill-all-securec-replace",
+          "ar-miner": "rtosv3-drvport-skill-ar-miner",
+          "cleancode-scanfix": "rtosv3-drvport-skill-cleancode-scanfix",
+          "code-research": "rtosv3-drvport-skill-code-research",
+          "codebase-search": "rtosv3-drvport-skill-codebase-search",
+          "design-gen": "rtosv3-drvport-skill-design-gen",
+          "executing-plans": "rtosv3-drvport-skill-executing-plans",
+          "huawei-c-coding-standard": "rtosv3-drvport-skill-huawei-c-coding-standard",
+          "r2c-build-redblue": "rtosv3-drvport-skill-r2c-build-redblue",
+          "r2c-design": "rtosv3-drvport-skill-r2c-design",
+          "r2c-imdesign": "rtosv3-drvport-skill-r2c-imdesign",
+          "r2c-implement-redblue": "rtosv3-drvport-skill-r2c-implement-redblue",
+          "r2c-push-mr": "rtosv3-drvport-skill-r2c-push-mr",
+          "r2c-review": "rtosv3-drvport-skill-r2c-review",
+          "r2c-verify-rb": "rtosv3-drvport-skill-r2c-verify-rb",
+          "red-blue": "rtosv3-drvport-skill-red-blue",
+          "req-analysis": "rtosv3-drvport-skill-req-analysis",
+          "req-design": "rtosv3-drvport-skill-req-design",
+          "req-formal-verif": "rtosv3-drvport-skill-req-formal-verif",
+          "semantic-equiv": "rtosv3-drvport-skill-semantic-equiv",
+          "sr-miner": "rtosv3-drvport-skill-sr-miner",
+          "subagent-driven-development": "rtosv3-drvport-skill-subagent-driven-development",
+          "using-workflow": "rtosv3-drvport-skill-using-workflow",
+          "v3-check-symbol-context": "rtosv3-drvport-skill-v3-check-symbol-context",
+          "v3-commit": "rtosv3-drvport-skill-v3-commit",
+          "v3-hm-kernel": "rtosv3-drvport-skill-v3-hm-kernel",
+          "v3-kb": "rtosv3-drvport-skill-v3-kb",
+          "v3-personal-pipeline": "rtosv3-drvport-skill-v3-personal-pipeline",
+          "v3-query-symbol": "rtosv3-drvport-skill-v3-query-symbol",
+          "workflow-core": "rtosv3-drvport-skill-workflow-core",
+          "writing-plans": "rtosv3-drvport-skill-writing-plans"
+        }
+      },
+      "codex": {
+        "stages": {},
+        "steps": {},
+        "roles": {
+          "bys-architect": "rtosv3-drvport-bys-architect",
+          "bys-designer": "rtosv3-drvport-bys-designer",
+          "bys-impl-lead": "rtosv3-drvport-bys-impl-lead",
+          "bys-release-lead": "rtosv3-drvport-bys-release-lead"
+        },
+        "skills": {
+          "aceharness-rag": "rtosv3-drvport-skill-aceharness-rag",
+          "all-build-single-package": "rtosv3-drvport-skill-all-build-single-package",
+          "all-cleancode": "rtosv3-drvport-skill-all-cleancode",
+          "all-multirepo-upload": "rtosv3-drvport-skill-all-multirepo-upload",
+          "all-securec-replace": "rtosv3-drvport-skill-all-securec-replace",
+          "ar-miner": "rtosv3-drvport-skill-ar-miner",
+          "cleancode-scanfix": "rtosv3-drvport-skill-cleancode-scanfix",
+          "code-research": "rtosv3-drvport-skill-code-research",
+          "codebase-search": "rtosv3-drvport-skill-codebase-search",
+          "design-gen": "rtosv3-drvport-skill-design-gen",
+          "executing-plans": "rtosv3-drvport-skill-executing-plans",
+          "huawei-c-coding-standard": "rtosv3-drvport-skill-huawei-c-coding-standard",
+          "r2c-build-redblue": "rtosv3-drvport-skill-r2c-build-redblue",
+          "r2c-design": "rtosv3-drvport-skill-r2c-design",
+          "r2c-imdesign": "rtosv3-drvport-skill-r2c-imdesign",
+          "r2c-implement-redblue": "rtosv3-drvport-skill-r2c-implement-redblue",
+          "r2c-push-mr": "rtosv3-drvport-skill-r2c-push-mr",
+          "r2c-review": "rtosv3-drvport-skill-r2c-review",
+          "r2c-verify-rb": "rtosv3-drvport-skill-r2c-verify-rb",
+          "red-blue": "rtosv3-drvport-skill-red-blue",
+          "req-analysis": "rtosv3-drvport-skill-req-analysis",
+          "req-design": "rtosv3-drvport-skill-req-design",
+          "req-formal-verif": "rtosv3-drvport-skill-req-formal-verif",
+          "semantic-equiv": "rtosv3-drvport-skill-semantic-equiv",
+          "sr-miner": "rtosv3-drvport-skill-sr-miner",
+          "subagent-driven-development": "rtosv3-drvport-skill-subagent-driven-development",
+          "using-workflow": "rtosv3-drvport-skill-using-workflow",
+          "v3-check-symbol-context": "rtosv3-drvport-skill-v3-check-symbol-context",
+          "v3-commit": "rtosv3-drvport-skill-v3-commit",
+          "v3-hm-kernel": "rtosv3-drvport-skill-v3-hm-kernel",
+          "v3-kb": "rtosv3-drvport-skill-v3-kb",
+          "v3-personal-pipeline": "rtosv3-drvport-skill-v3-personal-pipeline",
+          "v3-query-symbol": "rtosv3-drvport-skill-v3-query-symbol",
+          "workflow-core": "rtosv3-drvport-skill-workflow-core",
+          "writing-plans": "rtosv3-drvport-skill-writing-plans"
+        }
+      },
+      "dsh": {
+        "stages": {},
+        "steps": {},
+        "roles": {
+          "bys-architect": "rtosv3-drvport-bys-architect",
+          "bys-designer": "rtosv3-drvport-bys-designer",
+          "bys-impl-lead": "rtosv3-drvport-bys-impl-lead",
+          "bys-release-lead": "rtosv3-drvport-bys-release-lead"
+        },
+        "skills": {
+          "aceharness-rag": "rtosv3-drvport-skill-aceharness-rag",
+          "all-build-single-package": "rtosv3-drvport-skill-all-build-single-package",
+          "all-cleancode": "rtosv3-drvport-skill-all-cleancode",
+          "all-multirepo-upload": "rtosv3-drvport-skill-all-multirepo-upload",
+          "all-securec-replace": "rtosv3-drvport-skill-all-securec-replace",
+          "ar-miner": "rtosv3-drvport-skill-ar-miner",
+          "cleancode-scanfix": "rtosv3-drvport-skill-cleancode-scanfix",
+          "code-research": "rtosv3-drvport-skill-code-research",
+          "codebase-search": "rtosv3-drvport-skill-codebase-search",
+          "design-gen": "rtosv3-drvport-skill-design-gen",
+          "executing-plans": "rtosv3-drvport-skill-executing-plans",
+          "huawei-c-coding-standard": "rtosv3-drvport-skill-huawei-c-coding-standard",
+          "r2c-build-redblue": "rtosv3-drvport-skill-r2c-build-redblue",
+          "r2c-design": "rtosv3-drvport-skill-r2c-design",
+          "r2c-imdesign": "rtosv3-drvport-skill-r2c-imdesign",
+          "r2c-implement-redblue": "rtosv3-drvport-skill-r2c-implement-redblue",
+          "r2c-push-mr": "rtosv3-drvport-skill-r2c-push-mr",
+          "r2c-review": "rtosv3-drvport-skill-r2c-review",
+          "r2c-verify-rb": "rtosv3-drvport-skill-r2c-verify-rb",
+          "red-blue": "rtosv3-drvport-skill-red-blue",
+          "req-analysis": "rtosv3-drvport-skill-req-analysis",
+          "req-design": "rtosv3-drvport-skill-req-design",
+          "req-formal-verif": "rtosv3-drvport-skill-req-formal-verif",
+          "semantic-equiv": "rtosv3-drvport-skill-semantic-equiv",
+          "sr-miner": "rtosv3-drvport-skill-sr-miner",
+          "subagent-driven-development": "rtosv3-drvport-skill-subagent-driven-development",
+          "using-workflow": "rtosv3-drvport-skill-using-workflow",
+          "v3-check-symbol-context": "rtosv3-drvport-skill-v3-check-symbol-context",
+          "v3-commit": "rtosv3-drvport-skill-v3-commit",
+          "v3-hm-kernel": "rtosv3-drvport-skill-v3-hm-kernel",
+          "v3-kb": "rtosv3-drvport-skill-v3-kb",
+          "v3-personal-pipeline": "rtosv3-drvport-skill-v3-personal-pipeline",
+          "v3-query-symbol": "rtosv3-drvport-skill-v3-query-symbol",
+          "workflow-core": "rtosv3-drvport-skill-workflow-core",
+          "writing-plans": "rtosv3-drvport-skill-writing-plans"
+        }
+      },
+      "omp": {
+        "stages": {},
+        "steps": {},
+        "roles": {
+          "bys-architect": "rtosv3-drvport-bys-architect",
+          "bys-designer": "rtosv3-drvport-bys-designer",
+          "bys-impl-lead": "rtosv3-drvport-bys-impl-lead",
+          "bys-release-lead": "rtosv3-drvport-bys-release-lead"
+        },
+        "skills": {
+          "aceharness-rag": "rtosv3-drvport-skill-aceharness-rag",
+          "all-build-single-package": "rtosv3-drvport-skill-all-build-single-package",
+          "all-cleancode": "rtosv3-drvport-skill-all-cleancode",
+          "all-multirepo-upload": "rtosv3-drvport-skill-all-multirepo-upload",
+          "all-securec-replace": "rtosv3-drvport-skill-all-securec-replace",
+          "ar-miner": "rtosv3-drvport-skill-ar-miner",
+          "cleancode-scanfix": "rtosv3-drvport-skill-cleancode-scanfix",
+          "code-research": "rtosv3-drvport-skill-code-research",
+          "codebase-search": "rtosv3-drvport-skill-codebase-search",
+          "design-gen": "rtosv3-drvport-skill-design-gen",
+          "executing-plans": "rtosv3-drvport-skill-executing-plans",
+          "huawei-c-coding-standard": "rtosv3-drvport-skill-huawei-c-coding-standard",
+          "r2c-build-redblue": "rtosv3-drvport-skill-r2c-build-redblue",
+          "r2c-design": "rtosv3-drvport-skill-r2c-design",
+          "r2c-imdesign": "rtosv3-drvport-skill-r2c-imdesign",
+          "r2c-implement-redblue": "rtosv3-drvport-skill-r2c-implement-redblue",
+          "r2c-push-mr": "rtosv3-drvport-skill-r2c-push-mr",
+          "r2c-review": "rtosv3-drvport-skill-r2c-review",
+          "r2c-verify-rb": "rtosv3-drvport-skill-r2c-verify-rb",
+          "red-blue": "rtosv3-drvport-skill-red-blue",
+          "req-analysis": "rtosv3-drvport-skill-req-analysis",
+          "req-design": "rtosv3-drvport-skill-req-design",
+          "req-formal-verif": "rtosv3-drvport-skill-req-formal-verif",
+          "semantic-equiv": "rtosv3-drvport-skill-semantic-equiv",
+          "sr-miner": "rtosv3-drvport-skill-sr-miner",
+          "subagent-driven-development": "rtosv3-drvport-skill-subagent-driven-development",
+          "using-workflow": "rtosv3-drvport-skill-using-workflow",
+          "v3-check-symbol-context": "rtosv3-drvport-skill-v3-check-symbol-context",
+          "v3-commit": "rtosv3-drvport-skill-v3-commit",
+          "v3-hm-kernel": "rtosv3-drvport-skill-v3-hm-kernel",
+          "v3-kb": "rtosv3-drvport-skill-v3-kb",
+          "v3-personal-pipeline": "rtosv3-drvport-skill-v3-personal-pipeline",
+          "v3-query-symbol": "rtosv3-drvport-skill-v3-query-symbol",
+          "workflow-core": "rtosv3-drvport-skill-workflow-core",
+          "writing-plans": "rtosv3-drvport-skill-writing-plans"
+        }
+      },
+      "opencode": {
+        "stages": {},
+        "steps": {},
+        "roles": {
+          "bys-architect": "rtosv3-drvport-bys-architect",
+          "bys-designer": "rtosv3-drvport-bys-designer",
+          "bys-impl-lead": "rtosv3-drvport-bys-impl-lead",
+          "bys-release-lead": "rtosv3-drvport-bys-release-lead"
+        },
+        "skills": {
+          "aceharness-rag": "rtosv3-drvport-skill-aceharness-rag",
+          "all-build-single-package": "rtosv3-drvport-skill-all-build-single-package",
+          "all-cleancode": "rtosv3-drvport-skill-all-cleancode",
+          "all-multirepo-upload": "rtosv3-drvport-skill-all-multirepo-upload",
+          "all-securec-replace": "rtosv3-drvport-skill-all-securec-replace",
+          "ar-miner": "rtosv3-drvport-skill-ar-miner",
+          "cleancode-scanfix": "rtosv3-drvport-skill-cleancode-scanfix",
+          "code-research": "rtosv3-drvport-skill-code-research",
+          "codebase-search": "rtosv3-drvport-skill-codebase-search",
+          "design-gen": "rtosv3-drvport-skill-design-gen",
+          "executing-plans": "rtosv3-drvport-skill-executing-plans",
+          "huawei-c-coding-standard": "rtosv3-drvport-skill-huawei-c-coding-standard",
+          "r2c-build-redblue": "rtosv3-drvport-skill-r2c-build-redblue",
+          "r2c-design": "rtosv3-drvport-skill-r2c-design",
+          "r2c-imdesign": "rtosv3-drvport-skill-r2c-imdesign",
+          "r2c-implement-redblue": "rtosv3-drvport-skill-r2c-implement-redblue",
+          "r2c-push-mr": "rtosv3-drvport-skill-r2c-push-mr",
+          "r2c-review": "rtosv3-drvport-skill-r2c-review",
+          "r2c-verify-rb": "rtosv3-drvport-skill-r2c-verify-rb",
+          "red-blue": "rtosv3-drvport-skill-red-blue",
+          "req-analysis": "rtosv3-drvport-skill-req-analysis",
+          "req-design": "rtosv3-drvport-skill-req-design",
+          "req-formal-verif": "rtosv3-drvport-skill-req-formal-verif",
+          "semantic-equiv": "rtosv3-drvport-skill-semantic-equiv",
+          "sr-miner": "rtosv3-drvport-skill-sr-miner",
+          "subagent-driven-development": "rtosv3-drvport-skill-subagent-driven-development",
+          "using-workflow": "rtosv3-drvport-skill-using-workflow",
+          "v3-check-symbol-context": "rtosv3-drvport-skill-v3-check-symbol-context",
+          "v3-commit": "rtosv3-drvport-skill-v3-commit",
+          "v3-hm-kernel": "rtosv3-drvport-skill-v3-hm-kernel",
+          "v3-kb": "rtosv3-drvport-skill-v3-kb",
+          "v3-personal-pipeline": "rtosv3-drvport-skill-v3-personal-pipeline",
+          "v3-query-symbol": "rtosv3-drvport-skill-v3-query-symbol",
+          "workflow-core": "rtosv3-drvport-skill-workflow-core",
+          "writing-plans": "rtosv3-drvport-skill-writing-plans"
+        }
+      }
+    },
+    "artifacts": {
+      "dsh-roles": ".dsh/agent-native/rtosv3-drvport.roles.md",
+      "roles-json": ".agents/agent-native/rtosv3-drvport/roles.json",
+      "skill-aceharness-rag": ".agents/skills/rtosv3-drvport-skill-aceharness-rag/SKILL.md",
+      "skill-all-build-single-package": ".agents/skills/rtosv3-drvport-skill-all-build-single-package/SKILL.md",
+      "skill-all-cleancode": ".agents/skills/rtosv3-drvport-skill-all-cleancode/SKILL.md",
+      "skill-all-multirepo-upload": ".agents/skills/rtosv3-drvport-skill-all-multirepo-upload/SKILL.md",
+      "skill-all-securec-replace": ".agents/skills/rtosv3-drvport-skill-all-securec-replace/SKILL.md",
+      "skill-ar-miner": ".agents/skills/rtosv3-drvport-skill-ar-miner/SKILL.md",
+      "skill-cleancode-scanfix": ".agents/skills/rtosv3-drvport-skill-cleancode-scanfix/SKILL.md",
+      "skill-code-research": ".agents/skills/rtosv3-drvport-skill-code-research/SKILL.md",
+      "skill-codebase-search": ".agents/skills/rtosv3-drvport-skill-codebase-search/SKILL.md",
+      "skill-design-gen": ".agents/skills/rtosv3-drvport-skill-design-gen/SKILL.md",
+      "skill-executing-plans": ".agents/skills/rtosv3-drvport-skill-executing-plans/SKILL.md",
+      "skill-huawei-c-coding-standard": ".agents/skills/rtosv3-drvport-skill-huawei-c-coding-standard/SKILL.md",
+      "skill-r2c-build-redblue": ".agents/skills/rtosv3-drvport-skill-r2c-build-redblue/SKILL.md",
+      "skill-r2c-design": ".agents/skills/rtosv3-drvport-skill-r2c-design/SKILL.md",
+      "skill-r2c-imdesign": ".agents/skills/rtosv3-drvport-skill-r2c-imdesign/SKILL.md",
+      "skill-r2c-implement-redblue": ".agents/skills/rtosv3-drvport-skill-r2c-implement-redblue/SKILL.md",
+      "skill-r2c-push-mr": ".agents/skills/rtosv3-drvport-skill-r2c-push-mr/SKILL.md",
+      "skill-r2c-review": ".agents/skills/rtosv3-drvport-skill-r2c-review/SKILL.md",
+      "skill-r2c-verify-rb": ".agents/skills/rtosv3-drvport-skill-r2c-verify-rb/SKILL.md",
+      "skill-red-blue": ".agents/skills/rtosv3-drvport-skill-red-blue/SKILL.md",
+      "skill-req-analysis": ".agents/skills/rtosv3-drvport-skill-req-analysis/SKILL.md",
+      "skill-req-design": ".agents/skills/rtosv3-drvport-skill-req-design/SKILL.md",
+      "skill-req-formal-verif": ".agents/skills/rtosv3-drvport-skill-req-formal-verif/SKILL.md",
+      "skill-semantic-equiv": ".agents/skills/rtosv3-drvport-skill-semantic-equiv/SKILL.md",
+      "skill-sr-miner": ".agents/skills/rtosv3-drvport-skill-sr-miner/SKILL.md",
+      "skill-subagent-driven-development": ".agents/skills/rtosv3-drvport-skill-subagent-driven-development/SKILL.md",
+      "skill-using-workflow": ".agents/skills/rtosv3-drvport-skill-using-workflow/SKILL.md",
+      "skill-v3-check-symbol-context": ".agents/skills/rtosv3-drvport-skill-v3-check-symbol-context/SKILL.md",
+      "skill-v3-commit": ".agents/skills/rtosv3-drvport-skill-v3-commit/SKILL.md",
+      "skill-v3-hm-kernel": ".agents/skills/rtosv3-drvport-skill-v3-hm-kernel/SKILL.md",
+      "skill-v3-kb": ".agents/skills/rtosv3-drvport-skill-v3-kb/SKILL.md",
+      "skill-v3-personal-pipeline": ".agents/skills/rtosv3-drvport-skill-v3-personal-pipeline/SKILL.md",
+      "skill-v3-query-symbol": ".agents/skills/rtosv3-drvport-skill-v3-query-symbol/SKILL.md",
+      "skill-workflow-core": ".agents/skills/rtosv3-drvport-skill-workflow-core/SKILL.md",
+      "skill-writing-plans": ".agents/skills/rtosv3-drvport-skill-writing-plans/SKILL.md",
+      "stage-analysis-design": ".agents/skills/rtosv3-drvport-stage-analysis-design/SKILL.md",
+      "stage-detailed-design": ".agents/skills/rtosv3-drvport-stage-detailed-design/SKILL.md",
+      "stage-implementation": ".agents/skills/rtosv3-drvport-stage-implementation/SKILL.md",
+      "stage-verification": ".agents/skills/rtosv3-drvport-stage-verification/SKILL.md",
+      "workflow": ".agents/skills/rtosv3-drvport-workflow/SKILL.md"
+    },
+    "placeholders": {
+      "roles": [
+        "bys-architect",
+        "bys-designer",
+        "bys-impl-lead",
+        "bys-release-lead"
+      ],
+      "skills": [
+        "aceharness-rag",
+        "all-build-single-package",
+        "all-cleancode",
+        "all-multirepo-upload",
+        "all-securec-replace",
+        "ar-miner",
+        "cleancode-scanfix",
+        "code-research",
+        "codebase-search",
+        "design-gen",
+        "executing-plans",
+        "huawei-c-coding-standard",
+        "r2c-build-redblue",
+        "r2c-design",
+        "r2c-imdesign",
+        "r2c-implement-redblue",
+        "r2c-push-mr",
+        "r2c-review",
+        "r2c-verify-rb",
+        "red-blue",
+        "req-analysis",
+        "req-design",
+        "req-formal-verif",
+        "semantic-equiv",
+        "sr-miner",
+        "subagent-driven-development",
+        "using-workflow",
+        "v3-check-symbol-context",
+        "v3-commit",
+        "v3-hm-kernel",
+        "v3-kb",
+        "v3-personal-pipeline",
+        "v3-query-symbol",
+        "workflow-core",
+        "writing-plans"
+      ],
+      "constitution": "placeholder"
+    },
+    "runtime": {
+      "namespace": "rtosv3-drvport",
+      "targetGroups": {
+        "claude": [
+          "claude-code"
+        ],
+        "shared": [
+          "codex"
+        ],
+        "shared-skills": [
+          "dsh",
+          "omp",
+          "opencode"
+        ]
+      },
+      "skillsRoots": {
+        "claude-code": ".claude/skills",
+        "codex": ".agents/skills",
+        "dsh": ".agents/skills",
+        "omp": ".agents/skills",
+        "opencode": ".agents/skills"
+      },
+      "constitutionPlacement": "stage-skill-prefix",
+      "submitProtocol": "receipt-v1"
+    }
+  },
+  "capabilityReport": [
+    {
+      "target": "claude-code",
+      "capability": "state",
+      "level": "unavailable",
+      "uses": [
+        ""
+      ]
+    },
+    {
+      "target": "claude-code",
+      "capability": "gates",
+      "level": "degraded",
+      "uses": []
+    },
+    {
+      "target": "claude-code",
+      "capability": "outputs",
+      "level": "degraded",
+      "uses": []
+    },
+    {
+      "target": "claude-code",
+      "capability": "subagents",
+      "level": "native",
+      "uses": [
+        "/stages/0/steps/0/role",
+        "/stages/1/steps/0/role",
+        "/stages/2/steps/0/role",
+        "/stages/3/steps/0/role"
+      ]
+    },
+    {
+      "target": "claude-code",
+      "capability": "skills",
+      "level": "adapted",
+      "uses": [
+        "/skills/aceharness-rag",
+        "/skills/all-build-single-package",
+        "/skills/all-cleancode",
+        "/skills/all-multirepo-upload",
+        "/skills/all-securec-replace",
+        "/skills/ar-miner",
+        "/skills/cleancode-scanfix",
+        "/skills/code-research",
+        "/skills/codebase-search",
+        "/skills/design-gen",
+        "/skills/executing-plans",
+        "/skills/huawei-c-coding-standard",
+        "/skills/r2c-build-redblue",
+        "/skills/r2c-design",
+        "/skills/r2c-imdesign",
+        "/skills/r2c-implement-redblue",
+        "/skills/r2c-push-mr",
+        "/skills/r2c-review",
+        "/skills/r2c-verify-rb",
+        "/skills/red-blue",
+        "/skills/req-analysis",
+        "/skills/req-design",
+        "/skills/req-formal-verif",
+        "/skills/semantic-equiv",
+        "/skills/sr-miner",
+        "/skills/subagent-driven-development",
+        "/skills/using-workflow",
+        "/skills/v3-check-symbol-context",
+        "/skills/v3-commit",
+        "/skills/v3-hm-kernel",
+        "/skills/v3-kb",
+        "/skills/v3-personal-pipeline",
+        "/skills/v3-query-symbol",
+        "/skills/workflow-core",
+        "/skills/writing-plans"
+      ]
+    },
+    {
+      "target": "claude-code",
+      "capability": "preload",
+      "level": "native",
+      "uses": []
+    },
+    {
+      "target": "claude-code",
+      "capability": "stage-invocation",
+      "level": "native",
+      "uses": [
+        "/stages/0",
+        "/stages/1",
+        "/stages/2",
+        "/stages/3"
+      ]
+    },
+    {
+      "target": "claude-code",
+      "capability": "skill-invocation",
+      "level": "native",
+      "uses": [
+        "/skills/aceharness-rag",
+        "/skills/all-build-single-package",
+        "/skills/all-cleancode",
+        "/skills/all-multirepo-upload",
+        "/skills/all-securec-replace",
+        "/skills/ar-miner",
+        "/skills/cleancode-scanfix",
+        "/skills/code-research",
+        "/skills/codebase-search",
+        "/skills/design-gen",
+        "/skills/executing-plans",
+        "/skills/huawei-c-coding-standard",
+        "/skills/r2c-build-redblue",
+        "/skills/r2c-design",
+        "/skills/r2c-imdesign",
+        "/skills/r2c-implement-redblue",
+        "/skills/r2c-push-mr",
+        "/skills/r2c-review",
+        "/skills/r2c-verify-rb",
+        "/skills/red-blue",
+        "/skills/req-analysis",
+        "/skills/req-design",
+        "/skills/req-formal-verif",
+        "/skills/semantic-equiv",
+        "/skills/sr-miner",
+        "/skills/subagent-driven-development",
+        "/skills/using-workflow",
+        "/skills/v3-check-symbol-context",
+        "/skills/v3-commit",
+        "/skills/v3-hm-kernel",
+        "/skills/v3-kb",
+        "/skills/v3-personal-pipeline",
+        "/skills/v3-query-symbol",
+        "/skills/workflow-core",
+        "/skills/writing-plans"
+      ]
+    },
+    {
+      "target": "codex",
+      "capability": "state",
+      "level": "unavailable",
+      "uses": [
+        ""
+      ]
+    },
+    {
+      "target": "codex",
+      "capability": "gates",
+      "level": "degraded",
+      "uses": []
+    },
+    {
+      "target": "codex",
+      "capability": "outputs",
+      "level": "degraded",
+      "uses": []
+    },
+    {
+      "target": "codex",
+      "capability": "subagents",
+      "level": "native",
+      "uses": [
+        "/stages/0/steps/0/role",
+        "/stages/1/steps/0/role",
+        "/stages/2/steps/0/role",
+        "/stages/3/steps/0/role"
+      ]
+    },
+    {
+      "target": "codex",
+      "capability": "skills",
+      "level": "adapted",
+      "uses": [
+        "/skills/aceharness-rag",
+        "/skills/all-build-single-package",
+        "/skills/all-cleancode",
+        "/skills/all-multirepo-upload",
+        "/skills/all-securec-replace",
+        "/skills/ar-miner",
+        "/skills/cleancode-scanfix",
+        "/skills/code-research",
+        "/skills/codebase-search",
+        "/skills/design-gen",
+        "/skills/executing-plans",
+        "/skills/huawei-c-coding-standard",
+        "/skills/r2c-build-redblue",
+        "/skills/r2c-design",
+        "/skills/r2c-imdesign",
+        "/skills/r2c-implement-redblue",
+        "/skills/r2c-push-mr",
+        "/skills/r2c-review",
+        "/skills/r2c-verify-rb",
+        "/skills/red-blue",
+        "/skills/req-analysis",
+        "/skills/req-design",
+        "/skills/req-formal-verif",
+        "/skills/semantic-equiv",
+        "/skills/sr-miner",
+        "/skills/subagent-driven-development",
+        "/skills/using-workflow",
+        "/skills/v3-check-symbol-context",
+        "/skills/v3-commit",
+        "/skills/v3-hm-kernel",
+        "/skills/v3-kb",
+        "/skills/v3-personal-pipeline",
+        "/skills/v3-query-symbol",
+        "/skills/workflow-core",
+        "/skills/writing-plans"
+      ]
+    },
+    {
+      "target": "codex",
+      "capability": "preload",
+      "level": "unavailable",
+      "uses": []
+    },
+    {
+      "target": "codex",
+      "capability": "stage-invocation",
+      "level": "adapted",
+      "uses": [
+        "/stages/0",
+        "/stages/1",
+        "/stages/2",
+        "/stages/3"
+      ]
+    },
+    {
+      "target": "codex",
+      "capability": "skill-invocation",
+      "level": "adapted",
+      "uses": [
+        "/skills/aceharness-rag",
+        "/skills/all-build-single-package",
+        "/skills/all-cleancode",
+        "/skills/all-multirepo-upload",
+        "/skills/all-securec-replace",
+        "/skills/ar-miner",
+        "/skills/cleancode-scanfix",
+        "/skills/code-research",
+        "/skills/codebase-search",
+        "/skills/design-gen",
+        "/skills/executing-plans",
+        "/skills/huawei-c-coding-standard",
+        "/skills/r2c-build-redblue",
+        "/skills/r2c-design",
+        "/skills/r2c-imdesign",
+        "/skills/r2c-implement-redblue",
+        "/skills/r2c-push-mr",
+        "/skills/r2c-review",
+        "/skills/r2c-verify-rb",
+        "/skills/red-blue",
+        "/skills/req-analysis",
+        "/skills/req-design",
+        "/skills/req-formal-verif",
+        "/skills/semantic-equiv",
+        "/skills/sr-miner",
+        "/skills/subagent-driven-development",
+        "/skills/using-workflow",
+        "/skills/v3-check-symbol-context",
+        "/skills/v3-commit",
+        "/skills/v3-hm-kernel",
+        "/skills/v3-kb",
+        "/skills/v3-personal-pipeline",
+        "/skills/v3-query-symbol",
+        "/skills/workflow-core",
+        "/skills/writing-plans"
+      ]
+    },
+    {
+      "target": "dsh",
+      "capability": "state",
+      "level": "unavailable",
+      "uses": [
+        ""
+      ]
+    },
+    {
+      "target": "dsh",
+      "capability": "gates",
+      "level": "degraded",
+      "uses": []
+    },
+    {
+      "target": "dsh",
+      "capability": "outputs",
+      "level": "degraded",
+      "uses": []
+    },
+    {
+      "target": "dsh",
+      "capability": "subagents",
+      "level": "unavailable",
+      "uses": [
+        "/stages/0/steps/0/role",
+        "/stages/1/steps/0/role",
+        "/stages/2/steps/0/role",
+        "/stages/3/steps/0/role"
+      ]
+    },
+    {
+      "target": "dsh",
+      "capability": "skills",
+      "level": "adapted",
+      "uses": [
+        "/skills/aceharness-rag",
+        "/skills/all-build-single-package",
+        "/skills/all-cleancode",
+        "/skills/all-multirepo-upload",
+        "/skills/all-securec-replace",
+        "/skills/ar-miner",
+        "/skills/cleancode-scanfix",
+        "/skills/code-research",
+        "/skills/codebase-search",
+        "/skills/design-gen",
+        "/skills/executing-plans",
+        "/skills/huawei-c-coding-standard",
+        "/skills/r2c-build-redblue",
+        "/skills/r2c-design",
+        "/skills/r2c-imdesign",
+        "/skills/r2c-implement-redblue",
+        "/skills/r2c-push-mr",
+        "/skills/r2c-review",
+        "/skills/r2c-verify-rb",
+        "/skills/red-blue",
+        "/skills/req-analysis",
+        "/skills/req-design",
+        "/skills/req-formal-verif",
+        "/skills/semantic-equiv",
+        "/skills/sr-miner",
+        "/skills/subagent-driven-development",
+        "/skills/using-workflow",
+        "/skills/v3-check-symbol-context",
+        "/skills/v3-commit",
+        "/skills/v3-hm-kernel",
+        "/skills/v3-kb",
+        "/skills/v3-personal-pipeline",
+        "/skills/v3-query-symbol",
+        "/skills/workflow-core",
+        "/skills/writing-plans"
+      ]
+    },
+    {
+      "target": "dsh",
+      "capability": "preload",
+      "level": "unavailable",
+      "uses": []
+    },
+    {
+      "target": "dsh",
+      "capability": "stage-invocation",
+      "level": "native",
+      "uses": [
+        "/stages/0",
+        "/stages/1",
+        "/stages/2",
+        "/stages/3"
+      ]
+    },
+    {
+      "target": "dsh",
+      "capability": "skill-invocation",
+      "level": "native",
+      "uses": [
+        "/skills/aceharness-rag",
+        "/skills/all-build-single-package",
+        "/skills/all-cleancode",
+        "/skills/all-multirepo-upload",
+        "/skills/all-securec-replace",
+        "/skills/ar-miner",
+        "/skills/cleancode-scanfix",
+        "/skills/code-research",
+        "/skills/codebase-search",
+        "/skills/design-gen",
+        "/skills/executing-plans",
+        "/skills/huawei-c-coding-standard",
+        "/skills/r2c-build-redblue",
+        "/skills/r2c-design",
+        "/skills/r2c-imdesign",
+        "/skills/r2c-implement-redblue",
+        "/skills/r2c-push-mr",
+        "/skills/r2c-review",
+        "/skills/r2c-verify-rb",
+        "/skills/red-blue",
+        "/skills/req-analysis",
+        "/skills/req-design",
+        "/skills/req-formal-verif",
+        "/skills/semantic-equiv",
+        "/skills/sr-miner",
+        "/skills/subagent-driven-development",
+        "/skills/using-workflow",
+        "/skills/v3-check-symbol-context",
+        "/skills/v3-commit",
+        "/skills/v3-hm-kernel",
+        "/skills/v3-kb",
+        "/skills/v3-personal-pipeline",
+        "/skills/v3-query-symbol",
+        "/skills/workflow-core",
+        "/skills/writing-plans"
+      ]
+    },
+    {
+      "target": "omp",
+      "capability": "state",
+      "level": "unavailable",
+      "uses": [
+        ""
+      ]
+    },
+    {
+      "target": "omp",
+      "capability": "gates",
+      "level": "degraded",
+      "uses": []
+    },
+    {
+      "target": "omp",
+      "capability": "outputs",
+      "level": "degraded",
+      "uses": []
+    },
+    {
+      "target": "omp",
+      "capability": "subagents",
+      "level": "native",
+      "uses": [
+        "/stages/0/steps/0/role",
+        "/stages/1/steps/0/role",
+        "/stages/2/steps/0/role",
+        "/stages/3/steps/0/role"
+      ]
+    },
+    {
+      "target": "omp",
+      "capability": "skills",
+      "level": "adapted",
+      "uses": [
+        "/skills/aceharness-rag",
+        "/skills/all-build-single-package",
+        "/skills/all-cleancode",
+        "/skills/all-multirepo-upload",
+        "/skills/all-securec-replace",
+        "/skills/ar-miner",
+        "/skills/cleancode-scanfix",
+        "/skills/code-research",
+        "/skills/codebase-search",
+        "/skills/design-gen",
+        "/skills/executing-plans",
+        "/skills/huawei-c-coding-standard",
+        "/skills/r2c-build-redblue",
+        "/skills/r2c-design",
+        "/skills/r2c-imdesign",
+        "/skills/r2c-implement-redblue",
+        "/skills/r2c-push-mr",
+        "/skills/r2c-review",
+        "/skills/r2c-verify-rb",
+        "/skills/red-blue",
+        "/skills/req-analysis",
+        "/skills/req-design",
+        "/skills/req-formal-verif",
+        "/skills/semantic-equiv",
+        "/skills/sr-miner",
+        "/skills/subagent-driven-development",
+        "/skills/using-workflow",
+        "/skills/v3-check-symbol-context",
+        "/skills/v3-commit",
+        "/skills/v3-hm-kernel",
+        "/skills/v3-kb",
+        "/skills/v3-personal-pipeline",
+        "/skills/v3-query-symbol",
+        "/skills/workflow-core",
+        "/skills/writing-plans"
+      ]
+    },
+    {
+      "target": "omp",
+      "capability": "preload",
+      "level": "native",
+      "uses": []
+    },
+    {
+      "target": "omp",
+      "capability": "stage-invocation",
+      "level": "native",
+      "uses": [
+        "/stages/0",
+        "/stages/1",
+        "/stages/2",
+        "/stages/3"
+      ]
+    },
+    {
+      "target": "omp",
+      "capability": "skill-invocation",
+      "level": "native",
+      "uses": [
+        "/skills/aceharness-rag",
+        "/skills/all-build-single-package",
+        "/skills/all-cleancode",
+        "/skills/all-multirepo-upload",
+        "/skills/all-securec-replace",
+        "/skills/ar-miner",
+        "/skills/cleancode-scanfix",
+        "/skills/code-research",
+        "/skills/codebase-search",
+        "/skills/design-gen",
+        "/skills/executing-plans",
+        "/skills/huawei-c-coding-standard",
+        "/skills/r2c-build-redblue",
+        "/skills/r2c-design",
+        "/skills/r2c-imdesign",
+        "/skills/r2c-implement-redblue",
+        "/skills/r2c-push-mr",
+        "/skills/r2c-review",
+        "/skills/r2c-verify-rb",
+        "/skills/red-blue",
+        "/skills/req-analysis",
+        "/skills/req-design",
+        "/skills/req-formal-verif",
+        "/skills/semantic-equiv",
+        "/skills/sr-miner",
+        "/skills/subagent-driven-development",
+        "/skills/using-workflow",
+        "/skills/v3-check-symbol-context",
+        "/skills/v3-commit",
+        "/skills/v3-hm-kernel",
+        "/skills/v3-kb",
+        "/skills/v3-personal-pipeline",
+        "/skills/v3-query-symbol",
+        "/skills/workflow-core",
+        "/skills/writing-plans"
+      ]
+    },
+    {
+      "target": "opencode",
+      "capability": "state",
+      "level": "unavailable",
+      "uses": [
+        ""
+      ]
+    },
+    {
+      "target": "opencode",
+      "capability": "gates",
+      "level": "degraded",
+      "uses": []
+    },
+    {
+      "target": "opencode",
+      "capability": "outputs",
+      "level": "degraded",
+      "uses": []
+    },
+    {
+      "target": "opencode",
+      "capability": "subagents",
+      "level": "native",
+      "uses": [
+        "/stages/0/steps/0/role",
+        "/stages/1/steps/0/role",
+        "/stages/2/steps/0/role",
+        "/stages/3/steps/0/role"
+      ]
+    },
+    {
+      "target": "opencode",
+      "capability": "skills",
+      "level": "adapted",
+      "uses": [
+        "/skills/aceharness-rag",
+        "/skills/all-build-single-package",
+        "/skills/all-cleancode",
+        "/skills/all-multirepo-upload",
+        "/skills/all-securec-replace",
+        "/skills/ar-miner",
+        "/skills/cleancode-scanfix",
+        "/skills/code-research",
+        "/skills/codebase-search",
+        "/skills/design-gen",
+        "/skills/executing-plans",
+        "/skills/huawei-c-coding-standard",
+        "/skills/r2c-build-redblue",
+        "/skills/r2c-design",
+        "/skills/r2c-imdesign",
+        "/skills/r2c-implement-redblue",
+        "/skills/r2c-push-mr",
+        "/skills/r2c-review",
+        "/skills/r2c-verify-rb",
+        "/skills/red-blue",
+        "/skills/req-analysis",
+        "/skills/req-design",
+        "/skills/req-formal-verif",
+        "/skills/semantic-equiv",
+        "/skills/sr-miner",
+        "/skills/subagent-driven-development",
+        "/skills/using-workflow",
+        "/skills/v3-check-symbol-context",
+        "/skills/v3-commit",
+        "/skills/v3-hm-kernel",
+        "/skills/v3-kb",
+        "/skills/v3-personal-pipeline",
+        "/skills/v3-query-symbol",
+        "/skills/workflow-core",
+        "/skills/writing-plans"
+      ]
+    },
+    {
+      "target": "opencode",
+      "capability": "preload",
+      "level": "unavailable",
+      "uses": []
+    },
+    {
+      "target": "opencode",
+      "capability": "stage-invocation",
+      "level": "native",
+      "uses": [
+        "/stages/0",
+        "/stages/1",
+        "/stages/2",
+        "/stages/3"
+      ]
+    },
+    {
+      "target": "opencode",
+      "capability": "skill-invocation",
+      "level": "native",
+      "uses": [
+        "/skills/aceharness-rag",
+        "/skills/all-build-single-package",
+        "/skills/all-cleancode",
+        "/skills/all-multirepo-upload",
+        "/skills/all-securec-replace",
+        "/skills/ar-miner",
+        "/skills/cleancode-scanfix",
+        "/skills/code-research",
+        "/skills/codebase-search",
+        "/skills/design-gen",
+        "/skills/executing-plans",
+        "/skills/huawei-c-coding-standard",
+        "/skills/r2c-build-redblue",
+        "/skills/r2c-design",
+        "/skills/r2c-imdesign",
+        "/skills/r2c-implement-redblue",
+        "/skills/r2c-push-mr",
+        "/skills/r2c-review",
+        "/skills/r2c-verify-rb",
+        "/skills/red-blue",
+        "/skills/req-analysis",
+        "/skills/req-design",
+        "/skills/req-formal-verif",
+        "/skills/semantic-equiv",
+        "/skills/sr-miner",
+        "/skills/subagent-driven-development",
+        "/skills/using-workflow",
+        "/skills/v3-check-symbol-context",
+        "/skills/v3-commit",
+        "/skills/v3-hm-kernel",
+        "/skills/v3-kb",
+        "/skills/v3-personal-pipeline",
+        "/skills/v3-query-symbol",
+        "/skills/workflow-core",
+        "/skills/writing-plans"
+      ]
+    }
+  ],
+  "degradations": [
+    {
+      "code": "CAP_STATE_UNAVAILABLE",
+      "target": "claude-code",
+      "capability": "state",
+      "level": "unavailable",
+      "pointer": "",
+      "reason": "agent-native 不生成 runner，没有状态机",
+      "effect": "没有进度文件、暂停/续跑或阶段强制；提交退化为自证回执"
+    },
+    {
+      "code": "CAP_ROLE_FIELD_DEGRADED",
+      "target": "claude-code",
+      "capability": "subagents",
+      "level": "unavailable",
+      "pointer": "/roles/bys-architect",
+      "field": "title",
+      "reason": "Claude 无展示名槽",
+      "effect": "展示名丢弃，只保留 description"
+    },
+    {
+      "code": "CAP_ROLE_FIELD_DEGRADED",
+      "target": "claude-code",
+      "capability": "subagents",
+      "level": "unavailable",
+      "pointer": "/roles/bys-designer",
+      "field": "title",
+      "reason": "Claude 无展示名槽",
+      "effect": "展示名丢弃，只保留 description"
+    },
+    {
+      "code": "CAP_ROLE_FIELD_DEGRADED",
+      "target": "claude-code",
+      "capability": "subagents",
+      "level": "unavailable",
+      "pointer": "/roles/bys-impl-lead",
+      "field": "title",
+      "reason": "Claude 无展示名槽",
+      "effect": "展示名丢弃，只保留 description"
+    },
+    {
+      "code": "CAP_ROLE_FIELD_DEGRADED",
+      "target": "claude-code",
+      "capability": "subagents",
+      "level": "unavailable",
+      "pointer": "/roles/bys-release-lead",
+      "field": "title",
+      "reason": "Claude 无展示名槽",
+      "effect": "展示名丢弃，只保留 description"
+    },
+    {
+      "code": "CAP_STATE_UNAVAILABLE",
+      "target": "codex",
+      "capability": "state",
+      "level": "unavailable",
+      "pointer": "",
+      "reason": "agent-native 不生成 runner，没有状态机",
+      "effect": "没有进度文件、暂停/续跑或阶段强制；提交退化为自证回执"
+    },
+    {
+      "code": "CAP_ROLE_FIELD_DEGRADED",
+      "target": "codex",
+      "capability": "subagents",
+      "level": "degraded",
+      "pointer": "/roles/bys-architect",
+      "field": "model",
+      "reason": "codex 无能力档别名，槽位需要具体 model id",
+      "effect": "继承 default_subagent_model"
+    },
+    {
+      "code": "CAP_ROLE_FIELD_DEGRADED",
+      "target": "codex",
+      "capability": "subagents",
+      "level": "unavailable",
+      "pointer": "/roles/bys-architect",
+      "field": "title",
+      "reason": "codex 无展示名槽",
+      "effect": "展示名丢弃"
+    },
+    {
+      "code": "CAP_ROLE_FIELD_DEGRADED",
+      "target": "codex",
+      "capability": "subagents",
+      "level": "degraded",
+      "pointer": "/roles/bys-designer",
+      "field": "model",
+      "reason": "codex 无能力档别名，槽位需要具体 model id",
+      "effect": "继承 default_subagent_model"
+    },
+    {
+      "code": "CAP_ROLE_FIELD_DEGRADED",
+      "target": "codex",
+      "capability": "subagents",
+      "level": "unavailable",
+      "pointer": "/roles/bys-designer",
+      "field": "title",
+      "reason": "codex 无展示名槽",
+      "effect": "展示名丢弃"
+    },
+    {
+      "code": "CAP_ROLE_FIELD_DEGRADED",
+      "target": "codex",
+      "capability": "subagents",
+      "level": "degraded",
+      "pointer": "/roles/bys-impl-lead",
+      "field": "model",
+      "reason": "codex 无能力档别名，槽位需要具体 model id",
+      "effect": "继承 default_subagent_model"
+    },
+    {
+      "code": "CAP_ROLE_FIELD_DEGRADED",
+      "target": "codex",
+      "capability": "subagents",
+      "level": "unavailable",
+      "pointer": "/roles/bys-impl-lead",
+      "field": "title",
+      "reason": "codex 无展示名槽",
+      "effect": "展示名丢弃"
+    },
+    {
+      "code": "CAP_ROLE_FIELD_DEGRADED",
+      "target": "codex",
+      "capability": "subagents",
+      "level": "degraded",
+      "pointer": "/roles/bys-release-lead",
+      "field": "model",
+      "reason": "codex 无能力档别名，槽位需要具体 model id",
+      "effect": "继承 default_subagent_model"
+    },
+    {
+      "code": "CAP_ROLE_FIELD_DEGRADED",
+      "target": "codex",
+      "capability": "subagents",
+      "level": "unavailable",
+      "pointer": "/roles/bys-release-lead",
+      "field": "title",
+      "reason": "codex 无展示名槽",
+      "effect": "展示名丢弃"
+    },
+    {
+      "code": "CAP_STATE_UNAVAILABLE",
+      "target": "dsh",
+      "capability": "state",
+      "level": "unavailable",
+      "pointer": "",
+      "reason": "agent-native 不生成 runner，没有状态机",
+      "effect": "没有进度文件、暂停/续跑或阶段强制；提交退化为自证回执"
+    },
+    {
+      "code": "CAP_ROLE_FIELD_DEGRADED",
+      "target": "dsh",
+      "capability": "subagents",
+      "level": "degraded",
+      "pointer": "/roles/bys-architect",
+      "field": "description",
+      "reason": "dsh 只在 profile 层按 preset id 枚举角色；v1 角色目录不进入运行时路由",
+      "effect": "模型只能按角色 id/段落选择角色，读不到描述"
+    },
+    {
+      "code": "CAP_ROLE_FIELD_DEGRADED",
+      "target": "dsh",
+      "capability": "subagents",
+      "level": "degraded",
+      "pointer": "/roles/bys-architect",
+      "field": "model",
+      "reason": "dsh agentOptions 是委派工具级、跨角色共享",
+      "effect": "全角色共享 agentOptions；开启 modelSelection 时由模型逐次选择"
+    },
+    {
+      "code": "CAP_ROLE_FIELD_DEGRADED",
+      "target": "dsh",
+      "capability": "subagents",
+      "level": "degraded",
+      "pointer": "/roles/bys-designer",
+      "field": "description",
+      "reason": "dsh 只在 profile 层按 preset id 枚举角色；v1 角色目录不进入运行时路由",
+      "effect": "模型只能按角色 id/段落选择角色，读不到描述"
+    },
+    {
+      "code": "CAP_ROLE_FIELD_DEGRADED",
+      "target": "dsh",
+      "capability": "subagents",
+      "level": "degraded",
+      "pointer": "/roles/bys-designer",
+      "field": "model",
+      "reason": "dsh agentOptions 是委派工具级、跨角色共享",
+      "effect": "全角色共享 agentOptions；开启 modelSelection 时由模型逐次选择"
+    },
+    {
+      "code": "CAP_ROLE_FIELD_DEGRADED",
+      "target": "dsh",
+      "capability": "subagents",
+      "level": "degraded",
+      "pointer": "/roles/bys-impl-lead",
+      "field": "description",
+      "reason": "dsh 只在 profile 层按 preset id 枚举角色；v1 角色目录不进入运行时路由",
+      "effect": "模型只能按角色 id/段落选择角色，读不到描述"
+    },
+    {
+      "code": "CAP_ROLE_FIELD_DEGRADED",
+      "target": "dsh",
+      "capability": "subagents",
+      "level": "degraded",
+      "pointer": "/roles/bys-impl-lead",
+      "field": "model",
+      "reason": "dsh agentOptions 是委派工具级、跨角色共享",
+      "effect": "全角色共享 agentOptions；开启 modelSelection 时由模型逐次选择"
+    },
+    {
+      "code": "CAP_ROLE_FIELD_DEGRADED",
+      "target": "dsh",
+      "capability": "subagents",
+      "level": "degraded",
+      "pointer": "/roles/bys-release-lead",
+      "field": "description",
+      "reason": "dsh 只在 profile 层按 preset id 枚举角色；v1 角色目录不进入运行时路由",
+      "effect": "模型只能按角色 id/段落选择角色，读不到描述"
+    },
+    {
+      "code": "CAP_ROLE_FIELD_DEGRADED",
+      "target": "dsh",
+      "capability": "subagents",
+      "level": "degraded",
+      "pointer": "/roles/bys-release-lead",
+      "field": "model",
+      "reason": "dsh agentOptions 是委派工具级、跨角色共享",
+      "effect": "全角色共享 agentOptions；开启 modelSelection 时由模型逐次选择"
+    },
+    {
+      "code": "CAP_SUBAGENTS_UNAVAILABLE",
+      "capability": "subagents",
+      "level": "unavailable",
+      "pointer": "/stages/0/steps/0/role",
+      "reason": "dsh v1 不生成原生 agent preset；投影只写项目内文件",
+      "effect": "角色只在项目内角色目录里；主会话按同名段落执行，不能原生派发子 agent",
+      "target": "dsh"
+    },
+    {
+      "code": "CAP_SUBAGENTS_UNAVAILABLE",
+      "capability": "subagents",
+      "level": "unavailable",
+      "pointer": "/stages/1/steps/0/role",
+      "reason": "dsh v1 不生成原生 agent preset；投影只写项目内文件",
+      "effect": "角色只在项目内角色目录里；主会话按同名段落执行，不能原生派发子 agent",
+      "target": "dsh"
+    },
+    {
+      "code": "CAP_SUBAGENTS_UNAVAILABLE",
+      "capability": "subagents",
+      "level": "unavailable",
+      "pointer": "/stages/2/steps/0/role",
+      "reason": "dsh v1 不生成原生 agent preset；投影只写项目内文件",
+      "effect": "角色只在项目内角色目录里；主会话按同名段落执行，不能原生派发子 agent",
+      "target": "dsh"
+    },
+    {
+      "code": "CAP_SUBAGENTS_UNAVAILABLE",
+      "capability": "subagents",
+      "level": "unavailable",
+      "pointer": "/stages/3/steps/0/role",
+      "reason": "dsh v1 不生成原生 agent preset；投影只写项目内文件",
+      "effect": "角色只在项目内角色目录里；主会话按同名段落执行，不能原生派发子 agent",
+      "target": "dsh"
+    },
+    {
+      "code": "CAP_STATE_UNAVAILABLE",
+      "target": "omp",
+      "capability": "state",
+      "level": "unavailable",
+      "pointer": "",
+      "reason": "agent-native 不生成 runner，没有状态机",
+      "effect": "没有进度文件、暂停/续跑或阶段强制；提交退化为自证回执"
+    },
+    {
+      "code": "CAP_ROLE_FIELD_DEGRADED",
+      "target": "omp",
+      "capability": "subagents",
+      "level": "degraded",
+      "pointer": "/roles/bys-architect",
+      "field": "model",
+      "reason": "omp @tier 别名需要 modelRoles 条目，渲染期无法证明",
+      "effect": "继承 profile 默认模型"
+    },
+    {
+      "code": "CAP_ROLE_FIELD_DEGRADED",
+      "target": "omp",
+      "capability": "subagents",
+      "level": "unavailable",
+      "pointer": "/roles/bys-architect",
+      "field": "title",
+      "reason": "omp 无展示名槽",
+      "effect": "展示名丢弃"
+    },
+    {
+      "code": "CAP_ROLE_FIELD_DEGRADED",
+      "target": "omp",
+      "capability": "subagents",
+      "level": "degraded",
+      "pointer": "/roles/bys-designer",
+      "field": "model",
+      "reason": "omp @tier 别名需要 modelRoles 条目，渲染期无法证明",
+      "effect": "继承 profile 默认模型"
+    },
+    {
+      "code": "CAP_ROLE_FIELD_DEGRADED",
+      "target": "omp",
+      "capability": "subagents",
+      "level": "unavailable",
+      "pointer": "/roles/bys-designer",
+      "field": "title",
+      "reason": "omp 无展示名槽",
+      "effect": "展示名丢弃"
+    },
+    {
+      "code": "CAP_ROLE_FIELD_DEGRADED",
+      "target": "omp",
+      "capability": "subagents",
+      "level": "degraded",
+      "pointer": "/roles/bys-impl-lead",
+      "field": "model",
+      "reason": "omp @tier 别名需要 modelRoles 条目，渲染期无法证明",
+      "effect": "继承 profile 默认模型"
+    },
+    {
+      "code": "CAP_ROLE_FIELD_DEGRADED",
+      "target": "omp",
+      "capability": "subagents",
+      "level": "unavailable",
+      "pointer": "/roles/bys-impl-lead",
+      "field": "title",
+      "reason": "omp 无展示名槽",
+      "effect": "展示名丢弃"
+    },
+    {
+      "code": "CAP_ROLE_FIELD_DEGRADED",
+      "target": "omp",
+      "capability": "subagents",
+      "level": "degraded",
+      "pointer": "/roles/bys-release-lead",
+      "field": "model",
+      "reason": "omp @tier 别名需要 modelRoles 条目，渲染期无法证明",
+      "effect": "继承 profile 默认模型"
+    },
+    {
+      "code": "CAP_ROLE_FIELD_DEGRADED",
+      "target": "omp",
+      "capability": "subagents",
+      "level": "unavailable",
+      "pointer": "/roles/bys-release-lead",
+      "field": "title",
+      "reason": "omp 无展示名槽",
+      "effect": "展示名丢弃"
+    },
+    {
+      "code": "CAP_STATE_UNAVAILABLE",
+      "target": "opencode",
+      "capability": "state",
+      "level": "unavailable",
+      "pointer": "",
+      "reason": "agent-native 不生成 runner，没有状态机",
+      "effect": "没有进度文件、暂停/续跑或阶段强制；提交退化为自证回执"
+    },
+    {
+      "code": "CAP_ROLE_FIELD_DEGRADED",
+      "target": "opencode",
+      "capability": "subagents",
+      "level": "degraded",
+      "pointer": "/roles/bys-architect",
+      "field": "model",
+      "reason": "opencode 的 model 需要 provider/model-id 字面量",
+      "effect": "省略 model，继承父会话模型"
+    },
+    {
+      "code": "CAP_ROLE_FIELD_DEGRADED",
+      "target": "opencode",
+      "capability": "subagents",
+      "level": "unavailable",
+      "pointer": "/roles/bys-architect",
+      "field": "title",
+      "reason": "opencode 无展示名槽",
+      "effect": "展示名丢弃，只保留 description"
+    },
+    {
+      "code": "CAP_ROLE_FIELD_DEGRADED",
+      "target": "opencode",
+      "capability": "subagents",
+      "level": "degraded",
+      "pointer": "/roles/bys-designer",
+      "field": "model",
+      "reason": "opencode 的 model 需要 provider/model-id 字面量",
+      "effect": "省略 model，继承父会话模型"
+    },
+    {
+      "code": "CAP_ROLE_FIELD_DEGRADED",
+      "target": "opencode",
+      "capability": "subagents",
+      "level": "unavailable",
+      "pointer": "/roles/bys-designer",
+      "field": "title",
+      "reason": "opencode 无展示名槽",
+      "effect": "展示名丢弃，只保留 description"
+    },
+    {
+      "code": "CAP_ROLE_FIELD_DEGRADED",
+      "target": "opencode",
+      "capability": "subagents",
+      "level": "degraded",
+      "pointer": "/roles/bys-impl-lead",
+      "field": "model",
+      "reason": "opencode 的 model 需要 provider/model-id 字面量",
+      "effect": "省略 model，继承父会话模型"
+    },
+    {
+      "code": "CAP_ROLE_FIELD_DEGRADED",
+      "target": "opencode",
+      "capability": "subagents",
+      "level": "unavailable",
+      "pointer": "/roles/bys-impl-lead",
+      "field": "title",
+      "reason": "opencode 无展示名槽",
+      "effect": "展示名丢弃，只保留 description"
+    },
+    {
+      "code": "CAP_ROLE_FIELD_DEGRADED",
+      "target": "opencode",
+      "capability": "subagents",
+      "level": "degraded",
+      "pointer": "/roles/bys-release-lead",
+      "field": "model",
+      "reason": "opencode 的 model 需要 provider/model-id 字面量",
+      "effect": "省略 model，继承父会话模型"
+    },
+    {
+      "code": "CAP_ROLE_FIELD_DEGRADED",
+      "target": "opencode",
+      "capability": "subagents",
+      "level": "unavailable",
+      "pointer": "/roles/bys-release-lead",
+      "field": "title",
+      "reason": "opencode 无展示名槽",
+      "effect": "展示名丢弃，只保留 description"
+    }
+  ],
+  "warnings": [
+    {
+      "code": "SKILL_MIRRORED_ROOTS",
+      "target": "omp",
+      "message": "skills are written byte-identically to .claude/skills and .agents/skills; omp may list the same skill twice (content identical, display only)"
+    }
+  ],
+  "files": [
+    {
+      "path": ".agents/agent-native/rtosv3-drvport/roles.json",
+      "sha256": "31fc1630744a10b9a4e6cffd5c7743c6fd455ba85ebf3faeb8ec5a7da0c6cb52"
+    },
+    {
+      "path": ".agents/skills/rtosv3-drvport-skill-aceharness-rag/SKILL.md",
+      "sha256": "74c338495db395cec8be04c298826fb6d1a31901cbb95e7a23183eb8fbc40ac6"
+    },
+    {
+      "path": ".agents/skills/rtosv3-drvport-skill-all-build-single-package/SKILL.md",
+      "sha256": "eec39cf1cd2dda1d77547829284e21787676053ede57bd1d84b9d3b39ce2d2fd"
+    },
+    {
+      "path": ".agents/skills/rtosv3-drvport-skill-all-cleancode/SKILL.md",
+      "sha256": "6d4530772a63ebd80a4d7486f6e61c008898d5542d13b70a0fef0315fe901b23"
+    },
+    {
+      "path": ".agents/skills/rtosv3-drvport-skill-all-multirepo-upload/SKILL.md",
+      "sha256": "2e48b87769cc82eb809c40bdfb91a8f154d863dcbee00a7664eb497bd5a84510"
+    },
+    {
+      "path": ".agents/skills/rtosv3-drvport-skill-all-securec-replace/SKILL.md",
+      "sha256": "e2fd2fa3154e3e2a9ea6031be20a9686bfd2a4f71d199a5b2482a475b01aee6b"
+    },
+    {
+      "path": ".agents/skills/rtosv3-drvport-skill-ar-miner/SKILL.md",
+      "sha256": "f7823d7ab51b2f9dd55f44e9bfc81e2a885f75ab4695ae19a399e5dfaca9f7f8"
+    },
+    {
+      "path": ".agents/skills/rtosv3-drvport-skill-cleancode-scanfix/SKILL.md",
+      "sha256": "e8a98593747ec78e89d312e86af31365c9e68834f1a3d0f08de10322592ff860"
+    },
+    {
+      "path": ".agents/skills/rtosv3-drvport-skill-code-research/SKILL.md",
+      "sha256": "61b938a5432fc25ce69e67dd75d42ca50b901d30eb276ba5ffc1f7d7e540d00b"
+    },
+    {
+      "path": ".agents/skills/rtosv3-drvport-skill-codebase-search/SKILL.md",
+      "sha256": "2684e2bfbd3ed6799a490d7856e2e6b28e069619d2c7f866a6c60be71f4c9caf"
+    },
+    {
+      "path": ".agents/skills/rtosv3-drvport-skill-design-gen/SKILL.md",
+      "sha256": "0614b60a22f3ed35e69c5d93e6cba3725ff0fff7d4248fef466ca0106edba78c"
+    },
+    {
+      "path": ".agents/skills/rtosv3-drvport-skill-executing-plans/SKILL.md",
+      "sha256": "22f77f0792b0316d098e38a5325e9f9e9d24072a2818568508fa1320624b93bf"
+    },
+    {
+      "path": ".agents/skills/rtosv3-drvport-skill-huawei-c-coding-standard/SKILL.md",
+      "sha256": "bc3d4c4e88b17eab41916a8ce0ea65e44eaa66d5051a3af4a4d8c61a3915c3b5"
+    },
+    {
+      "path": ".agents/skills/rtosv3-drvport-skill-r2c-build-redblue/SKILL.md",
+      "sha256": "a6e65ac3e39ee1f92e729d7d8545bbc08021661236b2a320a7b6fea17046d67d"
+    },
+    {
+      "path": ".agents/skills/rtosv3-drvport-skill-r2c-design/SKILL.md",
+      "sha256": "75b08d9c8e3a3260d13aac7747cee57ce399dbba00ae73b0b3f9a4b15e154e89"
+    },
+    {
+      "path": ".agents/skills/rtosv3-drvport-skill-r2c-imdesign/SKILL.md",
+      "sha256": "98e58889d2f097a34a143958c99f7ecdced9cbcc17dd77f607c49c97a7479d04"
+    },
+    {
+      "path": ".agents/skills/rtosv3-drvport-skill-r2c-implement-redblue/SKILL.md",
+      "sha256": "8c2a760d6e843c5a5553d46c1754a99c628b97051f8332adee61748bd2595a5e"
+    },
+    {
+      "path": ".agents/skills/rtosv3-drvport-skill-r2c-push-mr/SKILL.md",
+      "sha256": "b6041243b2e8d439a876e284dbf13ec2470a8c583de2121ffb5044719dee813e"
+    },
+    {
+      "path": ".agents/skills/rtosv3-drvport-skill-r2c-review/SKILL.md",
+      "sha256": "853dd8ab148a689e0ceb724f522a16c652f6312b62ce1b86eb860a3df46194b2"
+    },
+    {
+      "path": ".agents/skills/rtosv3-drvport-skill-r2c-verify-rb/SKILL.md",
+      "sha256": "23a883fe8ed11ddb0b6866066df9ca2ac03db8c2e3d9f311d574efbf16f9f7f1"
+    },
+    {
+      "path": ".agents/skills/rtosv3-drvport-skill-red-blue/SKILL.md",
+      "sha256": "30de7530eddaf3b11b84a5fc1fa46ebec8ea198c56cb2c457f9a2882759274c0"
+    },
+    {
+      "path": ".agents/skills/rtosv3-drvport-skill-req-analysis/SKILL.md",
+      "sha256": "49496919291dc0bad9ab430b6f768f487b947708fc498052e64a7def4cab12d2"
+    },
+    {
+      "path": ".agents/skills/rtosv3-drvport-skill-req-design/SKILL.md",
+      "sha256": "b79e7a046e3d6725a0fda7d21c056c1a9b604cf5af84dc8fb770de2e2a330384"
+    },
+    {
+      "path": ".agents/skills/rtosv3-drvport-skill-req-formal-verif/SKILL.md",
+      "sha256": "1fbe1d961b5c5f41273ca846f1d13c59775edf65bc7adaad33dbc971e18137ca"
+    },
+    {
+      "path": ".agents/skills/rtosv3-drvport-skill-semantic-equiv/SKILL.md",
+      "sha256": "3be746736ba12b1f162d0e5057f676b99234890e290464533a3524091fffd9a4"
+    },
+    {
+      "path": ".agents/skills/rtosv3-drvport-skill-sr-miner/SKILL.md",
+      "sha256": "ace94459ad9ee5ef3b0f0f7a8d36a0135fc81355d05c8fb3634bde5dd5974aa0"
+    },
+    {
+      "path": ".agents/skills/rtosv3-drvport-skill-subagent-driven-development/SKILL.md",
+      "sha256": "addd69821153d86c72966f2295c81029fc7c014a6bd2bb98618e6a54715362c6"
+    },
+    {
+      "path": ".agents/skills/rtosv3-drvport-skill-using-workflow/SKILL.md",
+      "sha256": "7d606348b2d5cd3bef6f65e06a7091173d719458b35a01a3d5032f345c94ee16"
+    },
+    {
+      "path": ".agents/skills/rtosv3-drvport-skill-v3-check-symbol-context/SKILL.md",
+      "sha256": "b3b10b5756fefa89197b172fee1a43b46f2d69b38559641a09062ebe708006d9"
+    },
+    {
+      "path": ".agents/skills/rtosv3-drvport-skill-v3-commit/SKILL.md",
+      "sha256": "ac91a262207d24e692141d3c125f4bceb5bc43e91af8dde52b093358c5b48f1f"
+    },
+    {
+      "path": ".agents/skills/rtosv3-drvport-skill-v3-hm-kernel/SKILL.md",
+      "sha256": "0278f73c79c8b1a873020fd3ea2f96e3a84e09e8f1364b7896459e202d0d0164"
+    },
+    {
+      "path": ".agents/skills/rtosv3-drvport-skill-v3-kb/SKILL.md",
+      "sha256": "e9ededd4af3d8f674c902c2bf2229b5a946b76105a2875b0a20ecd949509fbef"
+    },
+    {
+      "path": ".agents/skills/rtosv3-drvport-skill-v3-personal-pipeline/SKILL.md",
+      "sha256": "5e95be7c37eb2a7ccc827af26f89c28f00376b3981b3d3211887765b27f68bf1"
+    },
+    {
+      "path": ".agents/skills/rtosv3-drvport-skill-v3-query-symbol/SKILL.md",
+      "sha256": "aa0c1f85b3bd96346e601333cbf020d47af138a09df1f6a355489a3d4a5a8ab1"
+    },
+    {
+      "path": ".agents/skills/rtosv3-drvport-skill-workflow-core/SKILL.md",
+      "sha256": "ffb2182859418561fc04e340dfafce03082537e69f271cae26c6ce5e9d0719fd"
+    },
+    {
+      "path": ".agents/skills/rtosv3-drvport-skill-writing-plans/SKILL.md",
+      "sha256": "99db8f5c6a6a3601d71979d265eedd4f672f4f97c29334c0546739c93abdddfc"
+    },
+    {
+      "path": ".agents/skills/rtosv3-drvport-stage-analysis-design/SKILL.md",
+      "sha256": "b09c7be2338ca7740fd216bd6149ab98b7e184c856fb1985eab842915d706f1c"
+    },
+    {
+      "path": ".agents/skills/rtosv3-drvport-stage-detailed-design/SKILL.md",
+      "sha256": "40aab0482258cb8a64f0b2ef91da75215e06d04f6ec0f150955389943875d892"
+    },
+    {
+      "path": ".agents/skills/rtosv3-drvport-stage-implementation/SKILL.md",
+      "sha256": "6ef81d21cabb322518c8f41f3cc2194a833444d2f3a8956151ba722ed740d5ef"
+    },
+    {
+      "path": ".agents/skills/rtosv3-drvport-stage-verification/SKILL.md",
+      "sha256": "862463b5ca47055894b515636fa9ad2a3c8cb42417ac4957fcf5558e167d7231"
+    },
+    {
+      "path": ".agents/skills/rtosv3-drvport-workflow/SKILL.md",
+      "sha256": "e0e097a0092c9584f20956f8ad381eb6aa465578ab87f46e5e8d5d55e9e9d68f"
+    },
+    {
+      "path": ".claude/agents/rtosv3-drvport-bys-architect.md",
+      "sha256": "2d2b1cf862d576c9cd8f431686343e06c64084ae9f137eb2a7f271f062d1d3cc"
+    },
+    {
+      "path": ".claude/agents/rtosv3-drvport-bys-designer.md",
+      "sha256": "237f4d0fd9a705cca611657186e498ad1be8b945d6d0c8ba955dca50999ebce1"
+    },
+    {
+      "path": ".claude/agents/rtosv3-drvport-bys-impl-lead.md",
+      "sha256": "27184270309a27392bdf67277bfb40d2e1649fe1e70b235663656a739753fc3d"
+    },
+    {
+      "path": ".claude/agents/rtosv3-drvport-bys-release-lead.md",
+      "sha256": "d25858b126ae0e7695163e23f11d4c97af61e1983ce282da8b19949d928b2417"
+    },
+    {
+      "path": ".claude/skills/rtosv3-drvport-skill-aceharness-rag/SKILL.md",
+      "sha256": "74c338495db395cec8be04c298826fb6d1a31901cbb95e7a23183eb8fbc40ac6"
+    },
+    {
+      "path": ".claude/skills/rtosv3-drvport-skill-all-build-single-package/SKILL.md",
+      "sha256": "eec39cf1cd2dda1d77547829284e21787676053ede57bd1d84b9d3b39ce2d2fd"
+    },
+    {
+      "path": ".claude/skills/rtosv3-drvport-skill-all-cleancode/SKILL.md",
+      "sha256": "6d4530772a63ebd80a4d7486f6e61c008898d5542d13b70a0fef0315fe901b23"
+    },
+    {
+      "path": ".claude/skills/rtosv3-drvport-skill-all-multirepo-upload/SKILL.md",
+      "sha256": "2e48b87769cc82eb809c40bdfb91a8f154d863dcbee00a7664eb497bd5a84510"
+    },
+    {
+      "path": ".claude/skills/rtosv3-drvport-skill-all-securec-replace/SKILL.md",
+      "sha256": "e2fd2fa3154e3e2a9ea6031be20a9686bfd2a4f71d199a5b2482a475b01aee6b"
+    },
+    {
+      "path": ".claude/skills/rtosv3-drvport-skill-ar-miner/SKILL.md",
+      "sha256": "f7823d7ab51b2f9dd55f44e9bfc81e2a885f75ab4695ae19a399e5dfaca9f7f8"
+    },
+    {
+      "path": ".claude/skills/rtosv3-drvport-skill-cleancode-scanfix/SKILL.md",
+      "sha256": "e8a98593747ec78e89d312e86af31365c9e68834f1a3d0f08de10322592ff860"
+    },
+    {
+      "path": ".claude/skills/rtosv3-drvport-skill-code-research/SKILL.md",
+      "sha256": "61b938a5432fc25ce69e67dd75d42ca50b901d30eb276ba5ffc1f7d7e540d00b"
+    },
+    {
+      "path": ".claude/skills/rtosv3-drvport-skill-codebase-search/SKILL.md",
+      "sha256": "2684e2bfbd3ed6799a490d7856e2e6b28e069619d2c7f866a6c60be71f4c9caf"
+    },
+    {
+      "path": ".claude/skills/rtosv3-drvport-skill-design-gen/SKILL.md",
+      "sha256": "0614b60a22f3ed35e69c5d93e6cba3725ff0fff7d4248fef466ca0106edba78c"
+    },
+    {
+      "path": ".claude/skills/rtosv3-drvport-skill-executing-plans/SKILL.md",
+      "sha256": "22f77f0792b0316d098e38a5325e9f9e9d24072a2818568508fa1320624b93bf"
+    },
+    {
+      "path": ".claude/skills/rtosv3-drvport-skill-huawei-c-coding-standard/SKILL.md",
+      "sha256": "bc3d4c4e88b17eab41916a8ce0ea65e44eaa66d5051a3af4a4d8c61a3915c3b5"
+    },
+    {
+      "path": ".claude/skills/rtosv3-drvport-skill-r2c-build-redblue/SKILL.md",
+      "sha256": "a6e65ac3e39ee1f92e729d7d8545bbc08021661236b2a320a7b6fea17046d67d"
+    },
+    {
+      "path": ".claude/skills/rtosv3-drvport-skill-r2c-design/SKILL.md",
+      "sha256": "75b08d9c8e3a3260d13aac7747cee57ce399dbba00ae73b0b3f9a4b15e154e89"
+    },
+    {
+      "path": ".claude/skills/rtosv3-drvport-skill-r2c-imdesign/SKILL.md",
+      "sha256": "98e58889d2f097a34a143958c99f7ecdced9cbcc17dd77f607c49c97a7479d04"
+    },
+    {
+      "path": ".claude/skills/rtosv3-drvport-skill-r2c-implement-redblue/SKILL.md",
+      "sha256": "8c2a760d6e843c5a5553d46c1754a99c628b97051f8332adee61748bd2595a5e"
+    },
+    {
+      "path": ".claude/skills/rtosv3-drvport-skill-r2c-push-mr/SKILL.md",
+      "sha256": "b6041243b2e8d439a876e284dbf13ec2470a8c583de2121ffb5044719dee813e"
+    },
+    {
+      "path": ".claude/skills/rtosv3-drvport-skill-r2c-review/SKILL.md",
+      "sha256": "853dd8ab148a689e0ceb724f522a16c652f6312b62ce1b86eb860a3df46194b2"
+    },
+    {
+      "path": ".claude/skills/rtosv3-drvport-skill-r2c-verify-rb/SKILL.md",
+      "sha256": "23a883fe8ed11ddb0b6866066df9ca2ac03db8c2e3d9f311d574efbf16f9f7f1"
+    },
+    {
+      "path": ".claude/skills/rtosv3-drvport-skill-red-blue/SKILL.md",
+      "sha256": "30de7530eddaf3b11b84a5fc1fa46ebec8ea198c56cb2c457f9a2882759274c0"
+    },
+    {
+      "path": ".claude/skills/rtosv3-drvport-skill-req-analysis/SKILL.md",
+      "sha256": "49496919291dc0bad9ab430b6f768f487b947708fc498052e64a7def4cab12d2"
+    },
+    {
+      "path": ".claude/skills/rtosv3-drvport-skill-req-design/SKILL.md",
+      "sha256": "b79e7a046e3d6725a0fda7d21c056c1a9b604cf5af84dc8fb770de2e2a330384"
+    },
+    {
+      "path": ".claude/skills/rtosv3-drvport-skill-req-formal-verif/SKILL.md",
+      "sha256": "1fbe1d961b5c5f41273ca846f1d13c59775edf65bc7adaad33dbc971e18137ca"
+    },
+    {
+      "path": ".claude/skills/rtosv3-drvport-skill-semantic-equiv/SKILL.md",
+      "sha256": "3be746736ba12b1f162d0e5057f676b99234890e290464533a3524091fffd9a4"
+    },
+    {
+      "path": ".claude/skills/rtosv3-drvport-skill-sr-miner/SKILL.md",
+      "sha256": "ace94459ad9ee5ef3b0f0f7a8d36a0135fc81355d05c8fb3634bde5dd5974aa0"
+    },
+    {
+      "path": ".claude/skills/rtosv3-drvport-skill-subagent-driven-development/SKILL.md",
+      "sha256": "addd69821153d86c72966f2295c81029fc7c014a6bd2bb98618e6a54715362c6"
+    },
+    {
+      "path": ".claude/skills/rtosv3-drvport-skill-using-workflow/SKILL.md",
+      "sha256": "7d606348b2d5cd3bef6f65e06a7091173d719458b35a01a3d5032f345c94ee16"
+    },
+    {
+      "path": ".claude/skills/rtosv3-drvport-skill-v3-check-symbol-context/SKILL.md",
+      "sha256": "b3b10b5756fefa89197b172fee1a43b46f2d69b38559641a09062ebe708006d9"
+    },
+    {
+      "path": ".claude/skills/rtosv3-drvport-skill-v3-commit/SKILL.md",
+      "sha256": "ac91a262207d24e692141d3c125f4bceb5bc43e91af8dde52b093358c5b48f1f"
+    },
+    {
+      "path": ".claude/skills/rtosv3-drvport-skill-v3-hm-kernel/SKILL.md",
+      "sha256": "0278f73c79c8b1a873020fd3ea2f96e3a84e09e8f1364b7896459e202d0d0164"
+    },
+    {
+      "path": ".claude/skills/rtosv3-drvport-skill-v3-kb/SKILL.md",
+      "sha256": "e9ededd4af3d8f674c902c2bf2229b5a946b76105a2875b0a20ecd949509fbef"
+    },
+    {
+      "path": ".claude/skills/rtosv3-drvport-skill-v3-personal-pipeline/SKILL.md",
+      "sha256": "5e95be7c37eb2a7ccc827af26f89c28f00376b3981b3d3211887765b27f68bf1"
+    },
+    {
+      "path": ".claude/skills/rtosv3-drvport-skill-v3-query-symbol/SKILL.md",
+      "sha256": "aa0c1f85b3bd96346e601333cbf020d47af138a09df1f6a355489a3d4a5a8ab1"
+    },
+    {
+      "path": ".claude/skills/rtosv3-drvport-skill-workflow-core/SKILL.md",
+      "sha256": "ffb2182859418561fc04e340dfafce03082537e69f271cae26c6ce5e9d0719fd"
+    },
+    {
+      "path": ".claude/skills/rtosv3-drvport-skill-writing-plans/SKILL.md",
+      "sha256": "99db8f5c6a6a3601d71979d265eedd4f672f4f97c29334c0546739c93abdddfc"
+    },
+    {
+      "path": ".claude/skills/rtosv3-drvport-stage-analysis-design/SKILL.md",
+      "sha256": "b09c7be2338ca7740fd216bd6149ab98b7e184c856fb1985eab842915d706f1c"
+    },
+    {
+      "path": ".claude/skills/rtosv3-drvport-stage-detailed-design/SKILL.md",
+      "sha256": "40aab0482258cb8a64f0b2ef91da75215e06d04f6ec0f150955389943875d892"
+    },
+    {
+      "path": ".claude/skills/rtosv3-drvport-stage-implementation/SKILL.md",
+      "sha256": "6ef81d21cabb322518c8f41f3cc2194a833444d2f3a8956151ba722ed740d5ef"
+    },
+    {
+      "path": ".claude/skills/rtosv3-drvport-stage-verification/SKILL.md",
+      "sha256": "862463b5ca47055894b515636fa9ad2a3c8cb42417ac4957fcf5558e167d7231"
+    },
+    {
+      "path": ".claude/skills/rtosv3-drvport-workflow/SKILL.md",
+      "sha256": "e0e097a0092c9584f20956f8ad381eb6aa465578ab87f46e5e8d5d55e9e9d68f"
+    },
+    {
+      "path": ".codex/agents/rtosv3-drvport-bys-architect.toml",
+      "sha256": "d84039e24030a27f3fb71a96d55fe062a0f3565442717824a6ab61a88673f4ce"
+    },
+    {
+      "path": ".codex/agents/rtosv3-drvport-bys-designer.toml",
+      "sha256": "a55da710880f58fcf3ede83c35a4dab7dfab7979bac7a90eda207abdc76b6a71"
+    },
+    {
+      "path": ".codex/agents/rtosv3-drvport-bys-impl-lead.toml",
+      "sha256": "245b219a0569dac592ed51aabbe5a830bc5c5cdb94302d5cb403ace922005219"
+    },
+    {
+      "path": ".codex/agents/rtosv3-drvport-bys-release-lead.toml",
+      "sha256": "f6facebb21c0dbca17337de94c0dfea0fa9dca0a5b2ce3edf79fc6d2b2105c52"
+    },
+    {
+      "path": ".dsh/agent-native/rtosv3-drvport.roles.md",
+      "sha256": "205e0bbf76288d3f1d455e2d4d6c79a4f1ea625e567df198a7147ba6f26b4b15"
+    },
+    {
+      "path": ".omp/agents/rtosv3-drvport-bys-architect.md",
+      "sha256": "9afc1f8b8952f22ab42e864c7cf2cbeb242e8f3f3b48e6c230d5560e094822da"
+    },
+    {
+      "path": ".omp/agents/rtosv3-drvport-bys-designer.md",
+      "sha256": "83c2ce5a89e21663584fd1737ae82c87b54e6118acf0e726147362d92f2ce72a"
+    },
+    {
+      "path": ".omp/agents/rtosv3-drvport-bys-impl-lead.md",
+      "sha256": "42d1d149ab93062ca6e8b41c8755e1725787ecdb411fa29e0afa189b38f9784f"
+    },
+    {
+      "path": ".omp/agents/rtosv3-drvport-bys-release-lead.md",
+      "sha256": "1348bfcd77c01faa1157d70fca37cf1a3f69b091ea0d5a95d90a3d864d1fb6ea"
+    },
+    {
+      "path": ".opencode/agents/rtosv3-drvport-bys-architect.md",
+      "sha256": "c1d042c68f52f409795e4789f10463f8f38a68dd1d289d85b5c138e0ae483ac2"
+    },
+    {
+      "path": ".opencode/agents/rtosv3-drvport-bys-designer.md",
+      "sha256": "855c5359fe191efb46f9ac2dc96f86bdbec5c134f594617bbecc1c2bccb95bc2"
+    },
+    {
+      "path": ".opencode/agents/rtosv3-drvport-bys-impl-lead.md",
+      "sha256": "229bf69dde042af95f54711086b834267a1a5f942314cf203a17b03deee55d11"
+    },
+    {
+      "path": ".opencode/agents/rtosv3-drvport-bys-release-lead.md",
+      "sha256": "bda1558185bbfbb30e826387c250375f2223046210f1e922bca76bb0cb3503d0"
+    }
+  ],
+  "rolesJson": {
+    "path": ".agents/agent-native/rtosv3-drvport/roles.json",
+    "sha256": "31fc1630744a10b9a4e6cffd5c7743c6fd455ba85ebf3faeb8ec5a7da0c6cb52",
+    "bytes": 29889
+  }
+}

@@ -5,9 +5,11 @@
  * layer (`core`, `ir`, `assembler`, `projection`, `runtime/*`); no lower layer
  * imports it. Later tickets extend this surface:
  *
- * - #102 multi-bundle / upgrade diff: `installProjection` already resolves the
- *   whole receipt set, returns `stale` paths and keeps modified ones with a
- *   `STALE_MODIFIED_KEPT` warning; the four-way diff report is additive.
+ * - #102 upgrade diff: `installProjection` resolves the whole receipt set,
+ *   returns `stale` paths and keeps modified ones with a
+ *   `STALE_MODIFIED_KEPT` warning; its `diff` is the four-way
+ *   `add/remove/change/keep` report and `receipt.previous` records the
+ *   replaced identity (path/version/options digest/options/IR digest).
  * - #103 legacy migration: `--migrate-legacy` is intentionally unsupported
  *   here; `LEGACY_INSTALL_PRESENT` carries the migration hint.
  * - #104 r2c host copies + `roles.json`: `installR2cProject` renders the four
@@ -20,6 +22,7 @@
  *   `installProjection` for agent-native).
  */
 export { installProjection, receiptOptions } from './install.js';
+export { diffFileSets, previousRecord } from './upgrade.js';
 export { installR2cProject, renderR2cRoles, R2C_ROLE_TARGETS, ROLES_JSON_PATH } from './r2c.js';
 export {
   ENGINE_ROOT,
