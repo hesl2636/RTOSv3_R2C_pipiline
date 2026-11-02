@@ -102,7 +102,7 @@ export function run(argv) {
     json: true,
     command: COMMAND,
     report: result.report,
-    data: { report: result.report, ir },
+    data: { ...result.report, ir },
     summaryCode: BUNDLE_SUMMARY_CODE,
   });
 }

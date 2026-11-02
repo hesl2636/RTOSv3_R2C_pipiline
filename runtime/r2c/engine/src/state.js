@@ -15,13 +15,12 @@ import {
   mkdirSync,
   readFileSync,
   readdirSync,
-  rmSync,
-  writeFileSync,
 } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
+import { jsonEqual as sameJson } from '../../../../core/json.js';
 import { R2cError, EXIT_CODES, isR2cError } from './errors.js';
 import { withLatestLock, withRunLock, withRunWriteLock } from './lock.js';
-import { renameIntoPlace } from '../../../../core/node/atomic-write.js';
+import { atomicWriteFile as coreAtomicWrite } from '../../../../core/node/atomic-write.js';
 import { SUPPORTED, isNewerSchema } from './schema.js';
 import {
   eventsPath,
@@ -75,17 +74,9 @@ function tempName(file) {
   return join(dirname(file), `.${basename(file)}.${process.pid}.${randomBytes(4).toString('hex')}.tmp`);
 }
 
-/** Write a file atomically (same-directory temp file + rename). */
+/** Write a file atomically: unique sibling temp, fsync, rename with the shared Windows retry. */
 export function atomicWriteFile(file, content) {
-  mkdirSync(dirname(file), { recursive: true });
-  const temp = tempName(file);
-  try {
-    writeFileSync(temp, content);
-    renameIntoPlace(temp, file);
-  } catch (error) {
-    rmSync(temp, { force: true });
-    throw error;
-  }
+  coreAtomicWrite(file, content, { temp: tempName(file) });
 }
 
 export function atomicWriteJson(file, value) {
@@ -511,10 +502,6 @@ function repairLatestClaims(latest, runId, routes) {
     }
   }
   return latest;
-}
-
-function sameJson(left, right) {
-  return JSON.stringify(left) === JSON.stringify(right);
 }
 
 function warnRepair(runId) {

@@ -8,20 +8,17 @@
  * actually installed. dsh has no native role format and renders nothing.
  */
 import { canonicalJson } from '../core/canonical-json.js';
-import { compareCodePoints } from '../core/code-point.js';
 import { sha256Hex } from '../core/node/sha256.js';
+import { LEVEL_RANK } from '../projection/contract.js';
 import { TARGETS } from '../runtime/agent-native/projection/targets/index.js';
 import { renderRole, ROLE_FIELD_ORDER } from '../runtime/shared/render-role.js';
 import { installProjection } from './install.js';
 import { R2C_ROLE_TARGETS } from './runtime.js';
+import { sorted } from '../core/sort.js';
 
 export { R2C_ROLE_TARGETS };
 
 export const ROLES_JSON_PATH = '.r2c/projection/roles.json';
-
-function sorted(values) {
-  return [...values].sort(compareCodePoints);
-}
 
 function effectiveTargets(hostTargets) {
   if (hostTargets === undefined || hostTargets === null) return [...R2C_ROLE_TARGETS];
@@ -39,7 +36,7 @@ function failure(code, message, details = {}) {
  * Returns `{targets, files, degradations, warnings, rolesJson}`; `files` are
  * installer-owned entries the receipt must record (host agents + roles.json).
  */
-export function renderR2cRoles({ ir, irDigest, hostTargets } = {}) {
+export function renderR2cRoles({ ir, irDigest, hostTargets, skills } = {}) {
   if (ir === null || typeof ir !== 'object' || ir.schema !== 'r2c.ir/v1') {
     return failure('ROLES_IR_UNSUPPORTED', 'renderR2cRoles needs an r2c.ir/v1 document');
   }
@@ -48,7 +45,11 @@ export function renderR2cRoles({ ir, irDigest, hostTargets } = {}) {
   }
   const targets = effectiveTargets(hostTargets);
   const roleIds = sorted(Object.keys(ir.roles ?? {}));
-  const skillNames = new Map(Object.keys(ir.skills ?? {}).map((id) => [id, id]));
+  const allSkills = Object.keys(ir.skills ?? {});
+  const selected = Array.isArray(skills) ? new Set(skills) : new Set(allSkills);
+  // Only selected skills get a runtime name: the renderer drops the rest, so
+  // an excluded skill can never leak into a host role definition.
+  const skillNames = new Map(allSkills.filter((id) => selected.has(id)).map((id) => [id, id]));
   const ctx = { namespace: 'r2c', skillNames, targets: TARGETS };
 
   const files = [];
@@ -66,6 +67,25 @@ export function renderR2cRoles({ ir, irDigest, hostTargets } = {}) {
         rendered = renderRole(role, target, ctx);
       } catch (error) {
         return failure(error.code ?? 'ROLES_RENDER_FAILED', error.message, { target, pointer: `/roles/${roleId}` });
+      }
+
+      // #82 #8: an excluded skill the role still preloads is a preload loss
+      // only where the target has a preload seam (Claude/omp). Targets without
+      // one never render role skills, and the projection already records their
+      // declared per-use loss, so no install-time record is added.
+      const hasPreloadSeam = LEVEL_RANK[TARGETS[target].capabilities.preload] <= LEVEL_RANK.adapted;
+      for (const [index, skillId] of (ir.roles[roleId].skills ?? []).entries()) {
+        if (selected.has(skillId) || !hasPreloadSeam) continue;
+        degradations.push({
+          code: 'CAP_PRELOAD_EXCLUDED',
+          target,
+          capability: 'preload',
+          level: 'unavailable',
+          pointer: `/roles/${roleId}/skills/${index}`,
+          field: 'skills',
+          reason: '按投影选项 options.skills 排除',
+          effect: '预载正文丢弃；技能本身也未安装',
+        });
       }
 
       for (const [field, state] of Object.entries(rendered.fields)) {
@@ -194,6 +214,7 @@ export function installR2cProject(input = {}) {
     ir,
     irDigest: sha256Hex(irText),
     hostTargets: input.hostTargets ?? R2C_ROLE_TARGETS,
+    skills: input.result?.options?.skills,
   });
   if (rendered.ok === false) {
     return rendered;

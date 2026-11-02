@@ -36,6 +36,7 @@ const USAGE = [
 ].join('\n');
 
 const VALUES = new Set(['result', 'project', 'ir', 'bundle', 'projection', 'runtime', 'engine-version', 'engine-home']);
+const LIST_VALUES = new Set(['target']);
 const FLAGS = new Set(['dry-run', 'force', 'uninstall', 'json', 'migrate-legacy', 'help', 'status', 'doctor']);
 
 function usageError(message) {
@@ -60,7 +61,16 @@ function parseArgs(argv) {
       options.flags.add(rawName);
       continue;
     }
-    if (!VALUES.has(rawName)) return { error: usageError(`unknown option: ${arg}`) };
+    if (!VALUES.has(rawName) && !LIST_VALUES.has(rawName)) return { error: usageError(`unknown option: ${arg}`) };
+    if (LIST_VALUES.has(rawName)) {
+      const value = inline !== undefined ? inline : argv[index + 1];
+      if (value === undefined || (inline === undefined && value.startsWith('--'))) {
+        return { error: usageError(`--${rawName} requires a value`) };
+      }
+      if (inline === undefined) index += 1;
+      (options.values.targets ??= []).push(value);
+      continue;
+    }
     if (inline !== undefined) {
       options.values[rawName] = inline;
       continue;
@@ -342,7 +352,7 @@ export function run(argv, io = {}) {
       engineHome: options.values['engine-home'],
       hostTargets: options.values.targets === undefined
         ? undefined
-        : String(options.values.targets).split(',').map((target) => target.trim()).filter(Boolean),
+        : options.values.targets.flatMap((target) => String(target).split(',')).map((target) => target.trim()).filter(Boolean),
       dryRun,
       force,
       clock,

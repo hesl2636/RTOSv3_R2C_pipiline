@@ -36,6 +36,10 @@ _Avoid_: 插件、能力
 跨阶段生效的约束文本；bundle 可以声明 `placeholder: true` 的 0 字节占位。
 _Avoid_: 规则、policy
 
+**placeholder**:
+显式标注「本期未实现、只声明契约」的产物；只允许 role、skill、constitution 三类。角色占位正文可空、投影生成统一占位 instructions；技能占位必须在正文前导区带可见横幅；宪法占位由 `bundle.json.constitution.placeholder` 声明，文件可为 0 字节。占位必须带机读标记，不得用空正文伪装。
+_Avoid_: stub、空实现
+
 **IR**:
 `r2c.ir/v1` 中立中间表示：`workflow.ir.json`，bundle 编译后的唯一输入，带 digest 与 `contentSha256`。投影、发布与 Web 都只读 IR。
 _Avoid_: AST、中间文件
@@ -60,6 +64,14 @@ _Avoid_: 需求、requirement
 逐字段的降级记录：`{code,target,capability,level,pointer,field,reason,effect}`；能力报告与安装摘要都读它。
 _Avoid_: 警告、warning
 
+**install root**:
+投影路径的锚点；v1 恒为项目根，所有 `files[].path` 相对它拼接，bundle 内容从不写入用户 home（只有引擎可用 `--engine-home`）。
+_Avoid_: 安装目录、target dir
+
+**install identity**:
+`(projection.id, bundle.id)`；一个安装根下每个身份至多一份回执，回执路径由它唯一决定。
+_Avoid_: 安装 id、slot
+
 **receipt**:
 安装账本（`.r2c/install/receipts/<projection>/<bundle>.json`）：写了哪些文件、哈希、合并指针、备份与选项摘要。卸载与 doctor 只认回执。
 _Avoid_: manifest、日志
@@ -75,6 +87,10 @@ _Avoid_: 安装时组装、动态载荷
 **canonical options**:
 投影选项的唯一字节形式（stageOrder、skills、targets、digest）；只有 canonical options 的构建可发布，自定义选择仅本地使用。
 _Avoid_: 参数、配置
+
+**projection options**:
+解析后的投影选项 `r2c.projection-options/v1`：`stageOrder`、`skills`、`targets` 与 `extra` 的回显，绑定 `ir.digest`。缺省归一化为 IR 顺序、全部技能、清单默认目标与 `extra: {}`；只缩小或重排渲染面，不回写 bundle 或 IR。
+_Avoid_: 参数、配置字段
 
 **ownership**:
 一条路径在任意时刻至多被一份回执拥有；安装永不覆盖别人的文件，卸载只删自己的文件。

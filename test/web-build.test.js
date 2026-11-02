@@ -8,22 +8,25 @@
  * (or from the frozen anchors), never from the server response itself.
  */
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { spawn, spawnSync } from 'node:child_process';
+import { cpSync, existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import { compileBundle } from '../assembler/compile.js';
+import { readZip } from '../assembler/zip.js';
 import { canonicalJson } from '../core/canonical-json.js';
+import { compareCodePoints } from '../core/code-point.js';
 import { sha256Hex } from '../core/node/sha256.js';
 import { inflateRaw } from '../core/node/inflate.js';
 import { normalizeOptions } from '../projection/options.js';
 import { project } from '../projection/project.js';
 import { getProjection } from '../projection/registry.js';
-import { readReleaseTarGz } from '../scripts/lib/release-tar.mjs';
+import { readReleaseTarGz } from '../installer/release-tar.js';
 import { PAYLOAD_MANIFEST_NAME } from '../scripts/lib/bundle-release.mjs';
+import { buildZip } from './helpers/zip.js';
 import {
   ROOT,
   cliJson,
@@ -108,8 +111,7 @@ function expected({ projectionId, raw = null, engineVersion }) {
   };
 }
 
-async function upload(server, csrf) {
-  const zip = readFileSync(SAMPLE);
+async function uploadBytes(server, csrf, zip) {
   const response = await httpRequest({
     port: server.port,
     method: 'POST',
@@ -123,6 +125,10 @@ async function upload(server, csrf) {
   assert.equal(response.status, 200, JSON.stringify(response.json));
   assert.match(response.json.data.uploadId, /^[0-9a-f]{16}$/);
   return response.json.data;
+}
+
+async function upload(server, csrf) {
+  return uploadBytes(server, csrf, readFileSync(SAMPLE));
 }
 
 async function build(server, csrf, payload) {
@@ -599,4 +605,138 @@ test('a new upload resets the client binding and the server refuses an old diges
   const evicted = await build(server, csrf, { uploadId: first.uploadId, options: {} });
   assert.equal(evicted.status, 404);
   assert.equal(evicted.json.error.code, 'WEB_UPLOAD_UNKNOWN');
+});
+
+/* -------------------------------------------------------------------------- */
+/* requires.engine: engine version, not framework version                     */
+/* -------------------------------------------------------------------------- */
+
+/** Copy the framework tree (including the linked yaml dependency) so versions can differ. */
+function copyFramework(t) {
+  const dir = mkdtempSync(join(tmpdir(), 'r2c-web-engine-'));
+  t.after(async () => {
+    // Windows keeps the directory busy for a moment after the server exits.
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      try {
+        rmSync(dir, { recursive: true, force: true });
+        return;
+      } catch {
+        await new Promise((resolveWait) => setTimeout(resolveWait, 250));
+      }
+    }
+    rmSync(dir, { recursive: true, force: true });
+  });
+  cpSync(ROOT, dir, {
+    recursive: true,
+    dereference: true,
+    filter: (src) => {
+      const top = src.slice(ROOT.length).replace(/^[\\/]/, '').split(/[\\/]/, 1)[0];
+      return top !== '.git' && top !== '.scratch';
+    },
+  });
+  const rootPackage = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'));
+  rootPackage.version = '9.9.9';
+  writeFileSync(join(dir, 'package.json'), canonicalJson(rootPackage));
+  return dir;
+}
+
+async function stopServer(server) {
+  const { child } = server;
+  if (child.exitCode !== null) return;
+  if (process.platform === 'win32') child.stdin.write('shutdown\n');
+  else child.kill('SIGTERM');
+  await Promise.race([
+    new Promise((resolveExit) => child.once('exit', resolveExit)),
+    new Promise((resolveKill) => setTimeout(resolveKill, 8000)).then(() => child.kill('SIGKILL')),
+  ]);
+}
+
+async function startServerAt(t, root, env = {}) {
+  const child = spawn(process.execPath, [join(root, 'web', 'serve.mjs')], {
+    cwd: root,
+    stdio: ['pipe', 'pipe', 'pipe'],
+    env: { ...process.env, ...env },
+  });
+  let stdout = '';
+  let stderr = '';
+  child.stdout.setEncoding('utf8');
+  child.stderr.setEncoding('utf8');
+  child.stdout.on('data', (chunk) => { stdout += chunk; });
+  child.stderr.on('data', (chunk) => { stderr += chunk; });
+  const url = await new Promise((resolveUrl, rejectUrl) => {
+    const timer = setTimeout(() => rejectUrl(new Error(`server did not start: ${stdout}${stderr}`)), 15_000);
+    child.stdout.on('data', () => {
+      const match = stdout.match(/http:\/\/127\.0\.0\.1:(\d+)\//);
+      if (match) {
+        clearTimeout(timer);
+        resolveUrl(match[0]);
+      }
+    });
+    child.once('exit', (code) => {
+      clearTimeout(timer);
+      rejectUrl(new Error(`server exited ${code}: ${stderr}`));
+    });
+  });
+  const server = {
+    child,
+    url,
+    base: url.replace(/\/$/, ''),
+    port: Number(new URL(url).port),
+    stdout: () => stdout,
+    stderr: () => stderr,
+  };
+  t.after(async () => stopServer(server));
+  return server;
+}
+
+/** The sample bundle with `requires.engine` added to its manifest. */
+function bundleWithEngineRange(range) {
+  const original = readZip(new Uint8Array(readFileSync(SAMPLE)), { inflateRaw });
+  assert.equal(original.ok, true, JSON.stringify(original.diagnostics));
+  const entries = [...original.entries.entries()].map(([path, entry]) => {
+    let bytes = Buffer.from(entry.data);
+    if (path === 'bundle.json') {
+      const manifest = JSON.parse(bytes.toString('utf8'));
+      manifest.requires = { engine: range };
+      bytes = Buffer.from(canonicalJson(manifest), 'utf8');
+    }
+    return [path, bytes];
+  });
+  entries.sort(([left], [right]) => compareCodePoints(left, right));
+  return buildZip(entries);
+}
+
+test('requires.engine is checked against the engine version, never the framework version', async (t) => {
+  const root = copyFramework(t);
+  const engineVersion = JSON.parse(readFileSync(join(root, 'runtime', 'r2c', 'engine', 'package.json'), 'utf8')).version;
+  assert.equal(engineVersion, '0.1.0');
+  assert.notEqual(engineVersion, '9.9.9');
+
+  const server = await startServerAt(t, root);
+  try {
+    const session = await sessionOf(server);
+    assert.equal(session.frameworkVersion, '9.9.9');
+    assert.equal(session.engineVersion, engineVersion);
+
+    // `^0.1.0` satisfies only the engine, not the framework that hosts it.
+    const satisfied = await uploadBytes(server, session.csrf, bundleWithEngineRange('^0.1.0'));
+    assert.equal(satisfied.report.ok, true, JSON.stringify(satisfied.report));
+    const built = await build(server, session.csrf, { uploadId: satisfied.uploadId, options: {} });
+    assert.equal(built.status, 200, JSON.stringify(built.json));
+    assert.equal(built.json.data.engineVersion, engineVersion);
+    assert.equal(built.json.data.canonical, true);
+
+    // `^9.0.0` satisfies only the framework: the build must be refused before
+    // any child starts, with the release's stable code.
+    const unsatisfied = await uploadBytes(server, session.csrf, bundleWithEngineRange('^9.0.0'));
+    assert.equal(unsatisfied.report.ok, true, JSON.stringify(unsatisfied.report));
+    const refused = await build(server, session.csrf, { uploadId: unsatisfied.uploadId, options: {} });
+    assert.equal(refused.status, 409, JSON.stringify(refused.json));
+    assert.equal(refused.json.error.code, 'PROJECTION_ENGINE_UNSATISFIED');
+    assert.match(refused.json.error.message, /\^9\.0\.0/);
+    const list = await httpRequest({ port: server.port, path: '/api/builds' });
+    assert.deepEqual(list.json.data.builds.map((item) => item.buildId), [built.json.data.buildId]);
+  } finally {
+    await stopServer(server);
+  }
 });

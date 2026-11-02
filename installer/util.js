@@ -5,7 +5,6 @@
  * symlink-aware so a link planted between the conflict check and the write
  * cannot redirect a project-relative path outside the project.
  */
-import { createHash } from 'node:crypto';
 import {
   chmodSync,
   closeSync,
@@ -22,11 +21,10 @@ import {
 } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { atomicWriteFile as coreAtomicWrite } from '../core/node/atomic-write.js';
+import { sha256Hex } from '../core/node/sha256.js';
 import { isSharedRoot, projectPath, toPosix } from './paths.js';
 
-export function sha256Hex(data) {
-  return createHash('sha256').update(typeof data === 'string' ? Buffer.from(data, 'utf8') : Buffer.from(data)).digest('hex');
-}
+export { sha256Hex };
 
 export function sha256File(file) {
   return sha256Hex(readFileSync(file));

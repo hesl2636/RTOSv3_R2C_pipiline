@@ -6,7 +6,8 @@
  * `null` stageOrder/skills/targets. A stale binding is rejected with
  * `PROJECTION_OPTIONS_IR_MISMATCH`, the code the future web build shares.
  */
-import { compareCodePoints } from '../core/code-point.js';
+import { jsonEqual } from '../core/json.js';
+import { sorted } from '../core/sort.js';
 
 export const OPTIONS_SCHEMA = 'r2c.projection-options/v1';
 
@@ -22,10 +23,6 @@ export const OPTION_CODES = Object.freeze({
 });
 
 const OPTION_KEYS = new Set(['schema', 'projection', 'ir', 'stageOrder', 'skills', 'targets', 'extra']);
-
-function sorted(values) {
-  return [...values].sort(compareCodePoints);
-}
 
 function isPlainObject(value) {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -73,15 +70,11 @@ function pointerSegment(key) {
   return String(key).replaceAll('~', '~0').replaceAll('/', '~1');
 }
 
-/** Recursively sort `extra` keys by code point so result bytes are stable. */
-function sortExtra(value) {
-  if (Array.isArray(value)) return value.map((item) => sortExtra(item));
+/** Copy `extra` without reordering: the caller's key order is echoed verbatim. */
+function copyExtra(value) {
+  if (Array.isArray(value)) return value.map((item) => copyExtra(item));
   if (!isPlainObject(value)) return value;
-  return Object.fromEntries(sorted(Object.keys(value)).map((key) => [key, sortExtra(value[key])]));
-}
-
-function jsonEqual(left, right) {
-  return JSON.stringify(left) === JSON.stringify(right);
+  return Object.fromEntries(Object.keys(value).map((key) => [key, copyExtra(value[key])]));
 }
 
 const TYPE_CHECKS = {
@@ -316,7 +309,7 @@ export function normalizeOptions({ projectionId, ir, irDigest, raw, manifest }) 
   let extra = {};
   if (input.extra !== undefined && input.extra !== null) {
     for (const item of validateExtra(input.extra, manifest, projectionId)) errors.push(item);
-    if (isPlainObject(input.extra)) extra = sortExtra(input.extra);
+    if (isPlainObject(input.extra)) extra = copyExtra(input.extra);
   }
 
   const options = {

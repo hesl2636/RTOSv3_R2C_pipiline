@@ -163,6 +163,16 @@ test('GLOSSARY carries the new vocabulary and marks the retired one', () => {
   assert.match(glossary, /retired|退役/i);
 });
 
+test('GLOSSARY defines the placeholder and install vocabulary', () => {
+  const glossary = read('GLOSSARY.md');
+  for (const term of ['placeholder', 'projection options', 'install root', 'install identity']) {
+    const pattern = new RegExp(`^\\*\\*${term}\\*\\*:`, 'm');
+    assert.match(glossary, pattern, `GLOSSARY is missing ${term}`);
+  }
+  assert.match(glossary, /^## 领域$/m);
+  assert.match(glossary, /^## 退役词汇$/m);
+});
+
 test('CHANGELOG records the P6 cutover', () => {
   const changelog = read('CHANGELOG.md');
   assert.match(changelog, /## \[0\.1\.0\]/);

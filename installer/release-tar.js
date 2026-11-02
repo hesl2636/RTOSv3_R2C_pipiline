@@ -2,8 +2,8 @@
  * Deterministic ustar+gzip container for bundle release payloads (#105, #74 §3.5).
  *
  * Owned by `installer/` so the installer can read a Release payload without
- * `scripts/` (#106); `scripts/lib/release-tar.mjs` re-exports it for the
- * packager and its tests.
+ * reaching into `scripts/`; the packager (`scripts/lib/bundle-release.mjs`)
+ * and its tests import this module directly.
  *
  * The legacy payload/engine writer in `src/plugin.js` freezes a 100-byte path
  * limit and 0644-only members because that is the frozen legacy asset

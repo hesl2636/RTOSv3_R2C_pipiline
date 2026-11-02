@@ -52,7 +52,10 @@ export function check(context) {
           });
         }
       });
-      if (step.skills.length === 0 && declared.skills.length > 0) {
+      // S8: an incomplete stage set cannot prove a step enables no skills,
+      // and a malformed `skills` is already BUNDLE_SCHEMA_INVALID.
+      if (context.complete.stages && step.skillsValid !== false
+        && step.skills.length === 0 && declared.skills.length > 0) {
         context.warn(stage.path, 'BUNDLE_STEP_NO_SKILLS', 'step enables no skills', {
           pointer: `${step.pointer}/skills`,
           details: { step: step.id },

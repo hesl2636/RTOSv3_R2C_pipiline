@@ -26,6 +26,7 @@ import { basename, join, resolve } from 'node:path';
 import { inflateRaw } from '../../core/node/inflate.js';
 import { sha256Hex } from '../../core/node/sha256.js';
 import { analyzeBundle, compileBundle } from '../../assembler/index.js';
+import { jsonEqual as sameValue } from '../../core/json.js';
 import { canonicalJson, isCanonicalJson } from '../../core/canonical-json.js';
 import { compareCodePoints } from '../../core/code-point.js';
 import { foldCase, hasFileDirPrefixConflict } from '../../core/paths.js';
@@ -53,7 +54,7 @@ import { getProjection } from '../../projection/registry.js';
 import { validateResult } from '../../projection/validate-result.js';
 import { collectEngine, engineEntryBytes } from './engine-archive.mjs';
 import { collectBundleFiles } from './file-set.mjs';
-import { createReleaseTarGz, readReleaseTarGz, releasePathProblem } from './release-tar.mjs';
+import { createReleaseTarGz, readReleaseTarGz, releasePathProblem } from '../../installer/release-tar.js';
 import { writeZip } from './zip-writer.mjs';
 
 export const BUNDLE_MAKE_LATEST = false;
@@ -341,10 +342,6 @@ export function buildPayloadManifest({ id, version, projection, ir, irDigest, op
   // re-runs V1–V12 without compiling or projecting (#106).
   if (result !== null) manifest.result = payloadResultBlock(result);
   return manifest;
-}
-
-function sameValue(left, right) {
-  return JSON.stringify(left) === JSON.stringify(right);
 }
 
 function payloadEntries(result) {

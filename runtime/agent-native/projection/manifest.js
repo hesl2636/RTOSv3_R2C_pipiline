@@ -9,6 +9,7 @@
  * Adding a target (#96–#99): one descriptor file under `targets/`, one entry
  * in `targets/index.js`, then regenerate `projection.json` from this manifest.
  */
+import { compareCodePoints } from '../../../core/code-point.js';
 import { TARGETS, TARGET_ORDER } from './targets/index.js';
 
 function targetEntry(id) {
@@ -23,6 +24,23 @@ function targetEntry(id) {
     default: target.default,
     capabilities,
   };
+}
+
+/** Stable asset id: <target>-<basename-without-extension>, dots and slashes folded. */
+function assetId(targetId, path) {
+  const relative = path.replace(`runtime/agent-native/targets/${targetId}/assets/`, '').replace(/\.[^.]*$/, '');
+  return `${targetId}-${relative.replace(/[^A-Za-z0-9]+/g, '-').replace(/^-+|-+$/g, '')}`;
+}
+
+/** Every static asset the target descriptors ship, sorted by id. */
+function assetEntries() {
+  const assets = new Map();
+  for (const id of TARGET_ORDER) {
+    for (const asset of TARGETS[id].assets ?? []) {
+      assets.set(asset.path, { id: assetId(id, asset.path), path: asset.path, sha256: asset.sha256 });
+    }
+  }
+  return [...assets.values()].sort((left, right) => compareCodePoints(left.id, right.id));
 }
 
 const writeRoots = ['.agents/agent-native', '.agents/skills'];
@@ -47,7 +65,9 @@ export const AGENT_NATIVE_MANIFEST = Object.freeze({
   },
   writeRoots,
   targets: TARGET_ORDER.map(targetEntry),
-  assets: [],
+  // The host hook/MCP assets are static bytes, not generated content: the
+  // manifest declares them so a reader can verify what the runtime copies.
+  assets: assetEntries(),
   // Closed: agent-native declares no custom options, so `extra` must be `{}`.
   optionsSchema: Object.freeze({
     type: 'object',

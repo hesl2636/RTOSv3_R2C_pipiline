@@ -42,7 +42,7 @@ import {
   parseBundleTag,
   verifyPayloadArchive,
 } from '../scripts/lib/bundle-release.mjs';
-import { createReleaseTarGz, readReleaseTarGz } from '../scripts/lib/release-tar.mjs';
+import { createReleaseTarGz, readReleaseTarGz } from '../installer/release-tar.js';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const SCRIPT = join(ROOT, 'scripts', 'release.mjs');

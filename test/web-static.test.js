@@ -208,6 +208,19 @@ test('transport limits: 411 without Content-Length, 413 above the upload cap', a
   ].join('\r\n'));
   assert.equal(statusOf(oversized), 413);
   assert.match(oversized, /WEB_BODY_TOO_LARGE/);
+
+  const bigHeader = await rawRequest(server.port, [
+    'GET /api/session HTTP/1.1',
+    `Host: 127.0.0.1:${server.port}`,
+    `X-Pad: ${'a'.repeat(20 * 1024)}`,
+    'Connection: close',
+    '',
+    '',
+  ].join('\r\n'));
+  assert.equal(statusOf(bigHeader), 413);
+  assert.match(bigHeader, /WEB_HEADER_TOO_LARGE/);
+  assert.match(bigHeader, /Content-Security-Policy: default-src 'none'/);
+  assert.match(bigHeader, /Content-Type: application\/json/);
 });
 
 test('request security envelope rejects bad Host, Origin, fetch site, CSRF and OPTIONS', async (t) => {
@@ -255,6 +268,17 @@ test('request security envelope rejects bad Host, Origin, fetch site, CSRF and O
   });
   assert.equal(crossSite.status, 403);
   assert.equal(crossSite.json.error.code, 'WEB_FETCH_SITE_INVALID');
+
+  const { 'Sec-Fetch-Site': _omitted, ...withoutSite } = body;
+  const missingSite = await httpRequest({
+    port: server.port,
+    method: 'POST',
+    path: '/api/validate',
+    headers: withoutSite,
+    body: zip,
+  });
+  assert.equal(missingSite.status, 403);
+  assert.equal(missingSite.json.error.code, 'WEB_FETCH_SITE_INVALID');
 
   const noCsrf = await httpRequest({
     port: server.port,
@@ -315,6 +339,10 @@ test('static whitelist denies traversal, source trees and serve.mjs', async (t) 
     '/docs/README.md',
     '/package.json',
     '/web/serve.mjs',
+    '/web/http.js',
+    '/web/build.js',
+    '/web/publish.js',
+    '/web/child.js',
     '/web/../core/canonical-json.js',
     '/web/%2e%2e/%2e%2e/package.json',
     '/web/%252e%252e/package.json',

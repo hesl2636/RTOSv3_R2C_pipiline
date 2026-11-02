@@ -15,9 +15,14 @@
  */
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
+import { readZip } from '../assembler/zip.js';
+import { inflateRaw } from '../core/node/inflate.js';
+import { canonicalJson } from '../core/canonical-json.js';
 import { sha256Hex } from '../core/node/sha256.js';
 import { createGithubClient } from '../installer/release-client.js';
 import {
@@ -26,10 +31,13 @@ import {
   readGithubToken,
   redactSecret,
 } from '../installer/release-auth.js';
+import { buildBundleRelease } from '../scripts/lib/bundle-release.mjs';
+import { readBuiltRelease } from '../scripts/lib/built-release.mjs';
 import { publishBundle } from '../installer/release-publish.js';
 import { bundleTag } from '../installer/release-tags.js';
 import { publishBundle as installedPublishBundle } from '../installer/index.js';
 import { jsonResponse, startGithubFixture } from './helpers/release-fixture.js';
+import { buildZip } from './helpers/zip.js';
 
 const REPO = 'owner/repo';
 const ID = 'rtosv3-drvport';
@@ -442,4 +450,63 @@ test('the release CLI disables publish without a token and never asks for one', 
 
 test('the release source API is reachable from the installer composition root', () => {
   assert.equal(installedPublishBundle, publishBundle);
+});
+
+function writeBuiltRelease(t, options = null) {
+  const dir = mkdtempSync(join(tmpdir(), 'r2c-built-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const result = buildBundleRelease({ root: ROOT, bundlePath: SAMPLE_ZIP, options });
+  assert.equal(result.ok, true, result.failures.join('; '));
+  for (const asset of result.assets) writeFileSync(join(dir, asset.name), asset.data);
+  return { dir, result };
+}
+
+test('a canonical build is publishable and a custom build is refused before any call', async (t) => {
+  const canonical = writeBuiltRelease(t);
+  const accepted = readBuiltRelease(canonical.dir);
+  assert.equal(accepted.ok, true, accepted.failures.join('; '));
+
+  const custom = writeBuiltRelease(t, { 'agent-native': { targets: ['claude-code'] } });
+  const refused = readBuiltRelease(custom.dir);
+  assert.equal(refused.ok, false);
+  assert.match(refused.failures[0], /^WEB_PUBLISH_NOT_CANONICAL: /);
+
+  // Two-step CLI use cannot bypass the gate either: the child refuses before
+  // touching the network.
+  const fixture = await startGithubFixture(t, { repo: REPO });
+  const result = spawnSync(
+    process.execPath,
+    ['scripts/release.mjs', '--publish', '--out', custom.dir, '--json'],
+    {
+      cwd: ROOT,
+      encoding: 'utf8',
+      env: { ...process.env, GH_TOKEN: TOKEN, GH_REPO: REPO, R2C_GITHUB_API: fixture.origin },
+    },
+  );
+  assert.equal(result.status, 1, `${result.stdout}\n${result.stderr}`);
+  assert.match(result.stdout, /WEB_PUBLISH_NOT_CANONICAL/);
+  assert.equal(fixture.calls.length, 0, 'the canonical gate runs before the first remote call');
+});
+
+test('--publish --out refuses a zip whose manifest disagrees with the IR', (t) => {
+  const built = writeBuiltRelease(t);
+  const zipName = `bundle-${ID}-v${VERSION}.zip`;
+  const zipPath = join(built.dir, zipName);
+  const archive = readZip(new Uint8Array(readFileSync(zipPath)), { inflateRaw });
+  const entries = new Map();
+  for (const [name, entry] of archive.entries) {
+    const data = name === 'bundle.json'
+      ? Buffer.from(canonicalJson({ ...JSON.parse(Buffer.from(entry.data).toString('utf8')), version: '9.9.9' }), 'utf8')
+      : Buffer.from(entry.data);
+    entries.set(name, data);
+  }
+  const tampered = buildZip(entries);
+  writeFileSync(zipPath, tampered);
+  const names = built.result.assets.map((asset) => asset.name).filter((name) => name !== 'SHA256SUMS.txt').sort();
+  const sums = names.map((name) => `${sha256Hex(readFileSync(join(built.dir, name)))}  ${name}\n`).join('');
+  writeFileSync(join(built.dir, 'SHA256SUMS.txt'), sums);
+
+  const refused = readBuiltRelease(built.dir);
+  assert.equal(refused.ok, false);
+  assert.match(refused.failures[0], /^RELEASE_TAG_MISMATCH: /);
 });

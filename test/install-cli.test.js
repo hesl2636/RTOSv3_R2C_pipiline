@@ -171,3 +171,19 @@ test('uninstall without --bundle is a usage error', (t) => {
   assert.equal(run.status, 2);
   assert.equal(envelopeOf(run).error.code, 'USAGE');
 });
+
+test('--target is repeatable and reaches the runtime install', (t) => {
+  const engineSource = tempDir(t, 'r2c-engine-');
+  mkdirSync(join(engineSource, 'bin'), { recursive: true });
+  writeFileSync(join(engineSource, 'bin', 'r2c.js'), '#!/usr/bin/env node\n');
+  writeFileSync(join(engineSource, 'package.json'), canonicalJson({ name: 'r2c-engine', version: '1.2.3' }));
+  const projectRoot = tempDir(t, 'r2c-project-');
+
+  const run = cli([
+    '--runtime', engineSource, '--engine-version', '1.2.3',
+    '--project', projectRoot, '--target', 'omp', '--target', 'codex', '--json',
+  ]);
+  assert.equal(run.status, 0);
+  const receipt = JSON.parse(readFileSync(join(projectRoot, '.r2c', 'install', 'runtime.json'), 'utf8'));
+  assert.deepEqual(receipt.host_targets, ['codex', 'omp']);
+});

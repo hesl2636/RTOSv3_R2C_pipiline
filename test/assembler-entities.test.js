@@ -469,3 +469,20 @@ test('entity diagnostics are deterministic and sorted', () => {
   const sorted = [...order].sort();
   assert.deepEqual(order, sorted);
 });
+
+test('distinct violations never collapse into one diagnostic', () => {
+  // Two missing frontmatter fields share code/path/line; their pointers keep
+  // them apart (dedupe key is code/path/pointer/line).
+  const missing = report({ overrides: { [ROLE_PATH]: '---\n---\n\nBody.\n' } });
+  const required = missing.errors.filter((error) => error.code === 'BUNDLE_FRONTMATTER_INVALID');
+  assert.deepEqual(required.map((error) => error.pointer).sort(), ['/description', '/id']);
+  assert.deepEqual(required.map((error) => error.details.reason), ['required', 'required']);
+
+  // Two unknown tool tokens are two violations with distinct pointers/tokens.
+  const tokens = report({
+    overrides: { [ROLE_PATH]: roleFile({ extra: ['tools:', '  - alpha', '  - beta'] }) },
+  });
+  const unknown = tokens.errors.filter((error) => error.code === 'BUNDLE_ROLE_TOOL_UNKNOWN');
+  assert.deepEqual(unknown.map((error) => error.details.token).sort(), ['alpha', 'beta']);
+  assert.deepEqual(unknown.map((error) => error.pointer).sort(), ['/tools/0', '/tools/1']);
+});

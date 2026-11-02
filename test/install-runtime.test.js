@@ -308,3 +308,49 @@ test('an r2c install refuses a foreign workflows/*.yaml', (t) => {
   assert.equal(existsSync(join(projectRoot, '.r2c/install/receipts')), false);
   assert.deepEqual(readdirSync(join(projectRoot, 'workflows')), ['other.yaml']);
 });
+
+test('renderR2cRoles uses the selected skill set and records preload loss at the seam', () => {
+  const ir = {
+    schema: 'r2c.ir/v1',
+    id: 'demo',
+    version: '1.0.0',
+    stages: [],
+    tasks: {},
+    constitution: [],
+    skills: { keep: {}, drop: {} },
+    roles: {
+      worker: {
+        description: 'Worker role.',
+        instructions: 'Do the work.\n',
+        skills: ['keep', 'drop'],
+      },
+    },
+  };
+  const rendered = renderR2cRoles({
+    ir,
+    irDigest: 'a'.repeat(64),
+    hostTargets: ['claude-code', 'codex', 'omp', 'opencode'],
+    skills: ['keep'],
+  });
+  assert.equal(rendered.ok, true, JSON.stringify(rendered));
+
+  const byTarget = (target) => rendered.files.filter((file) => file.kind === 'agent' && file.targets.includes(target));
+  const claude = byTarget('claude-code')[0];
+  assert.match(claude.content, /keep/);
+  assert.doesNotMatch(claude.content, /drop/);
+  const omp = byTarget('omp')[0];
+  assert.match(omp.content, /keep/);
+  assert.doesNotMatch(omp.content, /drop/);
+
+  const preload = rendered.degradations.filter((record) => record.code === 'CAP_PRELOAD_EXCLUDED');
+  assert.deepEqual(preload.map((record) => record.target).sort(), ['claude-code', 'omp']);
+  for (const record of preload) {
+    assert.equal(record.capability, 'preload');
+    assert.equal(record.level, 'unavailable');
+    assert.equal(record.pointer, '/roles/worker/skills/1');
+    assert.equal(record.field, 'skills');
+  }
+  // codex/opencode have no preload seam; the projection's declared loss owns
+  // that record, so install-time rendering adds none.
+  assert.ok(!preload.some((record) => record.target === 'codex' || record.target === 'opencode'));
+});

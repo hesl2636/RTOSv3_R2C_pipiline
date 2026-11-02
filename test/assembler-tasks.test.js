@@ -7,6 +7,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { canonicalJson } from '../core/canonical-json.js';
+import { compareCodePoints } from '../core/code-point.js';
 import { inflateRaw } from '../core/node/inflate.js';
 import { sha256Hex } from '../core/node/sha256.js';
 import { compileBundle } from '../assembler/compile.js';
@@ -385,6 +386,6 @@ test('task diagnostics are deterministic and sorted', () => {
   const second = taskReport(task);
   assert.equal(JSON.stringify(first), JSON.stringify(second));
   const byPathLine = [...first.errors, ...first.warnings].map((d) => [d.path, d.line ?? 0]);
-  const sorted = [...byPathLine].sort((a, b) => a[0].localeCompare(b[0]) || a[1] - b[1]);
+  const sorted = [...byPathLine].sort((a, b) => compareCodePoints(a[0], b[0]) || a[1] - b[1]);
   assert.deepEqual(byPathLine, sorted);
 });
