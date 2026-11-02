@@ -1,14 +1,16 @@
 #!/usr/bin/env node
 /**
- * Minimal installer CLI for tests and smoke runs (#94).
+ * Installer CLI (#94, #104).
  *
  * It consumes an already projected, already validated result — it never
  * compiles a bundle and never re-projects:
  *
  *   node installer/cli.js --result <dir|result.json> --project <dir> [--ir <file>]
- *                         [--dry-run] [--force] [--json]
+ *                         [--runtime <engineSource>] [--engine-version <V>]
+ *                         [--engine-home <dir>] [--dry-run] [--force] [--json]
  *   node installer/cli.js --uninstall --bundle <id> --projection <id>
  *                         --project <dir> [--force] [--dry-run] [--json]
+ *   node installer/cli.js --status|--doctor --project <dir> [--json]
  *
  * A result directory is `projection-result.json` + `files/<path>` and the
  * `workflow.ir.json` it was projected from. `V1–V12` bind the result to that
@@ -20,17 +22,21 @@ import { fileURLToPath } from 'node:url';
 import { toEnvelope } from '../core/diagnostics.js';
 import { compareCodePoints } from '../core/code-point.js';
 import { EXIT_CODES } from '../core/exit-codes.js';
-import { installProjection } from './install.js';
+import { doctor, formatDoctor } from './doctor.js';
+import { installR2cProject } from './r2c.js';
+import { installRuntime } from './runtime.js';
+import { formatStatus, installStatus } from './status.js';
 import { uninstallProjection } from './uninstall.js';
 
-const COMMAND = 'install';
 const USAGE = [
   'usage: installer/cli.js --result <dir|result.json> --project <dir> [--ir <file>] [--dry-run] [--force] [--json]',
+  '       installer/cli.js --runtime <engineSource> [--engine-version <V>] [--engine-home <dir>] --project <dir> [--dry-run] [--force] [--json]',
   '       installer/cli.js --uninstall --bundle <id> --projection <id> --project <dir> [--force] [--dry-run] [--json]',
+  '       installer/cli.js --status|--doctor --project <dir> [--json]',
 ].join('\n');
 
-const VALUES = new Set(['result', 'project', 'ir', 'bundle', 'projection']);
-const FLAGS = new Set(['dry-run', 'force', 'uninstall', 'json', 'migrate-legacy', 'help']);
+const VALUES = new Set(['result', 'project', 'ir', 'bundle', 'projection', 'runtime', 'engine-version', 'engine-home']);
+const FLAGS = new Set(['dry-run', 'force', 'uninstall', 'json', 'migrate-legacy', 'help', 'status', 'doctor']);
 
 function usageError(message) {
   return { code: 'USAGE', message, details: null };
@@ -231,9 +237,9 @@ function humanUninstall(outcome) {
   return lines.join('\n');
 }
 
-function emit({ json, code, data, error }) {
+function emit({ json, code, data, error, command = 'install' }) {
   if (json) {
-    process.stdout.write(`${JSON.stringify(toEnvelope({ command: COMMAND, code, data, error }))}\n`);
+    process.stdout.write(`${JSON.stringify(toEnvelope({ command, code, data, error }))}\n`);
     return code;
   }
   if (error !== null && error !== undefined) process.stderr.write(`error: ${error.message} [${error.code}]\n`);
@@ -268,6 +274,29 @@ export function run(argv, io = {}) {
   const force = options.flags.has('force');
   const clock = io.clock;
 
+  if (options.flags.has('status')) {
+    const status = installStatus(projectRoot);
+    if (json) return emit({ json, command: 'status', code: EXIT_CODES.OK, data: status, error: null });
+    process.stdout.write(formatStatus(status));
+    return EXIT_CODES.OK;
+  }
+
+  if (options.flags.has('doctor')) {
+    const report = doctor(projectRoot);
+    const code = report.ok ? EXIT_CODES.OK : EXIT_CODES.GATE;
+    if (json) {
+      return emit({
+        json,
+        command: 'doctor',
+        code,
+        data: report,
+        error: report.ok ? null : { code: 'DOCTOR_FAILED', message: `${report.summary.fail} check(s) failed`, details: report.checks.filter((item) => item.status === 'fail') },
+      });
+    }
+    process.stdout.write(formatDoctor(report));
+    return code;
+  }
+
   if (options.flags.has('uninstall')) {
     const projection = options.values.projection;
     const bundle = options.values.bundle;
@@ -301,15 +330,55 @@ export function run(argv, io = {}) {
     return code;
   }
 
+  let runtimeOutcome = null;
+  if (options.values.runtime !== undefined) {
+    runtimeOutcome = installRuntime({
+      projectRoot,
+      engineSource: options.values.runtime,
+      engineVersion: options.values['engine-version'],
+      engineHome: options.values['engine-home'],
+      hostTargets: options.values.targets === undefined
+        ? undefined
+        : String(options.values.targets).split(',').map((target) => target.trim()).filter(Boolean),
+      dryRun,
+      force,
+      clock,
+    });
+    if (runtimeOutcome.ok === false) {
+      return emit({
+        json,
+        command: 'runtime',
+        code: exitCodeFor(runtimeOutcome),
+        data: null,
+        error: { code: runtimeOutcome.code, message: runtimeOutcome.message, details: runtimeOutcome.conflicts ?? null },
+      });
+    }
+  }
+
   const resultPath = options.values.result;
   if (resultPath === undefined) {
-    return emit({ json, code: EXIT_CODES.USAGE, data: null, error: usageError(USAGE) });
+    if (runtimeOutcome === null) {
+      return emit({ json, code: EXIT_CODES.USAGE, data: null, error: usageError(USAGE) });
+    }
+    const data = {
+      action: runtimeOutcome.action,
+      dry_run: dryRun,
+      engine: runtimeOutcome.engine,
+      files: runtimeOutcome.files,
+      runtime_path: runtimeOutcome.runtimePath,
+      environment: runtimeOutcome.runtime?.merged ?? undefined,
+      pruned: runtimeOutcome.pruned ?? undefined,
+      wrote: runtimeOutcome.wrote ?? undefined,
+    };
+    if (json) return emit({ json, command: 'runtime', code: EXIT_CODES.OK, data, error: null });
+    process.stdout.write(`runtime/engine/${runtimeOutcome.engine.version}: ${runtimeOutcome.files} file(s) ${runtimeOutcome.action}\n`);
+    return EXIT_CODES.OK;
   }
   const loaded = loadResultInput({ result: resultPath, ir: options.values.ir });
   if (!loaded.ok) {
     return emit({ json, code: EXIT_CODES.USAGE, data: null, error: loaded.error });
   }
-  const outcome = installProjection({
+  const outcome = installR2cProject({
     result: loaded.result,
     irBytes: loaded.irBytes,
     projectRoot,
@@ -326,7 +395,16 @@ export function run(argv, io = {}) {
         details: outcome.conflicts ?? outcome.diagnostics ?? outcome.failures ?? null,
       }
       : null;
-    return emit({ json, code, data: summaryData(outcome), error });
+    const data = summaryData(outcome);
+    if (runtimeOutcome !== null) {
+      data.runtime = {
+        action: runtimeOutcome.action,
+        engine: runtimeOutcome.engine,
+        files: runtimeOutcome.files,
+        runtime_path: runtimeOutcome.runtimePath,
+      };
+    }
+    return emit({ json, code, data, error, command: 'install' });
   }
   if (outcome.ok === false) {
     process.stderr.write(`error: ${outcome.message} [${outcome.code}]\n`);
@@ -334,6 +412,7 @@ export function run(argv, io = {}) {
     for (const item of outcome.diagnostics ?? []) process.stderr.write(`  ${item.message}\n`);
     return code;
   }
+  if (runtimeOutcome !== null) process.stdout.write(`runtime/engine/${runtimeOutcome.engine.version}: ${runtimeOutcome.files} file(s) ${runtimeOutcome.action}\n`);
   process.stdout.write(`${humanInstall(outcome)}\n`);
   return code;
 }
