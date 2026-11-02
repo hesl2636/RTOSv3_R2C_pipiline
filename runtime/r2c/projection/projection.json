@@ -1,0 +1,61 @@
+{
+  "schema": "r2c.projection/v1",
+  "id": "r2c",
+  "name": "r2c 运行时投影",
+  "version": "0.1.0",
+  "description": "把中立 IR 投影成 r2c 项目根载荷（workflows/tasks/skills/roles/constitution）；一个 target，不生成引擎资产。",
+  "api": {
+    "ir": "r2c.ir/v1",
+    "options": "r2c.projection-options/v1",
+    "result": "r2c.projection-result/v1"
+  },
+  "writeRoots": [
+    "constitution",
+    "roles",
+    "skills",
+    "tasks",
+    "workflows"
+  ],
+  "targets": [
+    {
+      "id": "r2c",
+      "name": "r2c 运行时",
+      "default": true,
+      "capabilities": {
+        "state": {
+          "level": "native",
+          "note": "r2c 运行时记录步骤进度、强制顺序、支持 pause/resume；状态只在 .r2c/**。"
+        },
+        "gates": {
+          "level": "native",
+          "note": "submit 在项目根按序执行 gate[].command，任一非零拒绝提交；缺省超时 120 s。"
+        },
+        "outputs": {
+          "level": "native",
+          "note": "submit 先检查 expect.outputs 的每个 glob 都存在，再执行 gate。"
+        },
+        "subagents": {
+          "level": "degraded",
+          "note": "角色以宿主原生定义安装并按 r2c-<id> 命名，但 r2c 只输出角色提示、从不强制派发。"
+        },
+        "skills": {
+          "level": "native",
+          "note": "技能按宿主目录安装/注册，占位横幅保留。"
+        },
+        "preload": {
+          "level": "unavailable",
+          "note": "r2c 投影响应最差宿主：codex/opencode/dsh 无角色级预载接缝。"
+        },
+        "stage-invocation": {
+          "level": "unavailable",
+          "note": "运行粒度只保证全流程；单阶段调用不在 r2c 命令面。"
+        },
+        "skill-invocation": {
+          "level": "adapted",
+          "note": "单技能调用由宿主 agent 的技能面提供，r2c 不提供单独命令。"
+        }
+      }
+    }
+  ],
+  "assets": []
+}
