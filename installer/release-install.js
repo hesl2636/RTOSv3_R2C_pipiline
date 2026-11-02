@@ -28,8 +28,8 @@ import { compareCodePoints } from '../core/code-point.js';
 import { inflateRaw } from '../core/node/inflate.js';
 import { sha256Hex } from '../core/node/sha256.js';
 import { isValidRange, isValidVersion, satisfiesRange } from '../core/semver.js';
-import { normalizeOptions } from '../projection/options.js';
-import { defaultTargets, getProjection } from '../projection/registry.js';
+import { canonicalInputOptions, normalizeOptions } from '../projection/options.js';
+import { getProjection } from '../projection/registry.js';
 import { validateResult } from '../projection/validate-result.js';
 import {
   PAYLOAD_MANIFEST_NAME,
@@ -141,6 +141,15 @@ function pickAsset(sumsNames, pattern) {
  * and V1–V12 against the Release IR.
  */
 function verifyPayload({ payloadBytes, ir, irDigest, descriptor, canonical, id, version }) {
+  const parsed = readPayloadArchive(payloadBytes);
+  if (parsed.manifest !== null
+    && JSON.stringify(parsed.manifest.options) !== JSON.stringify(canonical.options)) {
+    return failure(
+      'RELEASE_PAYLOAD_INVALID',
+      'the payload was built with custom projection options; a Release payload is canonical. Re-project the published IR with the framework CLI or the web front end and install that result',
+      { details: { expected: canonical.options, actual: parsed.manifest.options } },
+    );
+  }
   const problems = verifyPayloadArchive(payloadBytes, {
     id,
     version,
@@ -155,7 +164,7 @@ function verifyPayload({ payloadBytes, ir, irDigest, descriptor, canonical, id, 
       details: { problems },
     });
   }
-  const { entries, manifest, problems: readProblems } = readPayloadArchive(payloadBytes);
+  const { entries, manifest, problems: readProblems } = parsed;
   if (readProblems.length > 0 || manifest === null) {
     return failure('RELEASE_PAYLOAD_INVALID', `payload manifest is unreadable: ${readProblems.join('; ')}`, {
       details: { problems: readProblems },
@@ -169,9 +178,11 @@ function verifyPayload({ payloadBytes, ir, irDigest, descriptor, canonical, id, 
   }
   const result = rebuilt.result;
   if (JSON.stringify(result.options) !== JSON.stringify(canonical.normalized)) {
-    return failure('RELEASE_PAYLOAD_INVALID', `${PAYLOAD_MANIFEST_NAME} result.options do not echo the canonical input`, {
-      details: { expected: canonical.normalized, actual: result.options },
-    });
+    return failure(
+      'RELEASE_PAYLOAD_INVALID',
+      'the payload was built with custom projection options; a Release payload is canonical. Re-project the published IR with the framework CLI or the web front end and install that result',
+      { details: { expected: canonical.normalized, actual: result.options } },
+    );
   }
   if (JSON.stringify(result.targets) !== JSON.stringify(canonical.targets)) {
     return failure('RELEASE_PAYLOAD_INVALID', `${PAYLOAD_MANIFEST_NAME} result.targets do not match the canonical targets`);
@@ -385,19 +396,19 @@ export function verifyRelease(input = {}) {
   const zip = verifyZip({ zipBytes: Buffer.from(assets[`bundle-${bundleId}-v${version}.zip`]), ir, id: bundleId, version });
   if (zip.ok === false) return zip;
 
-  const canonicalTargets = defaultTargets(projectionId);
+  const canonicalInput = canonicalInputOptions(projectionId, descriptor);
   const normalized = normalizeOptions({
     projectionId,
     ir,
     irDigest,
-    raw: { stageOrder: null, skills: null, targets: canonicalTargets },
+    raw: canonicalInput,
     manifest: descriptor,
   });
   if (!normalized.ok) {
     return failure('RELEASE_PAYLOAD_INVALID', `${projectionId} canonical options are invalid: ${(normalized.errors ?? []).map((error) => error.message).join('; ')}`);
   }
   const canonical = {
-    options: { stageOrder: null, skills: null, targets: canonicalTargets },
+    options: canonicalInput,
     targets: normalized.options.targets,
     normalized: normalized.options,
   };

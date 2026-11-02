@@ -763,3 +763,25 @@ test('an explicit version downloads anonymously over the mirror URL without the 
   }
   assert.ok(existsSync(join(target, '.agents', 'agent-native', ID, 'roles.json')));
 });
+
+test('a payload built with custom projection options is refused with a reproject hint', (t) => {
+  const optionsDir = tempDir(t, 'options');
+  const optionsFile = join(optionsDir, 'options.json');
+  writeFileSync(optionsFile, canonicalJson({ 'agent-native': { targets: ['claude-code'] } }));
+  const release = tempDir(t, 'custom-release');
+  const built = spawnSync(process.execPath, [
+    RELEASE, '--bundle', SAMPLE_ZIP, '--out', release, '--options', optionsFile,
+  ], { cwd: ROOT, encoding: 'utf8', timeout: 240_000, windowsHide: true });
+  assert.equal(built.status, 0, `${built.stdout}\n${built.stderr}`);
+
+  const target = project(t);
+  const { env } = isolatedEnv(t);
+  const result = install(
+    ['--bundle', ID, '--version', VERSION, '--projection', 'agent-native', '--project', target, '--release-base', release],
+    { env },
+  );
+  assert.equal(result.status, 2, `${result.stdout}\n${result.stderr}`);
+  assert.match(result.stderr, /custom projection options/);
+  assert.match(result.stderr, /Re-project/);
+  assert.equal(walk(target).length, 0);
+});

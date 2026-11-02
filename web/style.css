@@ -163,3 +163,53 @@ button:not(:disabled):hover { border-color: var(--accent); }
 }
 
 .fallback pre, .banner pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* Projection options and build (web #109) */
+
+.projection-control {
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  padding: 0.75rem 1rem;
+  margin: 0.75rem 0;
+}
+
+.projection-control h4 { margin: 0.75rem 0 0.35rem; font-size: 0.9rem; }
+
+.stage-order { margin: 0.35rem 0; padding-left: 1.4rem; }
+.stage-order li { margin: 0.2rem 0; }
+.stage-order button { margin-left: 0.3rem; padding: 0 0.4rem; }
+
+.skill-picker { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; }
+.skill-picker input[type="text"] { flex: 1 1 14rem; }
+
+.check-list {
+  flex-basis: 100%;
+  list-style: none;
+  margin: 0.35rem 0 0;
+  padding: 0;
+  max-height: 18rem;
+  overflow-y: auto;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
+  gap: 0.15rem 1rem;
+}
+
+.check-row { display: flex; gap: 0.4rem; align-items: center; font-size: 0.88rem; }
+.target-picker { display: flex; flex-wrap: wrap; gap: 0.4rem 1.25rem; }
+
+.projection-result { border-top: 1px dashed var(--border); padding-top: 0.75rem; margin-top: 0.75rem; }
+.matrix { border-collapse: collapse; margin: 0.35rem 0; font-size: 0.85rem; }
+.matrix th, .matrix td { border: 1px solid var(--border); padding: 0.15rem 0.5rem; text-align: left; }
+.matrix th { color: var(--muted); font-weight: 600; }
+
+.degradations, .warnings, .file-list, .asset-list { margin: 0.35rem 0; padding-left: 1.25rem; font-size: 0.88rem; }
+.file-list, .asset-list { max-height: 22rem; overflow-y: auto; }
+.file-list li, .asset-list li { margin: 0.15rem 0; overflow-wrap: anywhere; }
+
+.command {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  margin: 0.35rem 0;
+}
+.command code { flex: 1; overflow-x: auto; padding: 0.35rem 0.5rem; background: var(--bg); border-radius: 0.35rem; }

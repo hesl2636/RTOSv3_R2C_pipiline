@@ -8,6 +8,11 @@
  */
 import { validateBundleAsync } from '../assembler/validate-bundle.js';
 import { LIMITS } from '../assembler/limits.js';
+import { canonicalJson } from '../core/canonical-json.js';
+import { isCanonicalOptions, normalizeOptions } from '../projection/options.js';
+import { project } from '../projection/project.js';
+import { allowedProjections, defaultTargets, getProjection } from '../projection/registry.js';
+import { validateResult } from '../projection/validate-result.js';
 import {
   inflateRaw,
   missingRequirements,
@@ -24,9 +29,16 @@ const state = {
   degraded: false,
   mismatch: false,
   irBytes: null,
+  ir: null,
+  uploadId: null,
+  allowed: [],
+  options: {},
+  previews: {},
+  build: null,
   report: null,
   diagnostics: [],
   shared: null,
+  engineVersion: null,
 };
 
 function byId(id) {
@@ -264,6 +276,8 @@ function renderIr(data) {
   state.irBytes = irBytes;
   const text = new TextDecoder('utf-8', { fatal: true }).decode(irBytes);
   const ir = JSON.parse(text);
+  state.ir = { json: ir, digest: data.ir.digest, id: ir.id, version: ir.version };
+  state.allowed = allowedProjections(ir);
 
   const identity = byId('ir-identity');
   clear(identity);
@@ -305,6 +319,15 @@ function renderIr(data) {
 
 function renderNoIr() {
   state.irBytes = null;
+  state.ir = null;
+  state.uploadId = null;
+  state.allowed = [];
+  state.options = {};
+  state.previews = {};
+  state.build = null;
+  renderOptions();
+  const buildBody = byId('build-body');
+  if (buildBody !== null) show(buildBody, false);
   show(byId('ir-body'), false);
   show(byId('ir-empty'), true);
   byId('ir-empty').textContent = 'No IR: the bundle must validate without errors before it compiles.';
@@ -321,6 +344,536 @@ function downloadIr() {
   anchor.click();
   anchor.remove();
   URL.revokeObjectURL(url);
+}
+
+/* -------------------------------------------------------------------------- */
+/* Projection options                                                         */
+/* -------------------------------------------------------------------------- */
+
+const PREVIEW_DEBOUNCE_MS = 150;
+let previewTimer = null;
+
+function stageIdsOf(ir) {
+  return (ir.stages ?? []).map((stage) => stage.id);
+}
+
+function skillIdsOf(ir) {
+  return Object.keys(ir.skills ?? {}).sort();
+}
+
+function defaultOptionsFor(ir) {
+  const defaults = {};
+  for (const id of state.allowed) {
+    defaults[id] = {
+      stageOrder: stageIdsOf(ir),
+      skills: skillIdsOf(ir),
+      targets: defaultTargets(id),
+    };
+  }
+  return defaults;
+}
+
+function optionsForRequest() {
+  const options = {};
+  for (const id of state.allowed) {
+    const current = state.options[id];
+    options[id] = {
+      stageOrder: [...current.stageOrder],
+      skills: [...current.skills],
+      targets: [...current.targets],
+      extra: {},
+    };
+  }
+  return options;
+}
+
+function schedulePreview() {
+  if (previewTimer !== null) clearTimeout(previewTimer);
+  previewTimer = setTimeout(() => {
+    previewTimer = null;
+    void preview();
+  }, PREVIEW_DEBOUNCE_MS);
+}
+
+function resetOptions(message) {
+  state.options = state.ir === null ? {} : defaultOptionsFor(state.ir.json);
+  state.previews = {};
+  renderOptions();
+  const status = byId('options-status');
+  if (status !== null) status.textContent = message ?? 'Options reset to the published defaults.';
+  schedulePreview();
+}
+
+function renderStageOrder(list, projectionId) {
+  clear(list);
+  const current = state.options[projectionId];
+  const stages = new Map((state.ir?.json.stages ?? []).map((stage) => [stage.id, stage]));
+  current.stageOrder.forEach((id, index) => {
+    const item = element('li');
+    item.append(element('strong', null, stages.get(id)?.name ?? id), element('span', 'mono hint', ` ${id}`));
+    const up = element('button', null, '↑');
+    up.type = 'button';
+    up.title = 'move up';
+    up.disabled = index === 0;
+    up.addEventListener('click', () => {
+      const order = current.stageOrder;
+      [order[index - 1], order[index]] = [order[index], order[index - 1]];
+      renderStageOrder(list, projectionId);
+      schedulePreview();
+    });
+    const down = element('button', null, '↓');
+    down.type = 'button';
+    down.title = 'move down';
+    down.disabled = index === current.stageOrder.length - 1;
+    down.addEventListener('click', () => {
+      const order = current.stageOrder;
+      [order[index + 1], order[index]] = [order[index], order[index + 1]];
+      renderStageOrder(list, projectionId);
+      schedulePreview();
+    });
+    item.append(up, down);
+    list.append(item);
+  });
+}
+
+function renderSkillPicker(container, projectionId) {
+  clear(container);
+  const current = state.options[projectionId];
+  const search = element('input');
+  search.type = 'text';
+  search.placeholder = 'filter skills';
+  search.setAttribute('spellcheck', 'false');
+  const all = element('button', null, 'all');
+  const none = element('button', null, 'none');
+  const invert = element('button', null, 'invert');
+  for (const button of [all, none, invert]) button.type = 'button';
+  const list = element('ul', 'check-list');
+  const rows = [];
+  for (const [id, skill] of Object.entries(state.ir?.json.skills ?? {})) {
+    const label = element('label', 'check-row');
+    const box = element('input');
+    box.type = 'checkbox';
+    box.checked = current.skills.includes(id);
+    box.addEventListener('change', () => {
+      const selected = new Set(current.skills);
+      if (box.checked) selected.add(id);
+      else selected.delete(id);
+      current.skills = [...selected].sort();
+      schedulePreview();
+    });
+    label.append(box, element('span', 'mono', id));
+    if (skill.placeholder === true) label.append(element('span', 'badge badge-warn', 'placeholder'));
+    rows.push({ label, id });
+    list.append(label);
+  }
+  const applyFilter = () => {
+    const query = search.value.trim().toLowerCase();
+    for (const row of rows) row.label.hidden = query !== '' && !row.id.toLowerCase().includes(query);
+  };
+  const setAll = (predicate) => {
+    for (const row of rows) {
+      const box = row.label.querySelector('input');
+      box.checked = predicate(row.id);
+    }
+    current.skills = rows.filter((row) => predicate(row.id)).map((row) => row.id).sort();
+    schedulePreview();
+  };
+  search.addEventListener('input', applyFilter);
+  all.addEventListener('click', () => setAll(() => true));
+  none.addEventListener('click', () => setAll(() => false));
+  invert.addEventListener('click', () => setAll((id) => !current.skills.includes(id)));
+  container.append(search, all, none, invert, list);
+}
+
+function renderTargetPicker(container, projectionId) {
+  clear(container);
+  const descriptor = getProjection(projectionId);
+  const current = state.options[projectionId];
+  for (const target of descriptor?.targets ?? []) {
+    const label = element('label', 'check-row');
+    const box = element('input');
+    box.type = 'checkbox';
+    box.checked = current.targets.includes(target.id);
+    box.addEventListener('change', () => {
+      const selected = new Set(current.targets);
+      if (box.checked) selected.add(target.id);
+      else selected.delete(target.id);
+      current.targets = descriptor.targets.map((item) => item.id).filter((id) => selected.has(id));
+      schedulePreview();
+    });
+    label.append(box, element('span', 'mono', target.id), element('span', 'hint', ` ${target.name ?? ''}`));
+    container.append(label);
+  }
+}
+
+function renderOptions() {
+  const body = byId('options-body');
+  const controls = byId('projection-controls');
+  if (body === null || controls === null) return;
+  clear(controls);
+  const hasIr = state.ir !== null;
+  show(body, hasIr);
+  if (!hasIr) return;
+  byId('options-ir-digest').textContent = state.ir.digest;
+  for (const projectionId of state.allowed) {
+    const descriptor = getProjection(projectionId);
+    if (descriptor === null) continue;
+    const block = element('div', 'projection-control');
+    const head = element('div', 'row');
+    head.append(
+      element('strong', null, `${descriptor.name ?? descriptor.id} (${descriptor.id} @ ${descriptor.version})`),
+      element('span', 'badge', '…'),
+    );
+    head.lastChild.id = `canonical-${projectionId}`;
+    block.append(head);
+    const current = state.options[projectionId];
+
+    block.append(element('h4', null, 'Stage order'));
+    const orderList = element('ol', 'stage-order');
+    renderStageOrder(orderList, projectionId);
+    block.append(orderList);
+    const restoreOrder = element('button', null, 'IR order');
+    restoreOrder.type = 'button';
+    restoreOrder.addEventListener('click', () => {
+      current.stageOrder = stageIdsOf(state.ir.json);
+      renderStageOrder(orderList, projectionId);
+      schedulePreview();
+    });
+    block.append(restoreOrder);
+
+    block.append(element('h4', null, 'Skills'));
+    const picker = element('div', 'skill-picker');
+    renderSkillPicker(picker, projectionId);
+    block.append(picker);
+
+    if ((descriptor.targets ?? []).length > 1) {
+      block.append(element('h4', null, 'Targets'));
+      const targets = element('div', 'target-picker');
+      renderTargetPicker(targets, projectionId);
+      block.append(targets);
+    }
+    controls.append(block);
+  }
+}
+
+function bytesOfContent(content) {
+  return new TextEncoder().encode(content).length;
+}
+
+function summarizeResult(result) {
+  const bytes = result.files.reduce((sum, file) => sum + bytesOfContent(file.content), 0);
+  return {
+    id: result.projection.id,
+    version: result.projection.version,
+    options: result.options,
+    targets: result.targets,
+    coverage: result.coverage,
+    counts: {
+      files: result.files.length,
+      bytes,
+      degradations: result.degradations.length,
+      warnings: result.warnings.length,
+      capabilities: result.capabilityReport.length,
+    },
+    files: result.files.map((file) => ({
+      path: file.path,
+      targets: file.targets,
+      kind: file.kind,
+      mode: file.mode,
+    })),
+    capabilityReport: result.capabilityReport,
+    degradations: result.degradations,
+    warnings: result.warnings,
+    metadata: result.metadata,
+  };
+}
+
+function groupBy(items, keyOf) {
+  const groups = new Map();
+  for (const item of items) {
+    const key = keyOf(item);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(item);
+  }
+  return groups;
+}
+
+function renderProjectionSummary(parent, summary, digest, canonical) {
+  const block = element('div', 'projection-result');
+  const head = element('div', 'row');
+  head.append(
+    element('strong', null, `${summary.id} @ ${summary.version}`),
+    element('span', canonical ? 'badge badge-ok' : 'badge badge-warn', canonical ? 'canonical · publishable' : 'custom · local only'),
+  );
+  block.append(head);
+
+  const counts = element('div', 'summary');
+  const byKind = groupBy(summary.files, (file) => file.kind);
+  const byTarget = groupBy(summary.files.flatMap((file) => file.targets.map((target) => ({ target }))), (item) => item.target);
+  counts.append(element('p', null, `files ${summary.counts.files} · bytes ${formatBytes(summary.counts.bytes)} · degradations ${summary.counts.degradations} · warnings ${summary.counts.warnings} · capabilities ${summary.counts.capabilities}`));
+  counts.append(element('p', 'hint', `by kind: ${[...byKind.entries()].map(([kind, list]) => `${kind} ${list.length}`).join(', ') || 'none'}`));
+  counts.append(element('p', 'hint', `by target: ${[...byTarget.entries()].map(([target, list]) => `${target} ${list.length}`).join(', ') || 'none'}`));
+  counts.append(element('p', 'mono hint', `coverage stages ${summary.coverage.stages.length} · steps ${summary.coverage.steps.length}`));
+  if (digest !== undefined && digest !== null) counts.append(element('p', 'mono hint', `result digest ${digest}`));
+  block.append(counts);
+
+  block.append(element('h4', null, 'Capability matrix'));
+  const matrix = element('table', 'matrix');
+  const header = element('tr');
+  for (const label of ['target', 'capability', 'level', 'uses']) header.append(element('th', null, label));
+  matrix.append(header);
+  for (const row of summary.capabilityReport) {
+    const tr = element('tr');
+    tr.append(
+      element('td', 'mono', row.target),
+      element('td', 'mono', row.capability),
+      element('td', null, row.level),
+      element('td', 'mono', String(row.uses)),
+    );
+    matrix.append(tr);
+  }
+  block.append(matrix);
+
+  block.append(element('h4', null, 'Degradations'));
+  if (summary.degradations.length === 0) block.append(element('p', 'hint', 'none'));
+  const groups = groupBy(summary.degradations, (item) => `${item.target}/${item.capability}`);
+  for (const [key, items] of groups) {
+    const details = element('details');
+    details.append(element('summary', null, `${key} (${items.length})`));
+    const list = element('ul', 'degradations');
+    for (const item of items) {
+      list.append(element('li', null, `${item.level} · ${item.pointer}${item.field ? ` · ${item.field}` : ''} — ${item.reason} → ${item.effect}`));
+    }
+    details.append(list);
+    block.append(details);
+  }
+
+  block.append(element('h4', null, 'Warnings'));
+  if (summary.warnings.length === 0) block.append(element('p', 'hint', 'none'));
+  const warnings = element('ul', 'warnings');
+  for (const warning of summary.warnings) {
+    warnings.append(element('li', null, `${warning.code} · ${warning.pointer ?? warning.target ?? ''} — ${warning.message}`));
+  }
+  block.append(warnings);
+
+  const files = element('details');
+  files.append(element('summary', null, `Files (${summary.files.length})`));
+  const fileList = element('ul', 'file-list');
+  for (const file of summary.files) {
+    const row = element('li');
+    row.append(
+      element('span', 'mono', file.path),
+      element('span', 'hint', ` ${file.kind} · ${file.targets.join(',')} · ${file.mode === 0o755 ? '0755' : '0644'}`),
+    );
+    fileList.append(row);
+  }
+  files.append(fileList);
+  block.append(files);
+  parent.append(block);
+}
+
+async function preview() {
+  const body = byId('preview-body');
+  const status = byId('preview-status');
+  const button = byId('build-button');
+  if (body === null) return;
+  clear(body);
+  if (button !== null) button.disabled = true;
+  if (state.ir === null) {
+    show(body, false);
+    if (status !== null) status.textContent = 'Upload a valid bundle to preview projections.';
+    return;
+  }
+  if (state.allowed.length === 0) {
+    show(body, false);
+    if (status !== null) status.textContent = 'This IR allows no registered projection.';
+    return;
+  }
+  show(body, true);
+  const previews = {};
+  let ok = true;
+  for (const projectionId of state.allowed) {
+    const descriptor = getProjection(projectionId);
+    if (descriptor === null) continue;
+    const raw = state.options[projectionId] ? optionsForRequest()[projectionId] : null;
+    const normalized = normalizeOptions({
+      projectionId,
+      ir: state.ir.json,
+      irDigest: state.ir.digest,
+      raw,
+      manifest: descriptor,
+    });
+    if (!normalized.ok) {
+      ok = false;
+      const block = element('div', 'banner banner-error');
+      block.append(element('strong', null, 'Invalid options'));
+      const list = element('ul');
+      for (const error of normalized.errors) list.append(element('li', null, `${error.code}: ${error.message}`));
+      block.append(list);
+      body.append(block);
+      continue;
+    }
+    const result = project({
+      projectionId,
+      ir: state.ir.json,
+      irDigest: state.ir.digest,
+      options: normalized.options,
+      environment: { engineVersion: state.engineVersion },
+      assets: {},
+    });
+    if (!result.ok) {
+      ok = false;
+      const block = element('div', 'banner banner-error');
+      block.append(element('strong', null, 'Projection failed'));
+      for (const error of result.errors ?? []) block.append(element('p', null, `${error.code}: ${error.message}`));
+      body.append(block);
+      continue;
+    }
+    const validation = validateResult(result, {
+      ir: state.ir.json,
+      irDigest: state.ir.digest,
+      manifest: descriptor,
+      options: normalized.options,
+      environment: { engineVersion: state.engineVersion },
+      assets: {},
+    });
+    if (!validation.ok) {
+      ok = false;
+      const block = element('div', 'banner banner-error');
+      block.append(element('strong', null, 'Projection result failed V1–V12'));
+      for (const diagnostic of validation.diagnostics) block.append(element('p', null, `${diagnostic.code}: ${diagnostic.message}`));
+      body.append(block);
+      continue;
+    }
+    const digest = await sha256Hex(canonicalJson(result));
+    const canonical = isCanonicalOptions({
+      projectionId,
+      ir: state.ir.json,
+      irDigest: state.ir.digest,
+      options: normalized.options,
+      manifest: descriptor,
+    });
+    previews[projectionId] = { digest, canonical };
+    renderProjectionSummary(body, summarizeResult(result), digest, canonical);
+  }
+  state.previews = previews;
+  for (const [projectionId, info] of Object.entries(previews)) {
+    const badge = byId(`canonical-${projectionId}`);
+    if (badge === null) continue;
+    badge.textContent = info.canonical ? 'canonical' : 'custom (local only)';
+    badge.className = info.canonical ? 'badge badge-ok' : 'badge badge-warn';
+  }
+  if (status !== null) {
+    status.textContent = ok
+      ? `Preview computed in the browser with the shared modules (${Object.keys(previews).length} projection(s)).`
+      : 'Fix the options above; no build is possible while they are invalid.';
+  }
+  if (button !== null) button.disabled = !ok || state.uploadId === null;
+}
+
+function copyable(text) {
+  const row = element('div', 'command');
+  row.append(element('code', null, text));
+  const button = element('button', null, 'Copy');
+  button.type = 'button';
+  button.addEventListener('click', () => {
+    const clipboard = navigator.clipboard;
+    if (clipboard === undefined || typeof clipboard.writeText !== 'function') {
+      button.textContent = 'Copy unavailable';
+      return;
+    }
+    clipboard.writeText(text).then(() => { button.textContent = 'Copied'; }, () => { button.textContent = 'Copy failed'; });
+  });
+  row.append(button);
+  return row;
+}
+
+function renderBuild(build) {
+  state.build = build;
+  const body = byId('build-body');
+  if (body === null) return;
+  clear(body);
+  show(body, true);
+
+  const head = element('div', 'row');
+  head.append(
+    element('span', 'mono', `build ${build.buildId}`),
+    element('span', build.publishable ? 'badge badge-ok' : 'badge badge-warn', build.publishable ? 'publishable' : 'local only (publishable: false)'),
+    element('span', 'mono hint', build.tag),
+  );
+  body.append(head);
+
+  body.append(element('h3', null, build.install.mode === 'release' ? 'Install commands (fixed version)' : 'Install commands (local mirror)'));
+  body.append(element('p', 'hint', 'Run from the target project root. The web surface never writes to a project.'));
+  for (const item of build.install.commands) {
+    body.append(copyable(item.command));
+  }
+
+  body.append(element('h3', null, 'Assets'));
+  const assets = element('ul', 'asset-list');
+  for (const asset of build.artifacts) {
+    const item = element('li');
+    const link = element('a', null, asset.name);
+    link.href = asset.url;
+    link.setAttribute('download', asset.name);
+    item.append(link, element('span', 'hint', ` ${formatBytes(asset.bytes)} · sha256 ${asset.sha256}`));
+    assets.append(item);
+  }
+  body.append(assets);
+
+  body.append(element('h3', null, 'Projection results'));
+  for (const projection of build.projections) {
+    renderProjectionSummary(body, projection, projection.digest, build.canonical);
+  }
+}
+
+async function buildAssets() {
+  const status = byId('build-status');
+  if (state.ir === null || state.uploadId === null) return;
+  if (status !== null) status.textContent = 'Building on the server…';
+  let payload;
+  try {
+    const response = await fetch('/api/builds', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-R2C-CSRF': state.csrf ?? '',
+      },
+      body: JSON.stringify({
+        uploadId: state.uploadId,
+        irDigest: state.ir.digest,
+        options: optionsForRequest(),
+      }),
+      cache: 'no-store',
+      credentials: 'omit',
+    });
+    payload = await response.json();
+    if (!response.ok) {
+      const code = payload?.error?.code ?? `HTTP_${response.status}`;
+      const details = payload?.error?.details;
+      if (status !== null) {
+        const suffix = details === null || details === undefined ? '' : ` — ${JSON.stringify(details)}`;
+        status.textContent = `${code}: ${payload?.error?.message ?? 'build failed'}${suffix}`;
+      }
+      return;
+    }
+  } catch (error) {
+    if (status !== null) status.textContent = `Build failed: ${error instanceof Error ? error.message : String(error)}`;
+    return;
+  }
+  const build = payload.data;
+  for (const projection of build.projections) {
+    const local = state.previews[projection.id];
+    if (local !== undefined && local.digest !== projection.digest) {
+      setMismatch(`Result digest mismatch for ${projection.id}: browser ${local.digest}, server ${projection.digest}.`);
+    }
+  }
+  renderBuild(build);
+  if (status !== null) {
+    status.textContent = build.publishable
+      ? `Canonical build: ${build.artifacts.length} assets, publishable.`
+      : `Custom options: ${build.artifacts.length} local-only assets (publishable: false).`;
+  }
 }
 
 /* -------------------------------------------------------------------------- */
@@ -392,7 +945,7 @@ async function upload() {
   setStatus('Uploading for authoritative validation and compilation…');
   let payload;
   try {
-    const response = await fetch('/api/validate', {
+    const response = await fetch('/api/uploads', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/zip',
@@ -432,6 +985,11 @@ async function upload() {
         setMismatch(`IR digest mismatch: browser ${digest}, server ${data.ir.digest}.`);
       }
       renderIr(data);
+      state.uploadId = data.uploadId ?? null;
+      const buildBody = byId('build-body');
+      if (buildBody !== null) show(buildBody, false);
+      state.build = null;
+      resetOptions('New upload: options were reset to the published defaults.');
     } catch (error) {
       setMismatch(`IR could not be verified: ${error instanceof Error ? error.message : String(error)}`);
       renderNoIr();
@@ -462,7 +1020,7 @@ async function bootstrap() {
 
   state.degraded = !floor.deflateRaw;
   const mode = byId('mode-badge');
-  if (mode !== null) mode.textContent = state.degraded ? 'read-only · server validation' : 'read-only · shared validator';
+  if (mode !== null) mode.textContent = state.degraded ? 'build · server validation' : 'build · shared validator';
   const degrade = byId('degrade-badge');
   if (state.degraded && degrade !== null) {
     degrade.textContent = "degraded: no DecompressionStream('deflate-raw')";
@@ -483,6 +1041,7 @@ async function bootstrap() {
   }
   state.csrf = session.data.csrf;
   state.limits = session.data.limits;
+  state.engineVersion = session.data.engineVersion ?? null;
   state.shared = await loadSharedModules(session.data.modules ?? {});
   if (session.data.publish?.enabled !== true) {
     const publish = byId('publish-badge');
@@ -495,6 +1054,10 @@ async function bootstrap() {
     void upload();
   });
   byId('download-ir').addEventListener('click', downloadIr);
+  byId('reset-options').addEventListener('click', () => resetOptions());
+  byId('build-button').addEventListener('click', () => {
+    void buildAssets();
+  });
   byId('severity-filter').addEventListener('change', renderDiagnostics);
   byId('path-filter').addEventListener('input', renderDiagnostics);
   byId('upload-button').disabled = selectedFile() === null;
@@ -507,4 +1070,4 @@ if (typeof document !== 'undefined' && typeof window !== 'undefined') {
   });
 }
 
-export { state, upload, bootstrap };
+export { state, upload, bootstrap, preview, resetOptions, buildAssets };

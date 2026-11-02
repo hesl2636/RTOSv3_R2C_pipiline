@@ -26,9 +26,9 @@ import { basename, join, resolve } from 'node:path';
 import { inflateRaw } from '../../core/node/inflate.js';
 import { sha256Hex } from '../../core/node/sha256.js';
 import { analyzeBundle, compileBundle } from '../../assembler/index.js';
-import { canonicalJson } from '../../core/canonical-json.js';
+import { canonicalJson, isCanonicalJson } from '../../core/canonical-json.js';
 import { compareCodePoints } from '../../core/code-point.js';
-import { foldCase } from '../../core/paths.js';
+import { foldCase, hasFileDirPrefixConflict } from '../../core/paths.js';
 import { isValidRange, isValidVersion, satisfiesRange } from '../../core/semver.js';
 import {
   INSTALL_ASSET,
@@ -47,9 +47,9 @@ import {
   payloadResultBlock,
   verifyPayloadArchive,
 } from '../../installer/release-payload.js';
-import { normalizeOptions } from '../../projection/options.js';
+import { canonicalInputOptions, isCanonicalOptions, normalizeOptions, payloadInputOptions } from '../../projection/options.js';
 import { project } from '../../projection/project.js';
-import { defaultTargets, getProjection } from '../../projection/registry.js';
+import { getProjection } from '../../projection/registry.js';
 import { validateResult } from '../../projection/validate-result.js';
 import { collectEngine } from '../../src/engine.js';
 import { createTarGz } from '../../src/plugin.js';
@@ -60,9 +60,8 @@ import { writeZip } from './zip-writer.mjs';
 export const BUNDLE_MAKE_LATEST = false;
 export const CANONICAL_PROJECTIONS = Object.freeze(['r2c', 'agent-native']);
 
-// The tag/asset-name contract (#107) and the payload manifest contract
-// (#106) are shared with the installer and the web publisher; this module
-// re-exports them so #105 callers keep working.
+// The tag/asset-name contract is shared with the installer and the web
+// publisher (#107); this module re-exports it so #105 callers keep working.
 export {
   INSTALL_ASSET,
   IR_ASSET,
@@ -296,17 +295,36 @@ export function readEngine(root) {
   };
 }
 
-function validateProjectionOptions({ projectionId, ir, irDigest }) {
+/**
+ * Resolve one projection's options. `raw` is the caller's request (canonical
+ * `null` for a Release build, or the exact local selection from the web/CLI).
+ */
+function validateProjectionOptions({ projectionId, ir, irDigest, raw = null }) {
   const descriptor = getProjection(projectionId);
-  const options = { stageOrder: null, skills: null, targets: defaultTargets(projectionId) };
   const normalized = normalizeOptions({
     projectionId,
     ir,
     irDigest,
-    raw: options,
+    raw,
     manifest: descriptor,
   });
-  return { descriptor, options, normalized };
+  const canonical = normalized.ok && isCanonicalOptions({
+    projectionId,
+    ir,
+    irDigest,
+    options: normalized.options,
+    manifest: descriptor,
+  });
+  const options = canonical || !normalized.ok
+    ? canonicalInputOptions(projectionId, descriptor)
+    : payloadInputOptions({
+      projectionId,
+      ir,
+      irDigest,
+      options: normalized.options,
+      manifest: descriptor,
+    });
+  return { descriptor, raw, options, canonical, normalized };
 }
 
 function payloadFileName(projectionId, id, version) {
@@ -368,12 +386,17 @@ function payloadEntries(result) {
   }));
 }
 
-function buildPayload({ ir, irDigest, id, version, projectionId, engineVersion }) {
-  const { descriptor, options, normalized } = validateProjectionOptions({ projectionId, ir, irDigest });
+function buildPayload({ ir, irDigest, id, version, projectionId, engineVersion, raw = null }) {
+  const { descriptor, options, canonical, normalized } = validateProjectionOptions({
+    projectionId,
+    ir,
+    irDigest,
+    raw,
+  });
   if (!normalized.ok) {
     throw new ReleaseError(
       'RELEASE_PAYLOAD_INVALID',
-      `${projectionId} canonical options are invalid: ${normalized.errors.map((error) => error.message).join('; ')}`,
+      `${projectionId} options are invalid: ${normalized.errors.map((error) => `${error.code}: ${error.message}`).join('; ')}`,
     );
   }
   const environment = { engineVersion };
@@ -439,6 +462,7 @@ function buildPayload({ ir, irDigest, id, version, projectionId, engineVersion }
     data,
     manifest,
     result,
+    canonical,
   };
 }
 
@@ -489,12 +513,16 @@ function failureResult(failures, notes = []) {
 /**
  * Assemble every asset of one bundle Release in memory.
  *
- * @param {{root: string, bundlePath: string, tag?: string|null}} input
+ * @param {{root: string, bundlePath: string, tag?: string|null, options?: object|null}} input
  * @returns {{ok: boolean, failures: string[], notes: string[], assets: Array<{name: string, data: Buffer}>|null, plan: object|null}}
  */
-export function buildBundleRelease({ root, bundlePath, tag = null }) {
+export function buildBundleRelease({ root, bundlePath, tag = null, options = null }) {
   const failures = [];
   const notes = [];
+  if (options !== null && (typeof options !== 'object' || Array.isArray(options))) {
+    return failureResult(['RELEASE_PAYLOAD_INVALID: options must be an object keyed by projection id'], notes);
+  }
+  const requestedOptions = options ?? {};
   let source;
   try {
     source = loadBundleSource(bundlePath);
@@ -589,6 +617,15 @@ export function buildBundleRelease({ root, bundlePath, tag = null }) {
   }
 
   const payloads = new Map();
+  for (const projectionId of Object.keys(requestedOptions)) {
+    if (!allowed.includes(projectionId)) {
+      failures.push(`RELEASE_PROJECTION_NOT_ALLOWED: options name ${projectionId}, allowed: ${allowed.join(', ')}`);
+    } else if (requestedOptions[projectionId] !== null
+      && (typeof requestedOptions[projectionId] !== 'object' || Array.isArray(requestedOptions[projectionId]))) {
+      failures.push(`RELEASE_PAYLOAD_INVALID: ${projectionId} options must be an object or null`);
+    }
+  }
+  if (failures.length > 0) return failureResult(failures, notes);
   try {
     for (const projectionId of allowed) {
       payloads.set(projectionId, buildPayload({
@@ -598,12 +635,16 @@ export function buildBundleRelease({ root, bundlePath, tag = null }) {
         version,
         projectionId,
         engineVersion,
+        raw: requestedOptions[projectionId] ?? null,
       }));
     }
   } catch (error) {
     failures.push(error instanceof ReleaseError ? error.message : `RELEASE_PAYLOAD_INVALID: ${error.message}`);
     return failureResult(failures, notes);
   }
+
+  // Only canonical options may become a Release; custom selections are local.
+  const canonical = [...payloads.values()].every((payload) => payload.canonical);
 
   const assets = [];
   assets.push({ name: `bundle-${id}-v${version}.zip`, data: Buffer.from(source.bytes) });
@@ -647,12 +688,20 @@ export function buildBundleRelease({ root, bundlePath, tag = null }) {
     id,
     version,
     allowed,
+    canonical,
+    publishable: canonical,
     engineVersion,
     frameworkVersion,
     ir,
     irBytes,
     irDigest,
     payloads,
+    projections: [...payloads.values()].map((payload) => ({
+      id: payload.projectionId,
+      digest: sha256Hex(canonicalJson(payload.result)),
+      options: payload.manifest.options,
+      manifest: payload.manifest,
+    })),
     frameworkFiles: framework.files.map((file) => file.rel),
     engineFiles: engine.files.map((file) => file.rel),
   };
