@@ -10,7 +10,8 @@
  * (see `loadRun`); status never appends an event.
  */
 import { R2cError, EXIT_CODES } from '../errors.js';
-import { resolveRunForSession } from '../state.js';
+import { inspectManifest } from '../manifest.js';
+import { loadRun, resolveRunForSession } from '../state.js';
 
 function noteByStep(events) {
   const notes = new Map();
@@ -29,12 +30,13 @@ function currentStep(state) {
 }
 
 export async function run(_argv, ctx) {
-  const loaded = resolveRunForSession({
+  const routed = resolveRunForSession({
     root: ctx.projectRoot,
     sessionId: ctx.sessionId,
     fallbackToLatest: true,
+    repair: false,
   });
-  if (loaded === null) {
+  if (routed === null) {
     throw new R2cError(
       'NO_ACTIVE_RUN',
       'no active run for this session',
@@ -43,6 +45,10 @@ export async function run(_argv, ctx) {
     );
   }
 
+  // Status stays readable without a manifest (it reports run state only), but
+  // when one is available the resume guard applies before any repair write.
+  const inspected = inspectManifest({ manifest: ctx.manifest, projectRoot: ctx.projectRoot });
+  const loaded = loadRun(ctx.projectRoot, routed.runId, { manifest: inspected.data }) ?? routed;
   const { state, events } = loaded;
   const notes = noteByStep(events);
   const current = currentStep(state);

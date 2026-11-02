@@ -268,16 +268,18 @@ test('submit advances one step, delivers the next step and completes the last st
   assert.equal(after.stdout, '');
 });
 
-test('write commands without a session exit 2 and leave state untouched', (t) => {
+test('session-required write commands without a session exit 2 and leave state untouched', (t) => {
   const { root, runId } = startRun(t);
   const before = readFileSync(join(root, '.r2c', 'runs', runId, 'state.json'), 'utf8');
 
-  const { result, envelope } = cliJson(['submit', '--project-root', root, '--step', 'step-a'], {
-    cwd: root,
-  });
-  assert.equal(result.status, 2);
-  assert.equal(envelope.ok, false);
-  assert.equal(envelope.error.code, 'MISSING_SESSION');
+  // `submit` alone resolves a single running run when no session id is given
+  // (ticket #86); every other writer still requires one.
+  for (const command of ['pause', 'resume', 'cancel']) {
+    const { result, envelope } = cliJson([command, '--project-root', root], { cwd: root });
+    assert.equal(result.status, 2, command);
+    assert.equal(envelope.ok, false);
+    assert.equal(envelope.error.code, 'MISSING_SESSION');
+  }
   assert.equal(
     readFileSync(join(root, '.r2c', 'runs', runId, 'state.json'), 'utf8'),
     before,

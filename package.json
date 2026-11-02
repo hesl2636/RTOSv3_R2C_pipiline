@@ -13,6 +13,8 @@
   },
   "scripts": {
     "test": "node --test --test-concurrency=8 test/*.test.js",
+    "bundle:build": "node scripts/build-bundle.mjs examples/rtosv3/bundle",
+    "bundle:check": "node scripts/build-bundle.mjs examples/rtosv3/bundle --check",
     "release": "node scripts/release.mjs"
   },
   "dependencies": {

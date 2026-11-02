@@ -1,0 +1,66 @@
+{
+  "schema": "r2c.bundle/v1",
+  "id": "rtosv3-drvport",
+  "name": "RTOSv3 R2C 移植流水线",
+  "version": "1.0.0",
+  "description": "分析设计 → 详细设计 → 编码实现 → 验证检视 四阶段移植流水线；技能为占位，任务书为可执行正文。",
+  "stages": [
+    "analysis-design",
+    "detailed-design",
+    "implementation",
+    "verification"
+  ],
+  "roles": [
+    "bys-architect",
+    "bys-designer",
+    "bys-impl-lead",
+    "bys-release-lead"
+  ],
+  "tasks": [
+    "analysis-design-orchestration",
+    "detailed-design-orchestration",
+    "implementation-orchestration",
+    "verification-orchestration"
+  ],
+  "skills": [
+    "aceharness-rag",
+    "all-build-single-package",
+    "all-cleancode",
+    "all-multirepo-upload",
+    "all-securec-replace",
+    "ar-miner",
+    "cleancode-scanfix",
+    "code-research",
+    "codebase-search",
+    "design-gen",
+    "executing-plans",
+    "huawei-c-coding-standard",
+    "r2c-build-redblue",
+    "r2c-design",
+    "r2c-imdesign",
+    "r2c-implement-redblue",
+    "r2c-push-mr",
+    "r2c-review",
+    "r2c-verify-rb",
+    "red-blue",
+    "req-analysis",
+    "req-design",
+    "req-formal-verif",
+    "semantic-equiv",
+    "sr-miner",
+    "subagent-driven-development",
+    "using-workflow",
+    "v3-check-symbol-context",
+    "v3-commit",
+    "v3-hm-kernel",
+    "v3-kb",
+    "v3-personal-pipeline",
+    "v3-query-symbol",
+    "workflow-core",
+    "writing-plans"
+  ],
+  "constitution": {
+    "path": "constitution/CONSTITUTION.md",
+    "placeholder": true
+  }
+}

@@ -3,6 +3,7 @@
  * visible text and of `next --format plain` (spec §4); adapters must not wrap
  * or alter the returned body.
  */
+import { readFileSync } from 'node:fs';
 import { relative, resolve } from 'node:path';
 import { R2cError, EXIT_CODES } from './errors.js';
 import { findStep, flattenSteps, hasSkillFile, readTaskFile, skillFilePath } from './manifest.js';
@@ -83,6 +84,30 @@ export function renderCompleted(runId) {
 }
 
 /**
+ * An H2 section named exactly `提交` means the task already carries its
+ * runtime-substituted submit instruction; the engine must not append a second
+ * one (spec §9).
+ */
+const SUBMIT_SECTION = /^##[ \t]+提交[ \t]*$/m;
+
+/**
+ * The installed r2c projection writes the constitution as the complete
+ * injection block (markers + visible line + body). Read it verbatim; only the
+ * trailing newlines are normalized away so the caller can join blocks with a
+ * single blank line. A missing or empty file injects nothing.
+ */
+function constitutionOf(root) {
+  let text;
+  try {
+    text = readFileSync(resolve(root, 'constitution', 'CONSTITUTION.md'), 'utf8');
+  } catch {
+    return null;
+  }
+  if (text.trim() === '') return null;
+  return text.replace(/\n+$/, '');
+}
+
+/**
  * Resolve every prompt step's task file before a run is created (or a submit
  * advances), so a missing task file is a clean exit 2 with no partial writes.
  */
@@ -107,14 +132,17 @@ export function renderStep({ manifest, root, stepId, runnerCmd, sessionId, manif
   const meta = metaLines(root, step);
   const header = `## 下一步：${step.name}（阶段：${stage.name}）`;
   const body = bodyOf(root, step);
+  const constitution = constitutionOf(root);
   // An explicit `--manifest` must survive into the Submit line, otherwise the
   // printed command cannot rediscover the same manifest from the project root.
   const manifestArg = manifestPath === null ? '' : ` --manifest "${manifestPath}"`;
-  const submit = [
-    '提交命令（完成后执行；不要手改 .r2c）：',
-    `${runnerCmd} submit --session-id ${sessionId} --step ${step.id}${manifestArg}`,
-  ].join('\n');
-  return [header, meta.length > 0 ? meta.join('\n') : null, body, submit]
+  const submit = SUBMIT_SECTION.test(body)
+    ? null
+    : [
+      '提交命令（完成后执行；不要手改 .r2c）：',
+      `${runnerCmd} submit --session-id ${sessionId} --step ${step.id}${manifestArg}`,
+    ].join('\n');
+  return [header, meta.length > 0 ? meta.join('\n') : null, constitution, body, submit]
     .filter((part) => part !== null)
     .join('\n\n')
     .concat('\n');

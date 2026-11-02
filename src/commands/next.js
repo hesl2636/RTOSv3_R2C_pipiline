@@ -5,15 +5,17 @@
 import { R2cError, EXIT_CODES } from '../errors.js';
 import { loadManifest } from '../manifest.js';
 import { defaultRunnerCommand, renderStep } from '../render.js';
-import { resolveRunForSession } from '../state.js';
+import { loadRun, resolveRunForSession } from '../state.js';
 
 export async function run(_argv, ctx) {
-  const loadedRun = resolveRunForSession({
+  // Read first without repair so the manifest guard runs before any write.
+  const routed = resolveRunForSession({
     root: ctx.projectRoot,
     sessionId: ctx.sessionId,
     fallbackToLatest: true,
+    repair: false,
   });
-  if (loadedRun === null) {
+  if (routed === null) {
     throw new R2cError(
       'NO_ACTIVE_RUN',
       'no active run for this session',
@@ -22,7 +24,9 @@ export async function run(_argv, ctx) {
     );
   }
 
-  const { state } = loadedRun;
+  const manifest = loadManifest({ manifest: ctx.manifest, projectRoot: ctx.projectRoot });
+  const loaded = loadRun(ctx.projectRoot, routed.runId, { manifest: manifest.data }) ?? routed;
+  const { state } = loaded;
   const current = state.steps.find((step) => step.id === state.current_step_id);
   if (state.status !== 'running' || !current || current.status !== 'active') {
     throw new R2cError(
@@ -33,7 +37,6 @@ export async function run(_argv, ctx) {
     );
   }
 
-  const manifest = loadManifest({ manifest: ctx.manifest, projectRoot: ctx.projectRoot });
   const runnerCmd = ctx.runnerCmd ?? defaultRunnerCommand(ctx.binPath, { projectRoot: ctx.projectRoot });
   const sessionId = state.session_id;
   const text = renderStep({

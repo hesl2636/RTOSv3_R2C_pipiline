@@ -1,0 +1,26 @@
+{
+  "id": "analysis-design",
+  "name": "分析设计",
+  "steps": [
+    {
+      "id": "analysis-design",
+      "name": "需求分析与设计编排",
+      "role": "bys-architect",
+      "task": "analysis-design-orchestration",
+      "skills": [
+        "req-analysis",
+        "req-design",
+        "codebase-search",
+        "r2c-design",
+        "sr-miner",
+        "ar-miner",
+        "v3-kb",
+        "req-formal-verif",
+        "semantic-equiv",
+        "workflow-core",
+        "using-workflow",
+        "code-research"
+      ]
+    }
+  ]
+}

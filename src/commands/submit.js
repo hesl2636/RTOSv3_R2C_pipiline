@@ -21,36 +21,51 @@ import {
   nowIso,
   refreshStageFromSteps,
   resolveRunForSession,
+  resolveSingleRunningRun,
   writeState,
 } from '../state.js';
 
 export async function run(_argv, ctx) {
-  if (!ctx.sessionId) {
-    throw new R2cError(
-      'MISSING_SESSION',
-      'submit requires --session-id (or R2C_SESSION_ID)',
-      { option: '--session-id' },
-      EXIT_CODES.USAGE,
-    );
+  let runId;
+  if (ctx.sessionId) {
+    refuseClaimedSession(ctx.projectRoot, ctx.sessionId);
+    const routed = resolveRunForSession({
+      root: ctx.projectRoot,
+      sessionId: ctx.sessionId,
+      fallbackToLatest: false,
+      repair: false,
+    });
+    if (routed === null) {
+      throw new R2cError(
+        'NO_ACTIVE_RUN',
+        'no active run for this session',
+        { session_id: ctx.sessionId },
+        EXIT_CODES.NO_ACTIVE_RUN,
+      );
+    }
+    runId = routed.runId;
+  } else {
+    // No session id: the stable entry point resolves the single running run.
+    // Zero or several is an error before any lock, gate or write.
+    runId = resolveSingleRunningRun({ root: ctx.projectRoot }).runId;
   }
 
-  refuseClaimedSession(ctx.projectRoot, ctx.sessionId);
+  const loadedManifest = loadManifest({ manifest: ctx.manifest, projectRoot: ctx.projectRoot });
+  const manifest = loadedManifest.data;
+  assertRenderableSteps(manifest, loadedManifest.root);
 
-  const loadedRun = resolveRunForSession({
-    root: ctx.projectRoot,
-    sessionId: ctx.sessionId,
-    fallbackToLatest: false,
-  });
+  // Loading with the manifest applies the resume guard and repairs derived
+  // state only after the recorded step sequence matches the manifest.
+  const loadedRun = loadRun(ctx.projectRoot, runId, { manifest });
   if (loadedRun === null) {
     throw new R2cError(
       'NO_ACTIVE_RUN',
       'no active run for this session',
-      { session_id: ctx.sessionId },
+      { run_id: runId, session_id: ctx.sessionId },
       EXIT_CODES.NO_ACTIVE_RUN,
     );
   }
-
-  const { runId, state } = loadedRun;
+  const { state } = loadedRun;
   if (state.status !== 'running') {
     throw new R2cError(
       'NO_ACTIVE_RUN',
@@ -78,9 +93,6 @@ export async function run(_argv, ctx) {
     );
   }
 
-  const loadedManifest = loadManifest({ manifest: ctx.manifest, projectRoot: ctx.projectRoot });
-  const manifest = loadedManifest.data;
-  assertRenderableSteps(manifest, loadedManifest.root);
   const flat = flattenSteps(manifest);
   const currentIndex = flat.findIndex(({ step }) => step.id === current.id);
   if (currentIndex < 0) {
@@ -100,6 +112,7 @@ export async function run(_argv, ctx) {
     const locked = loadRun(ctx.projectRoot, runId, {
       assumeLocked: true,
       assumeLatestLocked: true,
+      manifest,
     });
     if (locked === null) {
       throw new R2cError(

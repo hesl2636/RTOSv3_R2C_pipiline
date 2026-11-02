@@ -1,0 +1,23 @@
+{
+  "id": "implementation",
+  "name": "编码实现",
+  "steps": [
+    {
+      "id": "implementation",
+      "name": "编码实现编排",
+      "role": "bys-impl-lead",
+      "task": "implementation-orchestration",
+      "skills": [
+        "r2c-implement-redblue",
+        "red-blue",
+        "executing-plans",
+        "subagent-driven-development",
+        "v3-query-symbol",
+        "v3-check-symbol-context",
+        "v3-hm-kernel",
+        "workflow-core",
+        "using-workflow"
+      ]
+    }
+  ]
+}
