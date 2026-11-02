@@ -1,0 +1,882 @@
+{
+  "schema": "r2c.projection.roles/v1",
+  "ir": {
+    "id": "rtosv3-drvport",
+    "version": "1.0.0",
+    "sha256": "8a2a57593939f91117d57f9ca34c56b2fc631f6837168ef74032daa95202d395"
+  },
+  "targets": {
+    "claude-code": {
+      "namespace": "rtosv3-drvport",
+      "roles": [
+        {
+          "id": "bys-architect",
+          "name": "rtosv3-drvport-bys-architect",
+          "placeholder": true,
+          "exposure": "subagent",
+          "artifact": {
+            "path": ".claude/agents/rtosv3-drvport-bys-architect.md",
+            "format": "md",
+            "sha256": "2d2b1cf862d576c9cd8f431686343e06c64084ae9f137eb2a7f271f062d1d3cc"
+          },
+          "fields": {
+            "id": {
+              "state": "adapted",
+              "reason": "文件名 + frontmatter name 承载渲染名"
+            },
+            "description": {
+              "state": "native"
+            },
+            "instructions": {
+              "state": "native"
+            },
+            "mode": {
+              "state": "adapted",
+              "reason": "Claude 无 mode 字段；同一 md 既是子 agent 也可作会话人格"
+            },
+            "model": {
+              "state": "adapted",
+              "reason": "能力档 strong → opus"
+            },
+            "title": {
+              "state": "unavailable",
+              "reason": "Claude 无展示名槽",
+              "effect": "展示名丢弃，只保留 description"
+            },
+            "placeholder": {
+              "state": "adapted",
+              "reason": "标记随产物保留；true 时正文替换为固定占位块"
+            }
+          }
+        },
+        {
+          "id": "bys-designer",
+          "name": "rtosv3-drvport-bys-designer",
+          "placeholder": true,
+          "exposure": "subagent",
+          "artifact": {
+            "path": ".claude/agents/rtosv3-drvport-bys-designer.md",
+            "format": "md",
+            "sha256": "237f4d0fd9a705cca611657186e498ad1be8b945d6d0c8ba955dca50999ebce1"
+          },
+          "fields": {
+            "id": {
+              "state": "adapted",
+              "reason": "文件名 + frontmatter name 承载渲染名"
+            },
+            "description": {
+              "state": "native"
+            },
+            "instructions": {
+              "state": "native"
+            },
+            "mode": {
+              "state": "adapted",
+              "reason": "Claude 无 mode 字段；同一 md 既是子 agent 也可作会话人格"
+            },
+            "model": {
+              "state": "adapted",
+              "reason": "能力档 strong → opus"
+            },
+            "title": {
+              "state": "unavailable",
+              "reason": "Claude 无展示名槽",
+              "effect": "展示名丢弃，只保留 description"
+            },
+            "placeholder": {
+              "state": "adapted",
+              "reason": "标记随产物保留；true 时正文替换为固定占位块"
+            }
+          }
+        },
+        {
+          "id": "bys-impl-lead",
+          "name": "rtosv3-drvport-bys-impl-lead",
+          "placeholder": true,
+          "exposure": "subagent",
+          "artifact": {
+            "path": ".claude/agents/rtosv3-drvport-bys-impl-lead.md",
+            "format": "md",
+            "sha256": "27184270309a27392bdf67277bfb40d2e1649fe1e70b235663656a739753fc3d"
+          },
+          "fields": {
+            "id": {
+              "state": "adapted",
+              "reason": "文件名 + frontmatter name 承载渲染名"
+            },
+            "description": {
+              "state": "native"
+            },
+            "instructions": {
+              "state": "native"
+            },
+            "mode": {
+              "state": "adapted",
+              "reason": "Claude 无 mode 字段；同一 md 既是子 agent 也可作会话人格"
+            },
+            "model": {
+              "state": "adapted",
+              "reason": "能力档 strong → opus"
+            },
+            "title": {
+              "state": "unavailable",
+              "reason": "Claude 无展示名槽",
+              "effect": "展示名丢弃，只保留 description"
+            },
+            "placeholder": {
+              "state": "adapted",
+              "reason": "标记随产物保留；true 时正文替换为固定占位块"
+            }
+          }
+        },
+        {
+          "id": "bys-release-lead",
+          "name": "rtosv3-drvport-bys-release-lead",
+          "placeholder": true,
+          "exposure": "subagent",
+          "artifact": {
+            "path": ".claude/agents/rtosv3-drvport-bys-release-lead.md",
+            "format": "md",
+            "sha256": "d25858b126ae0e7695163e23f11d4c97af61e1983ce282da8b19949d928b2417"
+          },
+          "fields": {
+            "id": {
+              "state": "adapted",
+              "reason": "文件名 + frontmatter name 承载渲染名"
+            },
+            "description": {
+              "state": "native"
+            },
+            "instructions": {
+              "state": "native"
+            },
+            "mode": {
+              "state": "adapted",
+              "reason": "Claude 无 mode 字段；同一 md 既是子 agent 也可作会话人格"
+            },
+            "model": {
+              "state": "adapted",
+              "reason": "能力档 strong → opus"
+            },
+            "title": {
+              "state": "unavailable",
+              "reason": "Claude 无展示名槽",
+              "effect": "展示名丢弃，只保留 description"
+            },
+            "placeholder": {
+              "state": "adapted",
+              "reason": "标记随产物保留；true 时正文替换为固定占位块"
+            }
+          }
+        }
+      ],
+      "summary": {
+        "roles": 4,
+        "native": 8,
+        "adapted": 16,
+        "degraded": 0,
+        "unavailable": 4
+      }
+    },
+    "codex": {
+      "namespace": "rtosv3-drvport",
+      "roles": [
+        {
+          "id": "bys-architect",
+          "name": "rtosv3-drvport-bys-architect",
+          "placeholder": true,
+          "exposure": "subagent",
+          "artifact": {
+            "path": ".codex/agents/rtosv3-drvport-bys-architect.toml",
+            "format": "toml",
+            "sha256": "d84039e24030a27f3fb71a96d55fe062a0f3565442717824a6ab61a88673f4ce"
+          },
+          "fields": {
+            "id": {
+              "state": "adapted",
+              "reason": "TOML name 承载渲染名"
+            },
+            "description": {
+              "state": "native"
+            },
+            "instructions": {
+              "state": "adapted",
+              "reason": "developer_instructions 多行基本字符串，反斜杠与引号转义"
+            },
+            "mode": {
+              "state": "native"
+            },
+            "model": {
+              "state": "degraded",
+              "reason": "codex 无能力档别名，槽位需要具体 model id",
+              "effect": "继承 default_subagent_model"
+            },
+            "title": {
+              "state": "unavailable",
+              "reason": "codex 无展示名槽",
+              "effect": "展示名丢弃"
+            },
+            "placeholder": {
+              "state": "adapted",
+              "reason": "标记随产物保留；true 时正文替换为固定占位块"
+            }
+          }
+        },
+        {
+          "id": "bys-designer",
+          "name": "rtosv3-drvport-bys-designer",
+          "placeholder": true,
+          "exposure": "subagent",
+          "artifact": {
+            "path": ".codex/agents/rtosv3-drvport-bys-designer.toml",
+            "format": "toml",
+            "sha256": "a55da710880f58fcf3ede83c35a4dab7dfab7979bac7a90eda207abdc76b6a71"
+          },
+          "fields": {
+            "id": {
+              "state": "adapted",
+              "reason": "TOML name 承载渲染名"
+            },
+            "description": {
+              "state": "native"
+            },
+            "instructions": {
+              "state": "adapted",
+              "reason": "developer_instructions 多行基本字符串，反斜杠与引号转义"
+            },
+            "mode": {
+              "state": "native"
+            },
+            "model": {
+              "state": "degraded",
+              "reason": "codex 无能力档别名，槽位需要具体 model id",
+              "effect": "继承 default_subagent_model"
+            },
+            "title": {
+              "state": "unavailable",
+              "reason": "codex 无展示名槽",
+              "effect": "展示名丢弃"
+            },
+            "placeholder": {
+              "state": "adapted",
+              "reason": "标记随产物保留；true 时正文替换为固定占位块"
+            }
+          }
+        },
+        {
+          "id": "bys-impl-lead",
+          "name": "rtosv3-drvport-bys-impl-lead",
+          "placeholder": true,
+          "exposure": "subagent",
+          "artifact": {
+            "path": ".codex/agents/rtosv3-drvport-bys-impl-lead.toml",
+            "format": "toml",
+            "sha256": "245b219a0569dac592ed51aabbe5a830bc5c5cdb94302d5cb403ace922005219"
+          },
+          "fields": {
+            "id": {
+              "state": "adapted",
+              "reason": "TOML name 承载渲染名"
+            },
+            "description": {
+              "state": "native"
+            },
+            "instructions": {
+              "state": "adapted",
+              "reason": "developer_instructions 多行基本字符串，反斜杠与引号转义"
+            },
+            "mode": {
+              "state": "native"
+            },
+            "model": {
+              "state": "degraded",
+              "reason": "codex 无能力档别名，槽位需要具体 model id",
+              "effect": "继承 default_subagent_model"
+            },
+            "title": {
+              "state": "unavailable",
+              "reason": "codex 无展示名槽",
+              "effect": "展示名丢弃"
+            },
+            "placeholder": {
+              "state": "adapted",
+              "reason": "标记随产物保留；true 时正文替换为固定占位块"
+            }
+          }
+        },
+        {
+          "id": "bys-release-lead",
+          "name": "rtosv3-drvport-bys-release-lead",
+          "placeholder": true,
+          "exposure": "subagent",
+          "artifact": {
+            "path": ".codex/agents/rtosv3-drvport-bys-release-lead.toml",
+            "format": "toml",
+            "sha256": "f6facebb21c0dbca17337de94c0dfea0fa9dca0a5b2ce3edf79fc6d2b2105c52"
+          },
+          "fields": {
+            "id": {
+              "state": "adapted",
+              "reason": "TOML name 承载渲染名"
+            },
+            "description": {
+              "state": "native"
+            },
+            "instructions": {
+              "state": "adapted",
+              "reason": "developer_instructions 多行基本字符串，反斜杠与引号转义"
+            },
+            "mode": {
+              "state": "native"
+            },
+            "model": {
+              "state": "degraded",
+              "reason": "codex 无能力档别名，槽位需要具体 model id",
+              "effect": "继承 default_subagent_model"
+            },
+            "title": {
+              "state": "unavailable",
+              "reason": "codex 无展示名槽",
+              "effect": "展示名丢弃"
+            },
+            "placeholder": {
+              "state": "adapted",
+              "reason": "标记随产物保留；true 时正文替换为固定占位块"
+            }
+          }
+        }
+      ],
+      "summary": {
+        "roles": 4,
+        "native": 8,
+        "adapted": 12,
+        "degraded": 4,
+        "unavailable": 4
+      }
+    },
+    "dsh": {
+      "namespace": "rtosv3-drvport",
+      "roles": [
+        {
+          "id": "bys-architect",
+          "name": "rtosv3-drvport-bys-architect",
+          "placeholder": true,
+          "exposure": "subagent",
+          "artifact": {
+            "path": ".dsh/agent-native/rtosv3-drvport.roles.md",
+            "format": "md",
+            "sha256": "205e0bbf76288d3f1d455e2d4d6c79a4f1ea625e567df198a7147ba6f26b4b15"
+          },
+          "fields": {
+            "id": {
+              "state": "adapted",
+              "reason": "角色段落标题承载渲染名"
+            },
+            "description": {
+              "state": "degraded",
+              "reason": "dsh 只在 profile 层按 preset id 枚举角色；v1 角色目录不进入运行时路由",
+              "effect": "模型只能按角色 id/段落选择角色，读不到描述"
+            },
+            "instructions": {
+              "state": "adapted",
+              "reason": "正文逐字节进角色段落；没有 persona 槽"
+            },
+            "mode": {
+              "state": "native"
+            },
+            "model": {
+              "state": "degraded",
+              "reason": "dsh agentOptions 是委派工具级、跨角色共享",
+              "effect": "全角色共享 agentOptions；开启 modelSelection 时由模型逐次选择"
+            },
+            "title": {
+              "state": "native"
+            },
+            "placeholder": {
+              "state": "adapted",
+              "reason": "标记随产物保留；true 时正文替换为固定占位块"
+            }
+          }
+        },
+        {
+          "id": "bys-designer",
+          "name": "rtosv3-drvport-bys-designer",
+          "placeholder": true,
+          "exposure": "subagent",
+          "artifact": {
+            "path": ".dsh/agent-native/rtosv3-drvport.roles.md",
+            "format": "md",
+            "sha256": "205e0bbf76288d3f1d455e2d4d6c79a4f1ea625e567df198a7147ba6f26b4b15"
+          },
+          "fields": {
+            "id": {
+              "state": "adapted",
+              "reason": "角色段落标题承载渲染名"
+            },
+            "description": {
+              "state": "degraded",
+              "reason": "dsh 只在 profile 层按 preset id 枚举角色；v1 角色目录不进入运行时路由",
+              "effect": "模型只能按角色 id/段落选择角色，读不到描述"
+            },
+            "instructions": {
+              "state": "adapted",
+              "reason": "正文逐字节进角色段落；没有 persona 槽"
+            },
+            "mode": {
+              "state": "native"
+            },
+            "model": {
+              "state": "degraded",
+              "reason": "dsh agentOptions 是委派工具级、跨角色共享",
+              "effect": "全角色共享 agentOptions；开启 modelSelection 时由模型逐次选择"
+            },
+            "title": {
+              "state": "native"
+            },
+            "placeholder": {
+              "state": "adapted",
+              "reason": "标记随产物保留；true 时正文替换为固定占位块"
+            }
+          }
+        },
+        {
+          "id": "bys-impl-lead",
+          "name": "rtosv3-drvport-bys-impl-lead",
+          "placeholder": true,
+          "exposure": "subagent",
+          "artifact": {
+            "path": ".dsh/agent-native/rtosv3-drvport.roles.md",
+            "format": "md",
+            "sha256": "205e0bbf76288d3f1d455e2d4d6c79a4f1ea625e567df198a7147ba6f26b4b15"
+          },
+          "fields": {
+            "id": {
+              "state": "adapted",
+              "reason": "角色段落标题承载渲染名"
+            },
+            "description": {
+              "state": "degraded",
+              "reason": "dsh 只在 profile 层按 preset id 枚举角色；v1 角色目录不进入运行时路由",
+              "effect": "模型只能按角色 id/段落选择角色，读不到描述"
+            },
+            "instructions": {
+              "state": "adapted",
+              "reason": "正文逐字节进角色段落；没有 persona 槽"
+            },
+            "mode": {
+              "state": "native"
+            },
+            "model": {
+              "state": "degraded",
+              "reason": "dsh agentOptions 是委派工具级、跨角色共享",
+              "effect": "全角色共享 agentOptions；开启 modelSelection 时由模型逐次选择"
+            },
+            "title": {
+              "state": "native"
+            },
+            "placeholder": {
+              "state": "adapted",
+              "reason": "标记随产物保留；true 时正文替换为固定占位块"
+            }
+          }
+        },
+        {
+          "id": "bys-release-lead",
+          "name": "rtosv3-drvport-bys-release-lead",
+          "placeholder": true,
+          "exposure": "subagent",
+          "artifact": {
+            "path": ".dsh/agent-native/rtosv3-drvport.roles.md",
+            "format": "md",
+            "sha256": "205e0bbf76288d3f1d455e2d4d6c79a4f1ea625e567df198a7147ba6f26b4b15"
+          },
+          "fields": {
+            "id": {
+              "state": "adapted",
+              "reason": "角色段落标题承载渲染名"
+            },
+            "description": {
+              "state": "degraded",
+              "reason": "dsh 只在 profile 层按 preset id 枚举角色；v1 角色目录不进入运行时路由",
+              "effect": "模型只能按角色 id/段落选择角色，读不到描述"
+            },
+            "instructions": {
+              "state": "adapted",
+              "reason": "正文逐字节进角色段落；没有 persona 槽"
+            },
+            "mode": {
+              "state": "native"
+            },
+            "model": {
+              "state": "degraded",
+              "reason": "dsh agentOptions 是委派工具级、跨角色共享",
+              "effect": "全角色共享 agentOptions；开启 modelSelection 时由模型逐次选择"
+            },
+            "title": {
+              "state": "native"
+            },
+            "placeholder": {
+              "state": "adapted",
+              "reason": "标记随产物保留；true 时正文替换为固定占位块"
+            }
+          }
+        }
+      ],
+      "summary": {
+        "roles": 4,
+        "native": 8,
+        "adapted": 12,
+        "degraded": 8,
+        "unavailable": 0
+      }
+    },
+    "omp": {
+      "namespace": "rtosv3-drvport",
+      "roles": [
+        {
+          "id": "bys-architect",
+          "name": "rtosv3-drvport-bys-architect",
+          "placeholder": true,
+          "exposure": "subagent",
+          "artifact": {
+            "path": ".omp/agents/rtosv3-drvport-bys-architect.md",
+            "format": "md",
+            "sha256": "9afc1f8b8952f22ab42e864c7cf2cbeb242e8f3f3b48e6c230d5560e094822da"
+          },
+          "fields": {
+            "id": {
+              "state": "adapted",
+              "reason": "文件名 + frontmatter name 承载渲染名"
+            },
+            "description": {
+              "state": "native"
+            },
+            "instructions": {
+              "state": "native"
+            },
+            "mode": {
+              "state": "native"
+            },
+            "model": {
+              "state": "degraded",
+              "reason": "omp @tier 别名需要 modelRoles 条目，渲染期无法证明",
+              "effect": "继承 profile 默认模型"
+            },
+            "title": {
+              "state": "unavailable",
+              "reason": "omp 无展示名槽",
+              "effect": "展示名丢弃"
+            },
+            "placeholder": {
+              "state": "adapted",
+              "reason": "标记随产物保留；true 时正文替换为固定占位块"
+            }
+          }
+        },
+        {
+          "id": "bys-designer",
+          "name": "rtosv3-drvport-bys-designer",
+          "placeholder": true,
+          "exposure": "subagent",
+          "artifact": {
+            "path": ".omp/agents/rtosv3-drvport-bys-designer.md",
+            "format": "md",
+            "sha256": "83c2ce5a89e21663584fd1737ae82c87b54e6118acf0e726147362d92f2ce72a"
+          },
+          "fields": {
+            "id": {
+              "state": "adapted",
+              "reason": "文件名 + frontmatter name 承载渲染名"
+            },
+            "description": {
+              "state": "native"
+            },
+            "instructions": {
+              "state": "native"
+            },
+            "mode": {
+              "state": "native"
+            },
+            "model": {
+              "state": "degraded",
+              "reason": "omp @tier 别名需要 modelRoles 条目，渲染期无法证明",
+              "effect": "继承 profile 默认模型"
+            },
+            "title": {
+              "state": "unavailable",
+              "reason": "omp 无展示名槽",
+              "effect": "展示名丢弃"
+            },
+            "placeholder": {
+              "state": "adapted",
+              "reason": "标记随产物保留；true 时正文替换为固定占位块"
+            }
+          }
+        },
+        {
+          "id": "bys-impl-lead",
+          "name": "rtosv3-drvport-bys-impl-lead",
+          "placeholder": true,
+          "exposure": "subagent",
+          "artifact": {
+            "path": ".omp/agents/rtosv3-drvport-bys-impl-lead.md",
+            "format": "md",
+            "sha256": "42d1d149ab93062ca6e8b41c8755e1725787ecdb411fa29e0afa189b38f9784f"
+          },
+          "fields": {
+            "id": {
+              "state": "adapted",
+              "reason": "文件名 + frontmatter name 承载渲染名"
+            },
+            "description": {
+              "state": "native"
+            },
+            "instructions": {
+              "state": "native"
+            },
+            "mode": {
+              "state": "native"
+            },
+            "model": {
+              "state": "degraded",
+              "reason": "omp @tier 别名需要 modelRoles 条目，渲染期无法证明",
+              "effect": "继承 profile 默认模型"
+            },
+            "title": {
+              "state": "unavailable",
+              "reason": "omp 无展示名槽",
+              "effect": "展示名丢弃"
+            },
+            "placeholder": {
+              "state": "adapted",
+              "reason": "标记随产物保留；true 时正文替换为固定占位块"
+            }
+          }
+        },
+        {
+          "id": "bys-release-lead",
+          "name": "rtosv3-drvport-bys-release-lead",
+          "placeholder": true,
+          "exposure": "subagent",
+          "artifact": {
+            "path": ".omp/agents/rtosv3-drvport-bys-release-lead.md",
+            "format": "md",
+            "sha256": "1348bfcd77c01faa1157d70fca37cf1a3f69b091ea0d5a95d90a3d864d1fb6ea"
+          },
+          "fields": {
+            "id": {
+              "state": "adapted",
+              "reason": "文件名 + frontmatter name 承载渲染名"
+            },
+            "description": {
+              "state": "native"
+            },
+            "instructions": {
+              "state": "native"
+            },
+            "mode": {
+              "state": "native"
+            },
+            "model": {
+              "state": "degraded",
+              "reason": "omp @tier 别名需要 modelRoles 条目，渲染期无法证明",
+              "effect": "继承 profile 默认模型"
+            },
+            "title": {
+              "state": "unavailable",
+              "reason": "omp 无展示名槽",
+              "effect": "展示名丢弃"
+            },
+            "placeholder": {
+              "state": "adapted",
+              "reason": "标记随产物保留；true 时正文替换为固定占位块"
+            }
+          }
+        }
+      ],
+      "summary": {
+        "roles": 4,
+        "native": 12,
+        "adapted": 8,
+        "degraded": 4,
+        "unavailable": 4
+      }
+    },
+    "opencode": {
+      "namespace": "rtosv3-drvport",
+      "roles": [
+        {
+          "id": "bys-architect",
+          "name": "rtosv3-drvport-bys-architect",
+          "placeholder": true,
+          "exposure": "subagent",
+          "artifact": {
+            "path": ".opencode/agents/rtosv3-drvport-bys-architect.md",
+            "format": "md",
+            "sha256": "c1d042c68f52f409795e4789f10463f8f38a68dd1d289d85b5c138e0ae483ac2"
+          },
+          "fields": {
+            "id": {
+              "state": "adapted",
+              "reason": "文件名即渲染名；opencode 无 name 字段"
+            },
+            "description": {
+              "state": "native"
+            },
+            "instructions": {
+              "state": "native"
+            },
+            "mode": {
+              "state": "native",
+              "reason": "mode: subagent/primary/all 与 IR 三值精确对应"
+            },
+            "model": {
+              "state": "degraded",
+              "reason": "opencode 的 model 需要 provider/model-id 字面量",
+              "effect": "省略 model，继承父会话模型"
+            },
+            "title": {
+              "state": "unavailable",
+              "reason": "opencode 无展示名槽",
+              "effect": "展示名丢弃，只保留 description"
+            },
+            "placeholder": {
+              "state": "adapted",
+              "reason": "标记随产物保留；true 时正文替换为固定占位块"
+            }
+          }
+        },
+        {
+          "id": "bys-designer",
+          "name": "rtosv3-drvport-bys-designer",
+          "placeholder": true,
+          "exposure": "subagent",
+          "artifact": {
+            "path": ".opencode/agents/rtosv3-drvport-bys-designer.md",
+            "format": "md",
+            "sha256": "855c5359fe191efb46f9ac2dc96f86bdbec5c134f594617bbecc1c2bccb95bc2"
+          },
+          "fields": {
+            "id": {
+              "state": "adapted",
+              "reason": "文件名即渲染名；opencode 无 name 字段"
+            },
+            "description": {
+              "state": "native"
+            },
+            "instructions": {
+              "state": "native"
+            },
+            "mode": {
+              "state": "native",
+              "reason": "mode: subagent/primary/all 与 IR 三值精确对应"
+            },
+            "model": {
+              "state": "degraded",
+              "reason": "opencode 的 model 需要 provider/model-id 字面量",
+              "effect": "省略 model，继承父会话模型"
+            },
+            "title": {
+              "state": "unavailable",
+              "reason": "opencode 无展示名槽",
+              "effect": "展示名丢弃，只保留 description"
+            },
+            "placeholder": {
+              "state": "adapted",
+              "reason": "标记随产物保留；true 时正文替换为固定占位块"
+            }
+          }
+        },
+        {
+          "id": "bys-impl-lead",
+          "name": "rtosv3-drvport-bys-impl-lead",
+          "placeholder": true,
+          "exposure": "subagent",
+          "artifact": {
+            "path": ".opencode/agents/rtosv3-drvport-bys-impl-lead.md",
+            "format": "md",
+            "sha256": "229bf69dde042af95f54711086b834267a1a5f942314cf203a17b03deee55d11"
+          },
+          "fields": {
+            "id": {
+              "state": "adapted",
+              "reason": "文件名即渲染名；opencode 无 name 字段"
+            },
+            "description": {
+              "state": "native"
+            },
+            "instructions": {
+              "state": "native"
+            },
+            "mode": {
+              "state": "native",
+              "reason": "mode: subagent/primary/all 与 IR 三值精确对应"
+            },
+            "model": {
+              "state": "degraded",
+              "reason": "opencode 的 model 需要 provider/model-id 字面量",
+              "effect": "省略 model，继承父会话模型"
+            },
+            "title": {
+              "state": "unavailable",
+              "reason": "opencode 无展示名槽",
+              "effect": "展示名丢弃，只保留 description"
+            },
+            "placeholder": {
+              "state": "adapted",
+              "reason": "标记随产物保留；true 时正文替换为固定占位块"
+            }
+          }
+        },
+        {
+          "id": "bys-release-lead",
+          "name": "rtosv3-drvport-bys-release-lead",
+          "placeholder": true,
+          "exposure": "subagent",
+          "artifact": {
+            "path": ".opencode/agents/rtosv3-drvport-bys-release-lead.md",
+            "format": "md",
+            "sha256": "bda1558185bbfbb30e826387c250375f2223046210f1e922bca76bb0cb3503d0"
+          },
+          "fields": {
+            "id": {
+              "state": "adapted",
+              "reason": "文件名即渲染名；opencode 无 name 字段"
+            },
+            "description": {
+              "state": "native"
+            },
+            "instructions": {
+              "state": "native"
+            },
+            "mode": {
+              "state": "native",
+              "reason": "mode: subagent/primary/all 与 IR 三值精确对应"
+            },
+            "model": {
+              "state": "degraded",
+              "reason": "opencode 的 model 需要 provider/model-id 字面量",
+              "effect": "省略 model，继承父会话模型"
+            },
+            "title": {
+              "state": "unavailable",
+              "reason": "opencode 无展示名槽",
+              "effect": "展示名丢弃，只保留 description"
+            },
+            "placeholder": {
+              "state": "adapted",
+              "reason": "标记随产物保留；true 时正文替换为固定占位块"
+            }
+          }
+        }
+      ],
+      "summary": {
+        "roles": 4,
+        "native": 12,
+        "adapted": 8,
+        "degraded": 4,
+        "unavailable": 4
+      }
+    }
+  }
+}
