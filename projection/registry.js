@@ -5,6 +5,7 @@
  * dynamic import, no code from a bundle or a project. Only contract versions
  * are checked here; `requires.engine` remains an r2c-only runtime concern.
  */
+import { compareCodePoints } from '../core/code-point.js';
 import { AGENT_NATIVE_MANIFEST } from '../runtime/agent-native/projection/manifest.js';
 import { projectAgentNative } from '../runtime/agent-native/projection/project.js';
 import { R2C_MANIFEST } from '../runtime/r2c/projection/manifest.js';
@@ -27,6 +28,13 @@ export function listProjections() {
 
 export function getProjection(id) {
   return PROJECTIONS.find((projection) => projection.id === id) ?? null;
+}
+
+/** The projections a bundle allows (#69 §5): IR order by default, else sorted. */
+export function allowedProjections(ir) {
+  const declared = ir?.requires?.projections;
+  if (!Array.isArray(declared)) return ['r2c', 'agent-native'];
+  return [...new Set(declared)].sort(compareCodePoints);
 }
 
 export function defaultTargets(id) {

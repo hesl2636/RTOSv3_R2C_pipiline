@@ -24,6 +24,19 @@ step-by-step across the engine, the payload, and all five agent adapters; see
   detection, degradation/placeholder summary, transaction residue); engine
   `r2c status` gains `installs[]` and trailing install lines without changing
   exit codes or existing lines.
+- Local web build surface: `POST /api/uploads` keeps the uploaded zip and
+  compiled IR in the 0700 session directory; `POST /api/builds` re-runs the
+  shared projections in-process and packages through `scripts/release.mjs` as an
+  isolated child (`shell:false`, 120 s kill, no `GH_TOKEN`/`GITHUB_TOKEN`,
+  JSON-lines stdout, capped and redacted stderr, crash → `WEB_CHILD_FAILED`).
+  Canonical options build publishable assets; custom stage order / skill /
+  target selections build locally with `publishable:false`. The page renders
+  file/byte counts, the capability matrix, degradation groups, warnings, the
+  file list and result digests from the projection result and copies a
+  fixed-version `install.mjs` command without writing to any project.
+- `scripts/release.mjs --bundle <zip|dir> --out DIR --options FILE --json`:
+  the bundle packager accepts resolved options (recording the actual selection
+  in each payload manifest) and emits JSON-lines progress for the web child.
 
 ## [0.1.0] - 2026-10-28
 

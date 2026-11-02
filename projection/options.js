@@ -335,4 +335,48 @@ export function normalizeOptions({ projectionId, ir, irDigest, raw, manifest }) 
   return { ok: deduped.length === 0, options, errors: deduped, warnings: [] };
 }
 
+/**
+ * The canonical input for one projection: `null` means "do not override" and
+ * the manifest default targets are the published selection (#69 §5, #74 §3.4).
+ */
+export function canonicalInputOptions(projectionId, manifest) {
+  return { stageOrder: null, skills: null, targets: defaultTargets(manifest) };
+}
+
+function sameStrings(left, right) {
+  return Array.isArray(left) && Array.isArray(right)
+    && left.length === right.length
+    && left.every((value, index) => value === right[index]);
+}
+
+/**
+ * True when the resolved options equal the published defaults field by field.
+ * Only canonical builds may become a Release (#74 §3.4, #75 §6.5).
+ */
+export function isCanonicalOptions({ projectionId, ir, irDigest, options, manifest }) {
+  if (!isPlainObject(options)) return false;
+  const canonical = normalizeOptions({ projectionId, ir, irDigest, raw: null, manifest });
+  if (!canonical.ok || !isPlainObject(options.extra)) return false;
+  return sameStrings(options.stageOrder, canonical.options.stageOrder)
+    && sameStrings(options.skills, canonical.options.skills)
+    && sameStrings(options.targets, canonical.options.targets)
+    && Object.keys(options.extra).length === 0;
+}
+
+/**
+ * The options a payload manifest records: canonical builds keep the canonical
+ * input (`null` overrides), custom local builds record the actual selection
+ * (#74 §3.5, #75 §7.1 step 4).
+ */
+export function payloadInputOptions({ projectionId, ir, irDigest, options, manifest }) {
+  if (isCanonicalOptions({ projectionId, ir, irDigest, options, manifest })) {
+    return canonicalInputOptions(projectionId, manifest);
+  }
+  return {
+    stageOrder: [...options.stageOrder],
+    skills: [...options.skills],
+    targets: [...options.targets],
+  };
+}
+
 export { defaultTargets };

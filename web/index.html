@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>r2c — local bundle inspector</title>
+  <title>r2c — local bundle inspector and build</title>
   <link rel="stylesheet" href="/web/style.css">
   <script src="/web/boot-check.js"></script>
   <script type="module" src="/web/app.js"></script>
@@ -12,7 +12,7 @@
   <header class="bar">
     <div>
       <h1>r2c bundle inspector</h1>
-      <p class="subtitle">Read-only local surface. Nothing is installed, written to a project, or published.</p>
+      <p class="subtitle">Local surface: read-only bundle and IR, editable projection options, local build. Nothing is installed, written to a project, or published.</p>
     </div>
     <div class="badges">
       <span class="badge" id="mode-badge">starting</span>
@@ -90,6 +90,31 @@ node bin/r2c-assembler.js compile ./bundle.zip --out ./dist</code></pre>
         <h3>Raw IR (read-only)</h3>
         <pre id="ir-raw" class="raw"></pre>
       </div>
+    </section>
+    <section class="panel" aria-labelledby="options-title">
+      <h2 id="options-title">4. Projection options</h2>
+      <p class="hint">Options are bound to the compiled IR digest and reset on every new upload. The IR itself is never edited; the server re-validates every choice.</p>
+      <p id="options-status" class="status" role="status"></p>
+      <div id="options-body" hidden>
+        <div class="row">
+          <span class="mono">IR digest <span id="options-ir-digest"></span></span>
+          <button id="reset-options" type="button">Restore published defaults</button>
+        </div>
+        <div id="projection-controls"></div>
+        <h3>Preview (browser, shared modules)</h3>
+        <p id="preview-status" class="status" role="status"></p>
+        <div id="preview-body" hidden></div>
+      </div>
+    </section>
+
+    <section class="panel" aria-labelledby="build-title">
+      <h2 id="build-title">5. Build</h2>
+      <p class="hint">Canonical options build the publishable asset set; custom options build locally only. Assets come from the release tool; nothing is written to a project.</p>
+      <div class="row">
+        <button id="build-button" type="button" disabled>Build assets</button>
+        <span id="build-status" class="status" role="status"></span>
+      </div>
+      <div id="build-body" hidden></div>
     </section>
   </main>
 

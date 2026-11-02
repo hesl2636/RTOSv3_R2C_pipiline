@@ -14,6 +14,7 @@
  * Everything under `web/` except this file is browser-loadable ESM and runs
  * the same shared modules (`core/`, `ir/`, `assembler/`) as the CLI.
  */
+import { spawn } from 'node:child_process';
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { createServer } from 'node:http';
 import {
@@ -31,10 +32,19 @@ import { tmpdir } from 'node:os';
 import { dirname, extname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { compileBundle } from '../assembler/compile.js';
+import { BUNDLE_ID_MAX, isValidId } from '../assembler/ids.js';
 import { LIMITS } from '../assembler/limits.js';
+import { canonicalJson } from '../core/canonical-json.js';
+import { compareCodePoints } from '../core/code-point.js';
 import { inflateRaw } from '../core/node/inflate.js';
 import { sha256Hex } from '../core/node/sha256.js';
 import { isInside } from '../core/paths.js';
+import { isValidVersion } from '../core/semver.js';
+import { isCanonicalOptions, normalizeOptions, payloadInputOptions } from '../projection/options.js';
+import { project } from '../projection/project.js';
+import { allowedProjections, getProjection } from '../projection/registry.js';
+import { validateResult } from '../projection/validate-result.js';
+import { buildChildEnv, redactSecrets } from './env.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, '..');
@@ -54,6 +64,20 @@ const UPLOAD_TTL_MS = 30 * 60 * 1000;
 const BUILD_TTL_MS = 60 * 60 * 1000;
 const SWEEP_INTERVAL_MS = 5 * 60 * 1000;
 const STALE_SESSION_MS = 24 * 60 * 60 * 1000;
+
+const JSON_MAX_BYTES = 256 * 1024;
+const MAX_UPLOADS = 4;
+const MAX_BUILDS = 16;
+const BUILD_TIMEOUT_MS = 120 * 1000;
+// Operator-only overrides (never browser-controlled): a tighter timeout for
+// slow CI hosts and an alternate packager entry for the child-isolation tests.
+
+const BUILD_RATE_LIMIT = 60;
+const BUILD_RATE_WINDOW_MS = 60 * 60 * 1000;
+const BUILD_CONCURRENCY = 2;
+const STDERR_MAX_BYTES = 16 * 1024;
+const STDOUT_LINE_MAX_BYTES = 4 * 1024 * 1024;
+const RELEASE_SCRIPT = resolve(ROOT, 'scripts', 'release.mjs');
 
 const CSP = [
   "default-src 'none'",
@@ -163,8 +187,8 @@ function sendJson(response, status, payload, extra = {}) {
   response.end(body);
 }
 
-function sendWebError(response, status, code, message, extra = {}) {
-  sendJson(response, status, { ok: false, error: { code, message, details: null } }, extra);
+function sendWebError(response, status, code, message, extra = {}, details = null) {
+  sendJson(response, status, { ok: false, error: { code, message, details } }, extra);
 }
 
 function foreignHost(request, port) {
@@ -315,6 +339,322 @@ async function existsFile(path) {
   }
 }
 
+/* -------------------------------------------------------------------------- */
+/* Build: options, child isolation, verification                              */
+/* -------------------------------------------------------------------------- */
+
+function envInteger(name, fallback) {
+  const raw = process.env[name];
+  if (raw === undefined || raw === '') return fallback;
+  const value = Number(raw);
+  return Number.isInteger(value) && value > 0 ? value : fallback;
+}
+
+function startupSecrets() {
+  return [process.env.GH_TOKEN, process.env.GITHUB_TOKEN]
+    .filter((value) => typeof value === 'string' && value !== '');
+}
+
+function isPlainObject(value) {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function webError(status, code, message, details = null, headers = {}) {
+  return { status, code, message, details, headers };
+}
+
+function projectBytes(result) {
+  return result.files.reduce((sum, file) => sum + Buffer.byteLength(file.content, 'utf8'), 0);
+}
+
+function filesSummary(result) {
+  return result.files.map((file) => ({
+    path: file.path,
+    targets: [...file.targets],
+    kind: file.kind,
+    mode: file.mode,
+    sha256: sha256Hex(file.content),
+  }));
+}
+
+function manifestFiles(result) {
+  return result.files.map((file) => ({
+    path: file.path,
+    mode: file.mode,
+    sha256: sha256Hex(file.content),
+    kind: file.kind,
+    targets: [...file.targets],
+  }));
+}
+
+/** Parse/validate the JSON build request without touching any state. */
+function parseBuildBody(body) {
+  if (!isPlainObject(body)) return webError(400, 'WEB_BODY_INVALID', 'build body must be a JSON object');
+  for (const key of Object.keys(body)) {
+    if (!['uploadId', 'options', 'irDigest'].includes(key)) {
+      return webError(400, 'WEB_BODY_INVALID', `unknown field ${key}`);
+    }
+  }
+  if (typeof body.uploadId !== 'string' || !/^[0-9a-f]{16}$/.test(body.uploadId)) {
+    return webError(400, 'WEB_BODY_INVALID', 'uploadId must be 16 hex characters');
+  }
+  if (body.irDigest !== undefined && (typeof body.irDigest !== 'string' || !/^[0-9a-f]{64}$/.test(body.irDigest))) {
+    return webError(400, 'WEB_BODY_INVALID', 'irDigest must be a sha256 digest');
+  }
+  if (body.options !== undefined && body.options !== null && !isPlainObject(body.options)) {
+    return webError(400, 'WEB_BODY_INVALID', 'options must be an object keyed by projection id');
+  }
+  return { uploadId: body.uploadId, options: body.options ?? null, irDigest: body.irDigest };
+}
+
+function installCommand({ id, version, projection, target, publishable }) {
+  if (!isValidId(id, BUNDLE_ID_MAX) || !isValidVersion(version) || String(version).includes('+')) return null;
+  const descriptor = getProjection(projection);
+  if (descriptor === null) return null;
+  if (target !== null && !descriptor.targets.some((item) => item.id === target)) return null;
+  const parts = [
+    'node .r2c/bootstrap/install.mjs',
+    '--bundle', id,
+    '--version', version,
+    '--projection', projection,
+  ];
+  if (target !== null) parts.push('--target', target);
+  if (!publishable) parts.push('--release-base', './dist');
+  parts.push('--project', '.');
+  return parts.join(' ');
+}
+
+/** One fixed-version command per projection (and per selected agent target). */
+function installCommands({ id, version, projections, publishable }) {
+  const commands = [];
+  for (const projection of projections) {
+    if (projection.id === 'r2c') {
+      const command = installCommand({ id, version, projection: 'r2c', target: null, publishable });
+      if (command === null) return null;
+      commands.push({ projection: 'r2c', target: null, command });
+      continue;
+    }
+    const all = installCommand({ id, version, projection: projection.id, target: null, publishable });
+    if (all === null) return null;
+    commands.push({ projection: projection.id, target: null, command: all });
+    for (const target of projection.targets) {
+      const command = installCommand({ id, version, projection: projection.id, target, publishable });
+      if (command === null) return null;
+      commands.push({ projection: projection.id, target, command });
+    }
+  }
+  return { mode: publishable ? 'release' : 'local', commands };
+}
+
+/**
+ * Run the release packager as an isolated child (#75 §10.8).
+ *
+ * `process.execPath` + an argument array, never a shell. Non-publish children
+ * lose the GitHub credentials, stdout is JSON-lines, stderr is capped and
+ * redacted, and a timeout kills the child without touching the server.
+ */
+function runReleaseChild({ script, args, env, cwd, timeoutMs, secrets }) {
+  return new Promise((resolveChild) => {
+    let child;
+    try {
+      child = spawn(process.execPath, ['--max-old-space-size=512', script, ...args], {
+        cwd,
+        env,
+        shell: false,
+        windowsHide: true,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+    } catch (error) {
+      resolveChild({
+        status: 'failed',
+        code: null,
+        signal: null,
+        events: [],
+        logLines: [],
+        stderr: redactSecrets(String(error?.message ?? error), secrets),
+        stderrTruncated: false,
+      });
+      return;
+    }
+
+    const events = [];
+    const logLines = [];
+    let stdoutBuffer = '';
+    let stderr = '';
+    let stderrTruncated = false;
+    let timedOut = false;
+    let settled = false;
+
+    const timer = setTimeout(() => {
+      timedOut = true;
+      child.kill('SIGKILL');
+    }, timeoutMs);
+    if (typeof timer.unref === 'function') timer.unref();
+
+    const consume = (line) => {
+      if (line.trim() === '') return;
+      if (line.length > STDOUT_LINE_MAX_BYTES) {
+        logLines.push('[oversized stdout line]');
+        return;
+      }
+      let parsed;
+      try {
+        parsed = JSON.parse(line);
+      } catch {
+        logLines.push(redactSecrets(line, secrets));
+        return;
+      }
+      if (isPlainObject(parsed) && typeof parsed.event === 'string') events.push(parsed);
+      else logLines.push(redactSecrets(line, secrets));
+    };
+
+    child.stdout.setEncoding('utf8');
+    child.stdout.on('data', (chunk) => {
+      stdoutBuffer += chunk;
+      let index;
+      while ((index = stdoutBuffer.indexOf('\n')) !== -1) {
+        const line = stdoutBuffer.slice(0, index);
+        stdoutBuffer = stdoutBuffer.slice(index + 1);
+        consume(line);
+      }
+      if (stdoutBuffer.length > STDOUT_LINE_MAX_BYTES) {
+        stdoutBuffer = '';
+        logLines.push('[oversized stdout line]');
+      }
+    });
+    child.stderr.setEncoding('utf8');
+    child.stderr.on('data', (chunk) => {
+      if (stderr.length >= STDERR_MAX_BYTES) {
+        stderrTruncated = true;
+        return;
+      }
+      const remaining = STDERR_MAX_BYTES - stderr.length;
+      stderr += chunk.slice(0, remaining);
+      if (chunk.length > remaining) stderrTruncated = true;
+    });
+
+    const finish = (status, code, signal) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (stdoutBuffer !== '') consume(stdoutBuffer);
+      resolveChild({
+        status,
+        code,
+        signal,
+        events,
+        logLines,
+        stderr: redactSecrets(stderr, secrets),
+        stderrTruncated,
+      });
+    };
+    child.on('error', (error) => {
+      stderr += String(error?.message ?? error);
+      finish('failed', null, null);
+    });
+    child.on('close', (code, signal) => {
+      if (timedOut) finish('timeout', code, signal);
+      else finish(code === 0 ? 'exited' : 'failed', code, signal);
+    });
+  });
+}
+
+function expectedSums(assets) {
+  return [...assets]
+    .filter((asset) => asset.name !== 'SHA256SUMS.txt')
+    .sort((left, right) => (left.name < right.name ? -1 : left.name > right.name ? 1 : 0))
+    .map((asset) => `${asset.sha256}  ${asset.name}\n`)
+    .join('');
+}
+
+/**
+ * The server is the authority: it recomputes every asset byte and compares the
+ * child's payload manifests with its own projection results (#75 §7.1 step 5).
+ */
+async function verifyChildBuild({ result, projectionEvents, expected, outDir, upload, ir, irDigest }) {
+  const problems = [];
+  if (result.ok !== true) problems.push('child result is not ok');
+  if (result.id !== upload.bundleId || result.version !== upload.version) {
+    problems.push(`child built ${String(result.id)}@${String(result.version)} for ${upload.bundleId}@${upload.version}`);
+  }
+  if (result.canonical !== expected.canonical) problems.push('canonical agreement');
+  if (JSON.stringify(result.allowed) !== JSON.stringify(expected.allowed)) problems.push('allowed projections disagree');
+
+  const reported = Array.isArray(result.assets) ? result.assets : [];
+  const names = reported.map((asset) => asset.name);
+  if (new Set(names).size !== names.length) problems.push('duplicate asset names');
+  const onDisk = (await readdir(outDir)).sort();
+  if (JSON.stringify([...names].sort()) !== JSON.stringify(onDisk)) {
+    problems.push(`asset names on disk differ from the child report: ${onDisk.join(', ')}`);
+  }
+  for (const asset of reported) {
+    const file = resolve(outDir, asset.name);
+    if (!isInside(outDir, file)) {
+      problems.push(`${asset.name}: escapes the build directory`);
+      continue;
+    }
+    let bytes;
+    try {
+      bytes = await readFile(file);
+    } catch {
+      problems.push(`${asset.name}: missing on disk`);
+      continue;
+    }
+    if (bytes.length !== asset.bytes) problems.push(`${asset.name}: byte count differs`);
+    if (sha256Hex(bytes) !== asset.sha256) problems.push(`${asset.name}: sha256 differs`);
+  }
+  const sums = reported.find((asset) => asset.name === 'SHA256SUMS.txt');
+  if (sums === undefined) {
+    problems.push('SHA256SUMS.txt is missing');
+  } else {
+    const text = await readFile(resolve(outDir, 'SHA256SUMS.txt'), 'utf8').catch(() => null);
+    if (text !== expectedSums(reported)) problems.push('SHA256SUMS.txt does not cover the assets');
+  }
+
+  for (const entry of expected.projections) {
+    const event = projectionEvents.find((item) => item.id === entry.id);
+    if (event === undefined) {
+      problems.push(`${entry.id}: child emitted no projection manifest`);
+      continue;
+    }
+    if (event.digest !== entry.digest) problems.push(`${entry.id}: result digest differs`);
+    const options = payloadInputOptions({
+      projectionId: entry.id,
+      ir,
+      irDigest,
+      options: entry.normalized.options,
+      manifest: entry.descriptor,
+    });
+    if (JSON.stringify(event.options) !== JSON.stringify(options)) {
+      problems.push(`${entry.id}: payload options differ`);
+    }
+    const manifest = event.manifest ?? {};
+    if (manifest.ir?.digest !== irDigest) problems.push(`${entry.id}: payload IR digest differs`);
+    if (JSON.stringify(manifest.bundle) !== JSON.stringify({ id: upload.bundleId, version: upload.version })) {
+      problems.push(`${entry.id}: payload bundle identity differs`);
+    }
+    // Compare only the contract fields; later payload manifests add fields
+    // (e.g. `files[].origin`, a top-level `result`) without changing bytes.
+    const declared = Array.isArray(manifest.files) ? manifest.files : [];
+    const projected = manifestFiles(entry.result);
+    if (declared.length !== projected.length) {
+      problems.push(`${entry.id}: payload file count differs from the projection result`);
+    } else {
+      for (let index = 0; index < declared.length; index += 1) {
+        const actual = declared[index] ?? {};
+        const want = projected[index];
+        if (actual.path !== want.path || actual.mode !== want.mode || actual.sha256 !== want.sha256
+          || actual.kind !== want.kind
+          || JSON.stringify(actual.targets) !== JSON.stringify(want.targets)) {
+          problems.push(`${entry.id}: payload file ${want.path} differs from the projection result`);
+          break;
+        }
+      }
+    }
+  }
+  return problems;
+}
+
 async function locateStatic(segments) {
   const candidate = staticCandidate(segments);
   if (candidate === null) return null;
@@ -420,6 +760,355 @@ async function main() {
   };
   const rate = { windowStart: Date.now(), count: 0 };
 
+  const engineVersion = version;
+  const secrets = startupSecrets();
+  const buildTimeoutMs = envInteger('R2C_WEB_BUILD_TIMEOUT_MS', BUILD_TIMEOUT_MS);
+  const releaseScript = process.env.R2C_WEB_RELEASE_SCRIPT === undefined
+    ? RELEASE_SCRIPT
+    : resolve(process.env.R2C_WEB_RELEASE_SCRIPT);
+  const uploads = new Map();
+  const builds = new Map();
+  const buildRate = { windowStart: Date.now(), count: 0 };
+  let activeBuilds = 0;
+
+  const touchUpload = (upload) => {
+    upload.lastUsed = Date.now();
+    uploads.delete(upload.uploadId);
+    uploads.set(upload.uploadId, upload);
+  };
+
+  const evictUploads = async () => {
+    while (uploads.size > MAX_UPLOADS) {
+      const [key, value] = uploads.entries().next().value;
+      uploads.delete(key);
+      await rm(value.dir, { recursive: true, force: true }).catch(() => {});
+    }
+  };
+
+  const evictBuilds = async () => {
+    while (builds.size > MAX_BUILDS) {
+      const [key, value] = builds.entries().next().value;
+      builds.delete(key);
+      await rm(value.dir, { recursive: true, force: true }).catch(() => {});
+    }
+  };
+
+  const persistUpload = async (bytes, data) => {
+    const uploadId = randomBytes(8).toString('hex');
+    const dir = resolve(tempRoot, 'uploads', uploadId);
+    await mkdir(dir, { mode: 0o700 });
+    const irBytes = Buffer.from(data.ir.data, 'base64');
+    await writeFile(resolve(dir, 'input.zip'), bytes, { mode: 0o600 });
+    await writeFile(resolve(dir, 'workflow.ir.json'), irBytes, { mode: 0o600 });
+    const record = {
+      uploadId,
+      dir,
+      bundleId: data.ir.id,
+      version: data.ir.version,
+      digest: data.ir.digest,
+      contentSha256: data.ir.contentSha256,
+      sha256: data.report.artifact.sha256,
+      report: data.report,
+      createdAt: Date.now(),
+      lastUsed: Date.now(),
+    };
+    await writeFile(resolve(dir, 'meta.json'), canonicalJson({
+      uploadId,
+      sha256: record.sha256,
+      id: record.bundleId,
+      version: record.version,
+      digest: record.digest,
+      contentSha256: record.contentSha256,
+    }), { mode: 0o600 });
+    uploads.set(uploadId, record);
+    await evictUploads();
+    return uploadId;
+  };
+
+  /**
+   * Authoritative build (#75 §7.1): the uploaded zip and IR come from the
+   * session dir, the shared projections run in-process, the release packager
+   * runs as an isolated child, and the child's payload manifests must equal
+   * the in-process results byte for byte.
+   */
+  const performBuild = async (upload, parsed) => {
+    const now = Date.now();
+    if (now - buildRate.windowStart >= BUILD_RATE_WINDOW_MS) {
+      buildRate.windowStart = now;
+      buildRate.count = 0;
+    }
+    buildRate.count += 1;
+    if (buildRate.count > BUILD_RATE_LIMIT) {
+      const retryAfter = Math.max(1, Math.ceil((buildRate.windowStart + BUILD_RATE_WINDOW_MS - now) / 1000));
+      return webError(429, 'WEB_RATE_LIMITED', 'too many builds in the current window', null, {
+        'Retry-After': String(retryAfter),
+      });
+    }
+    if (activeBuilds >= BUILD_CONCURRENCY) {
+      return webError(409, 'WEB_BUILD_BUSY', 'another build is already running');
+    }
+
+    const irBytes = await readFile(resolve(upload.dir, 'workflow.ir.json')).catch(() => null);
+    if (irBytes === null) return webError(404, 'WEB_UPLOAD_UNKNOWN', 'the upload is gone');
+    const irDigest = sha256Hex(irBytes);
+    if (irDigest !== upload.digest) {
+      return webError(500, 'WEB_INTERNAL', 'the stored IR does not match its digest');
+    }
+    let ir;
+    try {
+      ir = JSON.parse(irBytes.toString('utf8'));
+    } catch {
+      return webError(500, 'WEB_INTERNAL', 'the stored IR is not JSON');
+    }
+    if (ir.id !== upload.bundleId || ir.version !== upload.version) {
+      return webError(500, 'WEB_INTERNAL', 'the stored IR identity differs from the upload');
+    }
+    if (parsed.irDigest !== undefined && parsed.irDigest !== irDigest) {
+      return webError(409, 'PROJECTION_OPTIONS_IR_MISMATCH', 'the options are bound to a different IR digest');
+    }
+
+    const allowed = allowedProjections(ir);
+    const requested = parsed.options ?? {};
+    for (const projectionId of Object.keys(requested)) {
+      if (!allowed.includes(projectionId)) {
+        return webError(400, 'WEB_OPTIONS_INVALID', `unknown projection ${projectionId}`, {
+          allowed,
+        });
+      }
+      const raw = requested[projectionId];
+      if (raw !== null && !isPlainObject(raw)) {
+        return webError(400, 'WEB_OPTIONS_INVALID', `${projectionId} options must be an object or null`);
+      }
+    }
+
+    const expected = [];
+    for (const projectionId of allowed) {
+      const descriptor = getProjection(projectionId);
+      if (descriptor === null) {
+        return webError(500, 'WEB_INTERNAL', `projection ${projectionId} is not registered`);
+      }
+      const normalized = normalizeOptions({
+        projectionId,
+        ir,
+        irDigest,
+        raw: requested[projectionId] ?? null,
+        manifest: descriptor,
+      });
+      if (!normalized.ok) {
+        const first = normalized.errors[0];
+        const status = normalized.errors.some((item) => item.code === 'PROJECTION_OPTIONS_IR_MISMATCH')
+          ? 409
+          : 400;
+        return webError(status, first.code, first.message, {
+          errors: normalized.errors,
+          ...(first.target === undefined ? {} : { target: first.target }),
+        });
+      }
+      const result = project({
+        projectionId,
+        ir,
+        irDigest,
+        options: normalized.options,
+        environment: { engineVersion },
+        assets: {},
+      });
+      if (!result.ok) {
+        const first = (result.errors ?? [])[0] ?? { code: 'PROJECTION_INTERNAL', message: 'projection failed' };
+        return webError(400, first.code, first.message, { errors: result.errors ?? [] });
+      }
+      const validation = validateResult(result, {
+        ir,
+        irDigest,
+        manifest: descriptor,
+        options: normalized.options,
+        environment: { engineVersion },
+        assets: {},
+      });
+      if (!validation.ok) {
+        return webError(500, 'PROJECTION_RESULT_INVALID', validation.diagnostics[0].message, {
+          diagnostics: validation.diagnostics,
+        });
+      }
+      expected.push({
+        id: projectionId,
+        descriptor,
+        normalized,
+        result,
+        canonical: isCanonicalOptions({
+          projectionId,
+          ir,
+          irDigest,
+          options: normalized.options,
+          manifest: descriptor,
+        }),
+        digest: sha256Hex(canonicalJson(result)),
+      });
+    }
+    expected.sort((left, right) => compareCodePoints(left.id, right.id));
+    const canonical = expected.every((entry) => entry.canonical);
+
+    const buildId = randomBytes(8).toString('hex');
+    const workDir = resolve(tempRoot, 'builds', buildId);
+    const outDir = resolve(workDir, 'assets');
+    const tempDir = resolve(workDir, 'tmp');
+    const optionsPath = resolve(workDir, 'options.json');
+    await mkdir(outDir, { recursive: true, mode: 0o700 });
+    await mkdir(tempDir, { recursive: true, mode: 0o700 });
+    const childOptions = {};
+    for (const entry of expected) childOptions[entry.id] = requested[entry.id] ?? null;
+    await writeFile(optionsPath, canonicalJson(childOptions), { mode: 0o600 });
+
+    activeBuilds += 1;
+    let child;
+    try {
+      child = await runReleaseChild({
+        script: releaseScript,
+        args: [
+          '--bundle', resolve(upload.dir, 'input.zip'),
+          '--out', outDir,
+          '--options', optionsPath,
+          '--json',
+        ],
+        env: buildChildEnv({
+          ...process.env,
+          TMPDIR: tempDir,
+          TEMP: tempDir,
+          TMP: tempDir,
+        }),
+        cwd: ROOT,
+        timeoutMs: buildTimeoutMs,
+        secrets,
+      });
+    } finally {
+      activeBuilds -= 1;
+    }
+
+    if (child.status === 'timeout') {
+      await rm(workDir, { recursive: true, force: true }).catch(() => {});
+      return webError(504, 'WEB_CHILD_TIMEOUT', 'the build child was killed after the timeout', {
+        stderr: child.stderr,
+        stderrTruncated: child.stderrTruncated,
+      });
+    }
+    const resultEvent = child.events.filter((event) => event.event === 'result').pop();
+    const projectionEvents = child.events.filter((event) => event.event === 'projection');
+    if (child.status !== 'exited' || resultEvent === undefined || resultEvent.ok !== true) {
+      await rm(workDir, { recursive: true, force: true }).catch(() => {});
+      return webError(500, 'WEB_CHILD_FAILED', 'the build child failed', {
+        stderr: child.stderr,
+        stderrTruncated: child.stderrTruncated,
+        log: child.logLines.slice(0, 50),
+        exitCode: child.code,
+      });
+    }
+
+    const problems = await verifyChildBuild({
+      result: resultEvent,
+      projectionEvents,
+      expected: { canonical, allowed, projections: expected },
+      outDir,
+      upload,
+      ir,
+      irDigest,
+    });
+    if (problems.length > 0) {
+      await rm(workDir, { recursive: true, force: true }).catch(() => {});
+      return webError(500, 'WEB_CLIENT_SERVER_MISMATCH', 'the packaged payloads differ from the server projection', {
+        problems,
+      });
+    }
+
+    const projections = expected.map((entry) => ({
+      id: entry.id,
+      version: entry.descriptor.version,
+      options: entry.result.options,
+      targets: entry.result.targets,
+      coverage: entry.result.coverage,
+      counts: {
+        files: entry.result.files.length,
+        bytes: projectBytes(entry.result),
+        degradations: entry.result.degradations.length,
+        warnings: entry.result.warnings.length,
+        capabilities: entry.result.capabilityReport.length,
+      },
+      files: filesSummary(entry.result),
+      capabilityReport: entry.result.capabilityReport,
+      degradations: entry.result.degradations,
+      warnings: entry.result.warnings,
+      metadata: entry.result.metadata,
+      digest: entry.digest,
+    }));
+    const install = installCommands({
+      id: upload.bundleId,
+      version: upload.version,
+      projections,
+      publishable: canonical,
+    });
+    if (install === null) {
+      await rm(workDir, { recursive: true, force: true }).catch(() => {});
+      return webError(500, 'WEB_COMMAND_INVALID', 'the install command values are not whitelisted');
+    }
+
+    const assets = new Map();
+    const artifacts = [];
+    for (const asset of resultEvent.assets) {
+      const path = resolve(outDir, asset.name);
+      if (!isInside(outDir, path)) {
+        await rm(workDir, { recursive: true, force: true }).catch(() => {});
+        return webError(500, 'WEB_CLIENT_SERVER_MISMATCH', 'an asset escapes the build directory');
+      }
+      assets.set(asset.name, { name: asset.name, bytes: asset.bytes, sha256: asset.sha256, path });
+      artifacts.push({
+        name: asset.name,
+        bytes: asset.bytes,
+        sha256: asset.sha256,
+        url: `/api/builds/${buildId}/artifacts/${encodeURIComponent(asset.name)}`,
+      });
+    }
+
+    const summary = {
+      buildId,
+      tag: resultEvent.tag,
+      canonical,
+      publishable: canonical,
+      ir: {
+        id: upload.bundleId,
+        version: upload.version,
+        digest: irDigest,
+        contentSha256: upload.contentSha256,
+      },
+      engineVersion,
+      projections,
+      artifacts,
+      install,
+    };
+    builds.set(buildId, {
+      summary,
+      dir: workDir,
+      assets,
+      createdAt: Date.now(),
+      lastUsed: Date.now(),
+    });
+    await evictBuilds();
+    return { status: 200, summary };
+  };
+
+  const pruneState = () => {
+    const now = Date.now();
+    for (const [key, value] of uploads) {
+      if (now - value.lastUsed > UPLOAD_TTL_MS) {
+        uploads.delete(key);
+        void rm(value.dir, { recursive: true, force: true }).catch(() => {});
+      }
+    }
+    for (const [key, value] of builds) {
+      if (now - value.lastUsed > BUILD_TTL_MS) {
+        builds.delete(key);
+        void rm(value.dir, { recursive: true, force: true }).catch(() => {});
+      }
+    }
+  };
+
   let port = options.port;
   let shutdownStarted = false;
   let server;
@@ -440,6 +1129,7 @@ async function main() {
 
   const sweeper = setInterval(() => {
     void sweepIdle(tempRoot);
+    pruneState();
   }, SWEEP_INTERVAL_MS);
   sweeper.unref();
 
@@ -527,10 +1217,11 @@ async function main() {
         ok: true,
         data: {
           csrf,
-          mode: 'read-only',
+          mode: 'build',
           repo: null,
           publish: { enabled: false, reason: 'read-only' },
           frameworkVersion: version,
+          engineVersion,
           modules,
           limits: {
             zipBytes: LIMITS.MAX_ZIP_BYTES,
@@ -557,7 +1248,7 @@ async function main() {
       return;
     }
 
-    if (path === '/api/validate') {
+    if (path === '/api/validate' || path === '/api/uploads') {
       if (method !== 'POST') {
         status = 405;
         sendWebError(response, status, 'WEB_METHOD_NOT_ALLOWED', 'method is not allowed', { Allow: 'POST' });
@@ -595,7 +1286,145 @@ async function main() {
       }
       status = 200;
       const data = await runValidation(bytes);
+      if (path === '/api/uploads') {
+        data.uploadId = data.ir === null ? null : await persistUpload(bytes, data);
+      }
       sendJson(response, status, { ok: data.report.ok, data });
+      return;
+    }
+
+    if (path === '/api/builds') {
+      if (method === 'GET' || method === 'HEAD') {
+        status = 200;
+        const data = { builds: [...builds.values()].map((build) => build.summary) };
+        if (method === 'HEAD') {
+          const length = bytesOf(JSON.stringify({ ok: true, data })) + 1;
+          response.writeHead(status, securityHeaders({
+            'Content-Type': 'application/json; charset=utf-8',
+            'Content-Length': String(length),
+          }));
+          response.end();
+          return;
+        }
+        sendJson(response, status, { ok: true, data });
+        return;
+      }
+      if (method !== 'POST') {
+        status = 405;
+        sendWebError(response, status, 'WEB_METHOD_NOT_ALLOWED', 'method is not allowed', { Allow: 'GET, HEAD, POST' });
+        return;
+      }
+      const type = String(request.headers['content-type'] ?? '').split(';', 1)[0].trim().toLowerCase();
+      if (type !== 'application/json') {
+        status = 415;
+        sendWebError(response, status, 'WEB_CONTENT_TYPE_INVALID', 'build requests are JSON');
+        return;
+      }
+      const declaredHeader = request.headers['content-length'];
+      if (declaredHeader === undefined) {
+        status = 411;
+        sendWebError(response, status, 'WEB_BODY_MISSING', 'Content-Length is required');
+        return;
+      }
+      const declared = Number(declaredHeader);
+      if (!Number.isInteger(declared) || declared < 0) {
+        status = 400;
+        sendWebError(response, status, 'WEB_BODY_INVALID', 'Content-Length is invalid');
+        return;
+      }
+      if (declared > JSON_MAX_BYTES) {
+        status = 413;
+        sendWebError(response, status, 'WEB_BODY_TOO_LARGE', 'build request exceeds the JSON limit');
+        return;
+      }
+      let raw;
+      try {
+        raw = await collectBody(request, declared, JSON_MAX_BYTES);
+      } catch (error) {
+        status = error?.code === 'WEB_BODY_TOO_LARGE' ? 413 : error?.code === 'WEB_TIMEOUT' ? 408 : 400;
+        sendWebError(response, status, error?.code ?? 'WEB_BODY_INVALID', 'build request could not be read');
+        return;
+      }
+      let body;
+      try {
+        body = JSON.parse(Buffer.from(raw).toString('utf8'));
+      } catch {
+        status = 400;
+        sendWebError(response, status, 'WEB_BODY_INVALID', 'build body is not JSON');
+        return;
+      }
+      const parsed = parseBuildBody(body);
+      if (parsed.status !== undefined) {
+        status = parsed.status;
+        sendWebError(response, status, parsed.code, parsed.message, parsed.headers, parsed.details);
+        return;
+      }
+      const upload = uploads.get(parsed.uploadId);
+      if (upload === undefined) {
+        status = 404;
+        sendWebError(response, status, 'WEB_UPLOAD_UNKNOWN', 'the upload is unknown or expired');
+        return;
+      }
+      touchUpload(upload);
+      const built = await performBuild(upload, parsed);
+      status = built.status;
+      if (built.summary !== undefined) {
+        sendJson(response, status, { ok: true, data: built.summary });
+      } else {
+        sendWebError(response, status, built.code, built.message, built.headers, built.details);
+      }
+      return;
+    }
+
+    const artifactMatch = /^\/api\/builds\/([0-9a-f]{16})\/artifacts\/([^/]+)$/.exec(path);
+    if (artifactMatch !== null) {
+      if (method === 'POST') {
+        status = 405;
+        sendWebError(response, status, 'WEB_METHOD_NOT_ALLOWED', 'method is not allowed', { Allow: 'GET, HEAD' });
+        return;
+      }
+      const build = builds.get(artifactMatch[1]);
+      if (build === undefined) {
+        status = 404;
+        sendWebError(response, status, 'WEB_BUILD_UNKNOWN', 'the build is unknown or expired');
+        return;
+      }
+      let name;
+      try {
+        name = decodeURIComponent(artifactMatch[2]);
+      } catch {
+        status = 404;
+        sendWebError(response, status, 'WEB_PATH_INVALID', 'not found');
+        return;
+      }
+      if (name.includes('/') || name.includes('\\') || name.includes('%') || name.includes('..')) {
+        status = 404;
+        sendWebError(response, status, 'WEB_PATH_INVALID', 'not found');
+        return;
+      }
+      const asset = build.assets.get(name);
+      if (asset === undefined) {
+        status = 404;
+        sendWebError(response, status, 'WEB_NOT_FOUND', 'not found');
+        return;
+      }
+      let bytes;
+      try {
+        bytes = await readFile(asset.path);
+      } catch {
+        status = 404;
+        sendWebError(response, status, 'WEB_NOT_FOUND', 'not found');
+        return;
+      }
+      build.lastUsed = Date.now();
+      status = 200;
+      response.writeHead(status, securityHeaders({
+        'Content-Type': 'application/octet-stream',
+        'Content-Length': String(bytes.length),
+        'Content-Disposition': `attachment; filename="${name}"`,
+      }));
+      if (method === 'HEAD') response.end();
+      else response.end(bytes);
       return;
     }
 
