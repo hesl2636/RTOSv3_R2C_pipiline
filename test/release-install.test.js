@@ -347,6 +347,24 @@ test('--target narrows the written files but roles.json is still installed', (t)
   );
   assert.equal(again.status, 0, `${again.stdout}\n${again.stderr}`);
   assert.match(again.stdout, /unchanged/);
+
+  // --target repeats: two targets share .agents/skills and keep roles.json.
+  const multi = project(t);
+  const two = install(
+    ['--bundle', ID, '--version', VERSION, '--projection', 'agent-native',
+      '--target', 'claude-code', '--target', 'codex', '--project', multi, '--release-base', release],
+    { env },
+  );
+  assert.equal(two.status, 0, `${two.stdout}\n${two.stderr}`);
+  assert.ok(existsSync(join(multi, '.claude', 'agents')));
+  assert.ok(existsSync(join(multi, '.codex', 'agents')));
+  assert.ok(walk(multi).some((path) => path.startsWith('.agents/skills/rtosv3-drvport-')));
+  assert.equal(existsSync(join(multi, '.omp')), false);
+  assert.equal(existsSync(join(multi, '.opencode')), false);
+  assert.equal(existsSync(join(multi, '.dsh')), false);
+  const twoReceipt = receipt(multi, 'agent-native');
+  assert.deepEqual(twoReceipt.data.projection.targets, ['claude-code', 'codex']);
+  assert.equal(twoReceipt.data.capability_report.length, 16);
 });
 
 test('a release that only allows agent-native refuses r2c before any write', (t) => {

@@ -470,8 +470,6 @@ export function verifyRelease(input = {}) {
     frameworkVersion,
     result: payload.result,
     payloadManifest: payload.manifest,
-    sums,
-    assets: wanted.map((name) => ({ name, data: Buffer.from(assets[name]) })),
   };
 }
 
