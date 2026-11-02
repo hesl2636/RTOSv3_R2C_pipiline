@@ -300,8 +300,11 @@ test('skill name must equal its directory and honour the reserved names', () => 
     manifest: { skills: ['helper', 'anthropic-skills'] },
     overrides: { 'skills/anthropic-skills/SKILL.md': skillFile({ name: 'anthropic-skills' }) },
   });
-  const diagnostic = reserved.errors.find((error) => error.path === 'skills/anthropic-skills/SKILL.md');
-  assert.equal(diagnostic?.code, 'BUNDLE_SKILL_ID_RESERVED');
+  // The manifest declaration owns the reserved-id diagnostic; the file must
+  // not repeat it (decision #67 one root cause = one diagnostic).
+  const reservedDiagnostics = reserved.errors.filter((error) => error.code === 'BUNDLE_SKILL_ID_RESERVED');
+  assert.equal(reservedDiagnostics.length, 1);
+  assert.equal(reservedDiagnostics[0].path, 'bundle.json');
 });
 
 // ---------------------------------------------------------------------------
