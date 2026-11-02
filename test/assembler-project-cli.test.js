@@ -109,6 +109,30 @@ test('project is byte-deterministic across two output directories', () => {
   }
 });
 
+test('CLI options narrow skills and reorder stages', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'r2c-project-opt-'));
+  try {
+    const irPath = compileTo(dir);
+    const out = join(dir, 'out');
+    const result = run([
+      'project', irPath, '--projection', 'agent-native', '--target', 'claude-code',
+      '--stage-order', 'verification,implementation,detailed-design,analysis-design',
+      '--skills', 'ar-miner,code-research,codebase-search,design-gen,executing-plans,huawei-c-coding-standard,r2c-build-redblue,r2c-design,r2c-imdesign,r2c-implement-redblue,r2c-push-mr,r2c-review',
+      '--out', out, '--json',
+    ]);
+    assert.equal(result.status, 0, result.stderr);
+    const envelope = JSON.parse(result.stdout.trim());
+    assert.equal(envelope.data.counts.files, 22);
+    assert.equal(envelope.data.counts.warnings, 1);
+    assert.equal(envelope.data.warnings[0].code, 'STAGE_ORDER_OVERRIDDEN');
+    assert.deepEqual(envelope.data.coverage.stages, ['verification', 'implementation', 'detailed-design', 'analysis-design']);
+    assert.equal(envelope.data.options.skills.length, 12);
+    assert.equal(walk(out).length, 22);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('invalid options fail with a stable code and write nothing', () => {
   const dir = mkdtempSync(join(tmpdir(), 'r2c-project-bad-'));
   try {

@@ -11,6 +11,7 @@
  * descriptor) and `skillNames` maps IR skill ids to runtime-visible names.
  */
 import { placeholderInstructions } from './placeholder.js';
+import { TARGETS as DEFAULT_TARGETS } from '../agent-native/projection/targets/index.js';
 
 const ROLE_ID_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const MAX_ROLE_NAME = 64;
@@ -63,7 +64,7 @@ function descriptorFor(ctx, targetId) {
   if (ctx.skillNames === undefined || ctx.skillNames === null) {
     throw projectionError('PROJECTION_INTERNAL', 'ctx.skillNames is required');
   }
-  const table = ctx.targets;
+  const table = ctx.targets ?? DEFAULT_TARGETS;
   const descriptor = table instanceof Map ? table.get(targetId) : table?.[targetId];
   if (descriptor === undefined || descriptor === null) {
     throw projectionError('PROJECTION_TARGET_UNKNOWN', `no descriptor for target ${String(targetId)}`, { target: targetId });

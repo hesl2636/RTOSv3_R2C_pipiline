@@ -190,6 +190,16 @@ test('renderRole maps tools, denies and preload names for Claude', () => {
   assert.doesNotMatch(filtered.content, /codebase-search/);
 });
 
+test('renderRole resolves the closed registry when ctx omits a target table', () => {
+  const rendered = renderRole(SAMPLE_ROLE, 'claude-code', {
+    namespace: 'rtosv3-drvport',
+    skillNames: new Map(),
+  });
+  assert.equal(rendered.name, 'rtosv3-drvport-bys-architect');
+  assert.equal(sha256(rendered.content), '2d2b1cf862d576c9cd8f431686343e06c64084ae9f137eb2a7f271f062d1d3cc');
+  assert.throws(() => renderRole(SAMPLE_ROLE, 'claude-code', { namespace: 'rtosv3-drvport' }), /ctx\.skillNames/);
+});
+
 test('renderRole honours exposure and rejects unknown targets', () => {
   assert.equal(renderRole({ ...SAMPLE_ROLE, mode: 'any' }, 'claude-code', ctx()).exposure, 'both');
   assert.equal(renderRole({ ...SAMPLE_ROLE, mode: 'primary' }, 'claude-code', ctx()).exposure, 'primary');
