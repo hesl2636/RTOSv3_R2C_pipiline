@@ -136,11 +136,17 @@ test('uninstall exits 0, then 4 when the identity is gone', (t) => {
   assert.equal(envelopeOf(missing).error.code, 'NOT_INSTALLED');
 });
 
-test('--migrate-legacy is rejected explicitly', (t) => {
+test('--migrate-legacy is install-only and needs a result', (t) => {
   const projectRoot = tempDir(t, 'r2c-project-');
-  const run = cli(['--migrate-legacy', '--project', projectRoot, '--json']);
-  assert.equal(run.status, 2);
-  assert.equal(envelopeOf(run).error.code, 'LEGACY_MIGRATION_UNSUPPORTED');
+  const missingResult = cli(['--migrate-legacy', '--project', projectRoot, '--json']);
+  assert.equal(missingResult.status, 2);
+  assert.equal(envelopeOf(missingResult).error.code, 'USAGE');
+
+  const withUninstall = cli([
+    '--migrate-legacy', '--uninstall', '--projection', 'r2c', '--bundle', 'x', '--project', projectRoot, '--json',
+  ]);
+  assert.equal(withUninstall.status, 2);
+  assert.equal(envelopeOf(withUninstall).error.code, 'USAGE');
 });
 
 test('dry-run through the CLI writes nothing', (t) => {

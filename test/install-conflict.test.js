@@ -208,7 +208,9 @@ test('case-folded ownership collision is refused', (t) => {
   writeReceipt(projectRoot, { paths: [path.replace(/^./, (char) => char.toUpperCase())] });
   const outcome = installProjection({ result, irBytes, projectRoot, clock: CLOCK });
   assert.equal(outcome.code, 'INSTALL_CONFLICTS');
-  assert.deepEqual(codes(outcome), ['PATH_CASE_COLLISION']);
+  // #103 / spec §12: every cross-receipt literal collision is one code.
+  assert.deepEqual(codes(outcome), ['INSTALL_PATH_CONFLICT']);
+  assert.equal(outcome.conflicts[0].details.kind, 'case-fold');
 });
 
 test('a file/directory prefix collision between receipts is refused', (t) => {
@@ -219,7 +221,8 @@ test('a file/directory prefix collision between receipts is refused', (t) => {
   writeReceipt(projectRoot, { paths: [prefix] });
   const outcome = installProjection({ result, irBytes, projectRoot, clock: CLOCK });
   assert.equal(outcome.code, 'INSTALL_CONFLICTS');
-  assert.deepEqual(codes(outcome), ['PATH_PREFIX_CONFLICT']);
+  assert.deepEqual(codes(outcome), ['INSTALL_PATH_CONFLICT']);
+  assert.equal(outcome.conflicts[0].details.kind, 'file-dir-prefix');
 });
 
 test('an escaping path is refused by V5 before anything is written', (t) => {
@@ -410,7 +413,7 @@ const MATRIX = [
       writeReceipt(projectRoot, { paths: [path.replace(/^./, (char) => char.toUpperCase())] });
       return { ...sampleSet, force: true };
     },
-    expect: { code: 'INSTALL_CONFLICTS', codes: ['PATH_CASE_COLLISION'] },
+    expect: { code: 'INSTALL_CONFLICTS', codes: ['INSTALL_PATH_CONFLICT'] },
   },
   {
     name: 'a file/directory prefix collision with another receipt is refused',
@@ -419,7 +422,7 @@ const MATRIX = [
       writeReceipt(projectRoot, { paths: [targetOf(sampleSet.result).split('/')[0]] });
       return { ...sampleSet, force: true };
     },
-    expect: { code: 'INSTALL_CONFLICTS', codes: ['PATH_PREFIX_CONFLICT'] },
+    expect: { code: 'INSTALL_CONFLICTS', codes: ['INSTALL_PATH_CONFLICT'] },
   },
   {
     name: 'an escaping path is refused before any write',
