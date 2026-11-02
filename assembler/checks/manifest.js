@@ -5,17 +5,18 @@
  * content phases (S0/S1): declarations are unknown, so "declared vs present"
  * cannot be judged and must not cascade into dozens of follow-up errors.
  */
-import { canonicalJson, firstDifferenceOffset } from '../../core/canonical-json.js';
 import { codePointLength } from '../../core/code-point.js';
 import { parseSchemaId } from '../../core/schema.js';
 import { isValidRange } from '../../core/semver.js';
 import {
   BUNDLE_ID_MAX,
   ID_MAX,
+  PROJECTION_IDS,
   VERSION_RE,
   isValidId,
 } from '../ids.js';
 import { isPlainObject } from '../util.js';
+import { readJsonDocument, findKeyOrderViolation } from './json.js';
 
 export const BUNDLE_SCHEMA = 'r2c.bundle/v1';
 export const CONSTITUTION_PATH = 'constitution/CONSTITUTION.md';
@@ -33,6 +34,24 @@ const MANIFEST_KEYS = [
   'constitution',
   'requires',
 ];
+
+const CONSTITUTION_KEYS = ['path', 'placeholder'];
+const REQUIRES_KEYS = ['engine', 'projections'];
+
+function manifestKeyOrder(value) {
+  if (!isPlainObject(value)) return null;
+  const top = findKeyOrderViolation(value, MANIFEST_KEYS);
+  if (top !== null) return top;
+  if (isPlainObject(value.constitution)) {
+    const constitution = findKeyOrderViolation(value.constitution, CONSTITUTION_KEYS);
+    if (constitution !== null) return constitution;
+  }
+  if (isPlainObject(value.requires)) {
+    const requires = findKeyOrderViolation(value.requires, REQUIRES_KEYS);
+    if (requires !== null) return requires;
+  }
+  return null;
+}
 
 function pointerSegment(key) {
   return String(key).replaceAll('~', '~0').replaceAll('/', '~1');
@@ -69,17 +88,18 @@ function readIdArray(context, path, manifest, key, options) {
   if (value === undefined || value === null) {
     if (required) {
       schemaInvalid(context, path, `/${key}`, 'required', `manifest is missing '${key}'`);
-      context.declaredValid[kind] = false;
+      context.declaredValid[`${kind}s`] = false;
     }
     return null;
   }
   if (!Array.isArray(value)) {
     schemaInvalid(context, path, `/${key}`, 'type', `'${key}' must be an array`);
-    context.declaredValid[kind] = false;
+    context.declaredValid[`${kind}s`] = false;
     return null;
   }
   if (minItems !== undefined && value.length < minItems) {
     schemaInvalid(context, path, `/${key}`, 'minItems', `'${key}' must have at least ${minItems} item(s)`);
+    context.declaredValid[`${kind}s`] = false;
   }
   const seen = new Set();
   const valid = [];
@@ -87,10 +107,12 @@ function readIdArray(context, path, manifest, key, options) {
     const pointer = `/${key}/${index}`;
     if (typeof item !== 'string') {
       schemaInvalid(context, path, pointer, 'type', `'${key}[${index}]' must be a string`);
+      context.declaredValid[`${kind}s`] = false;
       return;
     }
     if (seen.has(item)) {
       schemaInvalid(context, path, pointer, 'uniqueItems', `duplicate '${key}' entry: ${item}`);
+      context.declaredValid[`${kind}s`] = false;
       return;
     }
     seen.add(item);
@@ -99,6 +121,7 @@ function readIdArray(context, path, manifest, key, options) {
         pointer,
         details: { where: 'manifest', value: item },
       });
+      context.declaredValid[`${kind}s`] = false;
       return;
     }
     if (reserved.includes(item)) {
@@ -124,25 +147,18 @@ export function check(context) {
     return;
   }
 
-  let manifest;
-  try {
-    manifest = JSON.parse(text);
-  } catch {
-    context.fail(path, 'BUNDLE_JSON_PARSE', 'bundle.json is not valid JSON', {
-      details: { reason: 'syntax' },
-    });
+  const document = readJsonDocument(context, path, text, {
+    order: manifestKeyOrder,
+  });
+  if (document === null) {
     context.skipContent();
     return;
   }
+  const { value: manifest } = document;
   if (!isPlainObject(manifest)) {
     schemaInvalid(context, path, '', 'type', 'bundle.json must be a JSON object');
     context.skipContent();
     return;
-  }
-  if (canonicalJson(manifest) !== text) {
-    context.fail(path, 'BUNDLE_JSON_NOT_CANONICAL', 'bundle.json is not canonical JSON', {
-      details: { offset: firstDifferenceOffset(canonicalJson(manifest), text) },
-    });
   }
 
   const parsedSchema = parseSchemaId(manifest.schema);
@@ -250,7 +266,7 @@ export function check(context) {
   context.declared.roles = declaredRoles ?? [];
   context.declared.tasks = declaredTasks ?? [];
   context.declared.skills = declaredSkills ?? [];
-  if (declaredStages === null) context.skip('stages');
+  if (declaredStages === null || context.declaredValid.stages === false) context.skip('stages');
 
   context.constitutionDeclaration = { declared: false, placeholder: false, valid: true };
   if (manifest.constitution !== undefined) {
@@ -259,7 +275,7 @@ export function check(context) {
       schemaInvalid(context, path, '/constitution', 'type', "'constitution' must be an object");
       context.constitutionDeclaration.valid = false;
     } else {
-      checkUnknownKeys(context, path, constitution, ['path', 'placeholder'], '/constitution');
+      checkUnknownKeys(context, path, constitution, CONSTITUTION_KEYS, '/constitution');
       if (constitution.path !== CONSTITUTION_PATH) {
         schemaInvalid(context, path, '/constitution/path', 'const', "'constitution.path' must be the fixed path");
       }
@@ -327,7 +343,7 @@ function checkRequires(context, path, requires) {
       const seen = new Set();
       value.forEach((item, index) => {
         const pointer = `/requires/projections/${index}`;
-        if (typeof item !== 'string' || !['r2c', 'agent-native'].includes(item) || seen.has(item)) {
+        if (typeof item !== 'string' || !PROJECTION_IDS.includes(item) || seen.has(item)) {
           context.fail(path, 'BUNDLE_REQUIRES_INVALID', "'requires.projections' has an invalid entry", {
             pointer,
             details: { pointer, reason: 'projections' },
