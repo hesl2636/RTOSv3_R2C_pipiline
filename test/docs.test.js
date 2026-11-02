@@ -288,7 +288,11 @@ test('every documented node command uses flags and subcommands the CLI prints', 
       }
       if (second === undefined) continue;
       if (second.endsWith('install.mjs')) {
-        assert.match(line, /--agent [a-z-]+/, `${rel}: the bootstrap requires --agent`);
+        assert.match(
+          line,
+          /--agent [a-z-]+|--bundle [<a-z0-9-]/,
+          `${rel}: the bootstrap requires --agent or --bundle`,
+        );
         seen.engine += 1;
         continue;
       }

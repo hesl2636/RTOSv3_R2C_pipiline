@@ -25,6 +25,25 @@
  *   `installProjection` for agent-native).
  */
 export { installProjection, receiptOptions } from './install.js';
+export {
+  RELEASE_EXIT,
+  allowedProjections,
+  checkEngineRequirement,
+  extractReleaseArchive,
+  installRelease,
+  narrowResult,
+  selectProjection,
+  verifyRelease,
+} from './release-install.js';
+export {
+  PAYLOAD_MANIFEST_NAME,
+  RELEASE_PAYLOAD_SCHEMA,
+  payloadResultBlock,
+  readPayloadArchive,
+  resultFromPayload,
+  verifyPayloadArchive,
+} from './release-payload.js';
+export { createReleaseTarGz, readReleaseTarGz, releasePathProblem } from './release-tar.js';
 export { checkR2cRoot, duplicateBackendWarnings } from './coexist.js';
 export {
   applyLegacyDeletions,

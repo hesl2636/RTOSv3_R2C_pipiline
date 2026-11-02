@@ -41,6 +41,12 @@ import {
   legacyAssetNames,
   parseBundleTag,
 } from '../../installer/release-tags.js';
+import {
+  PAYLOAD_MANIFEST_NAME,
+  RELEASE_PAYLOAD_SCHEMA,
+  payloadResultBlock,
+  verifyPayloadArchive,
+} from '../../installer/release-payload.js';
 import { canonicalInputOptions, isCanonicalOptions, normalizeOptions, payloadInputOptions } from '../../projection/options.js';
 import { project } from '../../projection/project.js';
 import { getProjection } from '../../projection/registry.js';
@@ -51,8 +57,6 @@ import { collectBundleFiles } from './file-set.mjs';
 import { createReleaseTarGz, readReleaseTarGz, releasePathProblem } from './release-tar.mjs';
 import { writeZip } from './zip-writer.mjs';
 
-export const RELEASE_PAYLOAD_SCHEMA = 'r2c.release-payload/v1';
-export const PAYLOAD_MANIFEST_NAME = 'manifest.json';
 export const BUNDLE_MAKE_LATEST = false;
 export const CANONICAL_PROJECTIONS = Object.freeze(['r2c', 'agent-native']);
 
@@ -69,6 +73,7 @@ export {
   legacyAssetNames,
   parseBundleTag,
 };
+export { PAYLOAD_MANIFEST_NAME, RELEASE_PAYLOAD_SCHEMA, verifyPayloadArchive };
 
 /** Framework source roots (#77 §5.5, decision #74 §3.3). */
 const FRAMEWORK_DIRS = Object.freeze([
@@ -332,17 +337,22 @@ function payloadFileName(projectionId, id, version) {
  * Build the canonical payload manifest for one projection. `options` records
  * the canonical *input* (nulls), never `result.options`.
  */
-export function buildPayloadManifest({ id, version, projection, ir, irDigest, options, targets, files }) {
+export function buildPayloadManifest({ id, version, projection, ir, irDigest, options, targets, files, result = null }) {
   const sorted = [...files]
-    .map((file) => ({
-      path: file.path,
-      mode: file.mode,
-      sha256: sha256Hex(Buffer.from(file.content, 'utf8')),
-      kind: file.kind,
-      targets: [...file.targets],
-    }))
+    .map((file) => {
+      const entry = {
+        path: file.path,
+        mode: file.mode,
+        sha256: sha256Hex(Buffer.from(file.content, 'utf8')),
+        kind: file.kind,
+        targets: [...file.targets],
+        origin: file.origin,
+      };
+      if (file.assetId !== undefined) entry.assetId = file.assetId;
+      return entry;
+    })
     .sort((left, right) => compareCodePoints(left.path, right.path));
-  return {
+  const manifest = {
     schema: RELEASE_PAYLOAD_SCHEMA,
     bundle: { id, version },
     ir: {
@@ -358,119 +368,14 @@ export function buildPayloadManifest({ id, version, projection, ir, irDigest, op
     targets: [...targets],
     files: sorted,
   };
+  // The validated result minus file content: the installer rebuilds it and
+  // re-runs V1–V12 without compiling or projecting (#106).
+  if (result !== null) manifest.result = payloadResultBlock(result);
+  return manifest;
 }
 
 function sameValue(left, right) {
   return JSON.stringify(left) === JSON.stringify(right);
-}
-
-/**
- * Self-proof of one payload archive: member set == manifest set, member hashes
- * == manifest hashes, deterministic metadata, canonical manifest bytes.
- */
-export function verifyPayloadArchive(bytes, expected) {
-  const problems = [];
-  const { entries, problems: readProblems } = readReleaseTarGz(bytes);
-  problems.push(...readProblems);
-  const memberPaths = entries.map((entry) => entry.path);
-  if (!sameValue(memberPaths, [...memberPaths].sort(compareCodePoints))) {
-    problems.push('payload members are not sorted by path');
-  }
-  const byPath = new Map(entries.map((entry) => [entry.path, entry]));
-  const manifestEntry = byPath.get(PAYLOAD_MANIFEST_NAME);
-  if (manifestEntry === undefined) {
-    problems.push(`${PAYLOAD_MANIFEST_NAME} is missing from the payload`);
-    return problems;
-  }
-  const text = Buffer.from(manifestEntry.data).toString('utf8');
-  if (!isCanonicalJson(text)) problems.push(`${PAYLOAD_MANIFEST_NAME} is not canonical JSON`);
-  let manifest;
-  try {
-    manifest = JSON.parse(text);
-  } catch (error) {
-    problems.push(`${PAYLOAD_MANIFEST_NAME} is not valid JSON: ${error.message}`);
-    return problems;
-  }
-  if (manifest?.schema !== RELEASE_PAYLOAD_SCHEMA) {
-    problems.push(`${PAYLOAD_MANIFEST_NAME} schema is ${String(manifest?.schema)}`);
-  }
-  if (!sameValue(manifest?.bundle, { id: expected.id, version: expected.version })) {
-    problems.push(`${PAYLOAD_MANIFEST_NAME} bundle ${JSON.stringify(manifest?.bundle)} does not match ${expected.id}@${expected.version}`);
-  }
-  if (manifest?.ir?.digest !== expected.irDigest) {
-    problems.push(`${PAYLOAD_MANIFEST_NAME} ir.digest does not match the IR bytes`);
-  }
-  if (manifest?.ir?.contentSha256 !== expected.contentSha256) {
-    problems.push(`${PAYLOAD_MANIFEST_NAME} ir.contentSha256 does not match the IR source`);
-  }
-  if (manifest?.projection?.id !== expected.projectionId) {
-    problems.push(`${PAYLOAD_MANIFEST_NAME} projection.id is ${String(manifest?.projection?.id)}`);
-  }
-  if (!isValidVersion(manifest?.projection?.version)) {
-    problems.push(`${PAYLOAD_MANIFEST_NAME} projection.version is not a semver`);
-  }
-  if (!sameValue(manifest?.options, expected.options)) {
-    problems.push(`${PAYLOAD_MANIFEST_NAME} options do not record the requested input`);
-  }
-  if (!sameValue(manifest?.targets, expected.targets)) {
-    problems.push(`${PAYLOAD_MANIFEST_NAME} targets do not match the projection`);
-  }
-
-  const declared = Array.isArray(manifest?.files) ? manifest.files : [];
-  const declaredPaths = declared.map((file) => file?.path);
-  const sorted = [...declaredPaths].sort(compareCodePoints);
-  if (!sameValue(declaredPaths, sorted)) problems.push(`${PAYLOAD_MANIFEST_NAME} files are not sorted by path`);
-  if (new Set(declaredPaths.map(foldCase)).size !== declaredPaths.length) {
-    problems.push(`${PAYLOAD_MANIFEST_NAME} has duplicate paths`);
-  }
-  for (let index = 0; index < declaredPaths.length; index += 1) {
-    for (let other = index + 1; other < declaredPaths.length; other += 1) {
-      if (hasFileDirPrefixConflict(declaredPaths[index], declaredPaths[other])) {
-        problems.push(`${PAYLOAD_MANIFEST_NAME} paths conflict: ${declaredPaths[index]} / ${declaredPaths[other]}`);
-      }
-    }
-  }
-  const expectedMembers = new Set(declaredPaths.map((path) => `files/${path}`));
-  expectedMembers.add(PAYLOAD_MANIFEST_NAME);
-  for (const entry of entries) {
-    if (!expectedMembers.has(entry.path)) problems.push(`payload member is not declared: ${entry.path}`);
-    if (entry.mtime !== 0 || entry.uid !== 0 || entry.gid !== 0) {
-      problems.push(`payload member has non-zero metadata: ${entry.path}`);
-    }
-  }
-  if (entries.length !== expectedMembers.size) {
-    problems.push(`payload member count ${entries.length} does not match the manifest (${expectedMembers.size})`);
-  }
-  const targets = new Set(manifest?.targets ?? []);
-  const covered = new Set();
-  for (const file of declared) {
-    if (file === null || typeof file !== 'object') {
-      problems.push(`${PAYLOAD_MANIFEST_NAME} has a non-object file entry`);
-      continue;
-    }
-    if (file.mode !== 0o644 && file.mode !== 0o755) problems.push(`${file.path}: mode must be 0644 or 0755`);
-    if (!Array.isArray(file.targets) || file.targets.length === 0) {
-      problems.push(`${file.path}: targets must be a non-empty array`);
-    } else {
-      for (const target of file.targets) {
-        covered.add(target);
-        if (!targets.has(target)) problems.push(`${file.path}: target ${target} is not in targets`);
-      }
-    }
-    if (typeof file.kind !== 'string' || file.kind === '') problems.push(`${file.path}: kind is missing`);
-    const member = byPath.get(`files/${file.path}`);
-    if (member === undefined) {
-      problems.push(`payload file is listed but missing: ${file.path}`);
-      continue;
-    }
-    if (member.mode !== file.mode) problems.push(`${file.path}: archive mode ${member.mode} != manifest ${file.mode}`);
-    const digest = sha256Hex(Buffer.from(member.data));
-    if (digest !== file.sha256) problems.push(`${file.path}: archive hash does not match the manifest`);
-  }
-  for (const target of manifest?.targets ?? []) {
-    if (!covered.has(target)) problems.push(`payload target ${target} has no files`);
-  }
-  return problems;
 }
 
 function payloadEntries(result) {
@@ -533,6 +438,7 @@ function buildPayload({ ir, irDigest, id, version, projectionId, engineVersion, 
     options,
     targets: result.targets,
     files: result.files,
+    result,
   });
   const entries = payloadEntries(result);
   entries.push({ path: PAYLOAD_MANIFEST_NAME, data: Buffer.from(canonicalJson(manifest), 'utf8') });
@@ -545,6 +451,7 @@ function buildPayload({ ir, irDigest, id, version, projectionId, engineVersion, 
     projectionId,
     options: manifest.options,
     targets: manifest.targets,
+    result,
   });
   if (problems.length > 0) {
     throw new ReleaseError('RELEASE_PAYLOAD_INVALID', `${projectionId} payload is inconsistent: ${problems.join('; ')}`);
