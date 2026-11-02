@@ -47,7 +47,6 @@ import {
   writeFileAtomic,
 } from './util.js';
 
-export const INSTALLER_MODULE = 'installer';
 
 const TIMESTAMP_SAFE = /[:.]/g;
 
