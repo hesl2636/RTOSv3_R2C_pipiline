@@ -61,7 +61,9 @@ import {
 import { GH_TOKEN_HINT, readGithubToken } from '../installer/release-auth.js';
 import { GITHUB_API_BASE, createGithubClient } from '../installer/release-client.js';
 import { publishBundle } from '../installer/release-publish.js';
-import { DEFAULT_RELEASE_REPO } from '../installer/release-source.js';
+import { DEFAULT_RELEASE_REPO, verifySums } from '../installer/release-source.js';
+import { IR_ASSET, bundleTag, isValidBundleId } from '../installer/release-tags.js';
+import { compareCodePoints } from '../core/code-point.js';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const ADAPTER_IDS = Object.freeze(['claude-code', 'codex', 'dsh', 'omp', 'opencode']);
@@ -87,8 +89,12 @@ function usage(message) {
     'usage: node scripts/release.mjs [--out DIR] | --check [--out DIR] | --compat\n'
     + '       node scripts/release.mjs --bundle <zip|dir> --out DIR [--tag TAG] [--options FILE] [--json]\n'
     + '       node scripts/release.mjs --bundle <zip|dir> --check [--out DIR] [--tag TAG]\n'
-    + '       node scripts/release.mjs --bundle <zip|dir> --publish [--out DIR] [--tag TAG] [--commit SHA]\n'
-    + '       --publish reads GH_TOKEN/GITHUB_TOKEN from the launch environment; it never prompts.\n',
+    + '       node scripts/release.mjs --bundle <zip|dir> --publish [--out DIR] [--tag TAG] [--commit SHA] [--json]\n'
+    + '       node scripts/release.mjs --publish --out <built-dir> [--tag TAG] [--commit SHA] [--json]\n'
+    + '       --out must already hold a build; publishing never re-projects or re-packs.\n'
+    + '       --publish reads GH_TOKEN/GITHUB_TOKEN from the launch environment; it never prompts.\n'
+    + '       GH_REPO and R2C_GITHUB_API are operator settings (default: ' + DEFAULT_RELEASE_REPO + ', '
+    + GITHUB_API_BASE + ').\n',
   );
   process.exit(2);
 }
@@ -143,16 +149,19 @@ function parseArgs(argv) {
   }
   if (options.check && options.compat) usage('--check and --compat are mutually exclusive');
   if (options.compat && options.bundle !== null) usage('--compat and --bundle are mutually exclusive');
-  if (options.tag !== null && options.bundle === null) usage('--tag only applies to --bundle');
+  if (options.tag !== null && options.bundle === null && !options.publish) usage('--tag only applies to --bundle');
   if (options.optionsFile !== null && options.bundle === null) usage('--options only applies to --bundle');
   if (options.optionsFile !== null && options.check) usage('--options is a build input, not a --check input');
   if (options.optionsFile !== null && options.publish) usage('--options does not apply to --publish');
-  if (options.json && (options.bundle === null || options.check || options.publish)) {
-    usage('--json only applies to a --bundle build');
+  if (options.json && options.check) usage('--json is progress output, not a --check input');
+  if (options.json && options.bundle === null && !options.publish) {
+    usage('--json only applies to a bundle build or publish');
   }
   if (options.commit !== null && !options.publish) usage('--commit only applies to --publish');
   if (options.publish && options.check) usage('--publish and --check are mutually exclusive');
-  if (options.publish && options.bundle === null) usage('--publish requires --bundle');
+  if (options.publish && options.bundle === null && !options.outSet) {
+    usage('--publish without --bundle requires --out <built-dir>');
+  }
   if (options.bundle !== null && !options.check && !options.publish && !options.outSet) {
     usage('--bundle requires --out DIR (a bundle Release never shares the legacy dist directory)');
   }
@@ -718,9 +727,123 @@ const RECOVERY_HINT = Object.freeze({
   'mark-prerelease-or-new-patch': 'mark the release prerelease, or publish a new patch version; never rewrite its assets',
 });
 
+const GH_REPO_RE = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
+
+/** Target repository: `GH_REPO` (operator setting), else the frozen default. */
+function publishRepo() {
+  const raw = process.env.GH_REPO;
+  if (raw === undefined || raw.trim() === '') return DEFAULT_RELEASE_REPO;
+  return GH_REPO_RE.test(raw.trim()) ? raw.trim() : null;
+}
+
+/**
+ * API origin: `R2C_GITHUB_API` is an operator-only override for a local
+ * fixture or a self-hosted mirror; otherwise the public GitHub API. The
+ * browser can never set it, and the token is only sent to this origin.
+ */
+function publishApiBase() {
+  const raw = process.env.R2C_GITHUB_API;
+  if (raw === undefined || raw.trim() === '') return GITHUB_API_BASE;
+  try {
+    const url = new URL(raw.trim());
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return null;
+    return raw.trim().replace(/\/+$/, '');
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Read an already built asset directory. Publishing never rebuilds: the zip,
+ * IR and payloads are exactly the bytes the build produced, and the manifest
+ * (`SHA256SUMS.txt`) must cover every file and nothing else.
+ */
+function readBuiltRelease(dir) {
+  const failures = [];
+  const fail = (message) => {
+    failures.push(message);
+    return { ok: false, failures, notes: [], plan: null, assets: null };
+  };
+  if (!existsSync(dir)) return fail(`RELEASE_ASSET_SET_MISMATCH: ${dir} does not exist`);
+  let entries;
+  try {
+    entries = readdirSync(dir, { withFileTypes: true });
+  } catch (error) {
+    return fail(`RELEASE_ASSET_SET_MISMATCH: ${dir} is unreadable: ${error.message}`);
+  }
+  const names = entries
+    .filter((entry) => entry.isFile())
+    .map((entry) => entry.name)
+    .sort(compareCodePoints);
+  if (names.length === 0) return fail(`RELEASE_ASSET_SET_MISMATCH: ${dir} holds no assets`);
+  if (!names.includes(SUMS_ASSET)) return fail(`RELEASE_ASSET_SET_MISMATCH: ${SUMS_ASSET} is missing`);
+  if (!names.includes(IR_ASSET)) return fail(`RELEASE_ASSET_SET_MISMATCH: ${IR_ASSET} is missing`);
+
+  let ir;
+  try {
+    ir = JSON.parse(readFileSync(join(dir, IR_ASSET), 'utf8'));
+  } catch (error) {
+    return fail(`RELEASE_PAYLOAD_INVALID: ${IR_ASSET} is not valid JSON: ${error.message}`);
+  }
+  const id = ir?.id;
+  const version = ir?.version;
+  if (!isValidBundleId(id)) return fail(`RELEASE_TAG_MISMATCH: ${IR_ASSET} id ${String(id)} is not a bundle id`);
+  if (!isValidVersion(version) || String(version).includes('+')) {
+    return fail(`RELEASE_VERSION_MISMATCH: ${IR_ASSET} version ${String(version)} is not a semver without build metadata`);
+  }
+  const zipName = `bundle-${id}-v${version}.zip`;
+  if (!names.includes(zipName)) return fail(`RELEASE_ASSET_SET_MISMATCH: ${zipName} is missing`);
+
+  const assets = [];
+  for (const name of names) {
+    if (name === SUMS_ASSET) continue;
+    const data = readFileSync(join(dir, name));
+    assets.push({ name, data, size: data.length, sha256: sha256(data) });
+  }
+  const sumsBytes = readFileSync(join(dir, SUMS_ASSET));
+  const sums = verifySums(sumsBytes, assets, { requireAll: true });
+  if (!sums.ok) {
+    for (const failure of sums.failures) failures.push(failure);
+    return { ok: false, failures, notes: [], plan: null, assets: null };
+  }
+  const diskNames = names.filter((name) => name !== SUMS_ASSET);
+  const sumsNames = [...assets.map((asset) => asset.name)].sort(compareCodePoints);
+  if (JSON.stringify(diskNames) !== JSON.stringify(sumsNames)) {
+    return fail(`RELEASE_ASSET_SET_MISMATCH: ${SUMS_ASSET} does not cover exactly [${diskNames.join(', ')}]`);
+  }
+  // The publish state machine verifies remote SHA256SUMS.txt again, so the
+  // sums file travels with the assets (it is never listed inside itself).
+  assets.push({ name: SUMS_ASSET, data: sumsBytes, size: sumsBytes.length, sha256: sha256(sumsBytes) });
+  assets.sort((left, right) => compareCodePoints(left.name, right.name));
+
+  return {
+    ok: true,
+    failures: [],
+    notes: [],
+    plan: {
+      tag: bundleTag(id, version),
+      bundleId: id,
+      version,
+      name: `${id} v${version}`,
+      makeLatest: false,
+      prerelease: false,
+      draft: true,
+      assets: assets
+        .map((asset) => ({ name: asset.name, size: asset.size, sha256: asset.sha256 }))
+        .sort((left, right) => compareCodePoints(left.name, right.name)),
+    },
+    assets,
+  };
+}
+
+function publishFailureLines(failures) {
+  return failures.map((failure) => failure.replace(/^([A-Z_]+): (.*)$/, (whole, code, message) => `${code}: ${message}`));
+}
+
 /**
  * Publish a bundle Release (#107). The token comes only from the launch
- * environment; it is never printed, asked for or written to disk.
+ * environment; it is never printed, asked for or written to disk. With
+ * `--json`, stdout is JSON-lines progress (`phase`) and one final `result`.
  */
 async function publishBundleCli(options) {
   const credential = readGithubToken(process.env);
@@ -728,41 +851,105 @@ async function publishBundleCli(options) {
     process.stderr.write(`release: publish disabled — ${GH_TOKEN_HINT} in the launch environment\n`);
     process.exit(2);
   }
-  const result = buildBundleRelease({
-    root: ROOT,
-    bundlePath: options.bundle,
-    tag: options.tag,
-  });
-  if (!result.ok) {
-    process.stderr.write(`bundle release failed for ${options.bundle}:\n`);
-    for (const failure of result.failures) process.stderr.write(`- ${failure}\n`);
-    process.exit(1);
+  const repo = publishRepo();
+  if (repo === null) {
+    process.stderr.write('release: GH_REPO must be owner/name\n');
+    process.exit(2);
   }
-  if (options.outSet) writeBundleAssets(result, options.out);
+  const base = publishApiBase();
+  if (base === null) {
+    process.stderr.write('release: R2C_GITHUB_API must be an http(s) URL\n');
+    process.exit(2);
+  }
+
+  let plan;
+  let assets;
+  if (options.bundle !== null) {
+    const result = buildBundleRelease({
+      root: ROOT,
+      bundlePath: options.bundle,
+      tag: options.tag,
+    });
+    if (!result.ok) {
+      if (options.json) {
+        emitJsonLine({ event: 'result', ok: false, state: 'FAILED', failures: result.failures });
+      } else {
+        process.stderr.write(`bundle release failed for ${options.bundle}:\n`);
+        for (const failure of result.failures) process.stderr.write(`- ${failure}\n`);
+      }
+      process.exit(1);
+    }
+    if (options.outSet) writeBundleAssets(result, options.out);
+    plan = result.plan;
+    assets = result.assets;
+  } else {
+    const built = readBuiltRelease(options.out);
+    if (!built.ok) {
+      if (options.json) {
+        emitJsonLine({ event: 'result', ok: false, state: 'FAILED', failures: built.failures });
+      } else {
+        process.stderr.write(`cannot publish ${options.out}:\n`);
+        for (const failure of built.failures) process.stderr.write(`- ${failure}\n`);
+      }
+      process.exit(1);
+    }
+    if (options.tag !== null && options.tag !== built.plan.tag) {
+      const failure = `RELEASE_TAG_MISMATCH: ${options.tag} does not match ${built.plan.tag}`;
+      if (options.json) emitJsonLine({ event: 'result', ok: false, state: 'FAILED', failures: [failure] });
+      else process.stderr.write(`release: ${failure}\n`);
+      process.exit(1);
+    }
+    plan = built.plan;
+    assets = built.assets;
+  }
 
   const commit = options.commit ?? headCommit();
   if (commit === null) {
     process.stderr.write('release: --commit <sha> is required when git HEAD is unavailable\n');
     process.exit(2);
   }
-  const client = createGithubClient({ base: GITHUB_API_BASE, token: credential.token });
+  const client = createGithubClient({
+    base,
+    token: credential.token,
+    allowInsecure: base.startsWith('http://'),
+  });
   const published = await publishBundle({
     client,
-    repo: DEFAULT_RELEASE_REPO,
-    plan: result.plan,
-    assets: result.assets,
+    repo,
+    plan,
+    assets,
     targetCommitish: commit,
+    onPhase: options.json
+      ? (phase) => emitJsonLine({ event: 'phase', phase })
+      : (phase) => process.stdout.write(`phase ${phase}\n`),
   });
-  for (const note of published.notes) process.stdout.write(`note: ${note}\n`);
+  for (const note of published.notes) {
+    if (options.json) emitJsonLine({ event: 'note', message: note });
+    else process.stdout.write(`note: ${note}\n`);
+  }
+  if (options.json) {
+    emitJsonLine({
+      event: 'result',
+      ok: published.ok,
+      state: published.state,
+      published: published.published,
+      tag: published.tag,
+      releaseId: published.releaseId,
+      recovery: published.recovery,
+      failures: published.failures,
+      cleanup: published.cleanup,
+      transitions: published.transitions,
+    });
+  }
   if (!published.ok) {
     process.stderr.write(`release: publish failed for ${published.tag} (${published.state}):\n`);
-    for (const failure of published.failures) process.stderr.write(`- ${failure}\n`);
+    for (const failure of publishFailureLines(published.failures)) process.stderr.write(`- ${failure}\n`);
     const hint = RECOVERY_HINT[published.recovery];
     if (hint !== undefined) process.stderr.write(`recovery: ${hint}\n`);
     process.exit(1);
   }
   process.stdout.write(
-    `published ${published.tag}: ${result.plan.assets.length} assets (release ${String(published.releaseId)})\n`,
+    `published ${published.tag}: ${plan.assets.length} assets (release ${String(published.releaseId)})\n`,
   );
 }
 
@@ -789,9 +976,10 @@ if (options.compat) {
   mkdirSync(dirname(file), { recursive: true });
   writeFileSync(file, generateCompat(ctx));
   process.stdout.write(`wrote ${file}\n`);
+} else if (options.publish) {
+  await publishBundleCli(options);
 } else if (options.bundle !== null) {
   if (options.check) checkBundle(options);
-  else if (options.publish) await publishBundleCli(options);
   else buildBundle(options);
 } else {
   const ctx = load({ root: ROOT, out: options.out });

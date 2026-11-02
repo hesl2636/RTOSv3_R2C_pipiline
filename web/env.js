@@ -19,6 +19,20 @@ export function buildChildEnv(env) {
 }
 
 /**
+ * The publish child is the only child that keeps the launch credentials
+ * (decision #75 §8.1): it inherits them through env, never argv. Everything
+ * else about the environment is the operator's clean copy.
+ */
+export function publishChildEnv(env) {
+  const out = buildChildEnv(env);
+  for (const key of TOKEN_KEYS) {
+    const value = env?.[key];
+    if (typeof value === 'string' && value !== '') out[key] = value;
+  }
+  return out;
+}
+
+/**
  * Replace every known secret value and bearer-style credential with
  * `[redacted]`. Unknown token shapes are caught by the generic patterns.
  */

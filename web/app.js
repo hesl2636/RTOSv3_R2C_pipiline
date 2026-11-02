@@ -20,6 +20,7 @@ import {
   sha256Hex,
 } from './primitives-browser.js';
 import { loadSharedModules } from './shared-imports.js';
+import { publishAvailability } from './publish-state.js';
 import webManifest from './web-manifest.json' with { type: 'json' };
 
 const state = {
@@ -35,6 +36,8 @@ const state = {
   options: {},
   previews: {},
   build: null,
+  publish: null,
+  publishJob: null,
   report: null,
   diagnostics: [],
   shared: null,
@@ -788,6 +791,148 @@ function copyable(text) {
   return row;
 }
 
+/**
+ * The one rule for the publish button: server credentials + repository, a
+ * canonical build, and no client/server mismatch (decision #75 §8.3).
+ */
+function refreshPublish(message) {
+  const view = publishAvailability({
+    publish: state.publish,
+    build: state.build,
+    mismatch: state.mismatch,
+  });
+  const button = byId('publish-button');
+  if (button !== null) button.disabled = !view.enabled;
+  const badge = byId('publish-badge');
+  if (badge !== null) {
+    badge.textContent = view.note;
+    badge.className = view.enabled ? 'badge badge-ok' : 'badge badge-warn';
+  }
+  if (message !== undefined) {
+    const status = byId('publish-status');
+    if (status !== null) status.textContent = message;
+  }
+  return view;
+}
+
+function publishFailureText(error) {
+  if (error === null || error === undefined) return 'publish failed';
+  const release = error.details?.release;
+  const parts = [`${error.code}: ${error.message ?? 'publish failed'}`];
+  if (release?.state !== null && release?.state !== undefined) parts.push(`state ${release.state}`);
+  for (const failure of release?.failures ?? []) parts.push(failure);
+  if (release?.recovery === 'mark-prerelease-or-new-patch') {
+    parts.push('the release may already be published: mark it prerelease or publish a new patch; never rewrite its assets');
+  } else if (release?.recovery === 'new-patch') {
+    parts.push('publish a new patch version');
+  }
+  return parts.join(' · ');
+}
+
+function renderPublishJob(job) {
+  const body = byId('publish-body');
+  if (body === null) return;
+  clear(body);
+  show(body, true);
+  const head = element('div', 'row');
+  head.append(
+    element('span', 'mono', job.tag),
+    element('span', job.state === 'PUBLISHED' ? 'badge badge-ok' : job.state === 'FAILED' ? 'badge badge-error' : 'badge badge-warn', job.state),
+    element('span', 'mono hint', job.phase),
+  );
+  body.append(head);
+  if (job.error !== null) body.append(element('p', 'status', publishFailureText(job.error)));
+  if (job.result?.install?.commands !== undefined) {
+    body.append(element('h3', null, 'Install commands (published release)'));
+    body.append(element('p', 'hint', 'Run from the target project root. The server never writes to a project.'));
+    for (const item of job.result.install.commands) body.append(copyable(item.command));
+    body.append(element('h3', null, 'Published assets'));
+    const list = element('ul', 'asset-list');
+    for (const asset of job.result.assets ?? []) {
+      list.append(element('li', 'mono', `${asset.name} · ${formatBytes(asset.bytes)} · sha256 ${asset.sha256}`));
+    }
+    body.append(list);
+  }
+  if (Array.isArray(job.log) && job.log.length > 0) {
+    body.append(element('h3', null, 'Publish log'));
+    const log = element('pre', 'raw');
+    log.textContent = job.log.join('\n');
+    body.append(log);
+  }
+}
+
+async function pollPublish(jobId) {
+  const status = byId('publish-status');
+  for (let attempt = 0; attempt < 600; attempt += 1) {
+    let payload;
+    try {
+      const response = await fetch(`/api/publish/${jobId}`, { cache: 'no-store', credentials: 'omit' });
+      payload = await response.json();
+      if (!response.ok) {
+        if (status !== null) status.textContent = `${payload?.error?.code ?? `HTTP_${response.status}`}: ${payload?.error?.message ?? 'publish status unavailable'}`;
+        return;
+      }
+    } catch (error) {
+      if (status !== null) status.textContent = `Publish status unavailable: ${error instanceof Error ? error.message : String(error)}`;
+      return;
+    }
+    const job = payload.data;
+    state.publishJob = job;
+    renderPublishJob(job);
+    if (status !== null) status.textContent = `${job.state} · ${job.phase}`;
+    if (job.state !== 'RUNNING') {
+      if (job.state === 'PUBLISHED') {
+        if (status !== null) status.textContent = `Published ${job.tag} (release ${String(job.result?.releaseId ?? '')}).`;
+      } else if (status !== null) {
+        status.textContent = publishFailureText(job.error);
+      }
+      refreshPublish();
+      return;
+    }
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 500));
+  }
+}
+
+async function publishRelease() {
+  const status = byId('publish-status');
+  const view = refreshPublish();
+  if (!view.enabled || state.build === null) return;
+  if (status !== null) status.textContent = 'Publishing on the server…';
+  const resultDigests = {};
+  for (const projection of state.build.projections ?? []) resultDigests[projection.id] = projection.digest;
+  let payload;
+  try {
+    const response = await fetch(`/api/builds/${state.build.buildId}/publish`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-R2C-CSRF': state.csrf ?? '',
+      },
+      body: JSON.stringify({
+        confirmTag: state.build.tag,
+        irDigest: state.ir?.digest,
+        resultDigests,
+      }),
+      cache: 'no-store',
+      credentials: 'omit',
+    });
+    payload = await response.json();
+    if (!response.ok) {
+      const code = payload?.error?.code ?? `HTTP_${response.status}`;
+      const reason = payload?.error?.details?.reason;
+      if (status !== null) {
+        status.textContent = `${code}: ${payload?.error?.message ?? 'publish failed'}${reason === undefined ? '' : ` (${reason})`}`;
+      }
+      if (code === 'WEB_CLIENT_SERVER_MISMATCH') setMismatch(payload?.error?.message ?? 'Client and server disagree; publishing is disabled.');
+      return;
+    }
+  } catch (error) {
+    if (status !== null) status.textContent = `Publish failed: ${error instanceof Error ? error.message : String(error)}`;
+    return;
+  }
+  await pollPublish(payload.data.jobId);
+}
+
 function renderBuild(build) {
   state.build = build;
   const body = byId('build-body');
@@ -825,6 +970,7 @@ function renderBuild(build) {
   for (const projection of build.projections) {
     renderProjectionSummary(body, projection, projection.digest, build.canonical);
   }
+  refreshPublish();
 }
 
 async function buildAssets() {
@@ -886,17 +1032,15 @@ function setMismatch(message) {
   const text = byId('mismatch-text');
   if (text !== null) text.textContent = message;
   show(banner, true);
-  const publish = byId('publish-badge');
-  publish.textContent = 'publish disabled: client/server mismatch';
-  publish.className = 'badge badge-error';
+  const badge = byId('publish-badge');
+  if (badge !== null) badge.className = 'badge badge-error';
+  refreshPublish();
 }
 
 function clearMismatch() {
   state.mismatch = false;
   show(byId('mismatch'), false);
-  const publish = byId('publish-badge');
-  publish.textContent = 'publish disabled (read-only)';
-  publish.className = 'badge badge-warn';
+  refreshPublish();
 }
 
 function sameReport(left, right) {
@@ -1043,10 +1187,10 @@ async function bootstrap() {
   state.limits = session.data.limits;
   state.engineVersion = session.data.engineVersion ?? null;
   state.shared = await loadSharedModules(session.data.modules ?? {});
-  if (session.data.publish?.enabled !== true) {
-    const publish = byId('publish-badge');
-    publish.textContent = `publish disabled (${session.data.publish?.reason ?? 'read-only'})`;
-  }
+  state.publish = session.data.publish ?? null;
+  refreshPublish(session.data.publish?.enabled === true
+    ? `Publishing to ${session.data.publish.repo} runs on this server; this page never sees the token.`
+    : `Publishing is disabled (${session.data.publish?.reason ?? 'read-only'}); validate, preview and local builds still work.`);
 
   const input = byId('file-input');
   input.addEventListener('change', refreshButton);
@@ -1057,6 +1201,9 @@ async function bootstrap() {
   byId('reset-options').addEventListener('click', () => resetOptions());
   byId('build-button').addEventListener('click', () => {
     void buildAssets();
+  });
+  byId('publish-button').addEventListener('click', () => {
+    void publishRelease();
   });
   byId('severity-filter').addEventListener('change', renderDiagnostics);
   byId('path-filter').addEventListener('input', renderDiagnostics);
@@ -1070,4 +1217,4 @@ if (typeof document !== 'undefined' && typeof window !== 'undefined') {
   });
 }
 
-export { state, upload, bootstrap, preview, resetOptions, buildAssets };
+export { state, upload, bootstrap, preview, resetOptions, buildAssets, publishRelease };
