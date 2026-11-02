@@ -48,4 +48,10 @@ export const AGENT_NATIVE_MANIFEST = Object.freeze({
   writeRoots,
   targets: TARGET_ORDER.map(targetEntry),
   assets: [],
+  // Closed: agent-native declares no custom options, so `extra` must be `{}`.
+  optionsSchema: Object.freeze({
+    type: 'object',
+    additionalProperties: false,
+    properties: Object.freeze({}),
+  }),
 });

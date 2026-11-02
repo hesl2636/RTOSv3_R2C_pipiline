@@ -57,5 +57,10 @@
       }
     }
   ],
-  "assets": []
+  "assets": [],
+  "optionsSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  }
 }
