@@ -164,77 +164,6 @@ function manifestValidate(h) {
   };
 }
 
-function walkFiles(root, base = root) {
-  const files = [];
-  if (!existsSync(root)) return files;
-  for (const entry of readdirSync(root, { withFileTypes: true })) {
-    const full = join(root, entry.name);
-    if (entry.isDirectory()) files.push(...walkFiles(full, base));
-    else if (entry.isFile()) files.push(full.slice(base.length + 1).split('\\').join('/'));
-  }
-  return files;
-}
-
-const PACK_DIRS = ['bin/', 'src/', 'schema/'];
-const PACK_ROOT_FILES = new Set(['package.json', 'README.md', 'LICENSE']);
-const PACK_FORBIDDEN = ['pack/', 'adapters/', 'plugins/', 'test/', 'docs/', 'scripts/', '.github/'];
-
-/**
- * P1: `npm pack --dry-run --json` ships exactly the declared whitelist.
- * Not part of the 17/15 acceptance faces (ticket #34's CI gate owns it); it is
- * reachable through `r2c acceptance --only P1` so the assertion still has one
- * implementation.
- */
-export function packWhitelist() {
-  return {
-    id: 'P1',
-    async run() {
-      const npm = process.platform === 'win32'
-        ? spawnSyncRetry('npm pack --dry-run --json', undefined, {
-          cwd: REPO_ROOT,
-          encoding: 'utf8',
-          timeout: 180_000,
-          shell: true,
-          windowsHide: true,
-        })
-        : spawnSyncRetry('npm', ['pack', '--dry-run', '--json'], {
-          cwd: REPO_ROOT,
-          encoding: 'utf8',
-          timeout: 180_000,
-          windowsHide: true,
-        });
-      if (npm.status !== 0) {
-        throw new Error(`P1: npm pack failed: ${excerpt(npm)}`);
-      }
-      let parsed;
-      try {
-        parsed = JSON.parse(npm.stdout);
-      } catch (error) {
-        throw new Error(`P1: npm pack did not emit JSON: ${error.message}`);
-      }
-      const packed = (Array.isArray(parsed) ? parsed[0]?.files : null) ?? [];
-      const paths = new Set(packed.map((file) => String(file.path).split('\\').join('/')));
-      for (const path of paths) {
-        const allowed = PACK_ROOT_FILES.has(path) || PACK_DIRS.some((dir) => path.startsWith(dir));
-        if (!allowed) throw new Error(`P1: unexpected packed path ${path}`);
-        const forbidden = PACK_FORBIDDEN.find((prefix) => path.startsWith(prefix));
-        if (forbidden !== undefined) throw new Error(`P1: forbidden path ${path} (${forbidden})`);
-      }
-      for (const required of PACK_ROOT_FILES) {
-        if (!paths.has(required)) throw new Error(`P1: missing ${required}`);
-      }
-      const expected = [];
-      for (const dir of ['bin', 'src', 'schema']) {
-        for (const rel of walkFiles(join(REPO_ROOT, dir))) expected.push(`${dir}/${rel}`);
-      }
-      for (const path of expected) {
-        if (!paths.has(path)) throw new Error(`P1: declared tree file not packed: ${path}`);
-      }
-      return { detail: `${paths.size} packed path(s), whitelist exact` };
-    },
-  };
-}
-
 function startRun(h, root, extra = []) {
   const result = requireExit(
     h.run(['run', '--project-root', root, ...extra], { cwd: root }),
@@ -1220,7 +1149,6 @@ export function allCheckIds() {
   return [
     'E0',
     'V1',
-    'P1',
     'FS1',
     "FS3'",
     'FS4',

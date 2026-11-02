@@ -10,19 +10,21 @@ import { existsSync, readFileSync } from 'node:fs';
 import { basename, dirname, isAbsolute, join, normalize, relative as relativePath } from 'node:path';
 import { parse as parseYaml } from 'yaml';
 import { EXIT_CODES, R2cError } from '../errors.js';
+import { isInside } from '../paths.js';
+import { runnerCommand } from '../render.js';
 import { sha256, userHome } from './util.js';
 
 export const ADAPTER_SCHEMA = 'r2c.adapter/v1';
 export const ADAPTER_MAP_SCHEMA = 'r2c.adapter-map/v1';
 
+/**
+ * Payload trees copied verbatim into the project root by every install, so the
+ * project owns a manifest and task/skill references `r2c run` can discover.
+ */
+export const LAYOUT_DIRS = Object.freeze(['workflows', 'tasks', 'skills']);
+
 function usageError(code, message, details = null) {
   return new R2cError(code, message, details, EXIT_CODES.USAGE);
-}
-
-/** True when `target` is `root` itself or lives beneath it, on every platform. */
-function isInside(root, target) {
-  const rel = relativePath(normalize(root), normalize(target));
-  return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel));
 }
 
 function entryByRel(resolved, rel) {
@@ -83,29 +85,43 @@ export function loadAdapterDeclaration(resolved, agentId) {
   return { adapter, map, adapterRel, mapRel };
 }
 
-export function defaultRunnerCommand(ctx, resolved) {
+/**
+ * The command installed configs carry (C3/C9): `--runner-cmd` when the caller
+ * overrode it, else `node <engine entry>` — project-relative for a project
+ * scope whose engine lives inside the project, absolute (quoted when needed)
+ * everywhere else. Distinct from `render.js`'s `defaultRunnerCommand`, which
+ * renders the same text from the running engine's own path.
+ */
+export function installedRunnerCommand(ctx, engine, scope) {
   if (typeof ctx.runnerCmd === 'string' && ctx.runnerCmd !== '') return ctx.runnerCmd;
-  const pkg = ctx.packageName || 'r2c-runner';
-  return `npx --yes ${pkg}@${resolved.manifest.version}`;
+  return runnerCommand(engine.entry, { projectRoot: scope === 'project' ? ctx.projectRoot : null });
 }
 
-function jsonInline(value) {
-  const quoted = JSON.stringify(value);
-  return quoted.slice(1, -1);
-}
-
-function placeholders({ projectRoot, payloadHome, runnerCmd, version, agentId }) {
+/**
+ * Placeholder values for the agent-facing templates.
+ *
+ * Project scope writes only paths relative to the project root (C3), so a
+ * renamed or moved project keeps its installed hooks working; user scope keeps
+ * absolute paths because the agent's working directory is not the project.
+ */
+function placeholders({ projectRoot, payloadHome, runnerCmd, scope, version, agentId }) {
+  const relativeHome = relativePath(projectRoot, payloadHome);
+  const homeInside = relativeHome !== '' && isInside(projectRoot, payloadHome);
+  const projectScope = scope === 'project';
+  const root = projectScope ? '.' : projectRoot;
   return {
-    PAYLOAD_HOME: payloadHome,
-    PROJECT_ROOT: projectRoot,
+    PAYLOAD_HOME: projectScope && homeInside ? toPosixName(relativeHome) : payloadHome,
+    // Project scope is relative to the project root, so a moved project keeps
+    // its hooks working; a batch file needs `.\` and gets it from the template.
+    PROJECT_ROOT: root,
     RUNNER_CMD: runnerCmd,
+    // Same command embedded inside a double-quoted shell word (JSON hook
+    // settings, .cmd files): the inner quotes must survive the outer pair.
+    RUNNER_CMD_DQ: runnerCmd.replaceAll('"', '\\"'),
+    RUNNER_CMD_BATCH: runnerCmd.replaceAll('"', '""'),
     NODE_BIN: process.execPath,
     VERSION: version,
     AGENT_ID: agentId,
-    // Escaped variants for assets that are JSON or YAML double-quoted strings.
-    PAYLOAD_HOME_JSON: jsonInline(payloadHome),
-    PROJECT_ROOT_JSON: jsonInline(projectRoot),
-    RUNNER_CMD_JSON: jsonInline(runnerCmd),
   };
 }
 
@@ -228,6 +244,25 @@ function agentsFromPayload(resolved) {
   return [...roles].sort();
 }
 
+/** One plan entry per payload layout file: a byte copy under the project root. */
+function layoutEntries({ resolved, projectRoot }) {
+  const entries = [];
+  for (const payloadEntry of resolved.entries) {
+    if (!LAYOUT_DIRS.some((dir) => payloadEntry.rel.startsWith(`${dir}/`))) continue;
+    const content = readFileSync(payloadEntry.abs);
+    entries.push({
+      action: 'layout',
+      kind: 'layout',
+      // Recorded project-relative: a renamed or moved project still resolves it.
+      rel: payloadEntry.rel,
+      target: join(projectRoot, payloadEntry.rel),
+      content,
+      sha256: sha256(content),
+    });
+  }
+  return entries;
+}
+
 /**
  * Build the plan for one install.
  *
@@ -252,6 +287,7 @@ export function buildPlan({
     projectRoot,
     payloadHome,
     runnerCmd,
+    scope,
     version: resolved.manifest.version,
     agentId: adapter.id,
   });
@@ -375,11 +411,15 @@ export function buildPlan({
     }
   }
 
+  for (const entry of layoutEntries({ resolved, projectRoot })) fileEntries.push(entry);
+
   for (const entry of linkEntries) entries.push(entry);
   for (const entry of fileEntries) {
     const covered = linkRoots.some((root) => isInside(root, entry.target));
     if (covered) continue;
-    if (entry.linkWarning !== null) warnings.push(entry.linkWarning);
+    // Only map-derived copies carry `linkWarning`; layout and derive-agent
+    // entries have none, and an `undefined` here printed `warn: undefined`.
+    if (typeof entry.linkWarning === 'string') warnings.push(entry.linkWarning);
     delete entry.linkWarning;
     entries.push(entry);
   }
@@ -438,14 +478,14 @@ function buildMergeEntry({ entry, adapter, target, pointer, mcpAbsolute, warning
       });
     }
   }
-  let values2 = {};
+  let mergedValues = {};
   if (pointer === null) {
     if (document === null || typeof document !== 'object' || Array.isArray(document)) {
       throw usageError('MERGE_INVALID_SHAPE', 'merge-json source must be a JSON object', {
         file: sourceRel,
       });
     }
-    values2 = document;
+    mergedValues = document;
   } else {
     let node = document;
     for (const key of pointer.split('.')) {
@@ -455,7 +495,7 @@ function buildMergeEntry({ entry, adapter, target, pointer, mcpAbsolute, warning
       warnings.push(`merge-pointer-empty:${pointer}`);
       node = {};
     }
-    values2 = node;
+    mergedValues = node;
   }
   return {
     action: 'merge-json',
@@ -463,7 +503,7 @@ function buildMergeEntry({ entry, adapter, target, pointer, mcpAbsolute, warning
     sourceRel,
     target,
     pointer,
-    values: values2,
-    sha256: sha256(Buffer.from(JSON.stringify(values2))),
+    values: mergedValues,
+    sha256: sha256(Buffer.from(JSON.stringify(mergedValues))),
   };
 }

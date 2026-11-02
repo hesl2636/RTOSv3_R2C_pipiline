@@ -2,14 +2,15 @@
  * Payload resolution, verification and materialisation.
  *
  * Resolution order (#7 §1): `--from <dir>` > `R2C_PLUGIN_SOURCE` >
- * `~/.r2c/cache/plugin-<V>` > GitHub Release download. A `--from` directory is
- * either an unpacked payload (it contains `r2c-plugin.json`) or a source-tree
+ * `~/.r2c/cache/payload-<V>` > the release (see `release.js` for the
+ * transport). A `--from` directory is
+ * either an unpacked payload (it contains `r2c-payload.json`) or a source-tree
  * root (it contains `package.json`, `pack/` and `adapters/`); for a source tree
  * the payload version comes from `package.json` and the per-file hashes are
  * computed on the fly.
  *
  * Verification happens before anything is written under the project: a
- * mismatching `r2c-plugin.json.files` entry aborts with exit 2 and zero
+ * mismatching `r2c-payload.json.files` entry aborts with exit 2 and zero
  * installed bytes.
  */
 import {
@@ -25,20 +26,21 @@ import { tmpdir } from 'node:os';
 import { basename, dirname, join, relative, resolve } from 'node:path';
 import { EXIT_CODES, R2cError } from '../errors.js';
 import {
-  PLUGIN_MANIFEST,
+  PAYLOAD_MANIFEST,
   PLUGIN_SCHEMA,
   comparePayloadPaths,
   manifestBuffer,
   readTarGz,
-  verifyPluginFiles,
+  verifyPayloadFiles,
 } from '../plugin.js';
 import { isValidRange, isValidVersion } from '../version.js';
+import { fetchPayloadArchive, hintFrom, sumsDigest } from './release.js';
 import { stateDir } from './state.js';
+import { isInside } from '../paths.js';
 import {
   atomicWriteFile,
   createDirLink,
   ensureDir,
-  isInside,
   listFiles,
   removePath,
   sha256,
@@ -47,15 +49,8 @@ import {
   userHome,
 } from './util.js';
 
-export { PLUGIN_SCHEMA };
-const RELEASE_BASE = 'https://github.com/hesl2636/RTOSv3_R2C_pipiline/releases/download';
-
 function payloadError(code, message, details = null, exitCode = EXIT_CODES.USAGE) {
   return new R2cError(code, message, details, exitCode);
-}
-
-function hintFrom() {
-  return 'pass --from <payload-dir|payload.tgz> or set R2C_PLUGIN_SOURCE to an unpacked payload (a checkout containing package.json, pack/ and adapters/ works too)';
 }
 
 function parsePayloadManifest(text, file) {
@@ -89,7 +84,7 @@ function parsePayloadManifest(text, file) {
 }
 
 function readPayloadManifest(dir) {
-  const file = join(dir, PLUGIN_MANIFEST);
+  const file = join(dir, PAYLOAD_MANIFEST);
   if (!existsSync(file)) return null;
   return parsePayloadManifest(readFileSync(file, 'utf8'), file);
 }
@@ -238,14 +233,6 @@ function resolveInspection(dir, sourceLabel) {
   };
 }
 
-function parseSums(text, assetName) {
-  for (const line of text.split(/\r?\n/)) {
-    const match = /^([0-9a-f]{64})\s+\*?(.+)$/.exec(line.trim());
-    if (match !== null && basename(match[2]) === assetName) return match[1];
-  }
-  return null;
-}
-
 function normalizedManifest(manifest, files) {
   const sortedFiles = Object.fromEntries(
     Object.entries(files).sort(([left], [right]) => comparePayloadPaths(left, right)),
@@ -286,11 +273,11 @@ export function extractTarGz(buffer, destination) {
 
 /**
  * Verify a `--from <tgz>` payload, then materialise it under
- * `~/.r2c/cache/plugin-<V>` as a sibling directory renamed into place.
+ * `~/.r2c/cache/payload-<V>` as a sibling directory renamed into place.
  *
  * Order is fail-closed and project-free: the sidecar checksum (when the
  * release's `SHA256SUMS.txt` sits next to the archive) covers the container,
- * and every `r2c-plugin.json.files` hash covers the contents. Nothing is
+ * and every `r2c-payload.json.files` hash covers the contents. Nothing is
  * extracted until both pass.
  */
 function resolveTgzPayload(file, sourceLabel) {
@@ -299,7 +286,7 @@ function resolveTgzPayload(file, sourceLabel) {
   const sumsFile = join(dirname(file), 'SHA256SUMS.txt');
   if (existsSync(sumsFile)) {
     const actual = sha256(buffer);
-    const expected = parseSums(readFileSync(sumsFile, 'utf8'), asset);
+    const expected = sumsDigest(readFileSync(sumsFile, 'utf8'), asset);
     if (expected === null || expected !== actual) {
       throw payloadError(
         'PAYLOAD_CHECKSUM_MISMATCH',
@@ -318,17 +305,17 @@ function resolveTgzPayload(file, sourceLabel) {
       problems,
     });
   }
-  const manifestEntry = entries.find((entry) => entry.path === PLUGIN_MANIFEST);
+  const manifestEntry = entries.find((entry) => entry.path === PAYLOAD_MANIFEST);
   if (manifestEntry === undefined) {
-    throw payloadError('PAYLOAD_MANIFEST_MISSING', `${asset} does not contain ${PLUGIN_MANIFEST}`, {
+    throw payloadError('PAYLOAD_MANIFEST_MISSING', `${asset} does not contain ${PAYLOAD_MANIFEST}`, {
       file,
     });
   }
   const manifest = parsePayloadManifest(
     manifestEntry.data.toString('utf8'),
-    `${asset}:${PLUGIN_MANIFEST}`,
+    `${asset}:${PAYLOAD_MANIFEST}`,
   );
-  const failures = verifyPluginFiles(manifest, entries, { strict: true });
+  const failures = verifyPayloadFiles(manifest, entries, { strict: true });
   if (failures.length > 0) {
     const first = failures[0];
     throw payloadError(first.code, first.message, { file: asset, failures });
@@ -337,7 +324,7 @@ function resolveTgzPayload(file, sourceLabel) {
   const normalized = normalizedManifest(manifest, manifest.files);
   const manifestBytes = manifestBuffer(normalized);
   const home = cacheDir(normalized.version);
-  const cached = join(home, PLUGIN_MANIFEST);
+  const cached = join(home, PAYLOAD_MANIFEST);
   const cacheValid = existsSync(cached) && readFileSync(cached).equals(manifestBytes);
   if (!cacheValid) extractPayloadArchive(home, entries, manifestBytes);
   return resolveInspection(home, sourceLabel);
@@ -349,7 +336,7 @@ function extractPayloadArchive(home, entries, manifestBytes) {
   ensureDir(temp);
   try {
     for (const entry of entries) {
-      if (entry.path === PLUGIN_MANIFEST) continue;
+      if (entry.path === PAYLOAD_MANIFEST) continue;
       const target = join(temp, ...entry.path.split('/'));
       if (!isInside(temp, target)) {
         throw payloadError('PAYLOAD_INVALID_TAR', `payload path escapes its root: ${entry.path}`, {
@@ -359,7 +346,7 @@ function extractPayloadArchive(home, entries, manifestBytes) {
       ensureDir(dirname(target));
       atomicWriteFile(target, entry.data);
     }
-    atomicWriteFile(join(temp, PLUGIN_MANIFEST), manifestBytes);
+    atomicWriteFile(join(temp, PAYLOAD_MANIFEST), manifestBytes);
     ensureDir(dirname(home));
     if (existsSync(home)) {
       const backup = `${home}.old-${process.pid}-${Date.now().toString(36)}`;
@@ -380,70 +367,25 @@ function extractPayloadArchive(home, entries, manifestBytes) {
   }
 }
 
+/** Download the release payload, verify it, and unpack it into a temp dir. */
 async function downloadRelease(version) {
-  const asset = `r2c-plugin-${version}.tgz`;
-  const base = `${RELEASE_BASE}/v${version}`;
-  const headers = { 'user-agent': 'r2c-runner' };
-  const token = process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
-  if (token) headers.authorization = `Bearer ${token}`;
-  let response;
-  let sumsResponse;
-  try {
-    response = await fetch(`${base}/${asset}`, { headers, signal: AbortSignal.timeout(60_000) });
-    sumsResponse = await fetch(`${base}/SHA256SUMS.txt`, {
-      headers,
-      signal: AbortSignal.timeout(30_000),
-    });
-  } catch (error) {
-    throw payloadError(
-      'PAYLOAD_UNAVAILABLE',
-      `cannot reach the payload release v${version}: ${error.message}; ${hintFrom()}`,
-      { version, url: `${base}/${asset}` },
-    );
-  }
-  if (!response.ok) {
-    const authHint = token ? '' : ' (the release repository is private; set GITHUB_TOKEN)';
-    throw payloadError(
-      'PAYLOAD_UNAVAILABLE',
-      `cannot download ${asset}: HTTP ${response.status}${authHint}; ${hintFrom()}`,
-      { version, url: `${base}/${asset}`, status: response.status },
-    );
-  }
-  const archive = Buffer.from(await response.arrayBuffer());
-  if (!sumsResponse.ok) {
-    throw payloadError(
-      'PAYLOAD_UNAVAILABLE',
-      `cannot download SHA256SUMS.txt: HTTP ${sumsResponse.status}; ${hintFrom()}`,
-      { version, status: sumsResponse.status },
-    );
-  }
-  const expected = parseSums(await sumsResponse.text(), asset);
-  if (expected === null) {
-    throw payloadError('PAYLOAD_CHECKSUM_MISMATCH', `SHA256SUMS.txt has no entry for ${asset}`, {
-      asset,
-    });
-  }
-  const actual = sha256(archive);
-  if (actual !== expected) {
-    throw payloadError(
-      'PAYLOAD_CHECKSUM_MISMATCH',
-      `SHA256SUMS.txt mismatch for ${asset}`,
-      { asset, expected, actual },
-      EXIT_CODES.GATE,
-    );
-  }
-  const temp = mkdtempSync(join(tmpdir(), 'r2c-plugin-download-'));
+  return stageArchive(await fetchPayloadArchive(version));
+}
+
+/** Extract a verified payload archive into a temp dir; the caller owns cleanup. */
+function stageArchive(archive) {
+  const temp = mkdtempSync(join(tmpdir(), 'r2c-payload-download-'));
   try {
     extractTarGz(archive, temp);
   } catch (error) {
     rmSync(temp, { recursive: true, force: true });
     throw error;
   }
-  // The archive may wrap everything in `r2c-plugin-<V>/`.
+  // The archive may wrap everything in `r2c-payload-<V>/`.
   const children = readdirSync(temp).filter((name) => !name.startsWith('.'));
   if (children.length === 1) {
     const nested = join(temp, children[0]);
-    if (statSync(nested).isDirectory() && existsSync(join(nested, 'r2c-plugin.json'))) {
+    if (statSync(nested).isDirectory() && existsSync(join(nested, PAYLOAD_MANIFEST))) {
       return { dir: nested, cleanup: () => rmSync(temp, { recursive: true, force: true }) };
     }
   }
@@ -451,7 +393,7 @@ async function downloadRelease(version) {
 }
 
 function cacheDir(version) {
-  return join(userHome(), '.r2c', 'cache', `plugin-${version}`);
+  return join(userHome(), '.r2c', 'cache', `payload-${version}`);
 }
 
 /**
@@ -504,17 +446,17 @@ export async function resolvePayload({ from = null, pluginVersion = null, projec
 }
 
 export function payloadHome(scope, projectRoot, version) {
-  return join(stateDir(scope, projectRoot), 'plugin', version);
+  return join(stateDir(scope, projectRoot), 'payload', version);
 }
 
 export function payloadReady(home, resolved) {
-  const manifest = join(home, 'r2c-plugin.json');
+  const manifest = join(home, PAYLOAD_MANIFEST);
   if (!existsSync(manifest)) return false;
   return sha256File(manifest) === resolved.sha256;
 }
 
 /**
- * Copy (or link, for `--link`) the verified payload into `<state>/plugin/<V>/`.
+ * Copy (or link, for `--link`) the verified payload into `<state>/payload/<V>/`.
  * The directory is assembled as a sibling temp directory and renamed into
  * place, so an interrupted install never leaves a half payload under a live
  * version path.
@@ -552,7 +494,7 @@ export function materializePayload(resolved, home, { mode = 'copy' } = {}) {
         }
       }
     }
-    atomicWriteFile(join(temp, 'r2c-plugin.json'), resolved.manifestBytes);
+    atomicWriteFile(join(temp, PAYLOAD_MANIFEST), resolved.manifestBytes);
     removePath(home);
     renameDir(temp, home);
     return { created: true, dirs: [...created, home], links: mode === 'link' };

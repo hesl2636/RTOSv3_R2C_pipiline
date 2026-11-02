@@ -3,9 +3,10 @@
  * visible text and of `next --format plain` (spec §4); adapters must not wrap
  * or alter the returned body.
  */
-import { resolve } from 'node:path';
+import { relative, resolve } from 'node:path';
 import { R2cError, EXIT_CODES } from './errors.js';
 import { findStep, flattenSteps, hasSkillFile, readTaskFile, skillFilePath } from './manifest.js';
+import { isInside } from './paths.js';
 
 function quotePath(file) {
   // Forward slashes are accepted by cmd, PowerShell and POSIX shells on
@@ -15,9 +16,27 @@ function quotePath(file) {
   return /\s/.test(portable) ? `"${portable.replaceAll('"', '\\"')}"` : portable;
 }
 
+/**
+ * `node <entry>` — the one command text every surface prints and every
+ * installed agent config carries (C3).
+ *
+ * With `projectRoot`, an entry that lives inside the project is written
+ * **project-relative** so renaming or moving the project keeps the installed
+ * hooks working; an entry outside the project stays absolute and is quoted
+ * when it contains whitespace.
+ */
+export function runnerCommand(entry, { projectRoot = null } = {}) {
+  const absolute = resolve(entry);
+  if (projectRoot !== null) {
+    const inside = relative(projectRoot, absolute);
+    if (inside !== '' && isInside(projectRoot, absolute)) return `node ${quotePath(inside)}`;
+  }
+  return `node ${quotePath(absolute)}`;
+}
+
 /** Default Submit-line prefix, directly executable from any cwd. */
-export function defaultRunnerCommand(binPath) {
-  return `node ${quotePath(resolve(binPath))}`;
+export function defaultRunnerCommand(binPath, options = {}) {
+  return runnerCommand(resolve(binPath), options);
 }
 
 function bodyOf(root, step) {

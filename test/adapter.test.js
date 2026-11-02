@@ -8,6 +8,7 @@ import {
   mkdtempSync,
   readFileSync,
   readdirSync,
+  renameSync,
   rmSync,
   statSync,
   writeFileSync,
@@ -17,7 +18,9 @@ import { dirname, join, relative, resolve } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { withPath } from './support/env.js';
+import { writeEngine } from './helpers/engine.js';
 import { createDirLink, linkTarget } from '../src/adapter/util.js';
+import { defaultRunnerCommand, runnerCommand } from '../src/render.js';
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const BIN = join(REPO, 'bin', 'r2c.js');
@@ -93,6 +96,14 @@ function install(env, project, extra = []) {
   );
 }
 
+function posix(file) {
+  return file.replaceAll('\\', '/');
+}
+
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 function receiptPath(project) {
   return join(project, '.r2c', 'install', 'claude-code.json');
 }
@@ -137,7 +148,7 @@ function writeFakePayload(t, { engine, version }) {
   adapter.requires.agent = '>=2.1.312 <3';
   writeFileSync(adapterFile, `${JSON.stringify(adapter, null, 2)}\n`);
   writeFileSync(
-    join(payload, 'r2c-plugin.json'),
+    join(payload, 'r2c-payload.json'),
     `${JSON.stringify({ schema: 'r2c.plugin/v1', version, engine, files: {} }, null, 2)}\n`,
   );
   return payload;
@@ -152,11 +163,12 @@ test('install --from a source tree writes commands, skills and a receipt', (t) =
   assert.equal(json.data.action, 'installed');
   assert.equal(json.data.changed, true);
   assert.equal(json.data.scope, 'project');
+  assert.deepEqual(json.data.warnings.filter((warning) => typeof warning !== 'string'), []);
 
   const commandFile = join(project, '.claude', 'commands', 'r2c-run.md');
   assert.ok(existsSync(commandFile));
   const command = readFileSync(commandFile, 'utf8');
-  assert.match(command, new RegExp(`npx --yes r2c-runner@${ENGINE_VERSION} run`));
+  assert.match(command, new RegExp(`node ${escapeRegExp(posix(BIN))} run`));
   assert.ok(!command.includes('<runner>'));
 
   const skills = readdirSync(join(project, '.claude', 'skills'));
@@ -167,12 +179,13 @@ test('install --from a source tree writes commands, skills and a receipt', (t) =
   const receipt = readReceipt(project);
   assert.equal(receipt.payload.version, ENGINE_VERSION);
   assert.match(receipt.payload.sha256, /^[0-9a-f]{64}$/);
-  assert.equal(receipt.runner_cmd, `npx --yes r2c-runner@${ENGINE_VERSION}`);
+  assert.equal(receipt.runner_cmd, `node ${posix(BIN)}`);
   assert.equal(receipt.engine.version, ENGINE_VERSION);
   assert.equal(receipt.engine.requires, '^0.1.0');
   assert.equal(receipt.requires.agent, '>=2.1.312 <3');
-  assert.equal(receipt.files.length, 46);
-  for (const file of receipt.files) {
+  const configFiles = receipt.files.filter((file) => file.kind !== 'layout');
+  assert.equal(configFiles.length, 46);
+  for (const file of configFiles) {
     assert.ok(existsSync(file.path), file.path);
     assert.match(file.sha256, /^[0-9a-f]{64}$/);
     const expectedKind = file.path.includes(`${join('.claude', 'commands')}`)
@@ -181,10 +194,75 @@ test('install --from a source tree writes commands, skills and a receipt', (t) =
         ? 'derive-agent'
         : 'copy';
     assert.equal(file.kind, expectedKind);
+    // Criterion: no installed config may carry the retired npx/package text.
+    assert.ok(!readFileSync(file.path, 'utf8').includes('npx'), file.path);
+    assert.ok(!readFileSync(file.path, 'utf8').includes('r2c-runner'), file.path);
+  }
+  const layoutFiles = receipt.files.filter((file) => file.kind === 'layout');
+  assert.equal(layoutFiles.length, 40, 'workflows/, tasks/ and skills/ are copied into the project root');
+  for (const file of layoutFiles) {
+    assert.ok(existsSync(join(project, file.path)), file.path);
+    assert.match(file.sha256, /^[0-9a-f]{64}$/);
   }
   assert.equal(readdirSync(join(project, '.claude', 'agents')).length, 4);
-  assert.ok(existsSync(join(receipt.payload_home, 'r2c-plugin.json')));
+  assert.ok(existsSync(join(receipt.payload_home, 'r2c-payload.json')));
   assert.ok(existsSync(join(receipt.payload_home, 'adapters', 'claude-code', 'map.json')));
+});
+
+test('a project-scope engine makes every installed path project-relative', (t) => {
+  const { project, env } = setup(t);
+  const engine = writeEngine(join(project, '.r2c', 'engine', ENGINE_VERSION), BIN);
+  const result = install(env, project, ['--engine', engine]);
+  assert.equal(result.status, 0, result.stderr);
+
+  const receipt = readReceipt(project);
+  const runnerCmd = `node .r2c/engine/${ENGINE_VERSION}/bin/r2c.js`;
+  assert.equal(receipt.runner_cmd, runnerCmd);
+  assert.equal(receipt.engine.home, engine);
+  assert.equal(receipt.engine.entry, join(engine, 'bin', 'r2c.js'));
+
+  const settings = readFileSync(join(project, '.claude', 'settings.json'), 'utf8');
+  const commands = readFileSync(join(project, '.claude', 'commands', 'r2c-run.md'), 'utf8');
+  for (const [label, text] of [['settings', settings], ['command', commands]]) {
+    assert.ok(!text.includes('npx'), `${label} still mentions npx`);
+    assert.ok(!text.includes('r2c-runner'), `${label} still mentions the package name`);
+    assert.ok(!posix(text).includes(posix(project)), `${label} still carries an absolute project path`);
+  }
+  const stop = JSON.parse(settings).hooks.Stop[0].hooks[0].command;
+  assert.ok(stop.includes(`--runner-cmd="${runnerCmd}"`), stop);
+  assert.ok(stop.includes(`node ".r2c/payload/${ENGINE_VERSION}/shims/hook.mjs"`), stop);
+
+  // A rebuild with the same arguments stays a zero-write noop: the relative
+  // text is deterministic, not path-dependent.
+  const second = install(env, project, ['--engine', engine]);
+  assert.equal(second.status, 0, second.stderr);
+  assert.equal(envelope(second).data.action, 'noop');
+});
+
+test('the printed Submit prefix is the same command the configs carry', (t) => {
+  const root = join(tempDir(t, 'spaced-root'), 'project with space');
+  const entry = join(root, '.r2c', 'engine', ENGINE_VERSION, 'bin', 'r2c.js');
+  const relativeCmd = `node .r2c/engine/${ENGINE_VERSION}/bin/r2c.js`;
+  // Project scope: relative, so the printed Submit line keeps working after a
+  // rename and matches the installed hook line exactly.
+  assert.equal(runnerCommand(entry, { projectRoot: root }), relativeCmd);
+  assert.equal(defaultRunnerCommand(entry, { projectRoot: root }), relativeCmd);
+  // User scope: absolute, quoted because the path has a space.
+  assert.equal(defaultRunnerCommand(entry, { projectRoot: null }), `node "${posix(entry)}"`);
+  // An engine outside the project cannot be made relative.
+  assert.equal(defaultRunnerCommand(BIN, { projectRoot: root }), `node ${posix(BIN)}`);
+});
+
+test('install never prints an undefined warning', (t) => {
+  const { project, env } = setup(t);
+  const result = install(env, project);
+  assert.equal(result.status, 0, result.stderr);
+  const json = envelope(result);
+  assert.deepEqual(json.data.warnings.filter((warning) => typeof warning !== 'string'), []);
+
+  const plain = cli(['adapter', 'install', 'claude-code', '--from', REPO, '--project-root', project], { env });
+  assert.equal(plain.status, 0, plain.stderr);
+  assert.ok(!/warn: (undefined|null)/.test(plain.stdout), plain.stdout);
 });
 
 test('a second install with the same arguments is a zero-write noop', (t) => {
@@ -224,7 +302,7 @@ test('foreign files conflict without --force; --force backs up and replaces', (t
   const backup = receipt.backups.find((entry) => entry.path === target);
   assert.ok(backup, 'conflict backup recorded');
   assert.equal(readFileSync(backup.backup, 'utf8'), 'foreign command\n');
-  assert.match(readFileSync(target, 'utf8'), /npx --yes r2c-runner/);
+  assert.match(readFileSync(target, 'utf8'), new RegExp(`node ${escapeRegExp(posix(BIN))} run`));
 });
 
 test('--dry-run prints the plan and writes nothing', (t) => {
@@ -290,7 +368,7 @@ test('doctor fails on a tampered file, uninstall removes the receipt and keeps .
   assert.equal(envelope(removed).data.action, 'removed');
   assert.ok(!existsSync(receiptPath(project)));
   assert.ok(existsSync(join(project, '.r2c', 'ir.md')), '.r2c runtime/business state is kept');
-  assert.ok(!existsSync(join(project, '.r2c', 'plugin', ENGINE_VERSION)));
+  assert.ok(!existsSync(join(project, '.r2c', 'payload', ENGINE_VERSION)));
   assert.ok(existsSync(target), 'edited file is left for --force');
 
   const again = cli(
@@ -345,7 +423,7 @@ test('a payload hash mismatch aborts before any project write', (t) => {
   const { project, env } = setup(t);
   const payload = writeFakePayload(t, { engine: '^0.1.0', version: ENGINE_VERSION });
   writeFileSync(
-    join(payload, 'r2c-plugin.json'),
+    join(payload, 'r2c-payload.json'),
     `${JSON.stringify({
       schema: 'r2c.plugin/v1',
       version: ENGINE_VERSION,
@@ -410,4 +488,92 @@ test('linkTarget resolves a real directory link and returns null for plain files
   writeFileSync(plain, 'x');
   assert.equal(linkTarget(plain), null);
   assert.equal(linkTarget(join(dir, 'missing')), null);
+});
+
+test('a renamed project still resolves its own receipt: doctor passes, uninstall reverts it', (t) => {
+  const { project, env } = setup(t);
+  assert.equal(install(env, project).status, 0);
+  const receipt = readReceipt(project);
+  const original = receipt.project_root;
+  assert.equal(original, project);
+
+  const moved = `${project}-moved`;
+  renameSync(project, moved);
+
+  // Doctor reads the same receipt with the live root: nothing is "missing".
+  const doctor = cli(['adapter', 'doctor', 'claude-code', '--project-root', moved, '--json'], { env, cwd: moved });
+  assert.equal(doctor.status, 0, `${doctor.stdout}\n${doctor.stderr}`);
+  const checks = envelope(doctor).data.checks;
+  assert.equal(checks.find((entry) => entry.name === 'receipt.files').status, 'pass');
+
+  // A re-install in the moved project reads the same receipt and finds every
+  // file it owns; it must not resurrect the conflict it used to report.
+  const again = install(env, moved);
+  assert.equal(again.status, 0, `${again.stdout}
+${again.stderr}`);
+  assert.equal(envelope(again).data.action, 'noop');
+
+  const removed = cli(['adapter', 'uninstall', 'claude-code', '--project-root', moved, '--json'], { env, cwd: moved });
+  assert.equal(removed.status, 0, `${removed.stdout}\n${removed.stderr}`);
+  const data = envelope(removed).data;
+
+  // Every file the receipt owns is reported and really gone from the moved
+  // project, not from the stale install-time root.
+  const reported = new Set(data.files.map((entry) => entry.path));
+  const livePath = (file) => (
+    file.kind === 'layout' ? join(moved, file.path) : join(moved, relative(original, file.path))
+  );
+  for (const file of receipt.files) {
+    const absolute = livePath(file);
+    assert.ok(reported.has(absolute), `uninstall reports ${absolute}`);
+    assert.equal(existsSync(absolute), false, `${absolute} is gone`);
+  }
+  assert.equal(existsSync(join(moved, '.claude')), false, 'agent config is gone');
+  assert.equal(existsSync(join(moved, 'workflows')), false, 'layout dirs are gone');
+  assert.equal(existsSync(join(moved, '.r2c', 'install', 'claude-code.json')), false);
+  assert.equal(data.payload_removed, true, 'the payload recorded at the old root is removed');
+  assert.ok(!existsSync(join(moved, '.r2c', 'payload', ENGINE_VERSION)));
+  assert.ok(
+    data.leftover.every((entry) => !entry.startsWith('modified:')),
+    `nothing diverged from the receipt: ${JSON.stringify(data.leftover)}`,
+  );
+});
+
+test('a write after a rename rewrites every skipped receipt path against the live root', (t) => {
+  const { project, env } = setup(t);
+  assert.equal(install(env, project).status, 0);
+
+  const moved = `${project}-moved`;
+  renameSync(project, moved);
+
+  // Editing one receipt-owned file forces the next install to rewrite the
+  // receipt while every other file is skipped.
+  const edited = join(moved, '.claude', 'commands', 'r2c-run.md');
+  writeFileSync(edited, `${readFileSync(edited, 'utf8')}\nlocal edit\n`);
+  const again = install(env, moved);
+  assert.equal(again.status, 0, `${again.stdout}\n${again.stderr}`);
+  assert.equal(envelope(again).data.action, 'upgraded');
+
+  const receipt = readReceipt(moved);
+  assert.equal(receipt.project_root, moved);
+  const stale = receipt.files.filter((file) => (
+    file.kind !== 'layout' && !resolve(file.path).startsWith(resolve(moved))
+  ));
+  assert.deepEqual(stale, [], 'no receipt entry keeps the pre-rename root');
+
+  const doctor = cli(['adapter', 'doctor', 'claude-code', '--project-root', moved, '--json'], { env, cwd: moved });
+  assert.equal(doctor.status, 0, `${doctor.stdout}\n${doctor.stderr}`);
+  assert.equal(
+    envelope(doctor).data.checks.find((entry) => entry.name === 'receipt.files').status,
+    'pass',
+  );
+
+  const removed = cli(['adapter', 'uninstall', 'claude-code', '--project-root', moved, '--json'], { env, cwd: moved });
+  assert.equal(removed.status, 0, `${removed.stdout}\n${removed.stderr}`);
+  assert.ok(envelope(removed).data);
+  assert.equal(existsSync(join(moved, '.claude')), false, 'agent config is gone after uninstall');
+  for (const file of receipt.files) {
+    const absolute = file.kind === 'layout' ? join(moved, file.path) : file.path;
+    assert.equal(existsSync(absolute), false, `still present: ${absolute}`);
+  }
 });

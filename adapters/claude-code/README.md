@@ -25,15 +25,16 @@ copied and reported as `link-unsupported:<path>`.
 ## Install / verify / remove
 
 ```bash
-r2c adapter install claude-code --from <payload-dir> --project .
-r2c adapter doctor claude-code --project .
-r2c adapter smoke claude-code --project .
-r2c adapter uninstall claude-code --project .
+node .r2c/engine/<V>/bin/r2c.js adapter install claude-code --project .
+node .r2c/engine/<V>/bin/r2c.js adapter doctor claude-code --project .
+node .r2c/engine/<V>/bin/r2c.js adapter smoke claude-code --project .
+node .r2c/engine/<V>/bin/r2c.js adapter uninstall claude-code --project .
 ```
 
-`--from` accepts an unpacked payload (`r2c-plugin.json`) or a source checkout
-(`package.json` + `pack/` + `adapters/`). It is the supported path while the
-release repository is private.
+Normally nothing else is needed: the engine resolves `r2c-payload-<V>.tgz` from
+the GitHub Release at its own version. `--from` accepts an unpacked payload
+(`r2c-payload.json`) or a source checkout (`package.json` + `pack/` +
+`adapters/`) for an offline install, and `--link` requires `--from <dir>`.
 
 ## Requirements
 

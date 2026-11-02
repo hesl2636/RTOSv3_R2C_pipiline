@@ -194,7 +194,7 @@ export async function run(_argv, ctx) {
     writeState(ctx.projectRoot, runId, lockedState);
   });
 
-  const runnerCmd = ctx.runnerCmd ?? defaultRunnerCommand(ctx.binPath);
+  const runnerCmd = ctx.runnerCmd ?? defaultRunnerCommand(ctx.binPath, { projectRoot: ctx.projectRoot });
   const settled = await executeShellSteps({
     manifest,
     projectRoot: ctx.projectRoot,

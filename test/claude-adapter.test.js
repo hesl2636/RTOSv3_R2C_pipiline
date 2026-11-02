@@ -7,15 +7,18 @@ import {
   mkdtempSync,
   readFileSync,
   readdirSync,
+  renameSync,
   rmSync,
   statSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { withPath } from './support/env.js';
+import { writeEngine } from './helpers/engine.js';
+import { dropPayloadManifest, writeTwoStepProject } from './helpers/two-step.js';
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const BIN = join(REPO, 'bin', 'r2c.js');
@@ -118,17 +121,24 @@ test('install wires seven commands, thirty-five skills and both Claude hooks', (
 
   const receipt = readReceipt(project);
   const settings = settingsFor(project);
-  const shim = join(receipt.payload_home, 'shims', 'hook.mjs');
+  // Project scope records the payload project-relative (C3), so the installed
+  // hook survives renaming the project directory.
+  const shim = posixPath(`.r2c/payload/${ENGINE_VERSION}/shims/hook.mjs`);
 
   const stop = commandsFor(settings, 'Stop');
   const preToolUse = commandsFor(settings, 'PreToolUse');
   assert.equal(stop.length, 1);
   assert.equal(preToolUse.length, 1);
-  assert.ok(posixPath(stop[0]).includes(posixPath(shim)), stop[0]);
-  assert.ok(posixPath(preToolUse[0]).includes(posixPath(shim)), preToolUse[0]);
+  assert.ok(posixPath(stop[0]).includes(shim), stop[0]);
+  assert.ok(posixPath(preToolUse[0]).includes(shim), preToolUse[0]);
+  assert.ok(!posixPath(stop[0]).includes(posixPath(project)), stop[0]);
+  assert.equal(receipt.payload_home, join(project, '.r2c', 'payload', ENGINE_VERSION));
   assert.match(stop[0], /--agent claude-code --event stop --format json/);
   assert.match(preToolUse[0], /--agent claude-code --event pre-tool-use --format json/);
-  assert.match(stop[0], new RegExp(`--runner-cmd="npx --yes r2c-runner@${ENGINE_VERSION.replaceAll('.', '\\.')}"`));
+  assert.equal(receipt.runner_cmd, `node ${posixPath(BIN)}`);
+  assert.ok(stop[0].includes(`--runner-cmd="${receipt.runner_cmd}"`), stop[0]);
+  assert.ok(!stop[0].includes('npx'), stop[0]);
+  assert.ok(!stop[0].includes('r2c-runner'), stop[0]);
 
   assert.deepEqual(
     receipt.merged.map((entry) => entry.pointer).sort(),
@@ -234,11 +244,12 @@ test('a project path with spaces renders a command that really launches', (t) =>
   const env = cleanEnv({ pathDir: bin, home });
 
   assert.equal(install(env, project).status, 0);
-  const receipt = readReceipt(project);
-  const shim = join(receipt.payload_home, 'shims', 'hook.mjs');
   const stop = commandsFor(settingsFor(project), 'Stop')[0];
+  // Project scope is project-relative, so a moved project still resolves it;
+  // the shim path stays quoted because the surrounding directory has a space.
   assert.ok(stop.startsWith('node "'), stop);
-  assert.ok(posixPath(stop).includes(`"${posixPath(shim)}"`), stop);
+  assert.ok(posixPath(stop).includes(posixPath(`.r2c/payload/${ENGINE_VERSION}/shims/hook.mjs`)), stop);
+  assert.ok(!posixPath(stop).includes(posixPath(project)), stop);
   assert.ok(stop.includes('--runner-cmd="'), stop);
 
   const launched = spawnSync(stop, {
@@ -250,6 +261,124 @@ test('a project path with spaces renders a command that really launches', (t) =>
     windowsHide: true,
   });
   assert.equal(launched.status, 0, `${launched.stderr}\n${stop}`);
+});
+
+test('renaming the project directory keeps the Stop hook delivering', (t) => {
+  const { project, env } = setup(t);
+  const engine = writeEngine(join(project, '.r2c', 'engine', ENGINE_VERSION), BIN);
+  assert.equal(install(env, project, ['--engine', engine]).status, 0);
+
+  dropPayloadManifest(project);
+  writeTwoStepProject(project);
+  const started = cli(['run', '--project-root', project, '--session-id', 'sess-renamed', '--json'], {
+    env,
+    cwd: project,
+  });
+  assert.equal(started.status, 0, started.stderr);
+
+  const moved = join(dirname(project), `${basename(project)}-renamed`);
+  renameSync(project, moved);
+  t.after(() => rmSync(moved, { recursive: true, force: true }));
+
+  const stop = commandsFor(settingsFor(moved), 'Stop')[0];
+  assert.ok(!posixPath(stop).includes(posixPath(project)), stop);
+  const launched = spawnSync(stop, {
+    shell: true,
+    cwd: moved,
+    encoding: 'utf8',
+    input: JSON.stringify({ session_id: 'sess-renamed' }),
+    timeout: 60_000,
+    windowsHide: true,
+  });
+  assert.equal(launched.status, 0, `${launched.stderr}\n${stop}`);
+  const delivered = JSON.parse(launched.stdout.trim());
+  assert.equal(delivered.decision, 'block');
+  assert.match(
+    delivered.reason,
+    new RegExp(`node \\.r2c/engine/${ENGINE_VERSION.replaceAll('.', '\\.')}/bin/r2c\\.js submit --session-id sess-renamed --step step-a`),
+  );
+  const trace = readFileSync(join(moved, '.r2c', 'runs', '.hooks', 'trace', 'claude-code.jsonl'), 'utf8');
+  assert.match(trace, /"hook":"stop".*"delivered":true/);
+});
+
+test('user scope quotes the absolute engine path so a spaced home still runs', (t) => {
+  const { bin, project } = setup(t);
+  const home = join(tempDir(t, 'spaced-home'), 'home with space');
+  mkdirSync(home, { recursive: true });
+  const env = cleanEnv({ pathDir: bin, home });
+  const engine = writeEngine(join(home, '.r2c', 'engine', ENGINE_VERSION), BIN);
+  const result = install(env, project, ['--scope', 'user', '--engine', engine]);
+  assert.equal(result.status, 0, result.stderr);
+
+  const entry = join(engine, 'bin', 'r2c.js');
+  const receipt = JSON.parse(readFileSync(join(home, '.r2c', 'install', 'claude-code.json'), 'utf8'));
+  assert.equal(receipt.runner_cmd, `node "${posixPath(entry)}"`, 'user scope stays absolute and quoted');
+  const stop = commandsFor(settingsFor(home), 'Stop')[0];
+  assert.ok(stop.includes(`--runner-cmd="node \\"${posixPath(entry)}\\""`), stop);
+
+  const doctor = cli(
+    ['adapter', 'doctor', 'claude-code', '--project-root', project, '--scope', 'user', '--json'],
+    { env },
+  );
+  assert.equal(doctor.status, 0, doctor.stdout + doctor.stderr);
+
+  dropPayloadManifest(project);
+  writeTwoStepProject(project);
+  const started = cli(['run', '--project-root', project, '--session-id', 'sess-user', '--json'], {
+    env,
+    cwd: project,
+  });
+  assert.equal(started.status, 0, started.stderr);
+
+  const launched = spawnSync(stop, {
+    shell: true,
+    cwd: project,
+    encoding: 'utf8',
+    input: JSON.stringify({ session_id: 'sess-user' }),
+    timeout: 60_000,
+    windowsHide: true,
+  });
+  assert.equal(launched.status, 0, `${launched.stderr}\n${stop}`);
+  assert.equal(JSON.parse(launched.stdout.trim()).decision, 'block');
+});
+
+test('--runner-cmd overrides the derived project-relative command', (t) => {
+  const { project, env } = setup(t);
+  const engine = writeEngine(join(project, '.r2c', 'engine', ENGINE_VERSION), BIN);
+  const result = install(env, project, ['--engine', engine, '--runner-cmd', 'r2c-custom --hook']);
+  assert.equal(result.status, 0, result.stderr);
+
+  const receipt = readReceipt(project);
+  assert.equal(receipt.runner_cmd, 'r2c-custom --hook');
+  const stop = commandsFor(settingsFor(project), 'Stop')[0];
+  assert.ok(stop.includes('--runner-cmd="r2c-custom --hook"'), stop);
+  assert.ok(!stop.includes('.r2c/engine/'), stop);
+});
+
+test('doctor fails when the recorded engine is gone or reports another version', (t) => {
+  const { project, env } = setup(t);
+  const engine = writeEngine(join(project, '.r2c', 'engine', ENGINE_VERSION), BIN);
+  const entry = join(engine, 'bin', 'r2c.js');
+  assert.equal(install(env, project, ['--engine', engine]).status, 0);
+  const doctor = () => cli(['adapter', 'doctor', 'claude-code', '--project-root', project, '--json'], { env });
+
+  assert.equal(doctor().status, 0, doctor().stdout);
+
+  writeFileSync(entry, 'process.stdout.write("9.9.9\\n");\n');
+  const mismatched = doctor();
+  assert.equal(mismatched.status, 3, mismatched.stderr);
+  const mismatch = envelope(mismatched);
+  assert.equal(mismatch.error.code, 'DOCTOR_FAILED');
+  const mismatchCheck = mismatch.data.checks.find((item) => item.name === 'engine.executable');
+  assert.equal(mismatchCheck.status, 'fail');
+  assert.match(mismatchCheck.detail, /9\.9\.9/);
+
+  rmSync(engine, { recursive: true, force: true });
+  const missing = doctor();
+  assert.equal(missing.status, 3, missing.stderr);
+  const missingCheck = envelope(missing).data.checks.find((item) => item.name === 'engine.executable');
+  assert.equal(missingCheck.status, 'fail');
+  assert.match(missingCheck.detail, /missing/);
 });
 
 test('uninstall removes only our hook items, even from a settings file it created', (t) => {

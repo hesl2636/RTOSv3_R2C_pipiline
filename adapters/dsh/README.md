@@ -2,7 +2,7 @@
 
 Installs at user scope only: it adds the `r2c-adapter-dsh` bundle to a dsh
 profile (`$DSH_HOME/profiles/<profile>`, default `web`) and renders the payload
-plugin assets into `<state>/plugin/<V>/adapters/dsh/`.
+assets into `<state>/payload/<V>/adapters/dsh/`.
 
 ## Landing paths
 
@@ -17,11 +17,23 @@ plugin assets into `<state>/plugin/<V>/adapters/dsh/`.
 
 ## Install
 
+Through the release bootstrap (it forwards `--profile` and `--scope`):
+
 ```bash
-npx r2c-runner adapter install dsh --from r2c-plugin-0.1.0.tgz --profile web
-npx r2c-runner adapter doctor  dsh
-npx r2c-runner adapter uninstall dsh
+node .r2c/bootstrap/install.mjs --agent dsh --version <V> --scope user --profile web
 ```
+
+Or with an engine that is already on disk:
+
+```bash
+node ~/.r2c/engine/<V>/bin/r2c.js adapter install dsh --profile web
+node ~/.r2c/engine/<V>/bin/r2c.js adapter doctor dsh
+node ~/.r2c/engine/<V>/bin/r2c.js adapter uninstall dsh
+```
+
+dsh is user scope only, so the engine lives at `~/.r2c/engine/<V>/`. The engine
+resolves `r2c-payload-<V>.tgz` from the GitHub Release at its own version; add
+`--from <payload-dir|r2c-payload-<V>.tgz>` for an offline install.
 
 The native command `dsh plugin --profile <name> add link:<payload>/adapters/dsh`
 is used when available; otherwise the profile manifest is merged directly and

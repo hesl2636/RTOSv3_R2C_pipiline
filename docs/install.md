@@ -1,66 +1,313 @@
 # Install, upgrade, rollback, uninstall
 
-The engine is an npm package (`r2c-runner`); adapters are declarations that the
-engine installer reads. There is no second package manager and no per-agent
-install script to run: one installer path performs every write, records a
-receipt, and can undo itself.
+One channel: the four assets of a GitHub Release of
+`hesl2636/RTOSv3_R2C_pipiline` — `r2c-engine-<V>.tgz`, `r2c-payload-<V>.tgz`,
+`install.mjs` and `SHA256SUMS.txt`. There is no npm channel and no manual
+payload copy. `install.mjs` downloads the engine archive, verifies it against
+`SHA256SUMS.txt`, extracts it to `<project>/.r2c/engine/<V>/` (project scope)
+or `~/.r2c/engine/<V>/` (user scope), then runs that engine's
+`adapter install <agent> --engine <home> --scope <scope> --project <dir>`.
 
-```bash
-npx r2c-runner adapter list  --from <payload-dir|r2c-plugin-0.1.0.tgz>
-npx r2c-runner adapter install <agent> --from <payload-dir|r2c-plugin-0.1.0.tgz> --project .
-npx r2c-runner adapter doctor  <agent> --project .
-npx r2c-runner adapter smoke   <agent> --project .
-npx r2c-runner adapter uninstall <agent> --project .
-```
+The engine then resolves `r2c-payload-<V>.tgz` from the same release, verifies
+every `r2c-payload.json` hash, materialises it at `<state>/payload/<V>/`, copies
+the layout (`workflows/`, `tasks/`, `skills/`) into the project root, writes the
+agent configuration and records the receipt. Engine, payload and adapters are
+one version set: `V` is `0.1.0` while `docs/compat.md` says so.
 
 `<agent>` is one of `claude-code`, `codex`, `dsh`, `omp`, `opencode`.
-`adapter list` reads the same `adapter.json` data that
-[docs/compat.md](compat.md) is generated from. Per-agent landing paths and
-hook wiring are in `adapters/<agent>/README.md` (starting with
+`adapter list` prints the same matrix that [docs/compat.md](compat.md) is
+generated from. Per-agent landing paths and hook wiring are in
+`adapters/<agent>/README.md` (starting with
 [claude-code](../adapters/claude-code/README.md)).
 
 ## Prerequisites
 
-- Node `>=22.19.0 <23 || >=24.0.0`; the engine refuses to start outside it.
-- npm (only to fetch the engine through `npx`).
-- The agent CLI you are installing for, on `PATH`. The installer detects it
+- Node `>=22.19.0 <23 || >=24.0.0`; the engine refuses to start outside it and
+  so does the bootstrap.
+- The CLI of the agent you are installing for, on `PATH`. The engine detects it
   with the probes in `adapter.json` (`detect.commands`, `detect.paths`) and
-  exits `4` with `AGENT_NOT_DETECTED` when neither matches. Passing the id only
-  as an option (`adapter install --agent <id>`, no positional) skips detection
-  and records a warning instead.
-- Write access to the target scope's directories (see the path table below).
+  exits `4` with `AGENT_NOT_DETECTED` when neither matches. Install the agent
+  first, or bypass detection with the engine's
+  `adapter install --agent <id>` form (option instead of positional; it records
+  a warning instead of failing).
+- `gh` for the release download below, or a repository checkout, or a local
+  copy of the release assets (see [Offline and private
+  downloads](#offline-and-private-downloads)). No npm.
+- Write access to the target scope's directories (see [Scopes and landing
+  paths](#scopes-and-landing-paths)).
 
-## Payload: `--from <dir|tgz>`
+## Install
 
-The payload is the release artifact `r2c-plugin-V.tgz`: `r2c-plugin.json`,
-`workflows/`, `tasks/`, `skills/`, `commands/`, `shims/hook.mjs`,
-`adapters/*`, `schema/*` and `LICENSE`. The installer resolves it in this
-order:
+Run every command from the project root. `--agent` is required; `--scope`
+defaults to `project`; `--project` defaults to the current directory;
+`--version` defaults to the latest formal release.
 
-1. `--from <dir|tgz>` (a directory containing `r2c-plugin.json`, or a source
-   checkout with `package.json` + `pack/` + `adapters/`);
-2. `R2C_PLUGIN_SOURCE` (same shapes);
-3. `~/.r2c/cache/plugin-<V>`;
-4. the GitHub Release download for version `V`.
+With `gh`, POSIX:
 
-While the release repository is private, the anonymous Release download returns
-`404`; `--from` is the supported path. A `.tgz` payload is verified against the
-sha256 recorded in its own `r2c-plugin.json`, and every file is hashed before
-the plan is built. `--link` is only accepted together with `--from <dir>`: a
-`.tgz` always installs with `--copy`.
+```bash
+mkdir -p .r2c/bootstrap
+gh release download v0.1.0 -R hesl2636/RTOSv3_R2C_pipiline -p install.mjs --dir .r2c/bootstrap
+node .r2c/bootstrap/install.mjs --agent claude-code --version 0.1.0 --project .
+```
 
-The payload is materialised under `<state>/plugin/<payload-version>/`, where
-`<state>` is `<project>/.r2c` for project scope and `~/.r2c` for user scope.
-`--plugin <V>` selects a cached payload version instead of the engine version;
-`--from` takes precedence over it.
+With `gh`, Windows (cmd or PowerShell):
 
-Before anything is written the installer runs: detection → payload
-resolution/verification → engine and agent version gates → plan (`--dry-run`
-prints it and exits) → conflict scan → pending marker → backups → atomic
-writes → post-install smoke → receipt. A conflict with an unowned file fails
-with exit `2`; `--force` backs the file up and replaces it. Installing the same
-payload with the same options a second time performs no writes, reports
-`action:"noop"`, `changed:false`, and exits `0`.
+```bat
+mkdir .r2c\bootstrap
+gh release download v0.1.0 -R hesl2636/RTOSv3_R2C_pipiline -p install.mjs --dir ".r2c\bootstrap"
+node ".r2c\bootstrap\install.mjs" --agent claude-code --version 0.1.0 --project "."
+```
+
+Without `gh`, from a repository checkout (`scripts/install.mjs` is the same file
+the release publishes as the `install.mjs` asset). The checkout is the project
+when you install into it; otherwise pass `--project`:
+
+```bash
+node scripts/install.mjs --agent claude-code --version 0.1.0
+node scripts/install.mjs --agent claude-code --version 0.1.0 --project "../other project"
+```
+
+```bat
+node scripts\install.mjs --agent claude-code --version 0.1.0
+node scripts\install.mjs --agent claude-code --version 0.1.0 --project "..\other project"
+```
+
+Omit `--version` to take the latest formal release; that asks the GitHub API and
+is impossible with a local `--release-base` directory, which therefore requires
+`--version`.
+
+What the command writes and prints: the engine home, the adapter line, the
+payload source, the layout line, the number of files written, and the next
+command. Re-running the same version with the same parameters writes nothing
+and exits `0`: the engine is found in place and is not downloaded again, while
+the payload is still resolved from its source and verified per file against
+`r2c-payload.json` before the no-op is reported. A release download—or a
+`.tgz` with a `SHA256SUMS.txt` beside it—is additionally checked against that
+file before extraction (a release download is staged in a temporary directory,
+never cached).
+
+Scope and quoting:
+
+- `--scope project` (the default where `adapter.json` lists both): engine
+  `.r2c/engine/<V>/`, payload `.r2c/payload/<V>/`, receipt
+  `.r2c/install/<agent>.json`. The installed hooks and Submit lines carry
+  `node .r2c/engine/<V>/bin/r2c.js` — relative to the project root, so renaming
+  or moving the project keeps them working.
+- `--scope user`: engine `~/.r2c/engine/<V>/`, payload `~/.r2c/payload/<V>/`,
+  receipts `~/.r2c/install/`, agent configuration under the user home. The
+  installed command is the engine's absolute path, quoted when it contains
+  spaces, because the agent's working directory is not the project. The layout
+  still lands in `--project`. `dsh` is user scope only and rejects
+  `--scope project`.
+- Quote any path with spaces or non-ASCII characters: `--project "C:\work\my
+  project"` (Windows) and `--project "$HOME/my project"` (POSIX). `~` expands in
+  POSIX shells only; use `%USERPROFILE%` in cmd and `$env:USERPROFILE` in
+  PowerShell. `--runner-cmd "node \"C:/tools/r2c/bin/r2c.js\""` is the only
+  supported manual override of the installed command.
+
+Two flags are forwarded to the engine's `adapter install`:
+
+- `--force` backs up and replaces files another install owns. That is what a
+  second adapter in the same project needs: the layout (`workflows/`,
+  `tasks/`, `skills/`) already belongs to the first adapter's receipt, so the
+  conflict rule refuses to overwrite it silently. Each replaced file is copied
+  under `.r2c/install/backup/<agent>/` first. Without it the bootstrap exits
+  with the engine's `2` and a `CONFLICT` error.
+- `--profile <name>` selects the dsh profile (default `web`; pass
+  `--scope user` too, dsh is user-scoped) and is ignored by the other adapters.
+
+After the install the layout is already in the project root: `r2c run`
+discovers `workflows/RTOSv3_R2C_pipiline.yaml` with no further step, and
+`r2c run --dry-run` prints the discovered manifest without writing state.
+
+```bash
+node .r2c/engine/0.1.0/bin/r2c.js run --dry-run
+```
+
+Next: `node .r2c/engine/0.1.0/bin/r2c.js run` in the project root (Windows: `node ".r2c\engine\0.1.0\bin\r2c.js" run`).
+
+## Upgrade
+
+Upgrade is a re-install at the new version: engine, payload and adapters move
+together. Download the new `install.mjs` if you keep it under `.r2c/bootstrap/`
+(the file is the same in every release), then run:
+
+```bash
+node .r2c/bootstrap/install.mjs --agent claude-code --version <new-V> --project .
+```
+
+```bat
+node ".r2c\bootstrap\install.mjs" --agent claude-code --version <new-V> --project "."
+```
+
+From a checkout the equivalent is `node scripts/install.mjs --agent <id>
+--version <new-V>`. What changes:
+
+- the new engine is extracted to `.r2c/engine/<new-V>/` and the new payload to
+  `.r2c/payload/<new-V>/`; hooks, Submit lines and the receipt point at the new
+  entry;
+- the previous engine and payload that this receipt owned are removed once no
+  other receipt still references them, so one agent upgraded alone keeps the old
+  set alive for the agents still on it; `--dry-run` lists the removals;
+- layout files are written from the new payload and the receipt is rewritten;
+  a file only the old payload carried is removed when it still matches the
+  receipt, and kept with a `layout-stale:` warning when you edited it;
+- `--plugin <V>` (an `adapter install` option the bootstrap does not pass) pins a
+  payload version different from the engine; leave it out to move both;
+- the same version with the same parameters is a no-op: exit `0` and no writes;
+- upgrading one adapter does not touch another.
+
+Each agent is upgraded by re-running the command with its own id, then verified
+with `adapter doctor` (see [Doctor](#doctor)), which also checks that the
+recorded engine entry really runs at the recorded version.
+
+Next: `node .r2c/engine/<new-V>/bin/r2c.js run` in the project root.
+
+## Rollback
+
+Rollback means installing the older version set again — engine, payload and
+adapters at `<old-V>` — not pointing `PATH` at an older engine. The receipt,
+the hooks and the Submit lines keep the entry they were installed with, so a
+`PATH` change reverts nothing.
+
+```bash
+node .r2c/bootstrap/install.mjs --agent claude-code --version <old-V> --project .
+```
+
+```bat
+node ".r2c\bootstrap\install.mjs" --agent claude-code --version <old-V> --project "."
+```
+
+The old payload resolves from `~/.r2c/cache/payload-<old-V>` when that version
+was installed from a tgz before, otherwise from release `v<old-V>`. Both the old
+engine and the old payload are verified before anything lands, the newer set is
+retired as in [Upgrade](#upgrade), and layout files that exist only in the newer
+payload are removed by the same rule: an unmodified copy is deleted, a
+hand-edited copy stays behind with a `layout-stale:` warning.
+
+If the re-install stops with `CONFLICT`, some target is a file the old receipt
+does not own (hand-edited, or written by the newer set under another name). The
+old engine is already on disk at that point, so finish with the explicit
+overwrite, which backs each file up under `.r2c/install/backup/` first:
+
+```bash
+node .r2c/engine/<old-V>/bin/r2c.js adapter install claude-code --scope project --project . --force
+```
+
+```bat
+node ".r2c\engine\<old-V>\bin\r2c.js" adapter install claude-code --scope project --project "." --force
+```
+
+Rolled-back runs continue from the project's `.r2c/runs`; an engine older than
+the state schema of those runs refuses them with `STATE_SCHEMA_NEWER`.
+
+Next: `node .r2c/engine/<old-V>/bin/r2c.js adapter doctor claude-code --project .`
+
+## Uninstall
+
+Use the engine entry the install wrote; it is removed only when no receipt still
+references it.
+
+```bash
+node .r2c/engine/0.1.0/bin/r2c.js adapter uninstall claude-code --project .
+```
+
+```bat
+node ".r2c\engine\0.1.0\bin\r2c.js" adapter uninstall claude-code --project "."
+```
+
+For a user-scope install pass `--scope user` and use
+`~/.r2c/engine/<V>/bin/r2c.js` as the entry.
+
+Uninstall deletes exactly the files listed in the receipt — agent configuration
+and the project-root layout copies alike — removes only the JSON entries and
+hook items this install merged (never a neighbour's), deletes self-created empty
+directories without going above the install root, and drops the payload and the
+engine only when no receipt still references them. A file whose sha256 no
+longer matches the receipt is not deleted; it is reported in `leftover[]` for
+manual review (`--force` deletes it anyway). Runtime state under `.r2c/` — runs,
+events, usage, business artifacts — is **kept** by default so a later reinstall
+or `r2c status` still sees the history.
+
+`--purge-state` additionally removes the runtime paths (`.r2c/runs/`,
+`.r2c/usage/`, `.r2c/latest.json`), every installed payload under
+`.r2c/payload/` and the receipts and backups under `.r2c/install/`. Business
+artifacts (`.r2c/ir.md`, `.r2c/sr-map.md`, `.r2c/artifacts/**`) are not touched.
+`dsh` needs a restart after install or uninstall for the bundle and patch to
+load.
+
+Next: `git status --short` in the project root, to review the layout files the uninstall reverted before you commit.
+
+## Offline and private downloads
+
+### Credentials
+
+A public repository is read anonymously. A private one answers the anonymous
+request with `404`, so the bootstrap and the payload downloader walk the same
+chain: `GH_TOKEN` → `GITHUB_TOKEN` → `git credential fill` for
+`protocol=https`, `host=github.com`. The helper call never prompts
+(`GIT_TERMINAL_PROMPT=0`) and times out after a few seconds, so an unattended
+install cannot hang; when none of the three yields a credential the error names
+the missing credential and suggests `gh auth login` instead of reporting a plain
+`404`.
+
+With a token the assets are read through the GitHub API
+(`/releases/tags/v<V>` plus `/releases/assets/<id>` with
+`Accept: application/octet-stream`), because the web download URL answers `404`
+to a bearer token. `gh auth login` stores its token in `gh`'s own config, so
+publish it to the installer when you rely on it:
+
+```bash
+export GH_TOKEN="$(gh auth token)"
+```
+
+```powershell
+$env:GH_TOKEN = (gh auth token)
+```
+
+`gh auth setup-git` makes the same token visible to `git credential fill`. A
+custom release base (`R2C_RELEASE_BASE`, below) never receives the GitHub
+credential: a mirror authenticates on its own.
+
+### Cache
+
+`~/.r2c/cache/payload-<V>` (the home is `R2C_HOME`, else `HOME`/`USERPROFILE`,
+else the OS home). Resolution order for the payload is `--from <dir|tgz>` →
+`R2C_PLUGIN_SOURCE` → the cache → the release download. The cache is filled by
+installing from a tgz (`--from`): a release download is staged in a temporary
+directory and becomes the payload home, it is not cached. So a repeated offline
+install needs either the cache, `--from`, or a local release base.
+
+The engine archive is not cached: it lives at `.r2c/engine/<V>/` (or
+`~/.r2c/engine/<V>/`) and is replaced in place. Re-running the bootstrap for the
+same version finds it there and downloads nothing.
+
+### Local mirror and `--from`
+
+`node scripts/release.mjs --out dist` produces exactly the release: a flat
+directory holding `r2c-engine-<V>.tgz`, `r2c-payload-<V>.tgz`, `install.mjs` and
+`SHA256SUMS.txt`. Point the bootstrap at such a directory with
+`--release-base <dir>` (or `R2C_RELEASE_BASE`): nothing is fetched, `--version`
+is required, and the base is passed on to the engine so the payload comes from
+the same directory. An http(s) base instead mirrors GitHub's layout and is read
+as `<base>/v<V>/<asset>`:
+
+```bash
+node scripts/install.mjs --agent claude-code --version 0.1.0 --release-base dist
+node .r2c/bootstrap/install.mjs --agent claude-code --version 0.1.0 --release-base "/srv/r2c/releases"
+```
+
+```bat
+node scripts\install.mjs --agent claude-code --version 0.1.0 --release-base "D:\r2c\releases"
+```
+
+For the adapter step alone, `adapter install --from <dir|tgz>` accepts an
+unpacked payload (a directory with `r2c-payload.json`, or a source checkout
+containing `package.json`, `pack/` and `adapters/`) or the release tgz. A tgz is
+verified against every `r2c-payload.json` hash, and against a
+`SHA256SUMS.txt` beside it when one is present, before anything is written;
+it is then cached under `~/.r2c/cache/payload-<V>`. `--link` is accepted only
+together with `--from <dir>`: a tgz always installs with `--copy`.
 
 ## Scopes and landing paths
 
@@ -79,53 +326,47 @@ lists it. `<P>` is the project root, `~` the user home.
 | `opencode` | project | `<P>/.opencode/{commands,skills,agents,plugins}/`, `<P>/opencode.json` `mcp` |
 | | user | `~/.config/opencode/{commands,skills,agents,plugins}/`, `~/.config/opencode/opencode.json` |
 
-Every install writes a receipt to `<state>/install/<agent>.json`: payload
-version and sha256, engine version and `requires.engine`, `runner_cmd`, agent
-binary and version, every installed file with its sha256, merged entries,
+Every install writes a receipt to `<state>/install/<agent>.json`: scope,
+project root, engine home and entry, payload version and sha256, `runner_cmd`,
+agent binary and version, every installed file with its sha256, merged entries,
 backups and created directories. `adapter doctor` and `adapter uninstall` both
 read that receipt; nothing is deleted by guesswork.
 
-`--profile <name>` selects the dsh profile (default `web`). dsh also needs a
-restart after install/uninstall for the bundle and patch to load. Codex command
+`--profile <name>` selects the dsh profile (default `web`). Codex command
 discovery is via `.agents/skills`; its Stop/PreToolUse hooks only run after you
 trust them in `/hooks`, which is a manual step (see below).
 
-## First run
+## Payload resolution
 
-The installer materialises the payload (workflow, tasks, skills) at
-`<state>/plugin/<V>/`; it does not copy that tree into the project. `r2c run`
-discovers a manifest only under the project's `workflows/`, and `taskFile`
-resolves relative to that same root, so do one of these once per project:
+`--from <dir|tgz>` → `R2C_PLUGIN_SOURCE` → `~/.r2c/cache/payload-<V>` → the
+release (a flat `--release-base` directory or an http(s) base). `--plugin <V>`
+selects a cached payload version instead of the engine version; `--from` takes
+precedence over it. `R2C_PLUGIN_SOURCE`, `--plugin` and the `r2c.plugin/v1`
+manifest id keep their historical name on purpose; [GLOSSARY.md](../GLOSSARY.md)
+records them as the documented exceptions to the payload vocabulary.
 
-```bash
-# (a) recommended: copy the whole payload layout into the project root
-cp -r .r2c/plugin/0.1.0/{workflows,tasks,skills} .
-npx r2c-runner run --project .
-
-# (b) terminal-only: point at the payload manifest (absolute path required)
-npx r2c-runner run --project . \
-  --manifest "$PWD/.r2c/plugin/0.1.0/workflows/RTOSv3_R2C_pipiline.yaml"
-```
-
-Copying only the YAML is not enough: its `taskFile` entries resolve against the
-manifest root, which is the project root for default discovery. Hook delivery
-also rediscovers the project manifest, so the layout copy is the only shape
-where Stop/idle delivery works without extra flags.
-
-`--project` and `--project-root` are aliases on every command.
+Before anything is written the installer runs: detection → payload
+resolution/verification → engine and agent version gates → plan (`--dry-run`
+prints it and exits) → conflict scan → pending marker → backups → atomic
+writes → post-install smoke → receipt. A conflict with an unowned file fails
+with exit `2`; `--force` backs the file up and replaces it. Installing the same
+payload with the same options a second time performs no writes, reports
+`action:"noop"`, `changed:false`, and exits `0`.
 
 ## Doctor
 
 ```bash
-npx r2c-runner adapter doctor <agent> --project .
+node .r2c/engine/0.1.0/bin/r2c.js adapter doctor <agent> --project .
 ```
 
 Zero-model checks, each reported as pass/warn/fail:
 
+- `receipt.present` — missing receipt exits `4`;
 - `agent.detected` / `agent.version` — outside `requires.agent` is a warning;
 - `engine.version` — outside `requires.engine` is a failure;
-- `receipt.present` — missing receipt exits `4`;
-- `receipt.files` — a sha256 mismatch fails;
+- `engine.executable` — the recorded entry really runs and reports the recorded
+  version;
+- `receipt.files` — a sha256 mismatch fails, and so does a missing layout copy;
 - `hooks.wired`, `hooks.smoke`, `hooks.launch` — the carrier contains this
   payload's shim, parses, and the configured command really launches;
 - `hooks.sandbox_write` (dsh/codex) — the hook can write project `.r2c`;
@@ -136,82 +377,18 @@ Zero-model checks, each reported as pass/warn/fail:
   versions.
 
 `adapter smoke <agent>` re-runs just the discovery probe. `adapter prune`
-deletes payloads, backups and cache entries no receipt references.
-
-## Upgrade
-
-Versions are locked-step: engine, payload and all five adapters share `V`. The
-version source of truth is `package.json.version`, and `npx r2c-runner`
-resolves the version the project pins.
-
-1. Install the new engine (`npx r2c-runner@<V>` or the pinned spec).
-2. Re-run `adapter install <agent>` with the new engine and no `--plugin`
-   override. The payload version defaults to the engine version, so the
-   installer materialises `<state>/plugin/<V>/` and rewires hooks and Submit
-   lines to it.
-3. Re-run `adapter doctor <agent>`. The receipt now records
-   `payload.version = <V>` and `engine.version = <V>`.
-
-Adapters can be upgraded independently — upgrading `claude-code` does not touch
-`codex` — and re-running the same version is a no-op. A payload whose
-`engine` range does not match the engine fails the install gate (exit `2`) for
-`--copy`; `--link` only warns, because the linked files are shared in place.
-
-## Rollback
-
-Rollback means going back to the matching set: **old engine + that engine's
-payload**. Re-install the chosen agent with the old engine and its payload,
-allowing the overwrite:
-
-```bash
-npx r2c-runner@<old-V> adapter install <agent> \
-  --from <old-payload-dir|r2c-plugin-<old-V>.tgz> --force --project .
-npx r2c-runner@<old-V> adapter doctor <agent> --project .
-```
-
-`--from` can be replaced by `--plugin <old-V>` when the old payload is already
-cached under `~/.r2c/cache/plugin-<old-V>`. `--force` covers any target the
-receipt does not know about (hand-edited files, files left by another tool);
-files the newer install owned are replaced and backed up from the receipt. The
-receipt is rewritten with the old payload/engine pair. Files that exist only in
-the newer payload have no counterpart in the old plan and stay behind — check
-the agent's install directory afterwards and delete what the old version never
-installed.
-
-**Pointing `PATH` back at an older engine is not a rollback.** The receipt
-still pins the newer payload, every hook and Submit line still invokes the
-newer shim, and `doctor` reports the mismatch as a failure. A half-reverted
-install also leaves runs created by the newer engine with a state schema the
-older engine may refuse (`STATE_SCHEMA_NEWER`); do not roll back below the
-schema of the runs you intend to continue.
-
-## Uninstall
-
-```bash
-npx r2c-runner adapter uninstall <agent> --project .
-```
-
-Uninstall deletes exactly the files listed in the receipt, removes only the
-JSON entries and hook items this install merged (never a neighbour's), deletes
-self-created empty directories without going above the install root, and drops
-the payload only when no receipt still references it. A file whose sha256 no
-longer matches the receipt is not deleted; it is reported in `leftover[]` for
-manual review (`--force` deletes it anyway). Runtime state under `.r2c/` —
-runs, events, usage, business artifacts — is **kept** by default so a later
-reinstall or `r2c status` still sees the history.
-
-`--purge-state` additionally removes the runtime paths
-(`.r2c/runs/`, `.r2c/usage/`, `.r2c/latest.json`), every installed payload under
-`.r2c/plugin/` and the receipts directory `.r2c/install/`. Business artifacts
-(`.r2c/ir.md`, `.r2c/sr-map.md`, `.r2c/artifacts/**`) are not touched. Anything
-the installer cannot own safely is reported in `leftover[]` for manual cleanup;
-dsh additionally needs a restart after uninstall.
+deletes engines, payloads, backups and cache entries no receipt references.
 
 ## Exit codes
 
-`0` success and idempotent no-op · `1` internal error · `2` usage, manifest or
-conflict error · `3` gate, smoke or validation failure · `4` agent not
-detected or adapter not installed · `5` lock conflict.
+Engine: `0` success and idempotent no-op · `1` internal error · `2` usage,
+manifest or conflict error · `3` gate, smoke or validation failure · `4` agent
+not detected or adapter not installed · `5` lock conflict.
+
+Bootstrap: `0` success · `1` download, asset or spawn failure · `2` usage
+(including an unsupported Node, refused before anything is downloaded) · `3`
+engine-archive checksum or extraction failure. A failing `adapter install`
+keeps its own exit code (`2`–`5`) instead of `1`.
 
 ## B and C have no runtime guard
 

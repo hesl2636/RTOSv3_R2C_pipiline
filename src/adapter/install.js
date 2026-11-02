@@ -10,11 +10,13 @@
 import { cpSync, existsSync, readFileSync, rmdirSync, statSync, unlinkSync } from 'node:fs';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
+import { ENGINE_ENTRY } from '../engine.js';
 import { EXIT_CODES, R2cError } from '../errors.js';
+import { isInside } from '../paths.js';
 import { isValidRange, satisfies } from '../version.js';
 import { withLock } from '../lock.js';
 import { detectAgent } from './detect.js';
-import { buildPlan, defaultRunnerCommand, loadAdapterDeclaration } from './plan.js';
+import { buildPlan, installedRunnerCommand, loadAdapterDeclaration } from './plan.js';
 import { materializePayload, payloadHome, payloadReady, resolvePayload } from './payload.js';
 import { pointerGet, pointerSet } from './pointer.js';
 import { runAdapterSmoke } from './smoke.js';
@@ -33,14 +35,16 @@ import {
   createDirLink,
   ensureDir,
   isFile,
-  isInside,
   isLink,
   linkTarget,
+  liveReceipt,
   readJsonIfExists,
+  receiptEntryPath,
   removePath,
   sha256File,
   userHome,
 } from './util.js';
+import { removeVersionSet, supersededVersionSet } from './versions.js';
 
 function installError(code, message, details = null, exitCode = EXIT_CODES.USAGE) {
   return new R2cError(code, message, details, exitCode);
@@ -96,6 +100,19 @@ function resolveScope(options, adapter) {
   return scope;
 }
 
+/**
+ * Where this install's engine lives (C9). `--engine` wins, then
+ * `R2C_ENGINE_HOME`, then the parent of the running engine's `bin/`, so a
+ * checkout install still records a true path.
+ */
+function resolveEngineHome(ctx, options) {
+  const declared = options.engine ?? process.env.R2C_ENGINE_HOME ?? null;
+  const home = declared !== null && declared !== ''
+    ? resolve(process.cwd(), declared)
+    : dirname(dirname(ctx.binPath));
+  return { home, entry: join(home, ENGINE_ENTRY) };
+}
+
 function gateVersions({ ctx, resolved, adapter, mode }) {
   const warnings = [];
   const ranges = [
@@ -143,7 +160,7 @@ function gateAgent({ detection, adapter }) {
 function backupTarget(state, agentId, timestamp, target, scope, projectRoot) {
   const root = scope === 'user' ? userHome() : projectRoot;
   let rel = relative(root, target);
-  if (rel === '' || rel.startsWith('..') || !isInside(root, target)) {
+  if (rel === '' || !isInside(root, target)) {
     rel = target.replace(/[^a-zA-Z0-9._-]+/g, '_');
   }
   const destination = join(
@@ -287,8 +304,14 @@ async function recoverPending(state, agentId, warnings) {
   }
 }
 
-function collectFilePlan(planEntries, prior, options) {
-  const priorByPath = new Map((prior?.files ?? []).map((file) => [pathKey(file.path), file]));
+function collectFilePlan(planEntries, prior, options, projectRoot) {
+  const recordedRoot = prior?.project_root ?? null;
+  const priorByPath = new Map(
+    (prior?.files ?? []).map((file) => [
+      pathKey(receiptEntryPath(file, { projectRoot, recordedRoot })),
+      file,
+    ]),
+  );
   const conflicts = [];
   const decisions = [];
   for (const entry of planEntries) {
@@ -332,41 +355,66 @@ function collectFilePlan(planEntries, prior, options) {
   return { conflicts, decisions };
 }
 
-function buildReceipt({ ctx, resolved, adapter, scope, mode, runnerCmd, detection, decisions, merged, mergedFilesCreated, prior, state, home }) {
+/**
+ * Layout files the previous receipt owned that the new payload no longer
+ * ships. An unmodified copy is removed from the project; a hand-edited copy is
+ * kept and reported, because the receipt no longer has a hash that authorises
+ * deleting it.
+ */
+function staleLayoutPlan({ prior, decisions, projectRoot }) {
+  if (prior === null) return { removals: [], modified: [] };
+  const current = new Set(
+    decisions.filter(({ entry }) => entry.action === 'layout').map(({ entry }) => pathKey(entry.target)),
+  );
+  const recordedRoot = prior.project_root ?? null;
+  const removals = [];
+  const modified = [];
+  for (const file of prior.files ?? []) {
+    if (file.kind !== 'layout') continue;
+    const path = receiptEntryPath(file, { projectRoot, recordedRoot });
+    if (current.has(pathKey(path)) || !existsSync(path)) continue;
+    if (isFile(path) && sha256File(path) === file.sha256) removals.push(path);
+    else modified.push(path);
+  }
+  return { removals, modified };
+}
+
+function buildReceipt({ ctx, adapter, scope, mode, runnerCmd, report, decisions, merged, mergedFilesCreated, prior, state, home }) {
   const now = ctx.now().toISOString();
   const files = [];
   for (const decision of decisions) {
     const { entry, write, known } = decision;
     if (!write && known !== null) {
-      files.push(known);
+      // A skipped file keeps its recorded hash but must carry the live path:
+      // the project may have been renamed since the receipt was written, and
+      // this receipt is about to record the new root.
+      files.push(entry.action === 'layout' ? known : { ...known, path: entry.target });
       continue;
     }
     if (!write) continue;
     files.push(
       entry.action === 'link'
         ? { path: entry.target, kind: 'link', sha256: null, target: entry.linkTarget }
-        : { path: entry.target, kind: entry.kind ?? entry.action, sha256: entry.sha256, source: entry.sourceRel },
+        : entry.action === 'layout'
+          ? { path: entry.rel, kind: 'layout', sha256: entry.sha256 }
+          : { path: entry.target, kind: entry.kind ?? entry.action, sha256: entry.sha256, source: entry.sourceRel },
     );
   }
+  const hasLayout = files.some((file) => file.kind === 'layout');
   return {
     schema: 'r2c.install/v1',
     adapter: adapter.id,
     scope,
-    project_root: scope === 'user' ? null : ctx.projectRoot,
+    // Layout copies live in the project root even for user scope, so the
+    // receipt must say which project it wrote into for uninstall to revert them.
+    project_root: hasLayout || scope !== 'user' ? ctx.projectRoot : null,
     payload_home: home,
     mode,
-    payload: {
-      version: resolved.manifest.version,
-      sha256: resolved.sha256,
-      source: resolved.source,
-    },
-    engine: { version: ctx.version, requires: adapter.requires?.engine ?? null },
+    payload: report.payload,
+    engine: report.engine,
     runner_cmd: runnerCmd,
-    requires: {
-      engine: adapter.requires?.engine ?? null,
-      agent: adapter.requires?.agent ?? null,
-    },
-    agent: { bin: detection.bin, version: detection.version },
+    requires: report.requires,
+    agent: report.agent,
     files,
     merged,
     merged_files_created: mergedFilesCreated,
@@ -391,9 +439,9 @@ export async function installAdapter({ ctx, agentId, options }) {
     const scope = resolveScope(options, adapter);
     const state = stateDir(scope, ctx.projectRoot);
     if (options.dryRun) {
-      return installOnce({ ctx, agentId, options, state, resolved, adapter, map, scope });
+      return await installOnce({ ctx, agentId, options, state, resolved, adapter, map, scope });
     }
-    return withLock(installLockPath(state), () =>
+    return await withLock(installLockPath(state), () =>
       installOnce({ ctx, agentId, options, state, resolved, adapter, map, scope }),
     );
   } finally {
@@ -421,7 +469,25 @@ async function installOnce({ ctx, agentId, options, state, resolved, adapter, ma
     warnings.push(...gateAgent({ detection, adapter }));
 
     const home = payloadHome(scope, ctx.projectRoot, resolved.manifest.version);
-    const runnerCmd = defaultRunnerCommand(ctx, resolved);
+    const engine = resolveEngineHome(ctx, options);
+    const runnerCmd = installedRunnerCommand(ctx, engine, scope);
+    // One set of report fragments for the dry-run, noop and installed results,
+    // so a payload or engine field can only be described one way.
+    const report = {
+      payload: {
+        version: resolved.manifest.version,
+        sha256: resolved.sha256,
+        source: resolved.source,
+      },
+      engine: {
+        version: ctx.version,
+        requires: adapter.requires?.engine ?? null,
+        home: engine.home,
+        entry: engine.entry,
+      },
+      requires: { engine: adapter.requires?.engine ?? null, agent: adapter.requires?.agent ?? null },
+      agent: { bin: detection.bin, version: detection.version },
+    };
     const plan = buildPlan({
       resolved,
       adapter,
@@ -435,11 +501,16 @@ async function installOnce({ ctx, agentId, options, state, resolved, adapter, ma
     });
     warnings.push(...plan.warnings);
 
-    const prior = readJsonIfExists(receiptPath(state, adapter.id));
+    const stored = readJsonIfExists(receiptPath(state, adapter.id));
+    // Re-root the receipt's absolute records (payload/engine homes, created
+    // dirs) at this project, so a moved project upgrades in place.
+    const prior = stored === null ? null : liveReceipt(stored, ctx.projectRoot);
     if (!options.dryRun) await recoverPending(state, adapter.id, warnings);
     const payloadNeeded = !payloadReady(home, resolved);
     const filePlan = plan.entries.filter((entry) => entry.action !== 'merge-json');
-    const { conflicts, decisions } = collectFilePlan(filePlan, prior, options);
+    const { conflicts, decisions } = collectFilePlan(filePlan, prior, options, ctx.projectRoot);
+    const staleLayout = staleLayoutPlan({ prior, decisions, projectRoot: ctx.projectRoot });
+    for (const path of staleLayout.modified) warnings.push(`layout-stale:${path}`);
     const mergeGroups = groupMerges(plan.entries.filter((entry) => entry.action === 'merge-json'));
     const mergeScans = new Map();
     for (const [target, group] of mergeGroups) mergeScans.set(target, scanMergeGroup(group));
@@ -457,11 +528,21 @@ async function installOnce({ ctx, agentId, options, state, resolved, adapter, ma
 
     const writes = decisions.filter((decision) => decision.write);
     const mergeWrites = [...mergeScans.values()].filter((scan) => scan.needsWrite);
-    const changed = payloadNeeded || writes.length > 0 || mergeWrites.length > 0;
+    const changed = payloadNeeded || writes.length > 0 || mergeWrites.length > 0
+      || staleLayout.removals.length > 0;
     const externalStepFile = stepsFile(resolved, adapter.id, home);
     const runSteps = externalStepFile !== null && (changed || prior?.steps === null || prior?.steps === undefined);
 
     const manual = [...(adapter.manualSteps ?? [])];
+    // Engine, payload and adapters move as one set (C7): a re-install at another
+    // version retires the previous one, unless another receipt still uses it.
+    const currentSet = {
+      state_dir: state,
+      adapter: adapter.id,
+      engine,
+      payload_home: home,
+    };
+    const superseded = supersededVersionSet({ prior, current: currentSet, projectRoot: ctx.projectRoot });
     if (options.dryRun) {
       return {
         command: 'adapter.install',
@@ -472,20 +553,18 @@ async function installOnce({ ctx, agentId, options, state, resolved, adapter, ma
           changed,
           dry_run: true,
           payload_home: home,
-          payload: {
-            version: resolved.manifest.version,
-            sha256: resolved.sha256,
-            source: resolved.source,
-          },
-          engine: { version: ctx.version, requires: adapter.requires?.engine ?? null },
+          payload: report.payload,
+          engine: report.engine,
           runner_cmd: runnerCmd,
-          requires: { engine: adapter.requires?.engine ?? null, agent: adapter.requires?.agent ?? null },
-          agent: { bin: detection.bin, version: detection.version },
+          requires: report.requires,
+          agent: report.agent,
           plan: [
             ...(payloadNeeded ? [{ action: 'payload', target: home }] : []),
             ...writes.map(({ entry }) => ({ action: entry.action, target: entry.target })),
             ...mergeWrites.map((scan) => ({ action: 'merge-json', target: scan.target })),
             ...(runSteps ? [{ action: 'steps', target: externalStepFile }] : []),
+            ...staleLayout.removals.map((path) => ({ action: 'remove', target: path, reason: 'layout' })),
+            ...superseded.map((entry) => ({ action: 'remove', target: entry.path })),
           ],
           files: [],
           skipped: decisions.filter((decision) => !decision.write).map(({ entry }) => entry.target),
@@ -505,15 +584,11 @@ async function installOnce({ ctx, agentId, options, state, resolved, adapter, ma
           action: 'noop',
           changed: false,
           payload_home: home,
-          payload: {
-            version: resolved.manifest.version,
-            sha256: resolved.sha256,
-            source: resolved.source,
-          },
-          engine: { version: ctx.version, requires: adapter.requires?.engine ?? null },
+          payload: report.payload,
+          engine: report.engine,
           runner_cmd: runnerCmd,
-          requires: { engine: adapter.requires?.engine ?? null, agent: adapter.requires?.agent ?? null },
-          agent: { bin: detection.bin, version: detection.version },
+          requires: report.requires,
+          agent: report.agent,
           files: [],
           skipped: decisions.filter((decision) => !decision.write).map(({ entry }) => entry.target),
           warnings,
@@ -608,6 +683,18 @@ async function installOnce({ ctx, agentId, options, state, resolved, adapter, ma
         }
         if (!preexisting) pending.created_files.push(entry.target);
       }
+      for (const path of staleLayout.removals) {
+        recordBackup(pending, {
+          path,
+          backup: backupTarget(state, adapter.id, timestamp, path, scope, ctx.projectRoot),
+        });
+        removePath(path);
+        try {
+          rmdirSync(dirname(path));
+        } catch {
+          // the directory still holds other files, or was not ours to remove
+        }
+      }
       atomicWriteJson(pendingPath(state, adapter.id), pending);
 
       let stepsOutcome = null;
@@ -657,12 +744,11 @@ async function installOnce({ ctx, agentId, options, state, resolved, adapter, ma
 
       const receipt = buildReceipt({
         ctx,
-        resolved,
         adapter,
         scope,
         mode,
         runnerCmd,
-        detection,
+        report,
         decisions,
         merged: [...merged.values()],
         mergedFilesCreated: [...mergedFilesCreated],
@@ -688,6 +774,11 @@ async function installOnce({ ctx, agentId, options, state, resolved, adapter, ma
       atomicWriteJson(receiptPath(state, adapter.id), receipt);
       unlinkSync(pendingPath(state, adapter.id));
 
+      const cleanup = removeVersionSet(superseded);
+      for (const failure of cleanup.failed) {
+        warnings.push(`cleanup-failed:${failure.path}: ${failure.error}`);
+      }
+
       return {
         command: 'adapter.install',
         data: {
@@ -701,11 +792,18 @@ async function installOnce({ ctx, agentId, options, state, resolved, adapter, ma
           runner_cmd: runnerCmd,
           requires: receipt.requires,
           agent: receipt.agent,
-          files: receipt.files.filter((file) => writes.some(({ entry }) => pathKey(entry.target) === pathKey(file.path))),
+          files: receipt.files.filter((file) => writes.some(
+            ({ entry }) => pathKey(entry.target) === pathKey(receiptEntryPath(file, {
+              projectRoot: ctx.projectRoot,
+              recordedRoot: receipt.project_root ?? null,
+            })),
+          )),
           skipped: decisions.filter((decision) => !decision.write).map(({ entry }) => entry.target),
           warnings,
           manual,
           leftover: [...receipt.step_leftover],
+          removed_layout: staleLayout.removals,
+          removed_version_set: cleanup.removed,
         },
       };
     } catch (error) {

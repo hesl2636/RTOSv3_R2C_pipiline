@@ -40,9 +40,10 @@ Global options:
       --runner-cmd CMD    Prefix used in rendered Submit lines.
       --retry             resume: re-activate the current failed step.
       --workflow ID       hook stop: only consider this workflow's runs.
+      --dry-run           run: discover and validate only, write no state.
 
 Adapter options:
-      --from PATH         Payload directory or r2c-plugin-<V>.tgz archive.
+      --from PATH         Payload directory or r2c-payload-<V>.tgz archive.
       --scope SCOPE       project | user (default from adapter.json).
       --plugin VERSION    Payload version for cache lookup (default: engine).
       --mcp FILE          Merge mcpServers from FILE into the agent config.
@@ -51,11 +52,13 @@ Adapter options:
       --copy / --link     Install mode; --link requires --from.
       --no-smoke          Skip the post-install discovery probe.
       --profile NAME      Agent profile (dsh: default "web").
+      --engine DIR        Engine home recorded in the receipt (default:
+                          R2C_ENGINE_HOME, else the running engine's root).
       --purge-state       uninstall: also remove .r2c runtime state.
 
 Acceptance options:
       --keep              Keep the temporary sandbox and print its path.
-      --only ID[,ID]      Run only the named checks (P1 is reachable here).
+      --only ID[,ID]      Run only the named checks.
 `;
 
 const PACKAGE_JSON = new URL('../package.json', import.meta.url);
@@ -79,6 +82,7 @@ const VALUE_OPTIONS = new Set([
   '--workflow',
   '--profile',
   '--only',
+  '--engine',
 ]);
 
 const FLAG_OPTIONS = new Set([
@@ -97,10 +101,6 @@ function readPackage() {
 
 function readVersion() {
   return readPackage().version;
-}
-
-function readPackageName() {
-  return readPackage().name;
 }
 
 /** True when `version` (as reported by process.versions.node) is in NODE_RANGE. */
@@ -248,6 +248,7 @@ function parseOptions(argv) {
       else if (name === '--mcp') options.mcp = value;
       else if (name === '--agent') options.agent = value;
       else if (name === '--profile') options.profile = value;
+      else if (name === '--engine') options.engine = value;
       else if (name === '--workflow') options.workflow = value;
       else if (name === '--only') options.only = value;
       continue;
@@ -347,11 +348,14 @@ export async function main(argv) {
     '--purge-state',
     '--copy',
     '--link',
+    '--engine',
   ]);
   const ACCEPTANCE_ONLY = new Set(['--keep', '--only']);
   let foreign = null;
+  const adapterOnly = (option) => ADAPTER_ONLY.has(option)
+    && !(option === '--dry-run' && command === 'run');
   if (command !== 'adapter' && command !== 'acceptance') {
-    foreign = (options.provided ?? []).find((option) => ADAPTER_ONLY.has(option));
+    foreign = (options.provided ?? []).find(adapterOnly);
   } else if (command === 'acceptance') {
     foreign = (options.provided ?? []).find(
       (option) => ADAPTER_ONLY.has(option) && option !== '--agent',
@@ -410,7 +414,6 @@ export async function main(argv) {
       workflow: options.workflow,
       retry: options.retry,
       version: readVersion(),
-      packageName: readPackageName(),
       binPath: BIN_PATH,
       options,
       hookInput,

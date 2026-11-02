@@ -15,7 +15,7 @@ import { dirname, join, resolve } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { withPath } from './support/env.js';
-import { writeTwoStepProject } from './helpers/two-step.js';
+import { dropPayloadManifest, writeTwoStepProject } from './helpers/two-step.js';
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const BIN = join(REPO, 'bin', 'r2c.js');
@@ -133,6 +133,10 @@ function cli(args, { env, cwd, input } = {}) {
   });
 }
 
+function posix(value) {
+  return value.replaceAll('\\', '/');
+}
+
 function envelope(result) {
   const line = result.stdout.trim().split(/\r?\n/).filter(Boolean).at(-1) ?? '';
   try {
@@ -183,7 +187,7 @@ function writePayload(t, { smoke } = {}) {
   cpSync(join(REPO, 'shims'), join(payload, 'shims'), { recursive: true });
   if (smoke !== undefined) writeFileSync(join(payload, 'adapters', 'dsh', 'smoke.mjs'), smoke);
   writeFileSync(
-    join(payload, 'r2c-plugin.json'),
+    join(payload, 'r2c-payload.json'),
     `${JSON.stringify({ schema: 'r2c.plugin/v1', version: ENGINE_VERSION, engine: '^0.1.0', files: {} }, null, 2)}\n`,
   );
   return payload;
@@ -211,9 +215,11 @@ test('user-scope install renders the plugin, patch, hooks and profile entry', (t
   const json = envelope(result);
   assert.equal(json.data.scope, 'user');
   assert.equal(json.data.action, 'installed');
-  assert.equal(json.data.runner_cmd, `npx --yes r2c-runner@${ENGINE_VERSION}`);
+  // dsh is user-scope only, so the engine path is absolute and quoted on demand.
+  assert.equal(json.data.runner_cmd, `node ${posix(BIN)}`);
+  assert.ok(!json.data.runner_cmd.includes('npx'));
 
-  const payloadHome = join(home, '.r2c', 'plugin', ENGINE_VERSION);
+  const payloadHome = join(home, '.r2c', 'payload', ENGINE_VERSION);
   for (const file of ['index.mjs', 'package.json', 'cordis.patch.yml', 'hooks.json']) {
     assert.ok(existsSync(join(payloadHome, 'adapters', 'dsh', file)), file);
   }
@@ -237,6 +243,16 @@ test('user-scope install renders the plugin, patch, hooks and profile entry', (t
   assert.equal(receipt.steps.profile.name, 'web');
   assert.equal(receipt.steps.profile.dir, profileDir(dshHome));
   assert.match(receipt.steps.bundle_patch, /cordis\.patch\.yml$/);
+
+  // User scope: the engine entry is absolute, quoted, and carried by every
+  // hook line; the payload path is JSON-escaped exactly once.
+  const entry = receipt.engine.entry;
+  const stopCommand = hooks.Stop[0].hooks[0].command;
+  assert.ok(!hooksText.includes('npx'), hooksText);
+  assert.ok(stopCommand.includes(`--runner-cmd="node ${posix(entry)}"`), stopCommand);
+  assert.ok(posix(stopCommand).includes(posix(join(payloadHome, 'shims', 'hook.mjs'))), stopCommand);
+  assert.ok(!hooksText.includes('\\\\\\\\'), 'paths are JSON-escaped once, not twice');
+  assert.ok(patch.includes(`runnerCmd: 'node ${posix(entry)}'`), patch);
 
   const second = install(env, project);
   assert.equal(second.status, 0, second.stderr);
@@ -345,7 +361,7 @@ test('mcp servers are appended to the rendered bundle patch and removed with the
   }));
   const result = install(env, project, ['--mcp', mcpFile]);
   assert.equal(result.status, 0, result.stderr);
-  const payloadHome = join(home, '.r2c', 'plugin', ENGINE_VERSION);
+  const payloadHome = join(home, '.r2c', 'payload', ENGINE_VERSION);
   const bundlePatch = join(payloadHome, 'adapters', 'dsh', 'cordis.patch.yml');
   const patch = readFileSync(bundlePatch, 'utf8');
   assert.match(patch, /r2c-mcp-r2c-sr/);
@@ -390,7 +406,8 @@ test('pre-tool-use denial is exit 0 + hookSpecificOutput.permissionDecision=deny
 test('the native plugin registers commands, steers on stop and denies guarded tools', async (t) => {
   const { home, project, env } = setup(t);
   assert.equal(install(env, project).status, 0);
-  const payloadHome = join(home, '.r2c', 'plugin', ENGINE_VERSION);
+  dropPayloadManifest(project);
+  const payloadHome = join(home, '.r2c', 'payload', ENGINE_VERSION);
   const plugin = await import(`${pathToFileURL(join(payloadHome, 'adapters', 'dsh', 'index.mjs')).href}?t=${Date.now()}`);
   const listeners = new Map();
   const commands = [];
@@ -449,7 +466,8 @@ test('the native plugin registers commands, steers on stop and denies guarded to
 test('DSH_SESSION_ID covers a stop when the event has no session id', async (t) => {
   const { home, project, env } = setup(t);
   assert.equal(install(env, project).status, 0);
-  const payloadHome = join(home, '.r2c', 'plugin', ENGINE_VERSION);
+  dropPayloadManifest(project);
+  const payloadHome = join(home, '.r2c', 'payload', ENGINE_VERSION);
   const plugin = await import(`${pathToFileURL(join(payloadHome, 'adapters', 'dsh', 'index.mjs')).href}?t=${Date.now()}-env`);
   let stop;
   plugin.apply({
@@ -480,7 +498,7 @@ test('DSH_SESSION_ID covers a stop when the event has no session id', async (t) 
 test('plugin errors are warnings and never reject the turn', async (t) => {
   const { home, project, env } = setup(t);
   assert.equal(install(env, project).status, 0);
-  const payloadHome = join(home, '.r2c', 'plugin', ENGINE_VERSION);
+  const payloadHome = join(home, '.r2c', 'payload', ENGINE_VERSION);
   const plugin = await import(`${pathToFileURL(join(payloadHome, 'adapters', 'dsh', 'index.mjs')).href}?t=${Date.now()}-err`);
   let stop;
   plugin.apply({

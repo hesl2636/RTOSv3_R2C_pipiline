@@ -80,7 +80,7 @@ function deliver(ctx, state) {
     manifest: manifest.data,
     root: manifest.root,
     stepId: state.current_step_id,
-    runnerCmd: ctx.runnerCmd ?? defaultRunnerCommand(ctx.binPath),
+    runnerCmd: ctx.runnerCmd ?? defaultRunnerCommand(ctx.binPath, { projectRoot: ctx.projectRoot }),
     sessionId: state.session_id,
     manifestPath: ctx.manifest ?? null,
   });

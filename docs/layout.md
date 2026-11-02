@@ -1,8 +1,11 @@
 # Repository layout
 
-One npm package (`r2c-runner`) at the repository root. No workspaces: the
-engine, the workflow content and the agent adapters live in one tree but only
-the engine is published.
+One repository root and one release channel: the engine, the workflow content
+and the agent adapters live in one tree and ship as the four assets of a GitHub
+Release ([What is published](#what-is-published)). Nothing goes to npm; the
+single `package.json` pins the build/test dependencies and the `engines.node`
+floor, and it is shipped inside the engine archive so an extracted engine can
+report its own version.
 
 ## Target tree
 
@@ -19,10 +22,20 @@ the engine is published.
 │   ├── hook.js                    # hook stop / hook pre-tool-use dialects
 │   ├── version.js                 # restricted semver evaluator (requires.engine)
 │   ├── schema.js                  # schema revision table + error mapping
+│   ├── plugin.js                  # payload file set, r2c.plugin/v1 manifest, ustar container
+│   ├── engine.js                  # engine file set (same container and path rules)
 │   ├── adapter/                   # the single installer (install/doctor/...)
+│   │   ├── install.js             # detect → verify → plan → conflicts → receipt
+│   │   ├── plan.js                # declarations → concrete paths and rendered bytes
+│   │   ├── payload.js             # payload resolution, verification, materialisation
+│   │   ├── release.js             # release transport, credentials, SHA256SUMS
+│   │   ├── uninstall.js           # receipt-driven removal
+│   │   ├── doctor.js              # zero-model health checks
+│   │   ├── versions.js            # engine/payload version-set ownership (C7)
+│   │   └── util.js                # path, hash and atomic-write primitives
 │   └── acceptance/                # fixture + zero-model aggregator
 ├── schema/                        # r2c.{workflow,state,latest,usage,adapter,
-│                                  #   adapter-map,plugin}/v1 JSON Schemas
+│                                  #   adapter-map,payload}/v1 JSON Schemas
 ├── shims/                         # hook.mjs + shared smoke-discovery.mjs
 ├── test/                          # node --test suites (not published)
 ├── pack/                          # workflow package = manifest root
@@ -41,8 +54,8 @@ the engine is published.
 │   ├── analysis/                  # frozen intranet attribution analysis plugin
 │   └── intranet-mcp/              # frozen intranet MCP server definitions
 ├── scripts/
-│   ├── release.mjs                # the only packager (r2c-plugin-V.tgz)
-│   ├── check-pack.mjs             # npm files whitelist gate
+│   ├── release.mjs                # the only packager (the four release assets)
+│   ├── install.mjs                # the bootstrap, published verbatim as the install.mjs asset
 │   └── verify-sums.mjs            # SHA256SUMS verification
 ├── docs/
 │   ├── layout.md                  # this file
@@ -70,16 +83,21 @@ the engine is published.
 | `pack/` | workflow authors | The only place workflow content exists: manifests, task files, skills, command sources. Adapters must not keep copies of these files. `pack/` is the manifest root (`workflows/` sits directly inside it). |
 | `adapters/<agent>/` | agent adapters | Declarations (`adapter.json`, `map.json`), agent-specific assets, optional `steps.mjs` / `smoke.mjs`. Copies of `pack/` content are forbidden; install-time generation only. |
 | `plugins/{upload,analysis,intranet-mcp}/` | intranet maintainers | Frozen. Not published to npm and never installed by default. See `docs/plugins.md`. |
-| `scripts/release.mjs` | release maintainer | The single packager; produces `r2c-plugin-V.tgz` + `SHA256SUMS.txt`. |
+| `scripts/release.mjs` | release maintainer | The single packager; produces `r2c-engine-V.tgz`, `r2c-payload-V.tgz`, `install.mjs` and `SHA256SUMS.txt` — the whole release. |
+| `scripts/install.mjs` | release maintainer | The bootstrap; one copy, published unchanged as the `install.mjs` asset. Node built-ins only — no imports from `src/`. |
 | `docs/` | maintainers | `docs/agents/issue-tracker.md` is preserved unchanged; the remaining docs describe this layout, installation, legacy recovery, plugins, compatibility and blue-zone preflight. |
 | `.github/workflows/` | CI maintainers | Zero-secret gates; live agent probes stay manual and `continue-on-error`. |
 
 ## What is published
 
-The npm package contains exactly `package.json` plus the `files` whitelist:
-`bin/`, `src/`, `schema/`, `README.md`, `LICENSE`. `pack/`, `adapters/`,
-`plugins/`, `test/`, `docs/`, `scripts/` and `.github/` are never published —
-adapters ship as the separate `r2c-plugin-V.tgz` release asset.
+A release has exactly four assets and nothing else: `r2c-engine-V.tgz` (the
+runnable CLI), `r2c-payload-V.tgz` (adapters, workflow content and shims),
+`install.mjs` (the repository bootstrap, byte for byte) and `SHA256SUMS.txt`
+(one digest per other asset). Nothing is published to npm; `npm ci` in CI only
+installs the build/test dependencies. `scripts/release.mjs --check` enforces
+that asset whitelist, so `pack/`, `adapters/`, `plugins/`, `test/`, `docs/`,
+`scripts/` and `.github/` can only reach a release inside the two archives that
+declare them.
 
 ## Runtime state
 
@@ -88,9 +106,9 @@ All run state lands inside the project under `.r2c/`:
 | Path | Committed? |
 | --- | --- |
 | `.r2c/runs/`, `.r2c/latest.json`, `.r2c/usage/` | No — runtime only |
-| `.r2c/install/`, `.r2c/plugin/` | No — install receipts and payloads |
+| `.r2c/install/`, `.r2c/payload/`, `.r2c/engine/` | No — install receipts, payloads and installed engines |
 | `.r2c/ir.md`, `.r2c/sr-map.md`, `.r2c/artifacts/**` | Yes — business artifacts |
 
-`.gitignore` lists those five runtime paths, `node_modules/`, and `dist/`
+`.gitignore` lists those runtime paths, `node_modules/`, and `dist/`
 (local release output). Local-only patterns belong in `.git/info/exclude`,
 never in the committed file.

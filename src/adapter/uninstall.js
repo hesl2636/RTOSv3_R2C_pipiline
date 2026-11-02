@@ -7,7 +7,7 @@
  * parts of the file. Runtime state under `.r2c` survives unless `--purge-state`
  * is explicit.
  */
-import { existsSync, readFileSync, readdirSync, rmdirSync, unlinkSync } from 'node:fs';
+import { existsSync, readFileSync, rmdirSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { EXIT_CODES, R2cError } from '../errors.js';
@@ -19,10 +19,13 @@ import {
   atomicWriteJson,
   isFile,
   isLink,
+  liveReceipt,
   readJsonIfExists,
+  receiptEntryPath,
   removePath,
   sha256File,
 } from './util.js';
+import { engineReferenced, isEngineHome, payloadReferenced, removeVersionSet } from './versions.js';
 
 function uninstallError(code, message, details = null, exitCode = EXIT_CODES.USAGE) {
   return new R2cError(code, message, details, exitCode);
@@ -65,57 +68,34 @@ function pointerDelete(object, pointer) {
   return true;
 }
 
-function readReceipts(state) {
-  const dir = installDir(state);
-  if (!existsSync(dir)) return [];
-  const receipts = [];
-  for (const name of readdirSync(dir)) {
-    if (!name.endsWith('.json') || name.endsWith('.pending.json')) continue;
-    try {
-      receipts.push(JSON.parse(readFileSync(join(dir, name), 'utf8')));
-    } catch {
-      // A corrupt receipt is doctor's problem, not prune's.
-    }
-  }
-  return receipts;
-}
-
-function payloadReferenced(home, projectRoot, excludeAgent, excludeState) {
-  for (const state of [stateDir('project', projectRoot), stateDir('user', projectRoot)]) {
-    for (const receipt of readReceipts(state)) {
-      if (receipt.adapter === excludeAgent && state === excludeState) continue;
-      if (receipt.payload_home === home) return receipt.adapter;
-    }
-  }
-  return null;
-}
-
-function planUninstall({ receipt, force }) {
+function planUninstall({ receipt, force, projectRoot }) {
+  const recordedRoot = receipt.project_root ?? null;
   const deletions = [];
   const leftovers = [];
-  for (const file of receipt.files ?? []) {
-    if (!existsSync(file.path)) continue;
-    if (file.kind === 'link') {
-      if (isLink(file.path)) {
-        deletions.push({ path: file.path, kind: 'link' });
+  for (const entry of receipt.files ?? []) {
+    const path = receiptEntryPath(entry, { projectRoot, recordedRoot });
+    if (!existsSync(path)) continue;
+    if (entry.kind === 'link') {
+      if (isLink(path)) {
+        deletions.push({ path, kind: 'link' });
       } else if (force) {
-        deletions.push({ path: file.path, kind: 'link' });
+        deletions.push({ path, kind: 'link' });
       } else {
-        leftovers.push(`modified:${file.path}`);
+        leftovers.push(`modified:${path}`);
       }
       continue;
     }
-    if (!isFile(file.path)) {
-      if (force) deletions.push({ path: file.path, kind: file.kind });
-      else leftovers.push(`modified:${file.path}`);
+    if (!isFile(path)) {
+      if (force) deletions.push({ path, kind: entry.kind });
+      else leftovers.push(`modified:${path}`);
       continue;
     }
-    if (sha256File(file.path) === file.sha256) {
-      deletions.push({ path: file.path, kind: file.kind });
+    if (sha256File(path) === entry.sha256) {
+      deletions.push({ path, kind: entry.kind });
     } else if (force) {
-      deletions.push({ path: file.path, kind: file.kind });
+      deletions.push({ path, kind: entry.kind });
     } else {
-      leftovers.push(`modified:${file.path}`);
+      leftovers.push(`modified:${path}`);
     }
   }
   return { deletions, leftovers };
@@ -175,7 +155,7 @@ function applyMergedRemovals(receipt, force, leftovers) {
 }
 
 function purgeRuntimeState(state) {
-  for (const name of ['runs', 'usage', 'plugin']) {
+  for (const name of ['runs', 'usage', 'payload']) {
     removePath(join(state, name));
   }
   removePath(join(state, 'latest.json'));
@@ -198,7 +178,7 @@ export async function uninstallAdapter({ ctx, agentId, options }) {
     return {
       command: 'adapter.uninstall',
       data: await buildReport({
-        receipt,
+        receipt: liveReceipt(receipt, ctx.projectRoot),
         scope,
         dryRun: true,
         options,
@@ -215,7 +195,14 @@ export async function uninstallAdapter({ ctx, agentId, options }) {
         scope,
       }, EXIT_CODES.NO_ACTIVE_RUN);
     }
-    const data = await buildReport({ receipt: fresh, scope, dryRun: false, options, state, projectRoot: ctx.projectRoot });
+    const data = await buildReport({
+      receipt: liveReceipt(fresh, ctx.projectRoot),
+      scope,
+      dryRun: false,
+      options,
+      state,
+      projectRoot: ctx.projectRoot,
+    });
     unlinkSync(receiptFile);
     if (options.purgeState) {
       purgeRuntimeState(state);
@@ -228,15 +215,19 @@ export async function uninstallAdapter({ ctx, agentId, options }) {
 async function buildReport({ receipt, scope, dryRun, options, state, projectRoot }) {
   const warnings = [];
   const leftovers = [];
+  // `receipt` is already the live view (see `liveReceipt`): payload home,
+  // engine home and merged files point at the project as it is now.
+  const payloadHome = receipt.payload_home ?? null;
+  const engineHome = receipt.engine?.home ?? null;
 
   if (!dryRun) {
-    const file = receipt.payload_home ? stepsFile(null, receipt.adapter, receipt.payload_home) : null;
+    const file = payloadHome ? stepsFile(null, receipt.adapter, payloadHome) : null;
     if (file !== null) {
       const outcome = await runAdapterStep(file, 'pre-uninstall', {
         adapter: receipt.adapter,
         scope,
         projectRoot,
-        payloadHome: receipt.payload_home,
+        payloadHome,
         runnerCmd: receipt.runner_cmd ?? null,
         version: receipt.payload?.version ?? null,
         profile: receipt.steps?.profile?.name ?? null,
@@ -249,15 +240,25 @@ async function buildReport({ receipt, scope, dryRun, options, state, projectRoot
     }
   }
 
-  const { deletions, leftovers: modified } = planUninstall({ receipt, force: options.force === true });
+  const { deletions, leftovers: modified } = planUninstall({
+    receipt,
+    force: options.force === true,
+    projectRoot,
+  });
   leftovers.push(...modified);
 
-  const sharedWith = receipt.payload_home
-    ? payloadReferenced(receipt.payload_home, projectRoot, receipt.adapter, state)
+  const sharedWith = payloadHome
+    ? payloadReferenced(payloadHome, projectRoot, { state, adapter: receipt.adapter })
     : null;
-  if (sharedWith !== null) warnings.push(`payload-shared:${receipt.payload_home} still used by ${sharedWith}`);
+  if (sharedWith !== null) warnings.push(`payload-shared:${payloadHome} still used by ${sharedWith}`);
 
-  const payloadRemoved = Boolean(receipt.payload_home) && sharedWith === null;
+  const payloadRemoved = Boolean(payloadHome) && sharedWith === null;
+  const engineVersion = receipt.engine?.version ?? null;
+  const engineSharedWith = engineHome === null
+    ? null
+    : engineReferenced(engineHome, projectRoot, { state, adapter: receipt.adapter });
+  if (engineSharedWith !== null) warnings.push(`engine-shared:${engineHome} still used by ${engineSharedWith}`);
+  const engineRemoved = engineSharedWith === null && isEngineHome(engineHome, engineVersion);
   const files = deletions.map((entry) => ({ path: entry.path, kind: entry.kind }));
 
   // Applying removals in a dry run would mutate the world; report the plan only.
@@ -266,7 +267,13 @@ async function buildReport({ receipt, scope, dryRun, options, state, projectRoot
     const touched = applyMergedRemovals(receipt, options.force === true, leftovers);
     files.push(...touched);
 
-    if (payloadRemoved) removePath(receipt.payload_home);
+    if (payloadRemoved) removePath(payloadHome);
+    if (engineRemoved) {
+      const outcome = removeVersionSet([{ path: engineHome, kind: 'engine' }]);
+      for (const failure of outcome.failed) {
+        warnings.push(`cleanup-failed:${failure.path}: ${failure.error}`);
+      }
+    }
     for (const dir of [...(receipt.dirs_created ?? [])].sort((left, right) => right.length - left.length)) {
       try {
         rmdirSync(dir);
@@ -284,9 +291,12 @@ async function buildReport({ receipt, scope, dryRun, options, state, projectRoot
     action: dryRun ? 'remove' : 'removed',
     changed: true,
     dry_run: dryRun,
-    payload_home: receipt.payload_home,
+    payload_home: payloadHome,
     payload_removed: payloadRemoved && !dryRun,
     payload_shared_with: sharedWith,
+    engine_home: engineHome,
+    engine_removed: engineRemoved && !dryRun,
+    engine_shared_with: engineSharedWith,
     files,
     skipped: [],
     warnings,

@@ -14,6 +14,7 @@ import { dirname, join, resolve } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { withPath } from './support/env.js';
+import { writeEngine } from './helpers/engine.js';
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const BIN = join(REPO, 'bin', 'r2c.js');
@@ -149,6 +150,14 @@ function install(env, project, extra = []) {
   );
 }
 
+function posix(value) {
+  return value.replaceAll('\\', '/');
+}
+
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 function receiptPath(root) {
   return join(root, '.r2c', 'install', 'omp.json');
 }
@@ -159,7 +168,8 @@ function readReceipt(root) {
 
 test('project install writes .omp files, never touches user scope, and never links a plugin', (t) => {
   const { home, project, env, log } = setup(t);
-  const result = install(env, project);
+  const engine = writeEngine(join(project, '.r2c', 'engine', ENGINE_VERSION), BIN);
+  const result = install(env, project, ['--engine', engine]);
   assert.equal(result.status, 0, result.stdout + result.stderr);
   const json = envelope(result);
   assert.equal(json.command, 'adapter.install');
@@ -170,8 +180,12 @@ test('project install writes .omp files, never touches user scope, and never lin
   assert.equal(commands.length, 7);
   assert.ok(commands.includes('r2c-run.md'));
   const run = readFileSync(join(project, '.omp', 'commands', 'r2c-run.md'), 'utf8');
-  assert.match(run, new RegExp(`npx --yes r2c-runner@${ENGINE_VERSION} run`));
+  const runnerCmd = `node .r2c/engine/${ENGINE_VERSION}/bin/r2c.js`;
+  assert.equal(json.data.runner_cmd, runnerCmd);
+  assert.ok(run.includes(`${runnerCmd} run`), run);
   assert.ok(!run.includes('<runner>'));
+  assert.ok(!run.includes('npx'));
+  assert.ok(!posix(run).includes(posix(project)), run);
 
   const skills = readdirSync(join(project, '.omp', 'skills')).sort();
   assert.equal(skills.length, 35);
@@ -188,7 +202,7 @@ test('project install writes .omp files, never touches user scope, and never lin
   ]);
   const agent = readFileSync(join(project, '.omp', 'agents', 'r2c-bys-architect.md'), 'utf8');
   assert.match(agent, /^---\r?\nname: r2c-bys-architect\r?\ndescription: /);
-  assert.ok(agent.includes('npx --yes r2c-runner'));
+  assert.ok(agent.includes(`${runnerCmd} status`), agent);
 
   for (const relative of ['hooks/post/r2c-stop.ts', 'hooks/pre/r2c-guard.ts']) {
     assert.ok(existsSync(join(project, '.omp', ...relative.split('/'))), relative);
@@ -200,6 +214,12 @@ test('project install writes .omp files, never touches user scope, and never lin
   assert.ok(stop.includes('try'));
   assert.ok(!stop.includes('process.execPath'));
   assert.ok(!stop.includes('<runner>'));
+  // Project scope: the carrier's own constants are project-relative, so the
+  // hook keeps resolving after the project is renamed or moved.
+  assert.ok(stop.includes(`const RUNNER_CMD = String.raw\`${runnerCmd}\``), stop.split('\n').find((line) => line.includes('RUNNER_CMD')));
+  assert.ok(stop.includes(`const SHIM = String.raw\`.r2c/payload/${ENGINE_VERSION}/shims/hook.mjs\``), stop.split('\n').find((line) => line.includes('const SHIM')));
+  assert.ok(stop.includes('const FALLBACK_PROJECT_ROOT = String.raw`.`'), stop.split('\n').find((line) => line.includes('FALLBACK_PROJECT_ROOT')));
+  assert.ok(!posix(stop).includes(posix(project)));
   const guard = readFileSync(join(project, '.omp', 'hooks', 'pre', 'r2c-guard.ts'), 'utf8');
   assert.ok(guard.includes('ctx?.sessionManager?.getSessionId?.()'));
   assert.ok(guard.includes('process.env.PATH'));
@@ -215,6 +235,13 @@ test('project install writes .omp files, never touches user scope, and never lin
   assert.ok(receipt.files.some((file) => file.path.endsWith('r2c-run.md') && file.kind === 'render'));
   assert.ok(receipt.files.some((file) => file.path.endsWith('r2c-stop.ts') && file.kind === 'render'));
   assert.ok(receipt.files.some((file) => file.path.endsWith('SKILL.md') && file.kind === 'copy'));
+  for (const file of receipt.files) {
+    if (file.kind === 'link') continue;
+    const path = file.kind === 'layout' ? join(project, file.path) : file.path;
+    const text = readFileSync(path, 'utf8');
+    assert.ok(!text.includes('npx'), path);
+    assert.ok(!text.includes('r2c-runner'), path);
+  }
 
   assert.ok(!existsSync(join(home, '.omp')), 'project install must not write user scope');
   assert.ok(!existsSync(join(home, '.r2c')), 'project install must not write user state');
@@ -264,7 +291,7 @@ test('uninstall removes adapter files and keeps .r2c runtime state', (t) => {
   assert.ok(!existsSync(join(project, '.omp', 'hooks', 'post', 'r2c-stop.ts')));
   assert.ok(!existsSync(join(project, '.omp', 'agents', 'r2c-bys-architect.md')));
   assert.ok(existsSync(join(project, '.r2c', 'ir.md')), '.r2c business state survives');
-  assert.ok(!existsSync(join(project, '.r2c', 'plugin', ENGINE_VERSION)));
+  assert.ok(!existsSync(join(project, '.r2c', 'payload', ENGINE_VERSION)));
 
   const again = cli(['adapter', 'uninstall', 'omp', '--project-root', project, '--json'], { env });
   assert.equal(again.status, 4, again.stderr);
