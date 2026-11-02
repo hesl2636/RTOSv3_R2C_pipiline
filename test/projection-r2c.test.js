@@ -328,7 +328,13 @@ test('a skill subset drops copies, keeps step references and records option loss
   assert.equal(excluded.capability, 'skills');
   assert.equal(excluded.level, 'unavailable');
   assert.equal(result.capabilityReport.find((row) => row.capability === 'skills').level, 'unavailable');
-  assert.ok(result.degradations.some((record) => record.capability === 'preload' && record.pointer === '/roles/worker/skills/1'));
+  // r2c has no preload seam: an excluded role skill produces no preload record
+  // (the loss is the excluded skill itself); selected refs keep the declared one.
+  assert.equal(result.degradations.some((record) => record.capability === 'preload' && record.pointer === '/roles/worker/skills/1'), false);
+  const preload = result.degradations.filter((record) => record.capability === 'preload');
+  assert.deepEqual(preload.map((record) => record.pointer), ['/roles/worker/skills/0']);
+  const preloadRow = result.capabilityReport.find((row) => row.capability === 'preload');
+  assert.deepEqual(preloadRow.uses, ['/roles/worker/skills/0']);
   const yaml = fileByPath(result, 'workflows/mini.yaml').content;
   assert.ok(yaml.includes('        skills:\n          - "helper"\n          - "other"\n'));
   const validation = validateResult(result, { ir, irDigest: sha256Hex(canonicalJson(ir)), options: result.options, manifest: MANIFEST, environment: {} });

@@ -149,6 +149,75 @@ test('invalid options fail with a stable code and write nothing', () => {
   }
 });
 
+test('all five targets with 12 skills and a reversed stage order: 52 files, warnings only', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'r2c-project-five-'));
+  try {
+    const irPath = compileTo(dir);
+    const out = join(dir, 'out');
+    const skills = Object.keys(JSON.parse(readFileSync(irPath, 'utf8')).skills).sort().slice(0, 12).reverse();
+    const result = run([
+      'project', irPath, '--projection', 'agent-native',
+      '--stage-order', 'verification,implementation,detailed-design,analysis-design',
+      '--skills', skills.join(','),
+      '--out', out, '--json',
+    ]);
+    assert.equal(result.status, 0, result.stderr);
+    const envelope = JSON.parse(result.stdout.trim());
+    assert.equal(envelope.data.counts.files, 52);
+    assert.equal(envelope.data.counts.capabilities, 40);
+    assert.equal(envelope.data.counts.warnings, 2);
+    assert.deepEqual(envelope.data.warnings.map((warning) => warning.code), ['SKILL_MIRRORED_ROOTS', 'STAGE_ORDER_OVERRIDDEN']);
+    assert.deepEqual(envelope.data.targets, ['claude-code', 'codex', 'dsh', 'omp', 'opencode']);
+    assert.deepEqual(envelope.data.coverage.stages, ['verification', 'implementation', 'detailed-design', 'analysis-design']);
+    assert.deepEqual(envelope.data.options.skills, [...skills].sort());
+    assert.deepEqual(envelope.data.options.targets, ['claude-code', 'codex', 'dsh', 'omp', 'opencode']);
+    assert.equal(envelope.data.options.ir.digest, sha256Hex(readFileSync(irPath)));
+    assert.equal(walk(out).length, 52);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('r2c with 12 skills adjusts the payload to 22 files', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'r2c-project-r2c-'));
+  try {
+    const irPath = compileTo(dir);
+    const out = join(dir, 'out');
+    const skills = Object.keys(JSON.parse(readFileSync(irPath, 'utf8')).skills).sort().slice(0, 12);
+    const result = run(['project', irPath, '--projection', 'r2c', '--skills', skills.join(','), '--out', out, '--json']);
+    assert.equal(result.status, 0, result.stderr);
+    const envelope = JSON.parse(result.stdout.trim());
+    assert.equal(envelope.data.counts.files, 22);
+    assert.deepEqual(envelope.data.options.targets, ['r2c']);
+    assert.equal(envelope.data.options.skills.length, 12);
+    assert.equal(envelope.data.capabilityReport.find((row) => row.capability === 'skills').level, 'unavailable');
+    assert.equal(walk(out).length, 22);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('unknown skills and stage ids are rejected through the CLI without output', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'r2c-project-reject-'));
+  try {
+    const irPath = compileTo(dir);
+    for (const args of [
+      ['--skills', 'nope'],
+      ['--stage-order', 'nope,implementation,detailed-design,analysis-design'],
+    ]) {
+      const out = join(dir, 'out');
+      const result = run(['project', irPath, '--projection', 'agent-native', ...args, '--out', out, '--json']);
+      assert.equal(result.status, 2);
+      const envelope = JSON.parse(result.stdout.trim());
+      assert.equal(envelope.ok, false);
+      assert.equal(envelope.error.code, 'PROJECTION_OPTIONS_INVALID');
+      assert.equal(existsSync(out), false);
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('a missing input is a usage failure, not an internal error', () => {
   const result = run(['project', 'does-not-exist.json', '--projection', 'agent-native', '--json']);
   assert.equal(result.status, 2);

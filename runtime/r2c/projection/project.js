@@ -59,7 +59,7 @@ function capabilityLevel(capability, excludedSkills) {
   return MANIFEST_TARGET.capabilities[capability].level;
 }
 
-function capabilityUses(capability, ir, allSkills) {
+function capabilityUses(capability, ir, allSkills, selectedSkills) {
   const stages = ir.stages ?? [];
   if (capability === 'state') return [''];
   if (capability === 'gates') {
@@ -77,8 +77,8 @@ function capabilityUses(capability, ir, allSkills) {
   if (capability === 'preload') {
     const uses = [];
     for (const roleId of sorted(Object.keys(ir.roles ?? {}))) {
-      for (const [index] of (ir.roles[roleId].skills ?? []).entries()) {
-        uses.push(`/roles/${roleId}/skills/${index}`);
+      for (const [index, skillId] of (ir.roles[roleId].skills ?? []).entries()) {
+        if (selectedSkills.has(skillId)) uses.push(`/roles/${roleId}/skills/${index}`);
       }
     }
     return uses;
@@ -331,11 +331,11 @@ export function projectR2c(input) {
     }
   }
 
-  // --- preload: unavailable at every role skill use -----------------------
+  // --- preload: unavailable at every selected role skill use --------------
   for (const roleId of roleIds) {
     const role = ir.roles[roleId];
     for (const [index, skillId] of (role.skills ?? []).entries()) {
-      const selected = selectedSkills.has(skillId);
+      if (!selectedSkills.has(skillId)) continue;
       degradations.push({
         code: 'R2C_PRELOAD_UNAVAILABLE',
         target: TARGET,
@@ -343,10 +343,8 @@ export function projectR2c(input) {
         level: 'unavailable',
         pointer: `/roles/${roleId}/skills/${index}`,
         field: 'skills',
-        reason: selected
-          ? 'r2c 投影响应最差宿主：codex/opencode/dsh 没有角色级技能预载接缝'
-          : '按投影选项排除',
-        effect: selected ? '支持宿主上由安装期角色渲染预载；其余宿主丢弃' : '预载正文丢弃；技能本身也未安装',
+        reason: 'r2c 投影响应最差宿主：codex/opencode/dsh 没有角色级技能预载接缝',
+        effect: '支持宿主上由安装期角色渲染预载；其余宿主丢弃',
       });
     }
   }
@@ -404,7 +402,7 @@ export function projectR2c(input) {
       target: TARGET,
       capability,
       level: capabilityLevel(capability, excludedSkills),
-      uses: sorted(capabilityUses(capability, ir, allSkills)),
+      uses: sorted(capabilityUses(capability, ir, allSkills, selectedSkills)),
     });
   }
 
