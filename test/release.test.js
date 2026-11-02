@@ -461,7 +461,7 @@ test('a tampered archive installs nothing into the project', (t) => {
 
   const tamperedDir = tempDir(t, 'tampered');
   const tampered = join(tamperedDir, ASSET);
-  writeFileSync(tampered, tamperArchive(archive, 'workflows/RTOSv3_R2C_pipiline.yaml'));
+  writeFileSync(tampered, tamperArchive(archive, 'workflows/hm2B_drvport_pipiline.yaml'));
   const result = cli(
     ['adapter', 'install', '--agent', 'claude-code', '--from', tampered, '--project-root', project, '--no-smoke', '--json'],
     { env: cleanEnv(home) },
@@ -659,7 +659,7 @@ test('the bootstrap downloads, verifies, extracts and installs with no npm and n
   assert.ok(existsSync(join(engineHome, 'bin', 'r2c.js')));
   assert.ok(existsSync(join(engineHome, 'node_modules', 'yaml', 'package.json')));
   assert.ok(existsSync(join(project, '.r2c', 'payload', VERSION, 'r2c-payload.json')));
-  assert.ok(existsSync(join(project, 'workflows', 'RTOSv3_R2C_pipiline.yaml')), 'layout landed in the project root');
+  assert.ok(existsSync(join(project, 'workflows', 'hm2B_drvport_pipiline.yaml')), 'layout landed in the project root');
   assert.ok(existsSync(join(project, 'skills')), 'skills landed in the project root');
   assert.ok(existsSync(join(project, '.claude', 'settings.json')), 'agent config written');
 

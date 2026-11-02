@@ -1,7 +1,7 @@
 {
   "name": "r2c-runner",
   "version": "0.1.0",
-  "description": "Declarative workflow runner for the RTOSv3 R2C pipeline",
+  "description": "Declarative workflow runner for the hm2B driver port pipeline",
   "license": "MIT",
   "type": "module",
   "bin": {

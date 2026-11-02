@@ -61,5 +61,5 @@ export function writeTwoStepProject(root, { yaml = TWO_STEP_YAML } = {}) {
  * fixtures that bring their own workflow: discovery refuses two manifests.
  */
 export function dropPayloadManifest(root) {
-  rmSync(join(root, 'workflows', 'RTOSv3_R2C_pipiline.yaml'), { force: true });
+  rmSync(join(root, 'workflows', 'hm2B_drvport_pipiline.yaml'), { force: true });
 }

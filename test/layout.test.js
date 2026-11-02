@@ -141,7 +141,7 @@ test('a clean project receives the layout and run discovers the manifest', (t) =
   assert.equal(run.status, 0, run.stderr);
   const data = envelope(run).data;
   assert.equal(data.dry_run, true);
-  assert.equal(data.workflow_id, 'rtosv3-r2c-pipeline');
+  assert.equal(data.workflow_id, 'hm2b-drvport-pipeline');
   assert.equal(existsSync(join(project, '.r2c', 'runs')), false, 'dry run writes no runtime state');
 });
 
@@ -184,7 +184,7 @@ test('the receipt records each layout file project-relative and doctor reports a
 
 test('an unowned same-name layout file is a conflict, and --force backs it up first', (t) => {
   const { project, env } = setup(t);
-  const rel = 'workflows/RTOSv3_R2C_pipiline.yaml';
+  const rel = 'workflows/hm2B_drvport_pipiline.yaml';
   mkdirSync(join(project, 'workflows'), { recursive: true });
   writeFileSync(join(project, rel), 'id: mine\n');
   const before = snapshot(project);
@@ -276,7 +276,7 @@ test('user scope copies the layout into the project, records the root, and rever
 
 test('a pending marker rolls back layout copies before the next install writes', (t) => {
   const { project, env } = setup(t);
-  const layout = join(project, 'workflows', 'RTOSv3_R2C_pipiline.yaml');
+  const layout = join(project, 'workflows', 'hm2B_drvport_pipiline.yaml');
   mkdirSync(join(project, 'workflows'), { recursive: true });
   writeFileSync(layout, 'half-written\n');
   mkdirSync(join(project, '.claude', 'commands'), { recursive: true });

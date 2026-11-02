@@ -9,7 +9,7 @@ import { parse } from 'yaml';
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const BIN = join(REPO, 'bin', 'r2c.js');
 const PACK = join(REPO, 'pack');
-const MANIFEST = join(PACK, 'workflows', 'RTOSv3_R2C_pipiline.yaml');
+const MANIFEST = join(PACK, 'workflows', 'hm2B_drvport_pipiline.yaml');
 const SKILLS = join(PACK, 'skills');
 
 const H2 = ['## Agent 角色设定', '## 任务', '## 约束条件'];
@@ -130,5 +130,5 @@ test('exactly one tracked workflows yaml exists and it is the default manifest',
   const tracked = result.stdout
     .split(/\r?\n/)
     .filter((file) => /(^|\/)workflows\/[^/]+\.yaml$/.test(file));
-  assert.deepEqual(tracked, ['pack/workflows/RTOSv3_R2C_pipiline.yaml']);
+  assert.deepEqual(tracked, ['pack/workflows/hm2B_drvport_pipiline.yaml']);
 });

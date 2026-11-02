@@ -32,37 +32,37 @@ test/ scripts/ docs/ .github/   测试、打包、文档、CI
 ### claude-code
 
 ```powershell
-curl.exe --create-dirs -fL -o .r2c/bootstrap/install.mjs https://github.com/hesl2636/RTOSv3_R2C_pipiline/releases/download/v0.1.0/install.mjs; node .r2c/bootstrap/install.mjs --agent claude-code --version 0.1.0 --project .
+curl.exe --create-dirs -fL -o .r2c/bootstrap/install.mjs https://github.com/hesl2636/hm2B_drvport_pipiline/releases/download/v0.1.0/install.mjs; node .r2c/bootstrap/install.mjs --agent claude-code --version 0.1.0 --project .
 ```
 
 ### codex
 
 ```powershell
-curl.exe --create-dirs -fL -o .r2c/bootstrap/install.mjs https://github.com/hesl2636/RTOSv3_R2C_pipiline/releases/download/v0.1.0/install.mjs; node .r2c/bootstrap/install.mjs --agent codex --version 0.1.0 --project .
+curl.exe --create-dirs -fL -o .r2c/bootstrap/install.mjs https://github.com/hesl2636/hm2B_drvport_pipiline/releases/download/v0.1.0/install.mjs; node .r2c/bootstrap/install.mjs --agent codex --version 0.1.0 --project .
 ```
 
 ### dsh
 
 ```powershell
-curl.exe --create-dirs -fL -o .r2c/bootstrap/install.mjs https://github.com/hesl2636/RTOSv3_R2C_pipiline/releases/download/v0.1.0/install.mjs; node .r2c/bootstrap/install.mjs --agent dsh --version 0.1.0 --scope user --profile web --project .
+curl.exe --create-dirs -fL -o .r2c/bootstrap/install.mjs https://github.com/hesl2636/hm2B_drvport_pipiline/releases/download/v0.1.0/install.mjs; node .r2c/bootstrap/install.mjs --agent dsh --version 0.1.0 --scope user --profile web --project .
 ```
 
 ### omp
 
 ```powershell
-curl.exe --create-dirs -fL -o .r2c/bootstrap/install.mjs https://github.com/hesl2636/RTOSv3_R2C_pipiline/releases/download/v0.1.0/install.mjs; node .r2c/bootstrap/install.mjs --agent omp --version 0.1.0 --project .
+curl.exe --create-dirs -fL -o .r2c/bootstrap/install.mjs https://github.com/hesl2636/hm2B_drvport_pipiline/releases/download/v0.1.0/install.mjs; node .r2c/bootstrap/install.mjs --agent omp --version 0.1.0 --project .
 ```
 
 ### opencode
 
 ```powershell
-curl.exe --create-dirs -fL -o .r2c/bootstrap/install.mjs https://github.com/hesl2636/RTOSv3_R2C_pipiline/releases/download/v0.1.0/install.mjs; node .r2c/bootstrap/install.mjs --agent opencode --version 0.1.0 --project .
+curl.exe --create-dirs -fL -o .r2c/bootstrap/install.mjs https://github.com/hesl2636/hm2B_drvport_pipiline/releases/download/v0.1.0/install.mjs; node .r2c/bootstrap/install.mjs --agent opencode --version 0.1.0 --project .
 ```
 
 POSIX 把 `curl.exe` 换成 `curl`。若 `curl` 下载 `install.mjs` 时报 `(56) Connection was reset`，改用 API 下载（需要 token）：
 
 ```powershell
-$env:GH_TOKEN='<token>'; New-Item -ItemType Directory -Force .r2c\bootstrap | Out-Null; curl.exe -fL -H "Authorization: Bearer $env:GH_TOKEN" -H "Accept: application/vnd.github.raw" -o .r2c/bootstrap/install.mjs "https://api.github.com/repos/hesl2636/RTOSv3_R2C_pipiline/contents/scripts/install.mjs?ref=v0.1.0"; node .r2c/bootstrap/install.mjs --agent omp --version 0.1.0 --project .
+$env:GH_TOKEN='<token>'; New-Item -ItemType Directory -Force .r2c\bootstrap | Out-Null; curl.exe -fL -H "Authorization: Bearer $env:GH_TOKEN" -H "Accept: application/vnd.github.raw" -o .r2c/bootstrap/install.mjs "https://api.github.com/repos/hesl2636/hm2B_drvport_pipiline/contents/scripts/install.mjs?ref=v0.1.0"; node .r2c/bootstrap/install.mjs --agent omp --version 0.1.0 --project .
 ```
 
 把 `omp` 换成目标 agent。若 `install.mjs` 自己报 `fetch failed`，设置 `GH_TOKEN` 后重跑同一条命令。同一项目安装第二个 agent 时加 `--force`。
@@ -92,7 +92,7 @@ node .r2c\engine\0.1.0\bin\r2c.js run
 │  ├─ agents/r2c-*.md            # 子 agent
 │  └─ plugins/r2c.ts             # A′ hook
 ├─ workflows/
-│  └─ RTOSv3_R2C_pipiline.yaml
+│  └─ hm2B_drvport_pipiline.yaml
 ├─ tasks/
 │  └─ step-*.md
 └─ skills/

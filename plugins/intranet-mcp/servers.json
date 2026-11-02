@@ -1,7 +1,7 @@
 {
-  "name": "RTOSv3_R2C_pipiline",
+  "name": "hm2B_drvport_pipiline",
   "version": "0.1.1",
-  "description": "Generated Harness workflow plugin for RTOSv3_R2C_pipiline",
+  "description": "Generated Harness workflow plugin for hm2B_drvport_pipiline",
   "mcp": {
     "ar-fetcher-mcp": {
       "type": "local",

@@ -37,7 +37,7 @@ jobs:
         run: npm test
       - name: Validate workflow manifest
         shell: bash
-        run: node bin/r2c.js validate --manifest "${{ github.workspace }}/pack/workflows/RTOSv3_R2C_pipiline.yaml"
+        run: node bin/r2c.js validate --manifest "${{ github.workspace }}/pack/workflows/hm2B_drvport_pipiline.yaml"
       - name: Release contract check
         run: node scripts/release.mjs --check
       - name: Tracked workflow count

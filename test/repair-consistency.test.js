@@ -72,8 +72,8 @@ function tempRoot(t) {
 function defaultProject(t) {
   const project = tempRoot(t);
   cpSync(
-    join(PACK, 'workflows', 'RTOSv3_R2C_pipiline.yaml'),
-    join(project.root, 'workflows', 'RTOSv3_R2C_pipiline.yaml'),
+    join(PACK, 'workflows', 'hm2B_drvport_pipiline.yaml'),
+    join(project.root, 'workflows', 'hm2B_drvport_pipiline.yaml'),
   );
   cpSync(join(PACK, 'tasks'), join(project.root, 'tasks'), { recursive: true });
   cpSync(join(PACK, 'skills'), join(project.root, 'skills'), { recursive: true });

@@ -31,7 +31,7 @@ import { delimiter, dirname, extname, isAbsolute, join, relative, resolve } from
 import { fileURLToPath } from 'node:url';
 import { gunzipSync } from 'node:zlib';
 
-const RELEASE_REPO = 'hesl2636/RTOSv3_R2C_pipiline';
+const RELEASE_REPO = 'hesl2636/hm2B_drvport_pipiline';
 const DEFAULT_RELEASE_BASE = `https://github.com/${RELEASE_REPO}/releases/download`;
 const GITHUB_API = `https://api.github.com`;
 const SUMS_ASSET = 'SHA256SUMS.txt';

@@ -218,7 +218,7 @@ test('install doc names the four release assets and the bootstrap, not a package
 
 test('install doc covers the bootstrap, detection, payload and doctor', () => {
   const install = read('docs/install.md');
-  assert.match(install, /gh release download v0\.1\.0 -R hesl2636\/RTOSv3_R2C_pipiline -p install\.mjs/);
+  assert.match(install, /gh release download v0\.1\.0 -R hesl2636\/hm2B_drvport_pipiline -p install\.mjs/);
   assert.match(install, /node \.r2c\/bootstrap\/install\.mjs --agent claude-code --version 0\.1\.0 --project \./);
   assert.match(install, /node ".r2c\\bootstrap\\install\.mjs"/);
   assert.match(install, /node scripts\/install\.mjs --agent claude-code --version 0\.1\.0/);

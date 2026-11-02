@@ -1,7 +1,7 @@
 # Install, upgrade, rollback, uninstall
 
 One channel: the four assets of a GitHub Release of
-`hesl2636/RTOSv3_R2C_pipiline` — `r2c-engine-<V>.tgz`, `r2c-payload-<V>.tgz`,
+`hesl2636/hm2B_drvport_pipiline` — `r2c-engine-<V>.tgz`, `r2c-payload-<V>.tgz`,
 `install.mjs` and `SHA256SUMS.txt`. There is no npm channel and no manual
 payload copy. `install.mjs` downloads the engine archive, verifies it against
 `SHA256SUMS.txt`, extracts it to `<project>/.r2c/engine/<V>/` (project scope)
@@ -50,7 +50,7 @@ POSIX:
 
 ```bash
 mkdir -p .r2c/bootstrap
-curl -fL -o .r2c/bootstrap/install.mjs https://github.com/hesl2636/RTOSv3_R2C_pipiline/releases/download/v0.1.0/install.mjs
+curl -fL -o .r2c/bootstrap/install.mjs https://github.com/hesl2636/hm2B_drvport_pipiline/releases/download/v0.1.0/install.mjs
 node .r2c/bootstrap/install.mjs --agent opencode --version 0.1.0 --project .
 ```
 
@@ -58,7 +58,7 @@ Windows (PowerShell):
 
 ```powershell
 New-Item -ItemType Directory -Force .r2c\bootstrap | Out-Null
-Invoke-WebRequest -UseBasicParsing -Uri 'https://github.com/hesl2636/RTOSv3_R2C_pipiline/releases/download/v0.1.0/install.mjs' -OutFile '.r2c\bootstrap\install.mjs'
+Invoke-WebRequest -UseBasicParsing -Uri 'https://github.com/hesl2636/hm2B_drvport_pipiline/releases/download/v0.1.0/install.mjs' -OutFile '.r2c\bootstrap\install.mjs'
 node '.r2c\bootstrap\install.mjs' --agent opencode --version 0.1.0 --project '.'
 ```
 
@@ -71,7 +71,7 @@ With `gh`, POSIX:
 
 ```bash
 mkdir -p .r2c/bootstrap
-gh release download v0.1.0 -R hesl2636/RTOSv3_R2C_pipiline -p install.mjs --dir .r2c/bootstrap
+gh release download v0.1.0 -R hesl2636/hm2B_drvport_pipiline -p install.mjs --dir .r2c/bootstrap
 node .r2c/bootstrap/install.mjs --agent claude-code --version 0.1.0 --project .
 ```
 
@@ -79,7 +79,7 @@ With `gh`, Windows (cmd or PowerShell):
 
 ```bat
 mkdir .r2c\bootstrap
-gh release download v0.1.0 -R hesl2636/RTOSv3_R2C_pipiline -p install.mjs --dir ".r2c\bootstrap"
+gh release download v0.1.0 -R hesl2636/hm2B_drvport_pipiline -p install.mjs --dir ".r2c\bootstrap"
 node ".r2c\bootstrap\install.mjs" --agent claude-code --version 0.1.0 --project "."
 ```
 
@@ -142,7 +142,7 @@ Two flags are forwarded to the engine's `adapter install`:
   `--scope user` too, dsh is user-scoped) and is ignored by the other adapters.
 
 After the install the layout is already in the project root: `r2c run`
-discovers `workflows/RTOSv3_R2C_pipiline.yaml` with no further step, and
+discovers `workflows/hm2B_drvport_pipiline.yaml` with no further step, and
 `r2c run --dry-run` prints the discovered manifest without writing state.
 
 ```bash

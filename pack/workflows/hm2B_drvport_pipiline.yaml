@@ -1,6 +1,6 @@
 schema: r2c.workflow/v1
-id: rtosv3-r2c-pipeline
-name: RTOSv3_R2C_pipiline
+id: hm2b-drvport-pipeline
+name: hm2B_drvport_pipiline
 version: 0.1.1
 description: ''
 stages:

@@ -49,7 +49,7 @@ Empty `hooks/`, `scripts/`, `.claude-plugin/`, `workflows/`, `tasks/`,
 
 | Legacy path | New path |
 | --- | --- |
-| `workflows/RTOSv3_R2C_pipiline.yaml` | `pack/workflows/RTOSv3_R2C_pipiline.yaml` |
+| `workflows/RTOSv3_R2C_pipiline.yaml` | `pack/workflows/hm2B_drvport_pipiline.yaml` |
 | `tasks/step-*.md` (4 files) | `pack/tasks/step-*.md` |
 | `skills/<id>/SKILL.md` (35 skills) | `pack/skills/<id>/SKILL.md` |
 | `commands/*.md` (7 files) | `pack/commands/*.md` |

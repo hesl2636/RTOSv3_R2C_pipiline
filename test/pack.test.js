@@ -127,7 +127,7 @@ const FORBIDDEN_COMMAND_TEXT = [
   'state.json',
   'events.jsonl',
   '.r2c/runs',
-  'RTOSv3_R2C_pipiline',
+  'hm2B_drvport_pipiline',
 ];
 
 function skillDirs() {

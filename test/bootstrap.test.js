@@ -167,7 +167,7 @@ test('with no credential at all the chain reports nothing and names gh auth logi
   // uses the plain web URL instead of the API.
   const anonymous = releaseEndpoints({ version: VERSION, token: null });
   assert.equal(anonymous.kind, 'direct');
-  assert.match(anonymous.archive, /^https:\/\/github\.com\/hesl2636\/RTOSv3_R2C_pipiline\/releases\/download\//);
+  assert.match(anonymous.archive, /^https:\/\/github\.com\/hesl2636\/hm2B_drvport_pipiline\/releases\/download\//);
 
   const hint = releaseAuthHint(404, { token: null, source: null });
   assert.match(hint, /404/);
@@ -561,7 +561,7 @@ test('a second adapter installs in the same project through the bootstrap with -
   assert.equal(codex.payload_home, claude.payload_home, 'both adapters share one payload');
   assert.equal(codex.engine.home, claude.engine.home, 'both adapters share one engine');
   assert.ok(existsSync(join(project, '.codex')), 'the second adapter wrote its own config');
-  assert.ok(existsSync(join(project, 'workflows', 'RTOSv3_R2C_pipiline.yaml')), 'the layout survives');
+  assert.ok(existsSync(join(project, 'workflows', 'hm2B_drvport_pipiline.yaml')), 'the layout survives');
 });
 
 test('the bootstrap refuses an unsupported node before it downloads anything', (t) => {

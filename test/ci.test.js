@@ -80,7 +80,7 @@ test('ci runs the node matrix, tests, manifest validation, and the release gate'
   assert.match(runs, /npm test/);
   assert.match(
     runs,
-    /node bin\/r2c\.js validate --manifest .*pack\/workflows\/RTOSv3_R2C_pipiline\.yaml/,
+    /node bin\/r2c\.js validate --manifest .*pack\/workflows\/hm2B_drvport_pipiline\.yaml/,
   );
   assert.match(runs, /node scripts\/release\.mjs --check/);
   assert.match(runs, /git ls-files .*workflows\/\*\.yaml/);

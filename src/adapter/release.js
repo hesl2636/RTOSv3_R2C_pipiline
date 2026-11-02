@@ -16,7 +16,7 @@ import { payloadAssetName } from '../plugin.js';
 import { which } from './detect.js';
 import { sha256 } from './util.js';
 
-const RELEASE_REPO = 'hesl2636/RTOSv3_R2C_pipiline';
+const RELEASE_REPO = 'hesl2636/hm2B_drvport_pipiline';
 const RELEASE_BASE = `https://github.com/${RELEASE_REPO}/releases/download`;
 const RELEASE_API = `https://api.github.com/repos/${RELEASE_REPO}`;
 
