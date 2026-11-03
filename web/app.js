@@ -991,13 +991,30 @@ function publishNote(view) {
   return `发布已禁用（${reasons[view.reason] ?? view.reason ?? '只读'}）`;
 }
 
+function installLabel(item) {
+  const projection = item.projection ?? 'install';
+  return item.target === null || item.target === undefined
+    ? `${projection} · 全部目标`
+    : `${projection} · ${item.target}`;
+}
+
 function appendInstallCommands(parent, commands) {
   if (!Array.isArray(commands) || commands.length === 0) return;
-  parent.append(copyable(commands[0].command));
-  if (commands.length === 1) return;
+  const raw = [];
+  for (const item of commands) {
+    const block = element('div', 'install-command');
+    block.append(element('div', 'command-title', installLabel(item)));
+    block.append(copyable(item.oneLiner ?? item.command));
+    parent.append(block);
+    if (typeof item.oneLiner === 'string' && item.oneLiner !== item.command) raw.push(item);
+  }
+  if (raw.length === 0) return;
   const fold = element('details', 'fold');
-  fold.append(element('summary', null, `其他安装命令 · ${commands.length - 1}`));
-  for (const item of commands.slice(1)) fold.append(copyable(item.command));
+  fold.append(element('summary', null, `仅安装命令 · ${raw.length}（已下载 install.mjs）`));
+  for (const item of raw) {
+    fold.append(element('div', 'command-title', installLabel(item)));
+    fold.append(copyable(item.command));
+  }
   parent.append(fold);
 }
 
@@ -1056,7 +1073,7 @@ function renderPublishJob(job) {
     body.append(element('h3', null, '安装命令'));
     const bootstrap = job.result.install.bootstrap;
     if (bootstrap !== null && bootstrap !== undefined) {
-      body.append(element('p', 'hint', '从 Release 资产下载 install.mjs 到 .hm2b/bootstrap/，然后在目标项目根目录执行。'));
+      body.append(element('p', 'hint', '以下每条命令会先用 gh 下载整个 Release 到 .hm2b/release，再离线安装；在目标项目根目录执行即可。'));
     }
     appendInstallCommands(body, job.result.install.commands);
     const assetsFold = element('details', 'fold');
@@ -1170,7 +1187,8 @@ function renderBuild(build) {
   if (releaseMode) {
     const bootstrap = build.install.bootstrap;
     if (bootstrap !== null && bootstrap !== undefined) {
-      body.append(element('p', 'hint', '从 Release 资产下载 install.mjs 到 .hm2b/bootstrap/，然后在目标项目根目录执行。Web 端不会写入任何项目。'));
+      body.append(element('p', 'hint', '以下每条命令会先用 gh 下载整个 Release 到 .hm2b/release，再离线安装；需要 Release 已发布且 gh 已登录，安装阶段不再需要 token。'));
+      body.append(element('p', 'hint', `命令安装的是 GitHub Release ${build.tag} 的资产；若该版本尚未发布，或已发布资产与本次构建不同，请先在 07 发布新版本。`));
     }
   } else {
     body.append(element(

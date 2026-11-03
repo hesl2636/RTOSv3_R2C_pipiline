@@ -212,6 +212,13 @@ async function main() {
     resolve,
   };
 
+  const publishes = createPublishService({
+    root: ROOT,
+    secrets,
+    publishScript,
+    publishTimeoutMs,
+    node,
+  });
   const builds = createBuildService({
     root: ROOT,
     tempRoot,
@@ -219,13 +226,7 @@ async function main() {
     secrets,
     releaseScript,
     buildTimeoutMs,
-    node,
-  });
-  const publishes = createPublishService({
-    root: ROOT,
-    secrets,
-    publishScript,
-    publishTimeoutMs,
+    repo: publishes.config.repo,
     node,
   });
 

@@ -487,6 +487,7 @@ label input, label select { margin-left: 0.35rem; }
 .file-list li:first-child, .asset-list li:first-child { border-top: 0; }
 
 .command { display: flex; gap: 0.5rem; align-items: stretch; margin: 0.35rem 0; }
+.command-title { margin: 0.55rem 0 0.1rem; font-size: 0.78rem; font-weight: 600; color: var(--muted); }
 .command code {
   flex: 1;
   min-width: 0;

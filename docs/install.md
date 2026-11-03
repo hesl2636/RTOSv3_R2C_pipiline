@@ -12,14 +12,21 @@ node install.mjs --bundle rtosv3-drvport --version 1.0.0 --projection runner --p
 node .hm2b/bin/hm2b.js status
 ```
 
-The web page generates the same command with `node .hm2b/bootstrap/install.mjs`
-as its first token. Download that file from the Release assets into
-`.hm2b/bootstrap/` before running a generated command:
+The web page emits one complete command per target. It first downloads the
+whole Release through `gh` into `.hm2b/release/<tag>/`, then installs from that
+local directory, so the installer never needs a second network call or a token:
 
 ```bash
-mkdir -p .hm2b/bootstrap
-curl -fL -o .hm2b/bootstrap/install.mjs https://github.com/hesl2636/hm2B_drvport_pipiline/releases/download/bundle-rtosv3-drvport-v1.0.0/install.mjs
+gh release download bundle-rtosv3-drvport-v1.0.0 \
+  --repo hesl2636/hm2B_drvport_pipiline \
+  --dir .hm2b/release/bundle-rtosv3-drvport-v1.0.0 --clobber
+node .hm2b/release/bundle-rtosv3-drvport-v1.0.0/install.mjs \
+  --bundle rtosv3-drvport --version 1.0.0 --projection runner \
+  --release-base .hm2b/release --project .
 ```
+
+`gh` must be logged in (`gh auth login`); the downloaded tree is disposable and
+ignored by `git` when `.hm2b/` is ignored.
 
 `--projection agent-native` installs only host files and one receipt; it never
 installs a runtime. `--target <id>` (repeatable) narrows the host set without

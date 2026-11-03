@@ -466,7 +466,7 @@ test('publish walks draft → upload → verify → publish against the fixture 
   const runnerCommand = commands.find((item) => item.projection === 'runner');
   assert.equal(
     runnerCommand.command,
-    `node .hm2b/bootstrap/install.mjs --bundle ${BUNDLE} --version ${VERSION} --projection runner --project .`,
+    `node .hm2b/release/${TAG}/install.mjs --bundle ${BUNDLE} --version ${VERSION} --projection runner --release-base .hm2b/release --project .`,
   );
   assert.ok(commands.some((item) => item.projection === 'agent-native' && item.target === 'claude-code'));
 
@@ -614,13 +614,13 @@ test('end-to-end: publish once, take the generated command and install the Relea
   const command = job.result.install.commands.find((item) => item.projection === 'runner').command;
   const tokens = command.split(' ');
   assert.equal(tokens[0], 'node');
-  assert.equal(tokens[1], '.hm2b/bootstrap/install.mjs');
+  assert.equal(tokens[1], `.hm2b/release/${TAG}/install.mjs`);
   const flag = (name) => tokens[tokens.indexOf(name) + 1];
   assert.equal(flag('--bundle'), BUNDLE);
   assert.equal(flag('--version'), VERSION);
   assert.equal(flag('--projection'), 'runner');
   assert.equal(flag('--project'), '.');
-  assert.equal(tokens.includes('--release-base'), false, 'a published release needs no local mirror');
+  assert.equal(tokens.includes('--release-base'), true, 'the one-click command uses the local gh mirror');
 
   // 2. Every published byte is verified against the Release manifest.
   const payloadName = `hm2b-payload-${BUNDLE}-v${VERSION}.tgz`;
@@ -682,15 +682,15 @@ test('end-to-end: publish once, take the generated command and install the Relea
   }
 
   // 4. Take the generated command, fetch the frozen bootstrap exactly as the
-  //    curl step would, and run it from the target project root. `--release-base`
-  //    is the loopback mirror of GitHub (decision #75 §9.3); everything else is
-  //    verbatim from the published command.
+  //    gh step would, and run it from the target project root. The local mirror
+  //    is repointed at the loopback GitHub fixture; everything else is verbatim.
   const projectRoot = tempDir(t, 'project');
-  const bootstrap = join(projectRoot, '.hm2b', 'bootstrap', 'install.mjs');
+  const bootstrap = join(projectRoot, ...tokens[1].split('/'));
   mkdirSync(dirname(bootstrap), { recursive: true });
   writeFileSync(bootstrap, downloaded.get('install.mjs'));
 
-  const installArgs = tokens.slice(2).concat(['--release-base', `${fixture.origin}/download`]);
+  const installArgs = tokens.slice(2);
+  installArgs[installArgs.indexOf('--release-base') + 1] = `${fixture.origin}/download`;
   const env = { ...process.env };
   for (const key of [
     'HM2B_SESSION_ID', 'HM2B_PROJECT_ROOT', 'HM2B_RELEASE_BASE', 'HM2B_HOME', 'HM2B_GITHUB_API',
@@ -701,7 +701,7 @@ test('end-to-end: publish once, take the generated command and install the Relea
     delete env[key];
   }
   const installed = await new Promise((resolveInstall, rejectInstall) => {
-    const child = spawn(process.execPath, [join('.hm2b', 'bootstrap', 'install.mjs'), ...installArgs], {
+    const child = spawn(process.execPath, [tokens[1], ...installArgs], {
       cwd: projectRoot,
       env,
       windowsHide: true,

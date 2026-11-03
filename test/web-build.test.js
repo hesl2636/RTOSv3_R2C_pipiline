@@ -278,10 +278,14 @@ test('canonical build is publishable and matches the CLI projection numbers', as
       asset: data.install.bootstrap.asset,
       path: data.install.bootstrap.path,
     },
-    { asset: 'install.mjs', path: '.hm2b/bootstrap/install.mjs' },
+    { asset: 'install.mjs', path: '.hm2b/release/bundle-rtosv3-drvport-v1.0.0/install.mjs' },
   );
   assert.match(data.install.bootstrap.instruction, /install\.mjs/);
-  assert.match(data.install.bootstrap.instruction, /\.hm2b\/bootstrap\/install\.mjs/);
+  assert.match(data.install.bootstrap.instruction, /\.hm2b\/release\/bundle-rtosv3-drvport-v1\.0\.0/);
+  assert.equal(
+    data.install.bootstrap.command,
+    'gh release download bundle-rtosv3-drvport-v1.0.0 --repo hesl2636/hm2B_drvport_pipiline --dir .hm2b/release/bundle-rtosv3-drvport-v1.0.0 --clobber',
+  );
   const commands = data.install.commands;
   const runnerCommand = commands.find((item) => item.projection === 'runner');
   assert.deepEqual(
@@ -289,7 +293,7 @@ test('canonical build is publishable and matches the CLI projection numbers', as
     {
       projection: 'runner',
       target: null,
-      command: 'node .hm2b/bootstrap/install.mjs --bundle rtosv3-drvport --version 1.0.0 --projection runner --project .',
+      command: 'node .hm2b/release/bundle-rtosv3-drvport-v1.0.0/install.mjs --bundle rtosv3-drvport --version 1.0.0 --projection runner --release-base .hm2b/release --project .',
     },
   );
   const agentCommands = commands.filter((item) => item.projection === 'agent-native');
@@ -303,9 +307,9 @@ test('canonical build is publishable and matches the CLI projection numbers', as
   for (const item of commands) {
     assert.match(
       item.command,
-      /^node \.hm2b\/bootstrap\/install\.mjs --bundle [a-z0-9-]+ --version \d+\.\d+\.\d+ --projection (runner|agent-native)( --target [a-z-]+)? --project \.$/,
+      /^node \.hm2b\/release\/bundle-[a-z0-9-]+-v\d+\.\d+\.\d+\/install\.mjs --bundle [a-z0-9-]+ --version \d+\.\d+\.\d+ --projection (runner|agent-native)( --target [a-z-]+)? --release-base \.hm2b\/release --project \.$/,
     );
-    assert.doesNotMatch(item.command, /--release-base/);
+    assert.equal(item.oneLiner, `${data.install.bootstrap.command}; ${item.command}`);
   }
 
   const list = await httpRequest({ port: server.port, path: '/api/builds' });

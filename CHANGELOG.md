@@ -23,6 +23,10 @@ step-by-step across the engine, the payload, and all five agent adapters; see
   (`r2c-design`, `stage-analysis-design`, `workflow`). The bundle prefix now
   remains only in the on-disk directory, so `/skill:` and role
   `skills`/`autoloadSkills` no longer carry `rtosv3-drvport-`.
+- Web build output lists every target's install command at once, and each
+  command first runs `gh release download` into `.hm2b/release/<tag>/` then
+  installs offline with `--release-base`. The manual `install.mjs` bootstrap
+  step is gone, and the install phase no longer needs a GitHub token.
 - P6 cutover (#111): the engine moved to `runtime/runner/engine/`, the pure
   manifest contract to `runtime/runner/contract/`, and the runtime assets to the
   two runtimes. The legacy directory trees, the declaration-driven install

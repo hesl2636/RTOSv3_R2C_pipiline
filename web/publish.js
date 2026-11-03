@@ -167,6 +167,7 @@ export function createPublishService({
     version: build.summary.compiledWorkflow.version,
     projections: build.summary.projections,
     publishable: true,
+    repo,
   });
 
   const view = (job) => ({

@@ -173,8 +173,9 @@ test('install docs describe exactly the bundle channel and the frozen legacy cha
   assert.match(install, /--projection/);
   assert.match(install, /frozen|冻结|legacy/i);
   assert.doesNotMatch(install, /\bnpx\b|\bnpm\s+install\b|\byarn\b|\bpnpm\b/);
-  // The generated web command starts from the downloaded bootstrap.
-  assert.match(install, /\.hm2b\/bootstrap\/install\.mjs/);
+  // The generated web command downloads the Release and installs offline.
+  assert.match(install, /\.hm2b\/release\/bundle-/);
+  assert.match(install, /--release-base \.hm2b\/release/);
   // Payload members are checked against the archive's own manifest.
   assert.match(install, /`manifest\.json`/);
   assert.doesNotMatch(install, /payload\.manifest\.json/);
