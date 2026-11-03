@@ -116,6 +116,13 @@ function countChip(label, count, tone) {
   return chip;
 }
 
+function constitutionInfo(ir) {
+  const name = constitutionState(ir);
+  if (name === 'placeholder') return { name, label: '占位', tone: 'warn' };
+  if (name === 'present') return { name, label: '已提供', tone: 'ok' };
+  return { name, label: '未声明', tone: 'muted' };
+}
+
 function renderOverview(report) {
   const panel = byId('overview');
   if (panel === null) return;
@@ -141,7 +148,8 @@ function renderOverview(report) {
       statCard('角色', Object.keys(ir.roles ?? {}).length, 'muted'),
       statCard('任务', Object.keys(ir.tasks ?? {}).length, 'muted'),
       statCard('技能', Object.keys(ir.skills ?? {}).length, 'muted'),
-      statCard('声明资产', assets.knowledgeBase.length + assets.checklists.length + assets.hooks.length + assets.mcp.length, 'muted'),
+      statCard('宪法', constitutionInfo(ir).label, constitutionInfo(ir).tone),
+      statCard('四类资产', assets.knowledgeBase.length + assets.checklists.length + assets.hooks.length + assets.mcp.length, 'muted'),
     );
   }
   const chip = byId('overview-bundle');
@@ -429,11 +437,11 @@ function renderIr(data) {
   const constitution = byId('ir-constitution');
   clear(constitution);
   const mounts = Array.isArray(ir.constitution) ? ir.constitution : [];
-  const constitutionName = constitutionState(ir);
-  const constitutionText = constitutionName === 'absent' ? '未声明' : constitutionName === 'placeholder' ? '占位' : '已提供';
+  const constitutionInfoValue = constitutionInfo(ir);
+  const constitutionText = constitutionInfoValue.label;
   const stateSpan = byId('ir-constitution-state');
   if (stateSpan !== null) stateSpan.textContent = `· ${constitutionText}`;
-  constitution.append(element('p', `status constitution-${constitutionName}`, `${constitutionText} · ${mounts.length} 个挂载`));
+  constitution.append(element('p', `status constitution-${constitutionInfoValue.name}`, `${constitutionText} · ${mounts.length} 个挂载`));
   for (const mount of mounts) {
     const item = element('div', 'entity');
     item.append(element('strong', null, `${mount.scope ?? 'global'}${mount.placeholder === true ? ' · 占位' : ''}`));
