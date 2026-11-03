@@ -276,13 +276,14 @@ export function planLegacyMigration({ projectRoot, legacy }) {
  * Journal operations for a takeover. `incomingPaths` are written by the new
  * install instead of being deleted, so they never appear as legacy deletions.
  */
-export function legacyJournalOperations(plan, incomingPaths) {
+export function legacyJournalOperations(plan, incomingPaths, projectRoot) {
   const operations = [];
   const mergedSeen = new Set();
   for (const entry of plan.merged) {
     if (mergedSeen.has(entry.file)) continue;
     mergedSeen.add(entry.file);
-    if (lstatOrNull === null) continue;
+    const absolute = projectPath(projectRoot, entry.file);
+    if (absolute === null || lstatOrNull(absolute) === null) continue;
     operations.push({ op: 'replace', path: entry.file, backup: true });
   }
   for (const entry of plan.deletions) {

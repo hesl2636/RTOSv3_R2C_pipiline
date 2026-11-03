@@ -22,6 +22,8 @@ import { tmpdir } from 'node:os';
 import { dirname, join, relative } from 'node:path';
 import { test } from 'node:test';
 import { installProjection } from '../installer/install.js';
+import { legacyJournalOperations } from '../installer/legacy.js';
+import { unlinkIfExists } from '../installer/util.js';
 import { fixedClock, sample } from './helpers/install-fixture.js';
 
 const CLOCK = fixedClock();
@@ -271,4 +273,21 @@ test('a failed migration rolls back every legacy deletion', (t) => {
   assert.deepEqual(stable(), before, 'legacy bytes and the receipt are restored');
   assert.equal(existsSync(absolute(projectRoot, '.r2c/install/legacy/claude.json.retired')), false);
   assert.equal(existsSync(absolute(projectRoot, '.r2c/install/pending.json')), false);
+});
+
+test('unlinkIfExists treats a path below a regular file as absent', (t) => {
+  const projectRoot = tempDir(t, 'r2c-unlink-');
+  writeFileSync(join(projectRoot, 'blocker'), 'not a directory\n');
+  // Linux reports ENOTDIR, Windows ENOENT; both mean "nothing to unlink".
+  assert.equal(unlinkIfExists(join(projectRoot, 'blocker', 'CONSTITUTION.md')), false);
+});
+
+test('journal operations skip merged pointers whose file is gone', (t) => {
+  const projectRoot = tempDir(t, 'r2c-journal-');
+  const operations = legacyJournalOperations({
+    merged: [{ file: 'settings.json', pointer: 'hooks.Stop' }],
+    deletions: [],
+    receipts: [],
+  }, new Set(), projectRoot);
+  assert.deepEqual(operations, []);
 });

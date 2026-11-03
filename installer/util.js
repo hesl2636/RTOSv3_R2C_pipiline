@@ -129,7 +129,9 @@ export function unlinkIfExists(path) {
     unlinkSync(path);
     return true;
   } catch (error) {
-    if (error?.code === 'ENOENT') return false;
+    // A path below a regular file ("file/child") is absent, not an I/O
+    // failure: Linux reports ENOTDIR where Windows reports ENOENT.
+    if (error?.code === 'ENOENT' || error?.code === 'ENOTDIR') return false;
     throw error;
   }
 }

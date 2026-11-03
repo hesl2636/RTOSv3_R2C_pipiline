@@ -544,7 +544,7 @@ export function installProjection(input = {}) {
       operations.push({ op: 'delete', path: entry.path, backup: entry.backup });
     }
     if (migration !== null && migration.receipts.length > 0) {
-      operations.push(...legacyJournalOperations(migration, new Set(incoming.map((entry) => entry.path))));
+      operations.push(...legacyJournalOperations(migration, new Set(incoming.map((entry) => entry.path)), projectRoot));
     }
     const receiptExisted = lstatOrNull(ownAbsolute) !== null;
     operations.push({ op: receiptExisted ? 'replace' : 'create', path: ownRel, backup: receiptExisted });
