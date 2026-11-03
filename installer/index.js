@@ -2,14 +2,14 @@
  * `installer/` public API (#94).
  *
  * The installer is a composition root: it may import `node:*` and every lower
- * layer (`core`, `ir`, `assembler`, `projection`, `runtime/*`); no lower layer
+ * layer (`core`, `compiledWorkflow`, `assembler`, `projection`, `runtime/*`); no lower layer
  * imports it. Later tickets extend this surface:
  *
  * - #102 upgrade diff: `installProjection` resolves the whole receipt set,
  *   returns `stale` paths and keeps modified ones with a
  *   `STALE_MODIFIED_KEPT` warning; its `diff` is the four-way
  *   `add/remove/change/keep` report and `receipt.previous` records the
- *   replaced identity (path/version/options digest/options/IR digest).
+ *   replaced identity (path/version/options digest/options/compiled workflow digest).
  * - #103 multi-bundle + legacy takeover: two agent-native identities coexist,
  *   a second runner bundle is refused (`RUNNER_ROOT_OCCUPIED`) before any write, the
  *   same bundle id on both projections warns `DUPLICATE_BACKEND`, and
@@ -20,8 +20,8 @@
  *   `installProjection` accepts them as `installerOwned` so its BC surface is
  *   unchanged. `installRuntime`, `installStatus` and `doctor` own the runtime
  *   receipt, launcher, host commands/hooks/pointers and diagnostics.
- * - #106 release install: feed the release IR bytes + pre-projected payload
- *   through the same `installRunnerProject({result, irBytes})` (or
+ * - #106 release install: feed the release compiled workflow bytes + pre-projected payload
+ *   through the same `installRunnerProject({result, compiledWorkflowBytes})` (or
  *   `installProjection` for agent-native).
  */
 export { installProjection, receiptOptions } from './install.js';
@@ -68,7 +68,7 @@ export {
 } from './release-source.js';
 export {
   INSTALL_ASSET,
-  IR_ASSET,
+  COMPILED_WORKFLOW_ASSET,
   SUMS_ASSET,
   bundleAssetNames,
   bundleTag,
@@ -110,7 +110,7 @@ export {
   LOCK_FILE,
   RECEIPTS_DIR,
   SHARED_ROOTS,
-  irPath,
+  compiledWorkflowPath,
   isSharedRoot,
   receiptPath,
 } from './paths.js';

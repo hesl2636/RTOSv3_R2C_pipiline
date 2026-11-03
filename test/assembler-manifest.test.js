@@ -192,7 +192,7 @@ test('missing required keys and wrong schemas are structural errors', () => {
   const cases = [
     { schema: 'hm2b.bundle/v3', reason: 'newer' },
     { schema: 'not-a-schema', reason: 'malformed' },
-    { schema: 'hm2b.ir/v1', reason: 'unknown' },
+    { schema: 'hm2b.compiled-workflow/v1', reason: 'unknown' },
     { schema: null, reason: 'malformed' },
   ];
   for (const item of cases) {
@@ -583,9 +583,9 @@ test('stage declaration order is execution order, never sorted', () => {
   const zip = buildZip(minimalFiles(overrides));
   const compiled = compileBundle(zip, PRIMITIVES);
   assert.equal(compiled.ok, true, JSON.stringify(compiled.report.errors));
-  const ir = JSON.parse(new TextDecoder().decode(compiled.irBytes));
-  assert.deepEqual(ir.stages.map((stage) => stage.id), order);
-  assert.deepEqual(ir.stages.flatMap((stage) => stage.steps.map((step) => step.id)), ['step-0', 'step-1', 'step-2']);
+  const compiledWorkflow = JSON.parse(new TextDecoder().decode(compiled.compiledWorkflowBytes));
+  assert.deepEqual(compiledWorkflow.stages.map((stage) => stage.id), order);
+  assert.deepEqual(compiledWorkflow.stages.flatMap((stage) => stage.steps.map((step) => step.id)), ['step-0', 'step-1', 'step-2']);
 });
 
 test('reports are byte-identical on repeat for an invalid manifest', () => {

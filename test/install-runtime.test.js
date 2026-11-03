@@ -214,8 +214,8 @@ test('--engine-home records an absolute engine entry only outside the project', 
 
 test('engine upgrade swaps only runtime.json and the engine directory', (t) => {
   const projectRoot = tempDir(t, 'hm2b-project-');
-  const { result, irBytes } = sample('runner');
-  const bundle = installRunnerProject({ result, irBytes, projectRoot, clock: CLOCK });
+  const { result, compiledWorkflowBytes } = sample('runner');
+  const bundle = installRunnerProject({ result, compiledWorkflowBytes, projectRoot, clock: CLOCK });
   assert.equal(bundle.code, 'OK', bundle.message);
 
   const source1 = writeEngineSource(tempDir(t, 'hm2b-engine1-'), '1.0.0');
@@ -382,12 +382,12 @@ test('two concurrent runtime installs yield exactly one success', async (t) => {
 
 test('render-roles renders four host definitions named runner-<id> and dsh none', (t) => {
   const projectRoot = tempDir(t, 'hm2b-project-');
-  const { result, irBytes, ir } = sample('runner');
-  const outcome = installRunnerProject({ result, irBytes, projectRoot, clock: CLOCK });
+  const { result, compiledWorkflowBytes, compiledWorkflow } = sample('runner');
+  const outcome = installRunnerProject({ result, compiledWorkflowBytes, projectRoot, clock: CLOCK });
   assert.equal(outcome.code, 'OK', outcome.message);
 
   const receipt = JSON.parse(read(projectRoot, outcome.receiptPath));
-  const roleIds = Object.keys(ir.roles).sort();
+  const roleIds = Object.keys(compiledWorkflow.roles).sort();
   const roleFiles = receipt.files.filter((file) => file.kind === 'agent');
   assert.equal(roleFiles.length, roleIds.length * 4);
   assert.equal(receipt.host_targets.join(','), RUNNER_ROLE_TARGETS.join(','));
@@ -430,8 +430,8 @@ test('render-roles renders four host definitions named runner-<id> and dsh none'
 });
 
 test('dsh alone renders no host role definitions', () => {
-  const { ir, irDigest } = sample('runner');
-  const rendered = renderRunnerRoles({ ir, irDigest, hostTargets: ['dsh'] });
+  const { compiledWorkflow, compiledWorkflowDigest } = sample('runner');
+  const rendered = renderRunnerRoles({ compiledWorkflow, compiledWorkflowDigest, hostTargets: ['dsh'] });
   assert.deepEqual(rendered.targets, []);
   assert.deepEqual(rendered.files.map((file) => file.path), ['.hm2b/projection/roles.json']);
   const roles = JSON.parse(rendered.files[0].content);
@@ -464,8 +464,8 @@ test('launcher stays byte-identical and executable on the host platform', (t) =>
 
 test('an engine install does not create a bundle receipt or record the engine version in one', (t) => {
   const projectRoot = tempDir(t, 'hm2b-project-');
-  const { result, irBytes } = sample('runner');
-  const bundle = installProjection({ result, irBytes, projectRoot, clock: CLOCK });
+  const { result, compiledWorkflowBytes } = sample('runner');
+  const bundle = installProjection({ result, compiledWorkflowBytes, projectRoot, clock: CLOCK });
   const engineSource = writeEngineSource(tempDir(t, 'hm2b-engine-'), '3.1.4');
   const runtime = installRuntime({ projectRoot, engineSource, engineVersion: '3.1.4', clock: CLOCK });
   assert.equal(runtime.code, 'OK');
@@ -478,8 +478,8 @@ test('a runner install refuses a foreign workflows/*.yaml', (t) => {
   const projectRoot = tempDir(t, 'hm2b-project-');
   mkdirSync(join(projectRoot, 'workflows'), { recursive: true });
   writeFileSync(join(projectRoot, 'workflows', 'other.yaml'), 'schema: hm2b.workflow/v1\nid: other\nversion: 0.1.0\nstages: []\n');
-  const { result, irBytes } = sample('runner');
-  const outcome = installRunnerProject({ result, irBytes, projectRoot, clock: CLOCK, force: true });
+  const { result, compiledWorkflowBytes } = sample('runner');
+  const outcome = installRunnerProject({ result, compiledWorkflowBytes, projectRoot, clock: CLOCK, force: true });
   assert.equal(outcome.code, 'RUNNER_ROOT_OCCUPIED');
   assert.deepEqual(outcome.occupied, ['workflows/other.yaml']);
   assert.equal(existsSync(join(projectRoot, '.hm2b/install/receipts')), false);
@@ -487,8 +487,8 @@ test('a runner install refuses a foreign workflows/*.yaml', (t) => {
 });
 
 test('renderRunnerRoles drops unresolvable skill names and records preload loss at the seam', () => {
-  const ir = {
-    schema: 'hm2b.ir/v2',
+  const compiledWorkflow = {
+    schema: 'hm2b.compiled-workflow/v2',
     id: 'demo',
     version: '1.0.0',
     stages: [],
@@ -504,8 +504,8 @@ test('renderRunnerRoles drops unresolvable skill names and records preload loss 
     },
   };
   const rendered = renderRunnerRoles({
-    ir,
-    irDigest: 'a'.repeat(64),
+    compiledWorkflow,
+    compiledWorkflowDigest: 'a'.repeat(64),
     hostTargets: ['claude-code', 'codex', 'omp', 'opencode'],
     skills: ['keep'],
   });

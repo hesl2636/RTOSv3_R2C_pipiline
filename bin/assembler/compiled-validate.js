@@ -1,6 +1,6 @@
-/** `hm2b-assembler ir validate <workflow.ir.json> [--json]`. */
+/** `hm2b-assembler compiled-workflow validate <workflow.compiled.json> [--json]`. */
 import { sha256Hex } from '../../core/node/sha256.js';
-import { IR_SUMMARY_CODE, validateIr } from '../../assembler/validate-ir.js';
+import { COMPILED_WORKFLOW_SUMMARY_CODE, validateCompiledWorkflow } from '../../assembler/validate-compiled.js';
 import {
   EXIT_CODES,
   emitFailure,
@@ -11,7 +11,7 @@ import {
   usageError,
 } from './common.js';
 
-const COMMAND = 'ir.validate';
+const COMMAND = 'compiled-workflow.validate';
 
 export function run(argv) {
   const parsed = parseArgs(argv);
@@ -25,7 +25,7 @@ export function run(argv) {
   }
   const { options } = parsed;
   if (options.help) {
-    process.stdout.write('Usage: hm2b-assembler ir validate <workflow.ir.json> [--json]\n');
+    process.stdout.write('Usage: hm2b-assembler compiled-workflow validate <workflow.compiled.json> [--json]\n');
     return EXIT_CODES.OK;
   }
   if (options.positionals.length !== 1) {
@@ -33,12 +33,12 @@ export function run(argv) {
       json: options.json,
       command: COMMAND,
       code: EXIT_CODES.USAGE,
-      error: usageError('usage: ir validate <workflow.ir.json>'),
+      error: usageError('usage: compiled-workflow validate <workflow.compiled.json>'),
     });
   }
   const input = readInput(options.positionals[0], {
-    notFound: 'IR_INPUT_NOT_FOUND',
-    unreadable: 'IR_INPUT_UNREADABLE',
+    notFound: 'COMPILED_WORKFLOW_INPUT_NOT_FOUND',
+    unreadable: 'COMPILED_WORKFLOW_INPUT_UNREADABLE',
   });
   if (!input.ok) {
     return emitFailure({
@@ -48,11 +48,11 @@ export function run(argv) {
       error: input.error,
     });
   }
-  const report = validateIr(input.bytes, { sha256: sha256Hex });
+  const report = validateCompiledWorkflow(input.bytes, { sha256: sha256Hex });
   return emitReport({
     json: options.json,
     command: COMMAND,
     report,
-    summaryCode: IR_SUMMARY_CODE,
+    summaryCode: COMPILED_WORKFLOW_SUMMARY_CODE,
   });
 }

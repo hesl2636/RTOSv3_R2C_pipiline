@@ -2,7 +2,7 @@
  * Regression tests for the PR #112 review fixes:
  *
  *   #88  skill-directory extra files are BUNDLE_UNEXPECTED_PATH
- *   #92  an unpacked directory compiles to the same IR bytes as the zip
+ *   #92  an unpacked directory compiles to the same compiled workflow bytes as the zip
  *        code-point map ordering for numeric ids (`9` before `10` is wrong)
  *        `compile --json` reports the path it actually wrote
  *   §6   projection failure rows are diagnostics (severity/path/pointer)
@@ -26,8 +26,8 @@ import { inflateRaw } from '../core/node/inflate.js';
 import { sha256Hex } from '../core/node/sha256.js';
 import { compileBundle } from '../assembler/compile.js';
 import { validateBundle } from '../assembler/validate-bundle.js';
-import { validateIr } from '../assembler/validate-ir.js';
-import { IR_FILENAME } from '../ir/schema.js';
+import { validateCompiledWorkflow } from '../assembler/validate-compiled.js';
+import { COMPILED_WORKFLOW_FILENAME } from '../compiled/schema.js';
 import { project } from '../projection/project.js';
 import { getProjection } from '../projection/registry.js';
 import {
@@ -99,21 +99,21 @@ function numericBundle() {
 test('numeric map ids compile in code-point order and validate as canonical', () => {
   const compiled = compileBundle(minimalZip({ overrides: numericBundle() }), PRIMITIVES);
   assert.equal(compiled.ok, true, JSON.stringify(compiled.report?.errors ?? []));
-  const text = DECODER.decode(compiled.irBytes);
+  const text = DECODER.decode(compiled.compiledWorkflowBytes);
   const ten = text.indexOf('\n    "10": {');
   const nine = text.indexOf('\n    "9": {');
   assert.ok(ten > 0 && nine > 0, 'roles map is emitted');
   assert.ok(ten < nine, `roles must be ordered "10" before "9":\n${text.slice(text.indexOf('"roles"'))}`);
 
-  const report = validateIr(compiled.irBytes, { sha256: sha256Hex });
+  const report = validateCompiledWorkflow(compiled.compiledWorkflowBytes, { sha256: sha256Hex });
   assert.equal(report.ok, true, JSON.stringify(report.errors));
 
   // JSON.stringify enumerates integer-like keys numerically, so re-serializing
-  // the parsed IR produces "9" before "10" — the validator must reject it.
+  // the parsed compiled workflow produces "9" before "10" — the validator must reject it.
   const numericOrder = ENCODER.encode(canonicalJson(JSON.parse(text)));
-  const rejected = validateIr(numericOrder, { sha256: sha256Hex });
+  const rejected = validateCompiledWorkflow(numericOrder, { sha256: sha256Hex });
   assert.equal(rejected.ok, false);
-  assert.ok(rejected.errors.some((error) => error.code === 'IR_JSON_NOT_CANONICAL'));
+  assert.ok(rejected.errors.some((error) => error.code === 'COMPILED_WORKFLOW_JSON_NOT_CANONICAL'));
 });
 
 /* --------------------------------------------------------------------------
@@ -128,7 +128,7 @@ function writeDirectory(root, files) {
   }
 }
 
-test('compile accepts an unpacked directory and reports the written IR path', () => {
+test('compile accepts an unpacked directory and reports the written compiled workflow path', () => {
   const dir = mkdtempSync(join(tmpdir(), 'hm2b-fixes-'));
   try {
     const zipPath = join(dir, 'bundle.zip');
@@ -148,14 +148,14 @@ test('compile accepts an unpacked directory and reports the written IR path', ()
     const dirEnvelope = JSON.parse(dirRun.stdout.trim());
     for (const [envelope, out] of [[zipEnvelope, zipOut], [dirEnvelope, dirOut]]) {
       assert.equal(envelope.ok, true);
-      assert.equal(envelope.data.ir.path, IR_FILENAME);
-      assert.equal(existsSync(join(out, envelope.data.ir.path)), true);
+      assert.equal(envelope.data.compiledWorkflow.path, COMPILED_WORKFLOW_FILENAME);
+      assert.equal(existsSync(join(out, envelope.data.compiledWorkflow.path)), true);
     }
 
-    const zipBytes = readFileSync(join(zipOut, IR_FILENAME));
-    const dirBytes = readFileSync(join(dirOut, IR_FILENAME));
+    const zipBytes = readFileSync(join(zipOut, COMPILED_WORKFLOW_FILENAME));
+    const dirBytes = readFileSync(join(dirOut, COMPILED_WORKFLOW_FILENAME));
     assert.deepEqual(dirBytes, zipBytes);
-    assert.equal(dirEnvelope.data.ir.sha256, zipEnvelope.data.ir.sha256);
+    assert.equal(dirEnvelope.data.compiledWorkflow.sha256, zipEnvelope.data.compiledWorkflow.sha256);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -168,22 +168,22 @@ test('compile accepts an unpacked directory and reports the written IR path', ()
 test('projection failures carry severity, path and pointer', () => {
   const manifest = getProjection('agent-native');
   assert.ok(manifest !== null);
-  const ir = {
-    schema: manifest.api.ir,
+  const compiledWorkflow = {
+    schema: manifest.api.compiledWorkflow,
     id: 'numeric-fixture',
     version: '1.0.0',
     stages: [],
     skills: {},
   };
-  const irDigest = 'a'.repeat(64);
+  const compiledWorkflowDigest = 'a'.repeat(64);
   const result = project({
     projectionId: 'agent-native',
-    ir,
-    irDigest,
+    compiledWorkflow,
+    compiledWorkflowDigest,
     options: {
       schema: 'hm2b.projection-options/v1',
       projection: 'agent-native',
-      ir: { digest: irDigest, id: ir.id, version: ir.version },
+      compiledWorkflow: { digest: compiledWorkflowDigest, id: compiledWorkflow.id, version: compiledWorkflow.version },
       stageOrder: [],
       skills: [],
       targets: ['missing-target'],

@@ -51,7 +51,7 @@ const VERSION = '1.0.0';
 const TAG = 'bundle-rtosv3-drvport-v1.0.0';
 const TOKEN = 'ghp_web_publish_secret_110a';
 const SAMPLE_SHA256 = 'ff1f3004c618be9d5ee6b090e0d635f6a6c7cb49a8c22e188cc11206bbe37cd4';
-const IR_DIGEST = '34d55ee62bf284594218d4923b0eafa267799edb1edbbeb7bb313a6f2ab0bc04';
+const COMPILED_WORKFLOW_DIGEST = '518643ab9c92d270a66bd4545cba660d0511243070c3479234edec3225b6d23c';
 const RUNNER_FILES = 45;
 
 function tempDir(t, prefix) {
@@ -64,11 +64,11 @@ function compiled() {
   const bytes = readFileSync(SAMPLE);
   const result = compileBundle(new Uint8Array(bytes), { inflateRaw, sha256: sha256Hex }, { path: 'bundle.zip' });
   assert.equal(result.ok, true, JSON.stringify(result.report?.errors));
-  const ir = JSON.parse(Buffer.from(result.irBytes).toString('utf8'));
-  assert.equal(ir.schema, 'hm2b.ir/v2');
+  const compiledWorkflow = JSON.parse(Buffer.from(result.compiledWorkflowBytes).toString('utf8'));
+  assert.equal(compiledWorkflow.schema, 'hm2b.compiled-workflow/v2');
   return {
-    ir,
-    irBytes: Buffer.from(result.irBytes),
+    compiledWorkflow,
+    compiledWorkflowBytes: Buffer.from(result.compiledWorkflowBytes),
     digest: result.digest,
   };
 }
@@ -196,12 +196,12 @@ test('a client/server digest mismatch disables publishing without spawning the c
   const session = await sessionOf(server);
   const buildData = await canonicalBuild(server, session.csrf);
 
-  const wrongIr = await publishRequest(server, session.csrf, buildData.buildId, {
+  const wrongCompiledWorkflow = await publishRequest(server, session.csrf, buildData.buildId, {
     confirmTag: TAG,
-    irDigest: 'f'.repeat(64),
+    compiledWorkflowDigest: 'f'.repeat(64),
   });
-  assert.equal(wrongIr.status, 409);
-  assert.equal(wrongIr.json.error.code, 'WEB_CLIENT_SERVER_MISMATCH');
+  assert.equal(wrongCompiledWorkflow.status, 409);
+  assert.equal(wrongCompiledWorkflow.json.error.code, 'WEB_CLIENT_SERVER_MISMATCH');
 
   const wrongResult = await publishRequest(server, session.csrf, buildData.buildId, {
     confirmTag: TAG,
@@ -224,11 +224,11 @@ test('a client/server digest mismatch disables publishing without spawning the c
   assert.equal(unknownBuild.status, 404);
   assert.equal(unknownBuild.json.error.code, 'WEB_BUILD_UNKNOWN');
 
-  const { ir } = compiled();
+  const { compiledWorkflow } = compiled();
   const customUpload = await upload(server, session.csrf);
   const custom = await build(server, session.csrf, {
     uploadId: customUpload.uploadId,
-    options: { runner: { stageOrder: ir.stages.map((stage) => stage.id).reverse() } },
+    options: { runner: { stageOrder: compiledWorkflow.stages.map((stage) => stage.id).reverse() } },
   });
   assert.equal(custom.status, 200, JSON.stringify(custom.json));
   assert.equal(custom.json.data.publishable, false);
@@ -428,7 +428,7 @@ test('publish walks draft → upload → verify → publish against the fixture 
 
   const accepted = await publishRequest(server, session.csrf, buildData.buildId, {
     confirmTag: TAG,
-    irDigest: buildData.ir.digest,
+    compiledWorkflowDigest: buildData.compiledWorkflow.digest,
     resultDigests: Object.fromEntries(buildData.projections.map((projection) => [projection.id, projection.digest])),
   });
   assert.equal(accepted.status, 202, JSON.stringify(accepted.json));
@@ -638,23 +638,23 @@ test('end-to-end: publish once, take the generated command and install the Relea
   }
 
   // 3. The payload archive matches its manifest and the projection result.
-  const { ir, digest } = compiled();
-  assert.equal(digest, IR_DIGEST);
+  const { compiledWorkflow, digest } = compiled();
+  assert.equal(digest, COMPILED_WORKFLOW_DIGEST);
   const manifest = getProjection('runner');
-  const normalized = normalizeOptions({ projectionId: 'runner', ir, irDigest: digest, raw: null, manifest });
+  const normalized = normalizeOptions({ projectionId: 'runner', compiledWorkflow, compiledWorkflowDigest: digest, raw: null, manifest });
   assert.equal(normalized.ok, true, JSON.stringify(normalized.errors));
   const result = project({
     projectionId: 'runner',
-    ir,
-    irDigest: digest,
+    compiledWorkflow,
+    compiledWorkflowDigest: digest,
     options: normalized.options,
     environment: { engineVersion: buildData.engineVersion },
     assets: {},
   });
   assert.equal(result.ok, true, JSON.stringify(result.errors));
   const checked = validateResult(result, {
-    ir,
-    irDigest: digest,
+    compiledWorkflow,
+    compiledWorkflowDigest: digest,
     manifest,
     options: normalized.options,
     environment: { engineVersion: buildData.engineVersion },
@@ -669,7 +669,7 @@ test('end-to-end: publish once, take the generated command and install the Relea
   assert.ok(payloadManifestEntry, 'the payload has a manifest');
   const payloadManifest = JSON.parse(Buffer.from(payloadManifestEntry.data).toString('utf8'));
   assert.deepEqual(payloadManifest.bundle, { id: BUNDLE, version: VERSION });
-  assert.equal(payloadManifest.ir.digest, digest);
+  assert.equal(payloadManifest.compiledWorkflow.digest, digest);
   assert.equal(payloadManifest.files.length, result.files.length);
   for (const file of result.files) {
     const entry = payload.entries.find((candidate) => candidate.path === `files/${file.path}`);
@@ -721,7 +721,7 @@ test('end-to-end: publish once, take the generated command and install the Relea
   const receipt = stored.receipt;
   assert.equal(receipt.bundle.id, BUNDLE);
   assert.equal(receipt.bundle.version, VERSION);
-  assert.equal(receipt.ir.digest, digest);
+  assert.equal(receipt.compiledWorkflow.digest, digest);
   const payloadByPath = new Map(payloadManifest.files.map((file) => [file.path, file]));
   for (const file of receipt.files) {
     const absolute = join(projectRoot, ...file.path.split('/'));

@@ -19,9 +19,9 @@ import { dirname, join, relative, resolve } from 'node:path';
 import { test } from 'node:test';
 import { isCanonicalJson } from '../core/canonical-json.js';
 import { installProjection } from '../installer/install.js';
-import { irPath as irRelPath } from '../installer/paths.js';
+import { compiledWorkflowPath as compiledWorkflowRelPath } from '../installer/paths.js';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { cloneResult, customSample, fixedClock, IR_FIXTURE, sample } from './helpers/install-fixture.js';
+import { cloneResult, customSample, fixedClock, COMPILED_WORKFLOW_FIXTURE, sample } from './helpers/install-fixture.js';
 
 const CLOCK = fixedClock();
 
@@ -46,13 +46,13 @@ function walk(root, current = root, out = []) {
 
 test('installs exactly the declared runner file set and records it in hm2b.install/v2', (t) => {
   const projectRoot = tempProject(t);
-  const { result, irBytes, ir, irDigest } = sample('runner');
-  const outcome = installProjection({ result, irBytes, projectRoot, clock: CLOCK });
+  const { result, compiledWorkflowBytes, compiledWorkflow, compiledWorkflowDigest } = sample('runner');
+  const outcome = installProjection({ result, compiledWorkflowBytes, projectRoot, clock: CLOCK });
   assert.equal(outcome.code, 'OK');
   assert.equal(outcome.action, 'installed');
   assert.equal(outcome.files, result.files.length);
 
-  const receiptRel = `.hm2b/install/receipts/runner/${ir.id}.json`;
+  const receiptRel = `.hm2b/install/receipts/runner/${compiledWorkflow.id}.json`;
   assert.equal(outcome.receiptPath, receiptRel);
   const receiptFile = join(projectRoot, ...receiptRel.split('/'));
   const text = readFileSync(receiptFile, 'utf8');
@@ -60,7 +60,7 @@ test('installs exactly the declared runner file set and records it in hm2b.insta
 
   const expected = new Set([
     ...result.files.map((file) => file.path),
-    irRelPath(ir.id, ir.version),
+    compiledWorkflowRelPath(compiledWorkflow.id, compiledWorkflow.version),
     receiptRel,
   ]);
   const actual = new Set(walk(projectRoot));
@@ -69,12 +69,12 @@ test('installs exactly the declared runner file set and records it in hm2b.insta
   const receipt = JSON.parse(text);
   assert.equal(receipt.schema, 'hm2b.install/v2');
   assert.deepEqual(receipt.projection, { id: 'runner', version: result.projection.version, targets: ['runner'] });
-  assert.deepEqual(receipt.bundle, { id: ir.id, version: ir.version });
-  assert.equal(receipt.ir_path, irRelPath(ir.id, ir.version));
-  assert.deepEqual(receipt.ir, {
-    path: irRelPath(ir.id, ir.version),
-    digest: irDigest,
-    contentSha256: result.ir.contentSha256,
+  assert.deepEqual(receipt.bundle, { id: compiledWorkflow.id, version: compiledWorkflow.version });
+  assert.equal(receipt.compiled_workflow_path, compiledWorkflowRelPath(compiledWorkflow.id, compiledWorkflow.version));
+  assert.deepEqual(receipt.compiledWorkflow, {
+    path: compiledWorkflowRelPath(compiledWorkflow.id, compiledWorkflow.version),
+    digest: compiledWorkflowDigest,
+    contentSha256: result.compiledWorkflow.contentSha256,
   });
   assert.equal(receipt.root, 'project');
   assert.equal(receipt.scope, 'project');
@@ -96,7 +96,7 @@ test('installs exactly the declared runner file set and records it in hm2b.insta
     assert.ok(Array.isArray(entry.targets) && entry.targets.length > 0);
   }
   assert.deepEqual([...byPath.keys()].sort(), receipt.files.map((file) => file.path));
-  assert.equal(byPath.has(irRelPath(ir.id, ir.version)), false, 'the IR copy is bookkeeping, not owned content');
+  assert.equal(byPath.has(compiledWorkflowRelPath(compiledWorkflow.id, compiledWorkflow.version)), false, 'the compiled workflow copy is bookkeeping, not owned content');
 
   // No absolute path anywhere in the receipt, and nothing outside the project.
   assert.equal(text.includes(projectRoot.replaceAll('\\', '\\\\')), false);
@@ -115,14 +115,14 @@ test('installs exactly the declared runner file set and records it in hm2b.insta
 
 test('reinstalling the same result is unchanged and byte-identical', (t) => {
   const projectRoot = tempProject(t);
-  const { result, irBytes } = sample('runner');
-  const first = installProjection({ result, irBytes, projectRoot, clock: CLOCK });
+  const { result, compiledWorkflowBytes } = sample('runner');
+  const first = installProjection({ result, compiledWorkflowBytes, projectRoot, clock: CLOCK });
   assert.equal(first.action, 'installed');
   const receiptFile = join(projectRoot, ...first.receiptPath.split('/'));
   const before = readFileSync(receiptFile, 'utf8');
   const beforeTree = walk(projectRoot).map((path) => [path, sha256File(join(projectRoot, ...path.split('/')))]);
 
-  const second = installProjection({ result, irBytes, projectRoot, clock: fixedClock('2026-02-02T00:00:00.000Z') });
+  const second = installProjection({ result, compiledWorkflowBytes, projectRoot, clock: fixedClock('2026-02-02T00:00:00.000Z') });
   assert.equal(second.code, 'OK');
   assert.equal(second.action, 'unchanged');
   assert.deepEqual(second.diff, {
@@ -138,13 +138,13 @@ test('reinstalling the same result is unchanged and byte-identical', (t) => {
 
 test('adopts unowned files with identical bytes without rewriting them', (t) => {
   const projectRoot = tempProject(t);
-  const { result, irBytes } = sample('runner');
+  const { result, compiledWorkflowBytes } = sample('runner');
   for (const file of result.files) {
     const absolute = join(projectRoot, ...file.path.split('/'));
     mkdirSync(dirname(absolute), { recursive: true });
     writeFileSync(absolute, file.content, { flag: 'w' });
   }
-  const outcome = installProjection({ result, irBytes, projectRoot, clock: CLOCK });
+  const outcome = installProjection({ result, compiledWorkflowBytes, projectRoot, clock: CLOCK });
   assert.equal(outcome.code, 'OK');
   assert.equal(outcome.action, 'installed');
   assert.equal(outcome.wrote.length, 0, 'nothing is rewritten when every file is adopted');
@@ -153,21 +153,21 @@ test('adopts unowned files with identical bytes without rewriting them', (t) => 
 
 test('dry-run reports the plan and writes nothing', (t) => {
   const projectRoot = tempProject(t);
-  const { result, irBytes } = sample('runner');
-  const outcome = installProjection({ result, irBytes, projectRoot, dryRun: true, clock: CLOCK });
+  const { result, compiledWorkflowBytes } = sample('runner');
+  const outcome = installProjection({ result, compiledWorkflowBytes, projectRoot, dryRun: true, clock: CLOCK });
   assert.equal(outcome.code, 'OK');
   assert.equal(outcome.action, 'would-install');
   assert.equal(outcome.decisions.length, result.files.length);
   assert.deepEqual(walk(projectRoot), []);
 });
 
-test('an IR whose bytes do not match the result digest is refused without writes', (t) => {
+test('a compiled workflow whose bytes do not match the result digest is refused without writes', (t) => {
   const projectRoot = tempProject(t);
-  const { result, irBytes } = sample('runner');
-  const tampered = Buffer.from(irBytes.toString('utf8').replace('rtosv3-drvport', 'rtosv3-drvport'), 'utf8');
+  const { result, compiledWorkflowBytes } = sample('runner');
+  const tampered = Buffer.from(compiledWorkflowBytes.toString('utf8').replace('rtosv3-drvport', 'rtosv3-drvport'), 'utf8');
   const outcome = installProjection({
     result,
-    irBytes: Buffer.concat([tampered, Buffer.from('\n')]),
+    compiledWorkflowBytes: Buffer.concat([tampered, Buffer.from('\n')]),
     projectRoot,
     clock: CLOCK,
   });
@@ -177,10 +177,10 @@ test('an IR whose bytes do not match the result digest is refused without writes
 
 test('executable modes survive to the receipt and the disk', (t) => {
   const projectRoot = tempProject(t);
-  const { result, irBytes } = sample('runner');
+  const { result, compiledWorkflowBytes } = sample('runner');
   const mutated = cloneResult(result);
   mutated.files[0].mode = 0o755;
-  const outcome = installProjection({ result: mutated, irBytes, projectRoot, clock: CLOCK });
+  const outcome = installProjection({ result: mutated, compiledWorkflowBytes, projectRoot, clock: CLOCK });
   assert.equal(outcome.code, 'OK');
   const entry = outcome.receipt.files.find((file) => file.path === mutated.files[0].path);
   assert.equal(entry.mode, '0755');
@@ -189,23 +189,23 @@ test('executable modes survive to the receipt and the disk', (t) => {
   }
 });
 
-/** A fixture IR whose roles/skills/tasks carry a per-variant prefix. */
-function prefixedIr(prefix) {
-  const ir = JSON.parse(readFileSync(IR_FIXTURE, 'utf8'));
-  ir.id = prefix;
-  ir.constitution = [];
-  const skills = new Map(Object.keys(ir.skills).map((id, index) => [id, `${prefix}-skill-${index}`]));
-  ir.skills = Object.fromEntries(Object.entries(ir.skills).map(([id, value]) => [skills.get(id), value]));
-  ir.roles = Object.fromEntries(Object.entries(ir.roles).map(([id, value]) => [`${prefix}-${id}`, value]));
-  ir.tasks = Object.fromEntries(Object.entries(ir.tasks).map(([id, value]) => [`${prefix}-${id}`, value]));
-  for (const stage of ir.stages) {
+/** A fixture compiled workflow whose roles/skills/tasks carry a per-variant prefix. */
+function prefixedCompiledWorkflow(prefix) {
+  const compiledWorkflow = JSON.parse(readFileSync(COMPILED_WORKFLOW_FIXTURE, 'utf8'));
+  compiledWorkflow.id = prefix;
+  compiledWorkflow.constitution = [];
+  const skills = new Map(Object.keys(compiledWorkflow.skills).map((id, index) => [id, `${prefix}-skill-${index}`]));
+  compiledWorkflow.skills = Object.fromEntries(Object.entries(compiledWorkflow.skills).map(([id, value]) => [skills.get(id), value]));
+  compiledWorkflow.roles = Object.fromEntries(Object.entries(compiledWorkflow.roles).map(([id, value]) => [`${prefix}-${id}`, value]));
+  compiledWorkflow.tasks = Object.fromEntries(Object.entries(compiledWorkflow.tasks).map(([id, value]) => [`${prefix}-${id}`, value]));
+  for (const stage of compiledWorkflow.stages) {
     for (const step of stage.steps) {
       if (step.task !== undefined) step.task = `${prefix}-${step.task}`;
       if (step.role !== undefined) step.role = `${prefix}-${step.role}`;
       step.skills = (step.skills ?? []).map((id) => skills.get(id)).filter(Boolean);
     }
   }
-  return ir;
+  return compiledWorkflow;
 }
 
 function runInstallerChild(env) {
@@ -213,14 +213,14 @@ function runInstallerChild(env) {
     const child = spawn(process.execPath, ['--input-type=module', '-e', `
       import { existsSync, readFileSync, writeFileSync } from 'node:fs';
       import { installProjection } from ${JSON.stringify(pathToFileURL(join(dirname(fileURLToPath(import.meta.url)), '..', 'installer', 'install.js')).href)};
-      const { PROJECT, RESULT, IR, READY, OTHER } = process.env;
+      const { PROJECT, RESULT, COMPILED_WORKFLOW, READY, OTHER } = process.env;
       writeFileSync(READY, '1');
       for (let index = 0; index < 5000 && !existsSync(OTHER); index += 1) {
         await new Promise((settle) => setTimeout(settle, 1));
       }
       const result = JSON.parse(readFileSync(RESULT, 'utf8'));
-      const irBytes = readFileSync(IR);
-      const outcome = installProjection({ result, irBytes, projectRoot: PROJECT, clock: () => new Date('2026-01-01T00:00:00.000Z') });
+      const compiledWorkflowBytes = readFileSync(COMPILED_WORKFLOW);
+      const outcome = installProjection({ result, compiledWorkflowBytes, projectRoot: PROJECT, clock: () => new Date('2026-01-01T00:00:00.000Z') });
       process.stdout.write(JSON.stringify(outcome));
       process.exitCode = outcome.ok ? 0 : 2;
     `], { env: { ...process.env, ...env }, encoding: 'utf8' });
@@ -236,26 +236,26 @@ function runInstallerChild(env) {
 test('two concurrent runner bundles with disjoint paths yield exactly one success', async (t) => {
   const projectRoot = tempProject(t);
   const barrier = tempProject(t);
-  const variants = ['alpha', 'beta'].map((prefix) => ({ prefix, value: customSample({ irPatch: prefixedIr(prefix) }) }));
+  const variants = ['alpha', 'beta'].map((prefix) => ({ prefix, value: customSample({ compiledWorkflowPatch: prefixedCompiledWorkflow(prefix) }) }));
   for (const variant of variants) {
     variant.resultFile = join(barrier, `${variant.prefix}-result.json`);
-    variant.irFile = join(barrier, `${variant.prefix}-ir.json`);
+    variant.compiledWorkflowFile = join(barrier, `${variant.prefix}-compiled-workflow.json`);
     writeFileSync(variant.resultFile, JSON.stringify(variant.value.result));
-    writeFileSync(variant.irFile, variant.value.irBytes);
+    writeFileSync(variant.compiledWorkflowFile, variant.value.compiledWorkflowBytes);
   }
   const [first, second] = variants;
   const runs = await Promise.all([
     runInstallerChild({
       PROJECT: projectRoot,
       RESULT: first.resultFile,
-      IR: first.irFile,
+      COMPILED_WORKFLOW: first.compiledWorkflowFile,
       READY: join(barrier, 'ready-alpha'),
       OTHER: join(barrier, 'ready-beta'),
     }),
     runInstallerChild({
       PROJECT: projectRoot,
       RESULT: second.resultFile,
-      IR: second.irFile,
+      COMPILED_WORKFLOW: second.compiledWorkflowFile,
       READY: join(barrier, 'ready-beta'),
       OTHER: join(barrier, 'ready-alpha'),
     }),

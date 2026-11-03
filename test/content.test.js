@@ -74,7 +74,7 @@ test('task bodies keep the three fixed H2 sections and stay runner-agnostic', ()
     assert.equal(counts(text, SLASH_ENTRY), 0, `${id}: /<name> entry reference`);
     assert.equal(counts(text, RUNTIME_PATH), 0, `${id}: runner runtime path`);
     assert.equal(counts(text, AGENT_PRIMITIVE), 0, `${id}: agent-specific primitive`);
-    assert.equal(counts(text, TASK_WHITELIST), 0, `${id}: whitelist must render from the IR`);
+    assert.equal(counts(text, TASK_WHITELIST), 0, `${id}: whitelist must render from the compiled workflow`);
     assert.equal(text.split('{{submit}}').length, 2, `${id}: exactly one submit token`);
     assert.ok(text.split(/\r?\n/).length <= 500, `${id}: under 500 lines`);
   }

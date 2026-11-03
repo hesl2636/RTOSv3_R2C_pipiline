@@ -2,7 +2,7 @@
  * Spec §9: the runner projection's `preload` capability is `unavailable`.
  *
  * The install never creates a host skill root (`.claude/skills`,
- * `.agents/skills`, ...), so a host role file must not name IR skills: those
+ * `.agents/skills`, ...), so a host role file must not name compiled workflow skills: those
  * names could never resolve. The loss is recorded per declared use and
  * `roles.json` reports `fields.skills: unavailable`.
  */
@@ -14,7 +14,7 @@ import { test } from 'node:test';
 import { isCanonicalJson } from '../core/canonical-json.js';
 import { sha256Hex } from '../core/node/sha256.js';
 import { installRunnerProject, ROLES_JSON_PATH } from '../installer/runner.js';
-import { IR_FIXTURE, customSample, fixedClock } from './helpers/install-fixture.js';
+import { COMPILED_WORKFLOW_FIXTURE, customSample, fixedClock } from './helpers/install-fixture.js';
 
 const ROLE_ID = 'bys-architect';
 const SKILL_ID = 'v3-kb';
@@ -34,9 +34,9 @@ test('host roles never preload a skill the runner install did not place', (t) =>
   const projectRoot = mkdtempSync(join(tmpdir(), 'hm2b-runner-preload-'));
   t.after(() => rmSync(projectRoot, { recursive: true, force: true }));
 
-  const base = JSON.parse(readFileSync(IR_FIXTURE, 'utf8'));
-  const { result, irBytes, ir } = customSample({
-    irPatch: {
+  const base = JSON.parse(readFileSync(COMPILED_WORKFLOW_FIXTURE, 'utf8'));
+  const { result, compiledWorkflowBytes, compiledWorkflow } = customSample({
+    compiledWorkflowPatch: {
       skills: {
         ...base.skills,
         [SKILL_ID]: { description: 'Fixture skill declared by one role.', body: '\n# v3-kb\n' },
@@ -47,7 +47,7 @@ test('host roles never preload a skill the runner install did not place', (t) =>
       },
     },
   });
-  const outcome = installRunnerProject({ result, irBytes, projectRoot, clock: fixedClock() });
+  const outcome = installRunnerProject({ result, compiledWorkflowBytes, projectRoot, clock: fixedClock() });
   assert.equal(outcome.code, 'OK', outcome.message);
 
   const receipt = JSON.parse(read(projectRoot, outcome.receiptPath));
@@ -66,7 +66,7 @@ test('host roles never preload a skill the runner install did not place', (t) =>
   const claudePath = AGENT_PATHS['claude-code'];
   const claude = read(projectRoot, claudePath);
   assert.match(claude, new RegExp(`^name: runner-${ROLE_ID}$`, 'm'));
-  assert.equal(claude.includes(ir.roles[ROLE_ID].description), true, 'role description is unchanged');
+  assert.equal(claude.includes(compiledWorkflow.roles[ROLE_ID].description), true, 'role description is unchanged');
   assert.match(claude, /占位（placeholder）/, 'role instructions are unchanged');
 
   // roles.json reports the field as unavailable on every installed target and
@@ -75,9 +75,9 @@ test('host roles never preload a skill the runner install did not place', (t) =>
   const rolesText = rolesBytes.toString('utf8');
   assert.equal(isCanonicalJson(rolesText), true);
   const roles = JSON.parse(rolesText);
-  assert.equal(roles.ir.id, ir.id);
-  assert.equal(roles.ir.version, ir.version);
-  assert.equal(roles.ir.sha256, sha256Hex(irBytes));
+  assert.equal(roles.compiledWorkflow.id, compiledWorkflow.id);
+  assert.equal(roles.compiledWorkflow.version, compiledWorkflow.version);
+  assert.equal(roles.compiledWorkflow.sha256, sha256Hex(compiledWorkflowBytes));
   for (const target of HOST_TARGETS) {
     const role = roles.targets[target].roles.find((item) => item.id === ROLE_ID);
     assert.ok(role, target);

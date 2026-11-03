@@ -41,9 +41,9 @@ import {
 } from './helpers/web-server.js';
 
 const SAMPLE = join(ROOT, 'examples', 'rtosv3', 'dist', 'bundle-rtosv3-drvport-v1.0.0.zip');
-const IR_FIXTURE = join(ROOT, 'test', 'fixtures', 'ir', 'workflow.ir.json');
+const COMPILED_WORKFLOW_FIXTURE = join(ROOT, 'test', 'fixtures', 'compiled', 'workflow.compiled.json');
 const SAMPLE_SHA256 = 'ff1f3004c618be9d5ee6b090e0d635f6a6c7cb49a8c22e188cc11206bbe37cd4';
-const IR_DIGEST = '34d55ee62bf284594218d4923b0eafa267799edb1edbbeb7bb313a6f2ab0bc04';
+const COMPILED_WORKFLOW_DIGEST = '518643ab9c92d270a66bd4545cba660d0511243070c3479234edec3225b6d23c';
 const TAG = 'bundle-rtosv3-drvport-v1.0.0';
 const ASSETS = [
   'SHA256SUMS.txt',
@@ -53,10 +53,10 @@ const ASSETS = [
   'hm2b-framework-0.1.0.tgz',
   'hm2b-payload-rtosv3-drvport-v1.0.0.tgz',
   'install.mjs',
-  'workflow.ir.json',
+  'workflow.compiled.json',
 ];
 const RUNNER_CANONICAL = { files: 45, bytes: 48877, degradations: 4, capabilities: 8, warnings: 0 };
-const AGENT_NATIVE_CANONICAL = { files: 98, bytes: 142657, degradations: 45, capabilities: 40, warnings: 1 };
+const AGENT_NATIVE_CANONICAL = { files: 98, bytes: 142731, degradations: 45, capabilities: 40, warnings: 1 };
 
 function tempDir(t, prefix) {
   const dir = mkdtempSync(join(tmpdir(), `hm2b-web-build-${prefix}-`));
@@ -64,27 +64,27 @@ function tempDir(t, prefix) {
   return dir;
 }
 
-function compiledIr(bundle = SAMPLE) {
+function compiledCompiledWorkflow(bundle = SAMPLE) {
   const bytes = typeof bundle === 'string' ? readFileSync(bundle) : bundle;
   const compiled = compileBundle(new Uint8Array(bytes), { inflateRaw, sha256: sha256Hex }, { path: 'bundle.zip' });
   assert.equal(compiled.ok, true);
   return {
-    ir: JSON.parse(Buffer.from(compiled.irBytes).toString('utf8')),
-    irDigest: compiled.digest,
-    irBytes: Buffer.from(compiled.irBytes),
+    compiledWorkflow: JSON.parse(Buffer.from(compiled.compiledWorkflowBytes).toString('utf8')),
+    compiledWorkflowDigest: compiled.digest,
+    compiledWorkflowBytes: Buffer.from(compiled.compiledWorkflowBytes),
   };
 }
 
 /** Project with the shared modules: the independent oracle for every number. */
 function expected({ projectionId, raw = null, engineVersion, bundle = SAMPLE }) {
-  const { ir, irDigest } = compiledIr(bundle);
+  const { compiledWorkflow, compiledWorkflowDigest } = compiledCompiledWorkflow(bundle);
   const manifest = getProjection(projectionId);
-  const normalized = normalizeOptions({ projectionId, ir, irDigest, raw, manifest });
+  const normalized = normalizeOptions({ projectionId, compiledWorkflow, compiledWorkflowDigest, raw, manifest });
   assert.equal(normalized.ok, true, JSON.stringify(normalized.errors));
   const result = project({
     projectionId,
-    ir,
-    irDigest,
+    compiledWorkflow,
+    compiledWorkflowDigest,
     options: normalized.options,
     environment: { engineVersion },
     assets: {},
@@ -174,8 +174,8 @@ test('canonical build is publishable and matches the CLI projection numbers', as
   const uploaded = await upload(server, csrf);
   assert.equal(uploaded.report.ok, true);
   assert.equal(uploaded.report.schema, 'hm2b.bundle/v2');
-  assert.equal(uploaded.ir.schema, 'hm2b.ir/v2');
-  assert.equal(uploaded.ir.digest, IR_DIGEST);
+  assert.equal(uploaded.compiledWorkflow.schema, 'hm2b.compiled-workflow/v2');
+  assert.equal(uploaded.compiledWorkflow.digest, COMPILED_WORKFLOW_DIGEST);
   const report = uploaded.report;
 
   const response = await build(server, csrf, { uploadId: uploaded.uploadId, options: {} });
@@ -184,12 +184,12 @@ test('canonical build is publishable and matches the CLI projection numbers', as
 
   assert.match(data.buildId, /^[0-9a-f]{16}$/);
   assert.equal(data.tag, TAG);
-  assert.equal(data.ir.schema, 'hm2b.ir/v2');
+  assert.equal(data.compiledWorkflow.schema, 'hm2b.compiled-workflow/v2');
   assert.equal(data.canonical, true);
   assert.equal(data.publishable, true);
   assert.deepEqual(
-    { id: data.ir.id, version: data.ir.version, digest: data.ir.digest },
-    { id: report.id, version: report.version, digest: IR_DIGEST },
+    { id: data.compiledWorkflow.id, version: data.compiledWorkflow.version, digest: data.compiledWorkflow.digest },
+    { id: report.id, version: report.version, digest: COMPILED_WORKFLOW_DIGEST },
   );
   assert.deepEqual(data.projections.map((item) => item.id), ['agent-native', 'runner']);
 
@@ -218,8 +218,8 @@ test('canonical build is publishable and matches the CLI projection numbers', as
     },
   );
 
-  // The CLI prints the same contract numbers for the frozen IR.
-  const cli = cliJson(['bin/hm2b-assembler.js', 'project', IR_FIXTURE, '--projection', 'runner', '--json']).data;
+  // The CLI prints the same contract numbers for the frozen compiled workflow.
+  const cli = cliJson(['bin/hm2b-assembler.js', 'project', COMPILED_WORKFLOW_FIXTURE, '--projection', 'runner', '--json']).data;
   assert.deepEqual(runner.files, cli.files);
   assert.deepEqual(runner.capabilityReport, cli.capabilityReport);
   assert.deepEqual(runner.degradations, cli.degradations);
@@ -259,7 +259,7 @@ test('canonical build is publishable and matches the CLI projection numbers', as
     const download = await httpRequest({ port: server.port, path: `/api/builds/${data.buildId}/artifacts/${name}` });
     const manifest = payloadManifest(download.raw);
     assert.equal(manifest.projection.id, id);
-    assert.equal(manifest.ir.digest, IR_DIGEST);
+    assert.equal(manifest.compiledWorkflow.digest, COMPILED_WORKFLOW_DIGEST);
     assert.deepEqual(manifest.options, {
       stageOrder: null,
       skills: null,
@@ -313,18 +313,18 @@ test('canonical build is publishable and matches the CLI projection numbers', as
   assert.deepEqual(list.json.data.builds.map((item) => item.buildId), [data.buildId]);
 });
 
-test('IR v2 asset groups are listed in every projection summary without extra web rules', async (t) => {
+test('compiled workflow v2 asset groups are listed in every projection summary without extra web rules', async (t) => {
   const server = await startWebServer(t);
   const { csrf, engineVersion } = await sessionOf(server);
   const zip = assetZip();
   const uploaded = await uploadBytes(server, csrf, zip);
   assert.equal(uploaded.report.ok, true, JSON.stringify(uploaded.report));
-  assert.equal(uploaded.ir.schema, 'hm2b.ir/v2');
+  assert.equal(uploaded.compiledWorkflow.schema, 'hm2b.compiled-workflow/v2');
 
   const response = await build(server, csrf, { uploadId: uploaded.uploadId, options: {} });
   assert.equal(response.status, 200, JSON.stringify(response.json));
   const data = response.json.data;
-  assert.equal(data.ir.schema, 'hm2b.ir/v2');
+  assert.equal(data.compiledWorkflow.schema, 'hm2b.compiled-workflow/v2');
 
   for (const projectionId of ['runner', 'agent-native']) {
     const projected = projectionOf(data, projectionId);
@@ -346,9 +346,9 @@ test('custom options build locally, record the actual options and stay unpublish
   const server = await startWebServer(t);
   const { csrf, engineVersion } = await sessionOf(server);
   const uploaded = await upload(server, csrf);
-  const { ir } = compiledIr();
-  const skillIds = Object.keys(ir.skills).sort();
-  const stageIds = ir.stages.map((stage) => stage.id);
+  const { compiledWorkflow } = compiledCompiledWorkflow();
+  const skillIds = Object.keys(compiledWorkflow.skills).sort();
+  const stageIds = compiledWorkflow.stages.map((stage) => stage.id);
   const twelve = skillIds.slice(0, 12);
   const custom = {
     runner: { stageOrder: [...stageIds].reverse(), skills: twelve, targets: ['runner'] },
@@ -364,11 +364,11 @@ test('custom options build locally, record the actual options and stay unpublish
   assert.equal(data.install.bootstrap, null);
   const runnerCommand = data.install.commands.find((item) => item.projection === 'runner');
   assert.equal(runnerCommand.target, null);
-  assert.ok(runnerCommand.command.startsWith('node bin/hm2b-assembler.js project workflow.ir.json --projection runner '));
+  assert.ok(runnerCommand.command.startsWith('node bin/hm2b-assembler.js project workflow.compiled.json --projection runner '));
   assert.ok(runnerCommand.command.includes(`--stage-order ${[...stageIds].reverse().join(',')} `));
   assert.ok(runnerCommand.command.includes(`--skills ${twelve.join(',')} `));
   assert.ok(runnerCommand.command.endsWith(
-    '--result .hm2b/build/runner && node installer/cli.js --result .hm2b/build/runner --ir workflow.ir.json --project .',
+    '--result .hm2b/build/runner && node installer/cli.js --result .hm2b/build/runner --compiled-workflow workflow.compiled.json --project .',
   ));
   const agentAll = data.install.commands.find((item) => item.projection === 'agent-native' && item.target === null);
   assert.ok(agentAll.command.includes('--target claude-code --target codex'));
@@ -378,14 +378,14 @@ test('custom options build locally, record the actual options and stay unpublish
     assert.ok(item, target);
     assert.ok(item.command.includes(`--target ${target} `));
     assert.ok(item.command.includes(`--result .hm2b/build/agent-native-${target} && `));
-    assert.ok(item.command.endsWith(`--result .hm2b/build/agent-native-${target} --ir workflow.ir.json --project .`));
+    assert.ok(item.command.endsWith(`--result .hm2b/build/agent-native-${target} --compiled-workflow workflow.compiled.json --project .`));
   }
   for (const item of data.install.commands) {
     assert.doesNotMatch(item.command, /--release-base/);
     assert.doesNotMatch(item.command, /\.hm2b\/bootstrap\/install\.mjs/);
     assert.match(
       item.command,
-      /^node bin\/hm2b-assembler\.js project workflow\.ir\.json --projection (runner|agent-native)(?: --target [a-z-]+)* --stage-order [a-z0-9,-]+ --skills [a-z0-9,-]+ --result \.hm2b\/build\/[a-z-]+ && node installer\/cli\.js --result \.hm2b\/build\/[a-z-]+ --ir workflow\.ir\.json --project \.$/,
+      /^node bin\/hm2b-assembler\.js project workflow\.compiled\.json --projection (runner|agent-native)(?: --target [a-z-]+)* --stage-order [a-z0-9,-]+ --skills [a-z0-9,-]+ --result \.hm2b\/build\/[a-z-]+ && node installer\/cli\.js --result \.hm2b\/build\/[a-z-]+ --compiled-workflow workflow\.compiled\.json --project \.$/,
     );
   }
   const runner = projectionOf(data, 'runner');
@@ -422,13 +422,13 @@ test('custom options build locally, record the actual options and stay unpublish
   }
 });
 
-test('a custom build chain re-projects the downloaded IR and installs the result', async (t) => {
+test('a custom build chain re-projects the downloaded compiled workflow and installs the result', async (t) => {
   const server = await startWebServer(t);
   const { csrf } = await sessionOf(server);
   const uploaded = await upload(server, csrf);
-  const { ir } = compiledIr();
-  const skillIds = Object.keys(ir.skills).sort();
-  const stageIds = ir.stages.map((stage) => stage.id);
+  const { compiledWorkflow } = compiledCompiledWorkflow();
+  const skillIds = Object.keys(compiledWorkflow.skills).sort();
+  const stageIds = compiledWorkflow.stages.map((stage) => stage.id);
   const twelve = skillIds.slice(0, 12);
   const custom = {
     runner: { stageOrder: [...stageIds].reverse(), skills: twelve, targets: ['runner'] },
@@ -440,12 +440,12 @@ test('a custom build chain re-projects the downloaded IR and installs the result
   const data = response.json.data;
   assert.equal(data.install.mode, 'local');
 
-  // The chain runs from the framework source, against the downloaded IR.
+  // The chain runs from the framework source, against the downloaded compiled workflow.
   const root = copyFramework(t);
-  const irAsset = data.artifacts.find((asset) => asset.name === 'workflow.ir.json');
-  const download = await httpRequest({ port: server.port, path: irAsset.url });
+  const compiledWorkflowAsset = data.artifacts.find((asset) => asset.name === 'workflow.compiled.json');
+  const download = await httpRequest({ port: server.port, path: compiledWorkflowAsset.url });
   assert.equal(download.status, 200);
-  writeFileSync(join(root, 'workflow.ir.json'), download.raw);
+  writeFileSync(join(root, 'workflow.compiled.json'), download.raw);
 
   for (const [projectionId, target] of [['runner', null], ['agent-native', 'claude-code']]) {
     const item = data.install.commands.find((entry) => entry.projection === projectionId && entry.target === target);
@@ -459,11 +459,11 @@ test('a custom build chain re-projects the downloaded IR and installs the result
     assert.equal(written.projection.id, projectionId);
     assert.deepEqual(written.options.skills, twelve);
     assert.deepEqual(written.targets, target === null ? ['runner'] : [target]);
-    assert.equal(existsSync(join(resultDir, 'workflow.ir.json')), true);
+    assert.equal(existsSync(join(resultDir, 'workflow.compiled.json')), true);
     assert.equal(
-      readFileSync(join(resultDir, 'workflow.ir.json')).equals(Buffer.from(download.raw)),
+      readFileSync(join(resultDir, 'workflow.compiled.json')).equals(Buffer.from(download.raw)),
       true,
-      'the result directory carries the downloaded IR bytes',
+      'the result directory carries the downloaded compiled workflow bytes',
     );
 
     const receiptPath = join(root, '.hm2b', 'install', 'receipts', projectionId, 'rtosv3-drvport.json');
@@ -511,13 +511,13 @@ test('stale digests are 409 and unknown stage/skill/target are 400 without a bui
   const server = await startWebServer(t);
   const { csrf } = await sessionOf(server);
   const uploaded = await upload(server, csrf);
-  const { ir } = compiledIr();
+  const { compiledWorkflow } = compiledCompiledWorkflow();
 
   const stale = await build(server, csrf, {
     uploadId: uploaded.uploadId,
     options: {
       runner: {
-        ir: { digest: '0'.repeat(64), id: ir.id, version: ir.version },
+        compiledWorkflow: { digest: '0'.repeat(64), id: compiledWorkflow.id, version: compiledWorkflow.version },
         stageOrder: null,
         skills: null,
         targets: null,
@@ -525,15 +525,15 @@ test('stale digests are 409 and unknown stage/skill/target are 400 without a bui
     },
   });
   assert.equal(stale.status, 409);
-  assert.equal(stale.json.error.code, 'PROJECTION_OPTIONS_IR_MISMATCH');
+  assert.equal(stale.json.error.code, 'PROJECTION_OPTIONS_COMPILED_WORKFLOW_MISMATCH');
 
-  const staleTopLevel = await build(server, csrf, { uploadId: uploaded.uploadId, irDigest: '0'.repeat(64) });
+  const staleTopLevel = await build(server, csrf, { uploadId: uploaded.uploadId, compiledWorkflowDigest: '0'.repeat(64) });
   assert.equal(staleTopLevel.status, 409);
-  assert.equal(staleTopLevel.json.error.code, 'PROJECTION_OPTIONS_IR_MISMATCH');
+  assert.equal(staleTopLevel.json.error.code, 'PROJECTION_OPTIONS_COMPILED_WORKFLOW_MISMATCH');
 
   const badStage = await build(server, csrf, {
     uploadId: uploaded.uploadId,
-    options: { runner: { stageOrder: ['nope', ...ir.stages.slice(1).map((stage) => stage.id)] } },
+    options: { runner: { stageOrder: ['nope', ...compiledWorkflow.stages.slice(1).map((stage) => stage.id)] } },
   });
   assert.equal(badStage.status, 400);
   assert.equal(badStage.json.error.code, 'PROJECTION_OPTIONS_INVALID');
@@ -729,26 +729,26 @@ test('a new upload resets the client binding and the server refuses an old diges
   const first = await upload(server, csrf);
   const second = await upload(server, csrf);
   assert.notEqual(first.uploadId, second.uploadId);
-  assert.equal(first.ir.digest, second.ir.digest);
+  assert.equal(first.compiledWorkflow.digest, second.compiledWorkflow.digest);
 
   const built = await build(server, csrf, {
     uploadId: second.uploadId,
     options: {
       runner: {
-        ir: { digest: first.ir.digest, id: first.ir.id, version: first.ir.version },
+        compiledWorkflow: { digest: first.compiledWorkflow.digest, id: first.compiledWorkflow.id, version: first.compiledWorkflow.version },
         stageOrder: null,
         skills: null,
         targets: null,
       },
     },
   });
-  assert.equal(built.status, 200, 'same IR bytes keep the binding valid');
+  assert.equal(built.status, 200, 'same compiled workflow bytes keep the binding valid');
 
   const before = await upload(server, csrf);
-  const different = { ...before.ir, digest: 'a'.repeat(64) };
+  const different = { ...before.compiledWorkflow, digest: 'a'.repeat(64) };
   const stale = await build(server, csrf, {
     uploadId: before.uploadId,
-    options: { runner: { ir: { digest: different.digest, id: different.id, version: different.version } } },
+    options: { runner: { compiledWorkflow: { digest: different.digest, id: different.id, version: different.version } } },
   });
   assert.equal(stale.status, 409);
 

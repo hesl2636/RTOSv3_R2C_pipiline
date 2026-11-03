@@ -43,7 +43,7 @@ function writeReceipt(projectRoot, { projection = 'agent-native', bundle = 'othe
     schema: 'hm2b.install/v2',
     projection: { id: projection, version: '1.0.0', targets: [] },
     bundle: { id: bundle, version: '1.0.0' },
-    ir: { path: `.hm2b/bundles/${bundle}/1.0.0/workflow.ir.json`, digest: '0'.repeat(64), contentSha256: '0'.repeat(64) },
+    compiledWorkflow: { path: `.hm2b/bundles/${bundle}/1.0.0/workflow.compiled.json`, digest: '0'.repeat(64), contentSha256: '0'.repeat(64) },
     root: 'project',
     scope: 'project',
     mode: 'fresh',
@@ -85,12 +85,12 @@ function codes(outcome) {
 
 test('a path owned by another identity is refused even with --force', (t) => {
   const projectRoot = tempProject(t);
-  const { result, irBytes } = sample('runner');
+  const { result, compiledWorkflowBytes } = sample('runner');
   const path = targetOf(result, 1);
   writeReceipt(projectRoot, { paths: [path] });
 
   for (const force of [false, true]) {
-    const outcome = installProjection({ result, irBytes, projectRoot, force, clock: CLOCK });
+    const outcome = installProjection({ result, compiledWorkflowBytes, projectRoot, force, clock: CLOCK });
     assert.equal(outcome.code, 'INSTALL_CONFLICTS');
     assert.deepEqual(codes(outcome), ['INSTALL_PATH_CONFLICT']);
     assert.match(outcome.conflicts[0].message, /agent-native\/other-bundle/);
@@ -100,7 +100,7 @@ test('a path owned by another identity is refused even with --force', (t) => {
 
 test('fail-if-exists steps refuse an existing path', (t) => {
   const projectRoot = tempProject(t);
-  const { result, irBytes } = sample('runner');
+  const { result, compiledWorkflowBytes } = sample('runner');
   const path = targetOf(result);
   const absolute = join(projectRoot, ...path.split('/'));
   mkdirSync(dirname(absolute), { recursive: true });
@@ -108,7 +108,7 @@ test('fail-if-exists steps refuse an existing path', (t) => {
   const mutated = cloneResult(result);
   mutated.installPlan.steps.find((step) => step.path === path).overwrite = 'fail-if-exists';
 
-  const outcome = installProjection({ result: mutated, irBytes, projectRoot, force: true, clock: CLOCK });
+  const outcome = installProjection({ result: mutated, compiledWorkflowBytes, projectRoot, force: true, clock: CLOCK });
   assert.equal(outcome.code, 'INSTALL_CONFLICTS');
   assert.deepEqual(codes(outcome), ['PATH_EXISTS']);
   assert.equal(readFileSync(absolute, 'utf8'), 'preexisting\n');
@@ -116,18 +116,18 @@ test('fail-if-exists steps refuse an existing path', (t) => {
 
 test('a modified file owned by this identity needs --force and is backed up', (t) => {
   const projectRoot = tempProject(t);
-  const { result, irBytes } = sample('runner');
+  const { result, compiledWorkflowBytes } = sample('runner');
   const path = targetOf(result);
   const absolute = join(projectRoot, ...path.split('/'));
-  assert.equal(installProjection({ result, irBytes, projectRoot, clock: CLOCK }).code, 'OK');
+  assert.equal(installProjection({ result, compiledWorkflowBytes, projectRoot, clock: CLOCK }).code, 'OK');
   writeFileSync(absolute, 'hand edited\n');
 
-  const refused = installProjection({ result, irBytes, projectRoot, clock: CLOCK });
+  const refused = installProjection({ result, compiledWorkflowBytes, projectRoot, clock: CLOCK });
   assert.equal(refused.code, 'INSTALL_CONFLICTS');
   assert.deepEqual(codes(refused), ['MODIFIED_OWNED_FILE']);
   assert.equal(readFileSync(absolute, 'utf8'), 'hand edited\n');
 
-  const forced = installProjection({ result, irBytes, projectRoot, force: true, clock: CLOCK });
+  const forced = installProjection({ result, compiledWorkflowBytes, projectRoot, force: true, clock: CLOCK });
   assert.equal(forced.code, 'OK');
   assert.equal(readFileSync(absolute, 'utf8'), result.files.find((file) => file.path === path).content);
   assert.equal(forced.backups.some((backup) => backup.path === path), true);
@@ -137,17 +137,17 @@ test('a modified file owned by this identity needs --force and is backed up', (t
 
 test('an unmodified file owned by this identity is backed up and replaced on upgrade', (t) => {
   const projectRoot = tempProject(t);
-  const { result, irBytes } = sample('runner');
-  assert.equal(installProjection({ result, irBytes, projectRoot, clock: CLOCK }).code, 'OK');
+  const { result, compiledWorkflowBytes } = sample('runner');
+  assert.equal(installProjection({ result, compiledWorkflowBytes, projectRoot, clock: CLOCK }).code, 'OK');
 
   const path = targetOf(result);
   const upgraded = cloneResult(result);
   const file = upgraded.files.find((entry) => entry.path === path);
   file.content = `${file.content}extra line\n`;
-  const outcome = installProjection({ result: upgraded, irBytes, projectRoot, clock: fixedClock('2026-02-01T00:00:00.000Z') });
+  const outcome = installProjection({ result: upgraded, compiledWorkflowBytes, projectRoot, clock: fixedClock('2026-02-01T00:00:00.000Z') });
   assert.equal(outcome.code, 'OK');
   assert.equal(outcome.mode, 'upgrade');
-  assert.equal(outcome.receipt.previous.version, result.ir.version);
+  assert.equal(outcome.receipt.previous.version, result.compiledWorkflow.version);
   assert.equal(readFileSync(join(projectRoot, ...path.split('/')), 'utf8'), file.content);
   assert.equal(outcome.backups.some((backup) => backup.path === path), true);
   assert.equal(outcome.receipt.created_at, '2026-01-01T00:00:00.000Z');
@@ -156,18 +156,18 @@ test('an unmodified file owned by this identity is backed up and replaced on upg
 
 test('an unowned file with different bytes is refused, and --force backs it up', (t) => {
   const projectRoot = tempProject(t);
-  const { result, irBytes } = sample('runner');
+  const { result, compiledWorkflowBytes } = sample('runner');
   const path = targetOf(result);
   const absolute = join(projectRoot, ...path.split('/'));
   mkdirSync(dirname(absolute), { recursive: true });
   writeFileSync(absolute, 'user content\n');
 
-  const refused = installProjection({ result, irBytes, projectRoot, clock: CLOCK });
+  const refused = installProjection({ result, compiledWorkflowBytes, projectRoot, clock: CLOCK });
   assert.equal(refused.code, 'INSTALL_CONFLICTS');
   assert.deepEqual(codes(refused), ['UNOWNED_PATH']);
   assert.equal(readFileSync(absolute, 'utf8'), 'user content\n');
 
-  const forced = installProjection({ result, irBytes, projectRoot, force: true, clock: CLOCK });
+  const forced = installProjection({ result, compiledWorkflowBytes, projectRoot, force: true, clock: CLOCK });
   assert.equal(forced.code, 'OK');
   assert.equal(forced.backups.some((backup) => backup.path === path), true);
 });
@@ -175,7 +175,7 @@ test('an unowned file with different bytes is refused, and --force backs it up',
 test('symlinks at a target are refused and never followed', (t) => {
   const projectRoot = tempProject(t);
   const outside = tempProject(t);
-  const { result, irBytes } = sample('runner');
+  const { result, compiledWorkflowBytes } = sample('runner');
   const path = targetOf(result, 1); // `roles/bys-architect.md`
   const absolute = join(projectRoot, ...path.split('/'));
   const victim = join(outside, ...path.split('/'));
@@ -195,7 +195,7 @@ test('symlinks at a target are refused and never followed', (t) => {
       return;
     }
   }
-  const outcome = installProjection({ result, irBytes, projectRoot, force: true, clock: CLOCK });
+  const outcome = installProjection({ result, compiledWorkflowBytes, projectRoot, force: true, clock: CLOCK });
   assert.equal(outcome.code, 'INSTALL_CONFLICTS');
   assert.deepEqual(codes(outcome), ['SYMLINK_AT_TARGET']);
   assert.equal(readFileSync(victim, 'utf8'), 'outside\n');
@@ -203,10 +203,10 @@ test('symlinks at a target are refused and never followed', (t) => {
 
 test('case-folded ownership collision is refused', (t) => {
   const projectRoot = tempProject(t);
-  const { result, irBytes } = sample('runner');
+  const { result, compiledWorkflowBytes } = sample('runner');
   const path = targetOf(result, 1);
   writeReceipt(projectRoot, { paths: [path.replace(/^./, (char) => char.toUpperCase())] });
-  const outcome = installProjection({ result, irBytes, projectRoot, clock: CLOCK });
+  const outcome = installProjection({ result, compiledWorkflowBytes, projectRoot, clock: CLOCK });
   assert.equal(outcome.code, 'INSTALL_CONFLICTS');
   // #103 / spec §12: every cross-receipt literal collision is one code.
   assert.deepEqual(codes(outcome), ['INSTALL_PATH_CONFLICT']);
@@ -215,11 +215,11 @@ test('case-folded ownership collision is refused', (t) => {
 
 test('a file/directory prefix collision between receipts is refused', (t) => {
   const projectRoot = tempProject(t);
-  const { result, irBytes } = sample('runner');
+  const { result, compiledWorkflowBytes } = sample('runner');
   const path = targetOf(result); // e.g. `constitution/CONSTITUTION.md`
   const prefix = path.split('/')[0];
   writeReceipt(projectRoot, { paths: [prefix] });
-  const outcome = installProjection({ result, irBytes, projectRoot, clock: CLOCK });
+  const outcome = installProjection({ result, compiledWorkflowBytes, projectRoot, clock: CLOCK });
   assert.equal(outcome.code, 'INSTALL_CONFLICTS');
   assert.deepEqual(codes(outcome), ['INSTALL_PATH_CONFLICT']);
   assert.equal(outcome.conflicts[0].details.kind, 'file-dir-prefix');
@@ -230,12 +230,12 @@ test('an escaping path is refused by V5 before anything is written', (t) => {
   const parent = dirname(projectRoot);
   const victim = join(parent, 'runner-escape-victim.md');
   t.after(() => rmSync(victim, { force: true }));
-  const { result, irBytes } = sample('runner');
+  const { result, compiledWorkflowBytes } = sample('runner');
   const mutated = cloneResult(result);
   mutated.files[0].path = '../runner-escape-victim.md';
   mutated.installPlan.steps[0].path = '../runner-escape-victim.md';
 
-  const outcome = installProjection({ result: mutated, irBytes, projectRoot, force: true, clock: CLOCK });
+  const outcome = installProjection({ result: mutated, compiledWorkflowBytes, projectRoot, force: true, clock: CLOCK });
   assert.equal(outcome.code, 'PROJECTION_RESULT_INVALID');
   assert.equal(existsSync(victim), false);
   assert.deepEqual(walk(projectRoot), []);
@@ -243,7 +243,7 @@ test('an escaping path is refused by V5 before anything is written', (t) => {
 
 test('all conflicts are aggregated in one pass, not first-error-wins', (t) => {
   const projectRoot = tempProject(t);
-  const { result, irBytes } = sample('runner');
+  const { result, compiledWorkflowBytes } = sample('runner');
   const first = targetOf(result, 0);
   const second = targetOf(result, 1);
   for (const path of [first, second]) {
@@ -251,7 +251,7 @@ test('all conflicts are aggregated in one pass, not first-error-wins', (t) => {
     mkdirSync(dirname(absolute), { recursive: true });
     writeFileSync(absolute, 'different\n');
   }
-  const outcome = installProjection({ result, irBytes, projectRoot, clock: CLOCK });
+  const outcome = installProjection({ result, compiledWorkflowBytes, projectRoot, clock: CLOCK });
   assert.equal(outcome.code, 'INSTALL_CONFLICTS');
   assert.deepEqual(outcome.conflicts.map((conflict) => conflict.path), [first, second]);
   assert.equal(outcome.conflicts.every((conflict) => conflict.code === 'UNOWNED_PATH'), true);
@@ -459,7 +459,7 @@ for (const row of MATRIX) {
     }
     const outcome = installProjection({
       result: arranged.result,
-      irBytes: arranged.irBytes,
+      compiledWorkflowBytes: arranged.compiledWorkflowBytes,
       projectRoot,
       force: arranged.force,
       clock: CLOCK,
@@ -473,7 +473,7 @@ for (const row of MATRIX) {
 
 test('a conflict that appears after the pre-lock check is caught by the TOCTOU recheck', (t) => {
   const projectRoot = tempProject(t);
-  const { result, irBytes } = sample('runner');
+  const { result, compiledWorkflowBytes } = sample('runner');
   const path = targetOf(result);
   const absolute = join(projectRoot, ...path.split('/'));
   let calls = 0;
@@ -488,7 +488,7 @@ test('a conflict that appears after the pre-lock check is caught by the TOCTOU r
     return new Date('2026-01-01T00:00:00.000Z');
   };
 
-  const outcome = installProjection({ result, irBytes, projectRoot, clock });
+  const outcome = installProjection({ result, compiledWorkflowBytes, projectRoot, clock });
   assert.equal(outcome.code, 'INSTALL_CONFLICTS');
   assert.match(outcome.message, /while waiting for the lock/);
   assert.deepEqual(outcome.conflicts.map((conflict) => conflict.path), [path]);

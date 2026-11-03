@@ -69,13 +69,13 @@ test('index.html has no inline scripts, styles or style attributes', () => {
   assert.match(html, /hm2b-assembler\.js bundle validate/);
 });
 
-test('the IR preview surfaces every hm2b.ir/v2 asset group and web/ carries no v1 IR literal', () => {
+test('the compiled workflow preview surfaces every hm2b.compiled-workflow/v2 asset group and web/ carries no v1 compiled workflow literal', () => {
   const html = readFileSync(join(WEB, 'index.html'), 'utf8');
-  for (const id of ['ir-knowledge-base', 'ir-checklists', 'ir-hooks', 'ir-mcp']) {
+  for (const id of ['compiled-workflow-knowledge-base', 'compiled-workflow-checklists', 'compiled-workflow-hooks', 'compiled-workflow-mcp']) {
     assert.match(html, new RegExp(`id="${id}"`), id);
   }
   for (const file of webFiles()) {
-    assert.doesNotMatch(readFileSync(file, 'utf8'), /hm2b\.ir\/v1/, relative(file));
+    assert.doesNotMatch(readFileSync(file, 'utf8'), /hm2b\.compiled-workflow\/v1/, relative(file));
   }
 });
 
@@ -124,7 +124,7 @@ test('app.js is import-safe in Node and uses the shared validator', async () => 
   assert.equal(typeof app.bootstrap, 'function');
   assert.equal(typeof app.upload, 'function');
   assert.equal(app.state.mismatch, false);
-  assert.equal(app.state.irBytes, null);
+  assert.equal(app.state.compiledWorkflowBytes, null);
 });
 
 test('browser primitives produce a byte-identical report to Node primitives (store and deflate)', async () => {

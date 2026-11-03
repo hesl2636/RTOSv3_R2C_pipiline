@@ -49,7 +49,7 @@ export const SECURITY_HEADERS = Object.freeze({
 /** Server-only modules under `web/` are never part of the static surface. */
 const SERVER_MODULES = new Set(['serve.mjs', 'http.js', 'build.js', 'publish.js', 'child.js']);
 /** Only these trees are public (decision #75 §10.6). */
-const STATIC_PREFIXES = new Set(['web', 'core', 'ir', 'assembler', 'projection', 'runtime']);
+const STATIC_PREFIXES = new Set(['web', 'core', 'compiled', 'assembler', 'projection', 'runtime']);
 const DENIED_TOP_LEVEL = new Set([
   '.git', 'node_modules', 'src', 'test', 'docs', 'examples', 'scripts', 'bin',
   'installer', 'adapters', 'pack', 'shims', 'plugins',

@@ -10,7 +10,7 @@
  * in `targets/index.js`, then regenerate `projection.json` from this manifest.
  */
 import { compareCodePoints } from '../../../core/code-point.js';
-import { IR_SCHEMA } from '../../../ir/schema.js';
+import { COMPILED_WORKFLOW_SCHEMA } from '../../../compiled/schema.js';
 import { TARGETS, TARGET_ORDER } from './targets/index.js';
 
 function targetEntry(id) {
@@ -58,9 +58,9 @@ export const AGENT_NATIVE_MANIFEST = Object.freeze({
   id: 'agent-native',
   name: 'Agent-native 投影',
   version: '0.1.0',
-  description: '把中立 IR 投影成原生 agent runtime 的技能与子 agent 定义；不生成 runner，不写用户自有配置文件。',
+  description: '把中立 compiled workflow 投影成原生 agent runtime 的技能与子 agent 定义；不生成 runner，不写用户自有配置文件。',
   api: {
-    ir: IR_SCHEMA,
+    compiledWorkflow: COMPILED_WORKFLOW_SCHEMA,
     options: 'hm2b.projection-options/v1',
     result: 'hm2b.projection-result/v1',
   },

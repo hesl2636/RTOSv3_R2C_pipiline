@@ -119,7 +119,7 @@ test('pre-tool-use allows business artefacts and unrelated paths', (t) => {
   const project = tempProject(t);
   const before = snapshot(project.root);
   const cases = [
-    { tool_name: 'Write', tool_input: { file_path: '.hm2b/ir.md' } },
+    { tool_name: 'Write', tool_input: { file_path: '.hm2b/compiledWorkflow.md' } },
     { tool_name: 'Write', tool_input: { path: '.hm2b/sr-map.md' } },
     { tool_name: 'Write', tool_input: { file_path: '.hm2b/artifacts/x' } },
     { tool_name: 'Write', tool_input: { file_path: 'docs/a.md' } },

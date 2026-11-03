@@ -28,31 +28,31 @@ function baseline() {
   if (cached !== undefined) return cached;
   const compiled = compileBundle(new Uint8Array(readFileSync(ZIP)), { inflateRaw, sha256: sha256Hex });
   assert.equal(compiled.ok, true);
-  const ir = JSON.parse(new TextDecoder().decode(compiled.irBytes));
-  const irDigest = compiled.digest;
+  const compiledWorkflow = JSON.parse(new TextDecoder().decode(compiled.compiledWorkflowBytes));
+  const compiledWorkflowDigest = compiled.digest;
   const { options } = normalizeOptions({
     projectionId: 'agent-native',
-    ir,
-    irDigest,
+    compiledWorkflow,
+    compiledWorkflowDigest,
     raw: { targets: ['claude-code'] },
     manifest: MANIFEST,
   });
   const result = project({
     projectionId: 'agent-native',
-    ir,
-    irDigest,
+    compiledWorkflow,
+    compiledWorkflowDigest,
     options,
     environment: {},
     assets: {},
   });
-  cached = { ir, irDigest, options, result };
+  cached = { compiledWorkflow, compiledWorkflowDigest, options, result };
   return cached;
 }
 
 function validate(result, base = baseline()) {
   return validateResult(result, {
-    ir: base.ir,
-    irDigest: base.irDigest,
+    compiledWorkflow: base.compiledWorkflow,
+    compiledWorkflowDigest: base.compiledWorkflowDigest,
     options: base.options,
     manifest: MANIFEST,
   });
@@ -75,8 +75,8 @@ test('the baseline result passes every check', () => {
   assert.deepEqual(outcome.diagnostics, []);
 });
 
-test('V1 rejects a projection/IR reference mismatch', () => {
-  const outcome = mutate((result) => { result.ir.digest = '0'.repeat(64); });
+test('V1 rejects a projection/compiled workflow reference mismatch', () => {
+  const outcome = mutate((result) => { result.compiledWorkflow.digest = '0'.repeat(64); });
   assert.equal(outcome.ok, false);
   assert.ok(checksOf(outcome).includes('V1'));
 });
@@ -121,8 +121,8 @@ test('V5 allows bundle asset roots only in the projection that declares them', (
   // runner declares knowledge-base/ at the project root, so that path is legal.
   const runner = getProjection('runner');
   const runnerOutcome = validateResult(result, {
-    ir: base.ir,
-    irDigest: base.irDigest,
+    compiledWorkflow: base.compiledWorkflow,
+    compiledWorkflowDigest: base.compiledWorkflowDigest,
     options: base.options,
     manifest: runner,
   });
@@ -169,7 +169,7 @@ test('V9 rejects a semantic use point without its degradation record', () => {
     result.degradations = result.degradations.filter((record) => record.capability !== 'state');
   });
   assert.ok(checksOf(outcome).includes('V9'));
-  // Degradation pointers must resolve in the IR.
+  // Degradation pointers must resolve in the compiled workflow.
   assert.ok(checksOf(mutate((result) => {
     result.degradations[0].pointer = '/stages/99';
   })).includes('V9'));
@@ -219,18 +219,18 @@ test('the result field order has one source for the validator and the payload', 
 
 test('V8 accepts a worse level only when option exclusion explains the worst use', () => {
   const base = baseline();
-  const selected = Object.keys(base.ir.skills).slice(0, 1);
+  const selected = Object.keys(base.compiledWorkflow.skills).slice(0, 1);
   const { options } = normalizeOptions({
     projectionId: 'agent-native',
-    ir: base.ir,
-    irDigest: base.irDigest,
+    compiledWorkflow: base.compiledWorkflow,
+    compiledWorkflowDigest: base.compiledWorkflowDigest,
     raw: { targets: ['claude-code'], skills: selected },
     manifest: MANIFEST,
   });
   const projected = project({
     projectionId: 'agent-native',
-    ir: base.ir,
-    irDigest: base.irDigest,
+    compiledWorkflow: base.compiledWorkflow,
+    compiledWorkflowDigest: base.compiledWorkflowDigest,
     options,
     environment: {},
     assets: {},
@@ -242,8 +242,8 @@ test('V8 accepts a worse level only when option exclusion explains the worst use
     && record.capability === 'skills' && record.level === row.level));
 
   const outcome = validateResult(projected, {
-    ir: base.ir,
-    irDigest: base.irDigest,
+    compiledWorkflow: base.compiledWorkflow,
+    compiledWorkflowDigest: base.compiledWorkflowDigest,
     options,
     manifest: MANIFEST,
   });

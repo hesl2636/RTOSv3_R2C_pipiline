@@ -25,19 +25,19 @@ function projectionError(code, message) {
   return error;
 }
 
-function irRef(ir, irDigest) {
+function compiledWorkflowRef(compiledWorkflow, compiledWorkflowDigest) {
   return {
-    id: ir?.id ?? null,
-    version: ir?.version ?? null,
-    digest: irDigest,
-    contentSha256: ir?.source?.bundle?.contentSha256 ?? null,
+    id: compiledWorkflow?.id ?? null,
+    version: compiledWorkflow?.version ?? null,
+    digest: compiledWorkflowDigest,
+    contentSha256: compiledWorkflow?.source?.bundle?.contentSha256 ?? null,
   };
 }
 
 /**
  * Normalize one failure into the diagnostic row shape (§6): every row carries
  * `severity: 'error'` plus the CLI location fields (`path`, `pointer`), so a
- * consumer can render failures with the same code as bundle/IR diagnostics.
+ * consumer can render failures with the same code as bundle/compiled workflow diagnostics.
  */
 export function failureRow(error) {
   const row = {
@@ -52,12 +52,12 @@ export function failureRow(error) {
   return row;
 }
 
-function failure(descriptor, ir, irDigest, errors) {
+function failure(descriptor, compiledWorkflow, compiledWorkflowDigest, errors) {
   return {
     schema: RESULT_SCHEMA,
     ok: false,
     projection: { id: descriptor.id, version: descriptor.version },
-    ir: irRef(ir, irDigest),
+    compiledWorkflow: compiledWorkflowRef(compiledWorkflow, compiledWorkflowDigest),
     errors: errors.map(failureRow),
   };
 }
@@ -82,38 +82,38 @@ function compareWarnings(left, right) {
 }
 
 /**
- * `project({projectionId, ir, irDigest, options, environment, assets})`.
+ * `project({projectionId, compiledWorkflow, compiledWorkflowDigest, options, environment, assets})`.
  * Returns a success or failure result; failures never carry partial files.
  */
-export function project({ projectionId, ir, irDigest, options, environment = {}, assets = {} }) {
+export function project({ projectionId, compiledWorkflow, compiledWorkflowDigest, options, environment = {}, assets = {} }) {
   const descriptor = getProjection(projectionId);
   if (descriptor === null) throw projectionError('PROJECTION_NOT_REGISTERED', `projection ${projectionId} is not registered`);
-  if (ir === null || typeof ir !== 'object' || ir.schema !== descriptor.api.ir) {
-    return failure(descriptor, ir, irDigest, [{
-      code: 'PROJECTION_IR_UNSUPPORTED',
-      message: `unsupported IR schema ${String(ir?.schema)}`,
+  if (compiledWorkflow === null || typeof compiledWorkflow !== 'object' || compiledWorkflow.schema !== descriptor.api.compiledWorkflow) {
+    return failure(descriptor, compiledWorkflow, compiledWorkflowDigest, [{
+      code: 'PROJECTION_COMPILED_WORKFLOW_UNSUPPORTED',
+      message: `unsupported compiled workflow schema ${String(compiledWorkflow?.schema)}`,
     }]);
   }
-  const check = validateOptions({ projectionId, ir, irDigest, options, manifest: descriptor });
-  if (!check.ok) return failure(descriptor, ir, irDigest, check.errors);
+  const check = validateOptions({ projectionId, compiledWorkflow, compiledWorkflowDigest, options, manifest: descriptor });
+  if (!check.ok) return failure(descriptor, compiledWorkflow, compiledWorkflowDigest, check.errors);
 
   let body;
   try {
-    body = descriptor.project({ ir, irDigest, options, environment, assets });
+    body = descriptor.project({ compiledWorkflow, compiledWorkflowDigest, options, environment, assets });
   } catch (error) {
-    return failure(descriptor, ir, irDigest, [{
+    return failure(descriptor, compiledWorkflow, compiledWorkflowDigest, [{
       code: error?.code ?? 'PROJECTION_INTERNAL',
       message: error instanceof Error ? error.message : String(error),
     }]);
   }
-  if (body.ok === false) return failure(descriptor, ir, irDigest, body.errors);
+  if (body.ok === false) return failure(descriptor, compiledWorkflow, compiledWorkflowDigest, body.errors);
 
   const files = [...body.files].sort((left, right) => compareCodePoints(left.path, right.path));
   let totalBytes = 0;
   for (const file of files) {
     const bytes = encoder.encode(file.content).length;
     if (bytes > MAX_FILE_BYTES) {
-      return failure(descriptor, ir, irDigest, [{
+      return failure(descriptor, compiledWorkflow, compiledWorkflowDigest, [{
         code: 'PROJECTION_OUTPUT_TOO_LARGE',
         message: `${file.path} exceeds 4 MiB`,
         pointer: file.path,
@@ -122,7 +122,7 @@ export function project({ projectionId, ir, irDigest, options, environment = {},
     totalBytes += bytes;
   }
   if (files.length > MAX_FILES || totalBytes > MAX_TOTAL_BYTES) {
-    return failure(descriptor, ir, irDigest, [{
+    return failure(descriptor, compiledWorkflow, compiledWorkflowDigest, [{
       code: 'PROJECTION_OUTPUT_TOO_LARGE',
       message: `projection output exceeds ${MAX_FILES} files or 64 MiB`,
     }]);
@@ -132,11 +132,11 @@ export function project({ projectionId, ir, irDigest, options, environment = {},
     schema: RESULT_SCHEMA,
     ok: true,
     projection: { id: descriptor.id, version: descriptor.version },
-    ir: irRef(ir, irDigest),
+    compiledWorkflow: compiledWorkflowRef(compiledWorkflow, compiledWorkflowDigest),
     options: {
       schema: options.schema,
       projection: options.projection,
-      ir: options.ir,
+      compiledWorkflow: options.compiledWorkflow,
       stageOrder: options.stageOrder,
       skills: options.skills,
       targets: options.targets,

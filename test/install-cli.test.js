@@ -28,10 +28,10 @@ function tempDir(t, prefix = 'hm2b-cli-') {
   return dir;
 }
 
-function writeResultDir(t, { result, irBytes }) {
+function writeResultDir(t, { result, compiledWorkflowBytes }) {
   const dir = tempDir(t, 'hm2b-result-');
   writeFileSync(join(dir, 'projection-result.json'), canonicalJson(result));
-  writeFileSync(join(dir, 'workflow.ir.json'), irBytes);
+  writeFileSync(join(dir, 'workflow.compiled.json'), compiledWorkflowBytes);
   for (const file of result.files) {
     const absolute = join(dir, 'files', ...file.path.split('/'));
     mkdirSync(dirname(absolute), { recursive: true });
@@ -52,8 +52,8 @@ function envelopeOf(run) {
 }
 
 test('installs from a result directory and reports one envelope', (t) => {
-  const { result, irBytes } = sample('runner');
-  const resultDir = writeResultDir(t, { result, irBytes });
+  const { result, compiledWorkflowBytes } = sample('runner');
+  const resultDir = writeResultDir(t, { result, compiledWorkflowBytes });
   const projectRoot = tempDir(t, 'hm2b-project-');
 
   const run = cli(['--result', resultDir, '--project', projectRoot, '--json']);
@@ -62,7 +62,7 @@ test('installs from a result directory and reports one envelope', (t) => {
   assert.deepEqual(Object.keys(envelope), ['ok', 'command', 'code', 'run_id', 'session_id', 'step', 'data', 'error']);
   assert.equal(envelope.ok, true);
   assert.equal(envelope.data.action, 'installed');
-  assert.equal(envelope.data.receipt_path, `.hm2b/install/receipts/runner/${result.ir.id}.json`);
+  assert.equal(envelope.data.receipt_path, `.hm2b/install/receipts/runner/${result.compiledWorkflow.id}.json`);
   const receipt = JSON.parse(readFileSync(join(projectRoot, ...envelope.data.receipt_path.split('/')), 'utf8'));
   assert.equal(envelope.data.files, receipt.files.length);
   assert.ok(envelope.data.files > result.files.length, 'runner installs add installer-owned host roles');
@@ -75,17 +75,17 @@ test('installs from a result directory and reports one envelope', (t) => {
 });
 
 test('accepts an inline result JSON path', (t) => {
-  const { result, irBytes } = sample('runner');
-  const resultDir = writeResultDir(t, { result, irBytes });
+  const { result, compiledWorkflowBytes } = sample('runner');
+  const resultDir = writeResultDir(t, { result, compiledWorkflowBytes });
   const projectRoot = tempDir(t, 'hm2b-project-');
-  const run = cli(['--result', join(resultDir, 'projection-result.json'), '--ir', join(resultDir, 'workflow.ir.json'), '--project', projectRoot, '--json']);
+  const run = cli(['--result', join(resultDir, 'projection-result.json'), '--compiled-workflow', join(resultDir, 'workflow.compiled.json'), '--project', projectRoot, '--json']);
   assert.equal(run.status, 0);
   assert.equal(envelopeOf(run).data.action, 'installed');
 });
 
 test('a payload mismatch is refused with no writes', (t) => {
-  const { result, irBytes } = sample('runner');
-  const resultDir = writeResultDir(t, { result, irBytes });
+  const { result, compiledWorkflowBytes } = sample('runner');
+  const resultDir = writeResultDir(t, { result, compiledWorkflowBytes });
   const target = join(resultDir, 'files', ...result.files[0].path.split('/'));
   writeFileSync(target, 'tampered\n');
   const projectRoot = tempDir(t, 'hm2b-project-');
@@ -98,19 +98,19 @@ test('a payload mismatch is refused with no writes', (t) => {
   assert.deepEqual(readdirSyncSafe(projectRoot), []);
 });
 
-test('a result directory without its IR is a usage error', (t) => {
+test('a result directory without its compiled workflow is a usage error', (t) => {
   const { result } = sample('runner');
   const resultDir = tempDir(t, 'hm2b-result-');
   writeFileSync(join(resultDir, 'projection-result.json'), canonicalJson(result));
   const projectRoot = tempDir(t, 'hm2b-project-');
   const run = cli(['--result', resultDir, '--project', projectRoot, '--json']);
   assert.equal(run.status, 2);
-  assert.equal(envelopeOf(run).error.code, 'IR_INPUT_REQUIRED');
+  assert.equal(envelopeOf(run).error.code, 'COMPILED_WORKFLOW_INPUT_REQUIRED');
 });
 
 test('conflicts exit 2 and list every path', (t) => {
-  const { result, irBytes } = sample('runner');
-  const resultDir = writeResultDir(t, { result, irBytes });
+  const { result, compiledWorkflowBytes } = sample('runner');
+  const resultDir = writeResultDir(t, { result, compiledWorkflowBytes });
   const projectRoot = tempDir(t, 'hm2b-project-');
   for (const file of result.files.slice(0, 2)) {
     const absolute = join(projectRoot, ...file.path.split('/'));
@@ -125,16 +125,16 @@ test('conflicts exit 2 and list every path', (t) => {
 });
 
 test('uninstall exits 0, then 4 when the identity is gone', (t) => {
-  const { result, irBytes } = sample('runner');
-  const resultDir = writeResultDir(t, { result, irBytes });
+  const { result, compiledWorkflowBytes } = sample('runner');
+  const resultDir = writeResultDir(t, { result, compiledWorkflowBytes });
   const projectRoot = tempDir(t, 'hm2b-project-');
   assert.equal(cli(['--result', resultDir, '--project', projectRoot]).status, 0);
 
-  const removed = cli(['--uninstall', '--projection', 'runner', '--bundle', result.ir.id, '--project', projectRoot, '--json']);
+  const removed = cli(['--uninstall', '--projection', 'runner', '--bundle', result.compiledWorkflow.id, '--project', projectRoot, '--json']);
   assert.equal(removed.status, 0);
   assert.equal(envelopeOf(removed).data.action, 'uninstalled');
 
-  const missing = cli(['--uninstall', '--projection', 'runner', '--bundle', result.ir.id, '--project', projectRoot, '--json']);
+  const missing = cli(['--uninstall', '--projection', 'runner', '--bundle', result.compiledWorkflow.id, '--project', projectRoot, '--json']);
   assert.equal(missing.status, 4);
   assert.equal(envelopeOf(missing).error.code, 'NOT_INSTALLED');
 });
@@ -153,8 +153,8 @@ test('--migrate-legacy is install-only and needs a result', (t) => {
 });
 
 test('dry-run through the CLI writes nothing', (t) => {
-  const { result, irBytes } = sample('runner');
-  const resultDir = writeResultDir(t, { result, irBytes });
+  const { result, compiledWorkflowBytes } = sample('runner');
+  const resultDir = writeResultDir(t, { result, compiledWorkflowBytes });
   const projectRoot = tempDir(t, 'hm2b-project-');
   const run = cli(['--result', resultDir, '--project', projectRoot, '--dry-run', '--json']);
   assert.equal(run.status, 0);

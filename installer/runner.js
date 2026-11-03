@@ -2,7 +2,7 @@
  * runner install composition (#104, #82 §11, spec §12).
  *
  * `render-roles` renders the four host
- * agent definitions from the IR through `runtime/shared/render-role.js`, names
+ * agent definitions from the compiled workflow through `runtime/shared/render-role.js`, names
  * them `runner-<id>`, records field-level degradations and writes one
  * `.hm2b/projection/roles.json` sectioned by the host target ids that were
  * actually installed. dsh has no native role format and renders nothing.
@@ -22,7 +22,7 @@ import { renderRole, ROLE_FIELD_ORDER } from '../runtime/shared/render-role.js';
 import { installProjection } from './install.js';
 import { RUNNER_ROLE_TARGETS } from './runtime.js';
 import { sorted } from '../core/sort.js';
-import { IR_SCHEMA } from '../ir/schema.js';
+import { COMPILED_WORKFLOW_SCHEMA } from '../compiled/schema.js';
 
 export { RUNNER_ROLE_TARGETS };
 
@@ -43,21 +43,21 @@ function failure(code, message, details = {}) {
 }
 
 /**
- * Render every IR role for every installed host target.
+ * Render every compiled workflow role for every installed host target.
  *
  * Returns `{targets, files, degradations, warnings, rolesJson}`; `files` are
  * installer-owned entries the receipt must record (host agents + roles.json).
  */
-export function renderRunnerRoles({ ir, irDigest, hostTargets, skills } = {}) {
-  if (ir === null || typeof ir !== 'object' || ir.schema !== IR_SCHEMA) {
-    return failure('ROLES_IR_UNSUPPORTED', `renderRunnerRoles needs an ${IR_SCHEMA} document`);
+export function renderRunnerRoles({ compiledWorkflow, compiledWorkflowDigest, hostTargets, skills } = {}) {
+  if (compiledWorkflow === null || typeof compiledWorkflow !== 'object' || compiledWorkflow.schema !== COMPILED_WORKFLOW_SCHEMA) {
+    return failure('ROLES_COMPILED_WORKFLOW_UNSUPPORTED', `renderRunnerRoles needs an ${COMPILED_WORKFLOW_SCHEMA} document`);
   }
-  if (typeof irDigest !== 'string' || irDigest === '') {
-    return failure('ROLES_IR_DIGEST_MISSING', 'renderRunnerRoles needs the IR digest');
+  if (typeof compiledWorkflowDigest !== 'string' || compiledWorkflowDigest === '') {
+    return failure('ROLES_COMPILED_WORKFLOW_DIGEST_MISSING', 'renderRunnerRoles needs the compiled workflow digest');
   }
   const targets = effectiveTargets(hostTargets);
-  const roleIds = sorted(Object.keys(ir.roles ?? {}));
-  const allSkills = Object.keys(ir.skills ?? {});
+  const roleIds = sorted(Object.keys(compiledWorkflow.roles ?? {}));
+  const allSkills = Object.keys(compiledWorkflow.skills ?? {});
   const selected = Array.isArray(skills) ? new Set(skills) : new Set(allSkills);
   // Spec §9: runner's preload is `unavailable`, and no host skill root is
   // installed. An empty name table means the renderer can never emit a name
@@ -74,12 +74,12 @@ export function renderRunnerRoles({ ir, irDigest, hostTargets, skills } = {}) {
     const descriptor = TARGETS[target];
     const roles = [];
     for (const roleId of roleIds) {
-      const declaredSkills = ir.roles[roleId].skills;
+      const declaredSkills = compiledWorkflow.roles[roleId].skills;
       // Host role files never name skills: the field is dropped from the render
       // input so a descriptor cannot write `skills: [unresolvable-id]` (nor an
       // empty `skills: []` line). `roles.json` still reports the declared field
       // as unavailable below.
-      const role = { ...ir.roles[roleId], id: roleId };
+      const role = { ...compiledWorkflow.roles[roleId], id: roleId };
       delete role.skills;
       let rendered;
       try {
@@ -172,7 +172,7 @@ export function renderRunnerRoles({ ir, irDigest, hostTargets, skills } = {}) {
       roles.push({
         id: roleId,
         name: rendered.name,
-        placeholder: ir.roles[roleId].placeholder === true,
+        placeholder: compiledWorkflow.roles[roleId].placeholder === true,
         exposure: rendered.exposure,
         artifact,
         fields,
@@ -190,7 +190,7 @@ export function renderRunnerRoles({ ir, irDigest, hostTargets, skills } = {}) {
   for (const target of sorted(targets)) orderedTargets[target] = rolesTargets[target];
   const rolesJson = canonicalJson({
     schema: 'hm2b.projection.roles/v1',
-    ir: { id: ir.id, version: ir.version, sha256: irDigest },
+    compiledWorkflow: { id: compiledWorkflow.id, version: compiledWorkflow.version, sha256: compiledWorkflowDigest },
     targets: orderedTargets,
   });
   files.push({
@@ -222,18 +222,18 @@ export function installRunnerProject(input = {}) {
   if (result === null || typeof result !== 'object' || result.projection?.id !== 'runner') {
     return installProjection(input);
   }
-  const irBytes = input.irBytes;
-  if (irBytes === undefined || irBytes === null) return installProjection(input);
-  const irText = typeof irBytes === 'string' ? irBytes : Buffer.from(irBytes).toString('utf8');
-  let ir;
+  const compiledWorkflowBytes = input.compiledWorkflowBytes;
+  if (compiledWorkflowBytes === undefined || compiledWorkflowBytes === null) return installProjection(input);
+  const compiledWorkflowText = typeof compiledWorkflowBytes === 'string' ? compiledWorkflowBytes : Buffer.from(compiledWorkflowBytes).toString('utf8');
+  let compiledWorkflow;
   try {
-    ir = JSON.parse(irText);
+    compiledWorkflow = JSON.parse(compiledWorkflowText);
   } catch {
     return installProjection(input);
   }
   const rendered = renderRunnerRoles({
-    ir,
-    irDigest: sha256Hex(irText),
+    compiledWorkflow,
+    compiledWorkflowDigest: sha256Hex(compiledWorkflowText),
     hostTargets: input.hostTargets ?? RUNNER_ROLE_TARGETS,
     skills: input.result?.options?.skills,
   });

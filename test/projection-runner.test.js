@@ -1,11 +1,11 @@
 /**
- * runner projection: IR -> five project-root payload roots (#93, #70, spec §9).
+ * runner projection: compiled workflow -> five project-root payload roots (#93, #70, spec §9).
  *
- * The sample bundle compiles to the frozen IR. Projecting it for `runner` must
+ * The sample bundle compiles to the frozen compiled workflow. Projecting it for `runner` must
  * produce the closed 45-file set, four role degradations, the eight static
  * capability rows and a result that passes V1–V12 twice byte-identically.
  * Workflow/task/skill/constitution bytes match the prototype oracle; role
- * copies are the normalised IR copy with the host-visible `agent:` header.
+ * copies are the normalised compiled workflow copy with the host-visible `agent:` header.
  */
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
@@ -52,21 +52,21 @@ const CAPABILITIES = [
 ];
 
 let sample;
-function sampleIr() {
+function sampleCompiledWorkflow() {
   if (sample !== undefined) return sample;
   const compiled = compileBundle(new Uint8Array(readFileSync(ZIP)), { inflateRaw, sha256: sha256Hex });
   assert.equal(compiled.ok, true);
-  sample = { ir: JSON.parse(new TextDecoder().decode(compiled.irBytes)), irDigest: compiled.digest };
+  sample = { compiledWorkflow: JSON.parse(new TextDecoder().decode(compiled.compiledWorkflowBytes)), compiledWorkflowDigest: compiled.digest };
   return sample;
 }
 
-function runProject({ ir, irDigest, raw, environment = {} }) {
-  const normalized = normalizeOptions({ projectionId: 'runner', ir, irDigest, raw, manifest: MANIFEST });
+function runProject({ compiledWorkflow, compiledWorkflowDigest, raw, environment = {} }) {
+  const normalized = normalizeOptions({ projectionId: 'runner', compiledWorkflow, compiledWorkflowDigest, raw, manifest: MANIFEST });
   assert.equal(normalized.ok, true, JSON.stringify(normalized.errors));
   return project({
     projectionId: 'runner',
-    ir,
-    irDigest,
+    compiledWorkflow,
+    compiledWorkflowDigest,
     options: normalized.options,
     environment,
     assets: {},
@@ -74,8 +74,8 @@ function runProject({ ir, irDigest, raw, environment = {} }) {
 }
 
 function sampleResult() {
-  const { ir, irDigest } = sampleIr();
-  return { ir, irDigest, result: runProject({ ir, irDigest, raw: null }) };
+  const { compiledWorkflow, compiledWorkflowDigest } = sampleCompiledWorkflow();
+  return { compiledWorkflow, compiledWorkflowDigest, result: runProject({ compiledWorkflow, compiledWorkflowDigest, raw: null }) };
 }
 
 const SOURCE = (path, fill) => ({ path, sha256: fill.repeat(64) });
@@ -86,7 +86,7 @@ const TASK_BODY = (label) => [
   '## 提交', '', '```', '{{submit}}', '```', '',
 ].join('\n');
 
-function miniIr({
+function miniCompiledWorkflow({
   id = 'mini',
   stages,
   roles,
@@ -105,7 +105,7 @@ function miniIr({
     source: SOURCE('roles/worker.md', 'd'),
   };
   return {
-    schema: 'hm2b.ir/v2',
+    schema: 'hm2b.compiled-workflow/v2',
     id,
     name: 'Mini workflow',
     version: '1.0.0',
@@ -146,7 +146,7 @@ function fileByPath(result, path) {
 // --- the frozen baseline --------------------------------------------------
 
 test('baseline: 45 files, 4 degradations, 8 capability rows, V1–V12 pass', () => {
-  const { ir, irDigest, result } = sampleResult();
+  const { compiledWorkflow, compiledWorkflowDigest, result } = sampleResult();
   assert.equal(result.ok, true, JSON.stringify(result.errors));
   assert.equal(result.schema, 'hm2b.projection-result/v1');
   assert.deepEqual(result.targets, ['runner']);
@@ -160,16 +160,16 @@ test('baseline: 45 files, 4 degradations, 8 capability rows, V1–V12 pass', () 
   assert.equal(result.metadata.runtime.runnerCommand, 'node .hm2b/bin/hm2b.js');
   assert.equal(result.metadata.runtime.constitution, 'inline-prefix');
 
-  const validation = validateResult(result, { ir, irDigest, options: result.options, manifest: MANIFEST, environment: {} });
+  const validation = validateResult(result, { compiledWorkflow, compiledWorkflowDigest, options: result.options, manifest: MANIFEST, environment: {} });
   assert.equal(validation.ok, true, JSON.stringify(validation.diagnostics, null, 2));
 });
 
 test('declared bundle assets project verbatim at the project root', () => {
   const compiled = compileBundle(new Uint8Array(assetZip()), { inflateRaw, sha256: sha256Hex });
   assert.equal(compiled.ok, true);
-  const ir = JSON.parse(new TextDecoder().decode(compiled.irBytes));
-  const irDigest = compiled.digest;
-  const result = runProject({ ir, irDigest, raw: null });
+  const compiledWorkflow = JSON.parse(new TextDecoder().decode(compiled.compiledWorkflowBytes));
+  const compiledWorkflowDigest = compiled.digest;
+  const result = runProject({ compiledWorkflow, compiledWorkflowDigest, raw: null });
   assert.equal(result.ok, true, JSON.stringify(result.errors));
 
   const assets = result.files.filter((file) => ['knowledge', 'checklist', 'hooks', 'mcp'].includes(file.kind));
@@ -207,10 +207,10 @@ test('declared bundle assets project verbatim at the project root', () => {
   assert.equal(result.metadata.artifacts.hooks, 'hooks/hooks.json');
   assert.equal(result.metadata.artifacts.mcp, 'mcp.json');
 
-  const validation = validateResult(result, { ir, irDigest, options: result.options, manifest: MANIFEST, environment: {} });
+  const validation = validateResult(result, { compiledWorkflow, compiledWorkflowDigest, options: result.options, manifest: MANIFEST, environment: {} });
   assert.equal(validation.ok, true, JSON.stringify(validation.diagnostics, null, 2));
 
-  const again = runProject({ ir, irDigest, raw: null });
+  const again = runProject({ compiledWorkflow, compiledWorkflowDigest, raw: null });
   assert.equal(JSON.stringify(again), JSON.stringify(result));
 
   // No user-owned configuration file or engine path is ever projected.
@@ -232,7 +232,7 @@ test('the sample file set stays on the five payload roots', () => {
     assert.match(path, /^(?:constitution|roles|skills|tasks|workflows)\//);
   }
   assert.equal(paths.filter((path) => path.endsWith('/SKILL.md')).length, 35);
-  assert.equal(paths.some((path) => /(?:^|\/)(?:commands|adapters|schema|shims|hm2b-payload\.json|workflow\.ir\.json|bundle\.json)(?:\/|$)/.test(path)), false);
+  assert.equal(paths.some((path) => /(?:^|\/)(?:commands|adapters|schema|shims|hm2b-payload\.json|workflow\.compiled\.json|bundle\.json)(?:\/|$)/.test(path)), false);
   assert.equal(result.installPlan.steps.length, result.files.length);
   assert.deepEqual(result.installPlan.steps.map((step) => step.path), paths);
   for (const step of result.installPlan.steps) {
@@ -277,7 +277,7 @@ test('workflow YAML is schema-ordered, quoted, 2-space, LF and omits empty colle
   assert.equal(step.agent, 'runner-bys-architect');
   for (const stage of doc.stages) {
     for (const item of stage.steps) {
-      assert.equal(item.agent, `runner-${sampleIr().ir.stages.flatMap((entry) => entry.steps).find((entry) => entry.id === item.id).role}`);
+      assert.equal(item.agent, `runner-${sampleCompiledWorkflow().compiledWorkflow.stages.flatMap((entry) => entry.steps).find((entry) => entry.id === item.id).role}`);
       assert.equal(item.skill, undefined);
       assert.equal(item.timeout, undefined);
     }
@@ -285,14 +285,14 @@ test('workflow YAML is schema-ordered, quoted, 2-space, LF and omits empty colle
 });
 
 test('gates and outputs map verbatim; an explicit timeout is kept', () => {
-  const ir = miniIr();
-  ir.stages[0].steps[0].gates = [
+  const compiledWorkflow = miniCompiledWorkflow();
+  compiledWorkflow.stages[0].steps[0].gates = [
     { command: 'node --test', timeout: 30 },
     { command: 'node tools/check.mjs' },
   ];
-  ir.stages[0].steps[0].outputs = ['reports/*.md'];
-  ir.stages[0].steps[0].skills = [];
-  const { result } = { result: runProject({ ir, irDigest: sha256Hex(canonicalJson(ir)) }) };
+  compiledWorkflow.stages[0].steps[0].outputs = ['reports/*.md'];
+  compiledWorkflow.stages[0].steps[0].skills = [];
+  const { result } = { result: runProject({ compiledWorkflow, compiledWorkflowDigest: sha256Hex(canonicalJson(compiledWorkflow)) }) };
   assert.equal(result.ok, true);
   const yaml = fileByPath(result, 'workflows/mini.yaml').content;
   assert.ok(yaml.includes('        expect:\n          outputs:\n            - "reports/*.md"\n        gate:\n          - command: "node --test"\n            timeout: 30\n          - command: "node tools/check.mjs"\n'));
@@ -306,7 +306,7 @@ test('gates and outputs map verbatim; an explicit timeout is kept', () => {
 // --- {{submit}} -----------------------------------------------------------
 
 test('{{submit}} derivation: 1 reference pins --step, 0 or 2 use the generic command', () => {
-  const ir = miniIr({
+  const compiledWorkflow = miniCompiledWorkflow({
     stages: [{
       id: 's',
       name: 'S',
@@ -322,7 +322,7 @@ test('{{submit}} derivation: 1 reference pins --step, 0 or 2 use the generic com
       unused: { body: TASK_BODY('未用'), source: SOURCE('tasks/unused.md', '3') },
     },
   });
-  const { result } = { result: runProject({ ir, irDigest: sha256Hex(canonicalJson(ir)) }) };
+  const { result } = { result: runProject({ compiledWorkflow, compiledWorkflowDigest: sha256Hex(canonicalJson(compiledWorkflow)) }) };
   assert.equal(result.ok, true);
   const once = fileByPath(result, 'tasks/used-once.md').content;
   const shared = fileByPath(result, 'tasks/shared.md').content;
@@ -340,12 +340,12 @@ test('{{submit}} derivation: 1 reference pins --step, 0 or 2 use the generic com
 });
 
 test('a task without exactly one {{submit}} token fails without files', () => {
-  const ir = miniIr({
+  const compiledWorkflow = miniCompiledWorkflow({
     tasks: {
       'one-task': { body: '## 提交\n\n没有 token。\n', source: SOURCE('tasks/one-task.md', 'e') },
     },
   });
-  const { result } = { result: runProject({ ir, irDigest: sha256Hex(canonicalJson(ir)) }) };
+  const { result } = { result: runProject({ compiledWorkflow, compiledWorkflowDigest: sha256Hex(canonicalJson(compiledWorkflow)) }) };
   assert.equal(result.ok, false);
   assert.deepEqual(result.errors, [{
     severity: 'error',
@@ -361,13 +361,13 @@ test('a task without exactly one {{submit}} token fails without files', () => {
 
 test('skill copies rebuild frontmatter, always write placeholder and keep the body verbatim', () => {
   const body = '\n# helper\n\nDo it.\n';
-  const ir = miniIr({
+  const compiledWorkflow = miniCompiledWorkflow({
     skills: {
       helper: { description: 'Helper skill.', placeholder: false, body, source: SOURCE('skills/helper/SKILL.md', 'f') },
       other: { description: 'Other skill.', placeholder: true, body, source: SOURCE('skills/other/SKILL.md', 'a') },
     },
   });
-  const { result } = { result: runProject({ ir, irDigest: sha256Hex(canonicalJson(ir)) }) };
+  const { result } = { result: runProject({ compiledWorkflow, compiledWorkflowDigest: sha256Hex(canonicalJson(compiledWorkflow)) }) };
   assert.equal(result.ok, true);
   assert.equal(
     fileByPath(result, 'skills/helper/SKILL.md').content,
@@ -380,14 +380,14 @@ test('skill copies rebuild frontmatter, always write placeholder and keep the bo
 });
 
 test('a skill subset drops copies, keeps step references and records option losses', () => {
-  const ir = miniIr({
+  const compiledWorkflow = miniCompiledWorkflow({
     skills: {
       helper: { description: 'Helper skill.', placeholder: false, body: '\n# helper\n', source: SOURCE('skills/helper/SKILL.md', 'f') },
       other: { description: 'Other skill.', placeholder: false, body: '\n# other\n', source: SOURCE('skills/other/SKILL.md', 'a') },
     },
   });
-  ir.roles.worker.skills = ['helper', 'other'];
-  const { result } = { result: runProject({ ir, irDigest: sha256Hex(canonicalJson(ir)), raw: { skills: ['helper'] } }) };
+  compiledWorkflow.roles.worker.skills = ['helper', 'other'];
+  const { result } = { result: runProject({ compiledWorkflow, compiledWorkflowDigest: sha256Hex(canonicalJson(compiledWorkflow)), raw: { skills: ['helper'] } }) };
   assert.equal(result.ok, true);
   assert.deepEqual(result.options.skills, ['helper']);
   assert.equal(result.files.some((file) => file.path === 'skills/other/SKILL.md'), false);
@@ -404,7 +404,7 @@ test('a skill subset drops copies, keeps step references and records option loss
   assert.deepEqual(preloadRow.uses, ['/roles/worker/skills/0']);
   const yaml = fileByPath(result, 'workflows/mini.yaml').content;
   assert.ok(yaml.includes('        skills:\n          - "helper"\n          - "other"\n'));
-  const validation = validateResult(result, { ir, irDigest: sha256Hex(canonicalJson(ir)), options: result.options, manifest: MANIFEST, environment: {} });
+  const validation = validateResult(result, { compiledWorkflow, compiledWorkflowDigest: sha256Hex(canonicalJson(compiledWorkflow)), options: result.options, manifest: MANIFEST, environment: {} });
   assert.equal(validation.ok, true, JSON.stringify(validation.diagnostics));
 });
 
@@ -423,12 +423,12 @@ test('role copies are normalised: bare id, agent header, fixed key order, verbat
     instructions,
     source: SOURCE('roles/lead.md', 'd'),
   };
-  const ir = miniIr({
+  const compiledWorkflow = miniCompiledWorkflow({
     roles: { lead: role },
     skills: { helper: { description: 'Helper.', placeholder: false, body: '\n# helper\n', source: SOURCE('skills/helper/SKILL.md', 'f') } },
   });
-  ir.stages[0].steps[0].role = 'lead';
-  const { result } = { result: runProject({ ir, irDigest: sha256Hex(canonicalJson(ir)) }) };
+  compiledWorkflow.stages[0].steps[0].role = 'lead';
+  const { result } = { result: runProject({ compiledWorkflow, compiledWorkflowDigest: sha256Hex(canonicalJson(compiledWorkflow)) }) };
   assert.equal(result.ok, true);
   assert.equal(
     fileByPath(result, 'roles/lead.md').content,
@@ -456,7 +456,7 @@ test('role copies are normalised: bare id, agent header, fixed key order, verbat
 });
 
 test('placeholder roles use the fixed instructions and keep the agent header', () => {
-  const ir = miniIr({
+  const compiledWorkflow = miniCompiledWorkflow({
     roles: {
       worker: {
         description: 'Placeholder worker.',
@@ -466,7 +466,7 @@ test('placeholder roles use the fixed instructions and keep the agent header', (
       },
     },
   });
-  const { result } = { result: runProject({ ir, irDigest: sha256Hex(canonicalJson(ir)) }) };
+  const { result } = { result: runProject({ compiledWorkflow, compiledWorkflowDigest: sha256Hex(canonicalJson(compiledWorkflow)) }) };
   assert.equal(result.ok, true);
   const content = fileByPath(result, 'roles/worker.md').content;
   assert.ok(content.startsWith('---\nid: "worker"\nagent: "runner-worker"\ndescription: "Placeholder worker."\nplaceholder: true\n---\n'));
@@ -474,16 +474,16 @@ test('placeholder roles use the fixed instructions and keep the agent header', (
 });
 
 test('constitution is the injection block and its state is trinary', () => {
-  const absent = miniIr();
-  const absentResult = runProject({ ir: absent, irDigest: sha256Hex(canonicalJson(absent)) });
+  const absent = miniCompiledWorkflow();
+  const absentResult = runProject({ compiledWorkflow: absent, compiledWorkflowDigest: sha256Hex(canonicalJson(absent)) });
   assert.equal(absentResult.ok, true);
   assert.equal(absentResult.files.some((file) => file.kind === 'constitution'), false);
   assert.equal(absentResult.metadata.placeholders.constitution, 'absent');
 
-  const placeholder = miniIr({
+  const placeholder = miniCompiledWorkflow({
     constitution: [{ scope: 'global', placeholder: true, body: '', source: SOURCE('constitution/CONSTITUTION.md', '0') }],
   });
-  const placeholderResult = runProject({ ir: placeholder, irDigest: sha256Hex(canonicalJson(placeholder)) });
+  const placeholderResult = runProject({ compiledWorkflow: placeholder, compiledWorkflowDigest: sha256Hex(canonicalJson(placeholder)) });
   assert.equal(placeholderResult.ok, true);
   assert.equal(fileByPath(placeholderResult, 'constitution/CONSTITUTION.md').content, [
     '<!-- constitution:begin scope=global placeholder=true -->',
@@ -494,10 +494,10 @@ test('constitution is the injection block and its state is trinary', () => {
   ].join('\n'));
   assert.equal(placeholderResult.metadata.placeholders.constitution, 'placeholder');
 
-  const present = miniIr({
+  const present = miniCompiledWorkflow({
     constitution: [{ scope: 'global', placeholder: false, body: '\nRule one.\n', source: SOURCE('constitution/CONSTITUTION.md', '1') }],
   });
-  const presentResult = runProject({ ir: present, irDigest: sha256Hex(canonicalJson(present)) });
+  const presentResult = runProject({ compiledWorkflow: present, compiledWorkflowDigest: sha256Hex(canonicalJson(present)) });
   const content = fileByPath(presentResult, 'constitution/CONSTITUTION.md').content;
   assert.ok(content.startsWith('<!-- constitution:begin scope=global placeholder=false -->\n> **项目宪法（constitution）**'));
   assert.ok(content.includes('\nRule one.\n\n<!-- constitution:end -->\n'));
@@ -507,12 +507,12 @@ test('constitution is the injection block and its state is trinary', () => {
 // --- metadata, capabilities, engine gate ---------------------------------
 
 test('metadata records idMap, artifacts, placeholders and runtime', () => {
-  const { ir, result } = sampleResult();
+  const { compiledWorkflow, result } = sampleResult();
   assert.deepEqual(result.metadata.idMap, {
     runner: {
       stages: {},
       steps: {},
-      roles: Object.fromEntries(Object.keys(ir.roles).sort().map((id) => [id, `runner-${id}`])),
+      roles: Object.fromEntries(Object.keys(compiledWorkflow.roles).sort().map((id) => [id, `runner-${id}`])),
       skills: {},
     },
   });
@@ -533,7 +533,7 @@ test('metadata records idMap, artifacts, placeholders and runtime', () => {
 });
 
 test('capability report is the static runner matrix in fixed order with resolvable uses', () => {
-  const { ir, result } = sampleResult();
+  const { compiledWorkflow, result } = sampleResult();
   assert.deepEqual(result.capabilityReport.map((row) => row.capability), CAPABILITIES);
   const levels = Object.fromEntries(result.capabilityReport.map((row) => [row.capability, row.level]));
   assert.deepEqual(levels, {
@@ -562,36 +562,36 @@ test('capability report is the static runner matrix in fixed order with resolvab
 });
 
 test('stage order options reorder coverage and still pass V1–V12', () => {
-  const { ir, irDigest } = sampleIr();
-  const stageOrder = ir.stages.map((stage) => stage.id).reverse();
-  const { result } = { result: runProject({ ir, irDigest, raw: { stageOrder } }) };
+  const { compiledWorkflow, compiledWorkflowDigest } = sampleCompiledWorkflow();
+  const stageOrder = compiledWorkflow.stages.map((stage) => stage.id).reverse();
+  const { result } = { result: runProject({ compiledWorkflow, compiledWorkflowDigest, raw: { stageOrder } }) };
   assert.equal(result.ok, true);
   assert.deepEqual(result.coverage.stages, stageOrder);
   assert.deepEqual(result.options.stageOrder, stageOrder);
   assert.equal(result.files.length, 45);
   assert.ok(result.warnings.some((warning) => warning.code === 'STAGE_ORDER_OVERRIDDEN' && warning.pointer === '/stages'));
-  const validation = validateResult(result, { ir, irDigest, options: result.options, manifest: MANIFEST, environment: {} });
+  const validation = validateResult(result, { compiledWorkflow, compiledWorkflowDigest, options: result.options, manifest: MANIFEST, environment: {} });
   assert.equal(validation.ok, true, JSON.stringify(validation.diagnostics));
 });
 
-test('an hm2b.ir/v1 document is rejected before any file is produced', () => {
-  const ir = { ...miniIr(), schema: 'hm2b.ir/v1' };
-  const result = runProject({ ir, irDigest: sha256Hex(canonicalJson(ir)), raw: null });
+test('an hm2b.compiled-workflow/v1 document is rejected before any file is produced', () => {
+  const compiledWorkflow = { ...miniCompiledWorkflow(), schema: 'hm2b.compiled-workflow/v1' };
+  const result = runProject({ compiledWorkflow, compiledWorkflowDigest: sha256Hex(canonicalJson(compiledWorkflow)), raw: null });
   assert.equal(result.ok, false);
   assert.equal(result.files, undefined);
   assert.deepEqual(result.errors, [{
     severity: 'error',
-    code: 'PROJECTION_IR_UNSUPPORTED',
+    code: 'PROJECTION_COMPILED_WORKFLOW_UNSUPPORTED',
     path: '',
     pointer: null,
-    message: 'unsupported IR schema hm2b.ir/v1',
+    message: 'unsupported compiled workflow schema hm2b.compiled-workflow/v1',
   }]);
 });
 
 test('requires.engine is evaluated against environment.engineVersion and never enters files', () => {
-  const base = miniIr({ requires: { engine: '>=0.1.0 <1.0.0' } });
+  const base = miniCompiledWorkflow({ requires: { engine: '>=0.1.0 <1.0.0' } });
   const digest = sha256Hex(canonicalJson(base));
-  const unknown = runProject({ ir: base, irDigest: digest, environment: {} });
+  const unknown = runProject({ compiledWorkflow: base, compiledWorkflowDigest: digest, environment: {} });
   assert.equal(unknown.ok, false);
   assert.equal(unknown.errors[0].severity, 'error');
   assert.equal(unknown.errors[0].code, 'PROJECTION_ENGINE_UNKNOWN');
@@ -599,7 +599,7 @@ test('requires.engine is evaluated against environment.engineVersion and never e
   assert.equal(unknown.errors[0].pointer, null);
   assert.equal(unknown.files, undefined);
 
-  const unsatisfied = runProject({ ir: base, irDigest: digest, environment: { engineVersion: '2.0.0' } });
+  const unsatisfied = runProject({ compiledWorkflow: base, compiledWorkflowDigest: digest, environment: { engineVersion: '2.0.0' } });
   assert.equal(unsatisfied.ok, false);
   assert.equal(unsatisfied.errors[0].severity, 'error');
   assert.equal(unsatisfied.errors[0].code, 'PROJECTION_ENGINE_UNSATISFIED');
@@ -607,14 +607,14 @@ test('requires.engine is evaluated against environment.engineVersion and never e
   assert.equal(unsatisfied.errors[0].pointer, null);
   assert.ok(unsatisfied.errors[0].message.includes('2.0.0'));
 
-  const satisfied = runProject({ ir: base, irDigest: digest, environment: { engineVersion: '0.1.0' } });
+  const satisfied = runProject({ compiledWorkflow: base, compiledWorkflowDigest: digest, environment: { engineVersion: '0.1.0' } });
   assert.equal(satisfied.ok, true);
   for (const file of satisfied.files) assert.equal(file.content.includes('0.1.0'), false, file.path);
 });
 
 test('requires.projections is the caller whitelist and is not evaluated in the projection', () => {
-  const ir = miniIr({ requires: { projections: ['agent-native'] } });
-  const { result } = { result: runProject({ ir, irDigest: sha256Hex(canonicalJson(ir)) }) };
+  const compiledWorkflow = miniCompiledWorkflow({ requires: { projections: ['agent-native'] } });
+  const { result } = { result: runProject({ compiledWorkflow, compiledWorkflowDigest: sha256Hex(canonicalJson(compiledWorkflow)) }) };
   assert.equal(result.ok, true);
   assert.equal(result.files.some((file) => file.content.includes('agent-native')), false);
 });
@@ -644,7 +644,7 @@ test('CLI projects the sample and the engine validates it with 0 errors and 0 wa
   try {
     const out = join(dir, 'project');
     const projected = spawnSync(process.execPath, [
-      ASSEMBLER, 'project', 'test/fixtures/ir/workflow.ir.json', '--projection', 'runner', '--out', out, '--json',
+      ASSEMBLER, 'project', 'test/fixtures/compiled/workflow.compiled.json', '--projection', 'runner', '--out', out, '--json',
     ], { cwd: ROOT, encoding: 'utf8' });
     assert.equal(projected.status, 0, projected.stderr);
     const envelope = JSON.parse(projected.stdout.trim());

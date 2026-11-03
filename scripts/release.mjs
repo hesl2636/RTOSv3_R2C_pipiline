@@ -26,7 +26,7 @@ import { fileURLToPath } from 'node:url';
 import { compareCodePoints } from '../core/code-point.js';
 import { sha256Hex as sha256 } from '../core/node/sha256.js';
 import { isValidVersion } from '../core/semver.js';
-import { IR_BUNDLE_SCHEMA, IR_SCHEMA } from '../ir/schema.js';
+import { COMPILED_WORKFLOW_BUNDLE_SCHEMA, COMPILED_WORKFLOW_SCHEMA } from '../compiled/schema.js';
 import { listProjections } from '../projection/registry.js';
 import { createReleaseTarGz, readReleaseTarGz } from '../installer/release-tar.js';
 import {
@@ -44,7 +44,7 @@ import { GH_TOKEN_HINT, readGithubToken } from '../installer/release-auth.js';
 import { GITHUB_API_BASE, createGithubClient } from '../installer/release-client.js';
 import { publishBundle } from '../installer/release-publish.js';
 import { DEFAULT_RELEASE_REPO } from '../installer/release-source.js';
-import { IR_ASSET } from '../installer/release-tags.js';
+import { COMPILED_WORKFLOW_ASSET } from '../installer/release-tags.js';
 import { readBuiltRelease } from './lib/built-release.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -186,7 +186,7 @@ function escapePipe(value) {
  */
 function generateCompat({ framework, enginePkg }) {
   const projections = listProjections();
-  const contracts = [IR_BUNDLE_SCHEMA, IR_SCHEMA, ...projections.map((projection) => projection.api.result)];
+  const contracts = [COMPILED_WORKFLOW_BUNDLE_SCHEMA, COMPILED_WORKFLOW_SCHEMA, ...projections.map((projection) => projection.api.result)];
   const lines = [
     '# Compatibility matrix',
     '',
@@ -198,7 +198,7 @@ function generateCompat({ framework, enginePkg }) {
     '| --- | --- | --- |',
     `| Framework | \`${framework.name}\` | \`${framework.version}\` |`,
     `| Engine | \`${enginePkg.name}\` | \`${enginePkg.version}\` |`,
-    `| Contract | bundle / IR / projection | ${[...new Set(contracts)].map((id) => `\`${id}\``).join(', ')} |`,
+    `| Contract | bundle / compiled workflow / projection | ${[...new Set(contracts)].map((id) => `\`${id}\``).join(', ')} |`,
     ...projections.map(
       (projection) => `| Projection | \`${projection.id}\` | \`${projection.version}\` |`,
     ),
@@ -232,7 +232,7 @@ function checkEngine(ctx, failures) {
     failures.push('engine archive is missing the vendored node_modules/yaml');
   }
   for (const file of ctx.engine.files) {
-    if (/^(test|tests|docs|scripts|pack|adapters|plugins|dist|web|installer|projection|assembler|ir|examples|\.github)\//.test(file.rel)) {
+    if (/^(test|tests|docs|scripts|pack|adapters|plugins|dist|web|installer|projection|assembler|compiledWorkflow|examples|\.github)\//.test(file.rel)) {
       failures.push(`engine must not ship ${file.rel}`);
     }
   }
@@ -624,7 +624,7 @@ function publishApiBase() {
 
 /**
  * Read an already built asset directory. Publishing never rebuilds: the zip,
- * IR and payloads are exactly the bytes the build produced, and the manifest
+ * compiled workflow and payloads are exactly the bytes the build produced, and the manifest
  * (`SHA256SUMS.txt`) must cover every file and nothing else.
  */
 function publishFailureLines(failures) {

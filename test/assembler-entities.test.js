@@ -13,7 +13,7 @@ import { inflateRaw } from '../core/node/inflate.js';
 import { sha256Hex } from '../core/node/sha256.js';
 import { compileBundle } from '../assembler/compile.js';
 import { validateBundle } from '../assembler/validate-bundle.js';
-import { validateIr } from '../assembler/validate-ir.js';
+import { validateCompiledWorkflow } from '../assembler/validate-compiled.js';
 import { buildZip } from './helpers/zip.js';
 import {
   MINIMAL_MANIFEST,
@@ -311,15 +311,15 @@ test('skill name must equal its directory and honour the reserved names', () => 
 // constitution — absent / present / placeholder trinary
 // ---------------------------------------------------------------------------
 
-test('no constitution item means no file, no diagnostics and an empty IR mount list', () => {
+test('no constitution item means no file, no diagnostics and an empty compiled workflow mount list', () => {
   const value = report();
   assert.equal(value.ok, true);
   assert.deepEqual(value.errors, []);
   assert.deepEqual(value.warnings, []);
   assert.ok(!minimalFiles().has(CONSTITUTION_PATH));
 
-  const ir = JSON.parse(new TextDecoder().decode(compile().irBytes));
-  assert.deepEqual(ir.constitution, []);
+  const compiledWorkflow = JSON.parse(new TextDecoder().decode(compile().compiledWorkflowBytes));
+  assert.deepEqual(compiledWorkflow.constitution, []);
 });
 
 test('a placeholder constitution may be zero bytes and warns without blocking', () => {
@@ -337,14 +337,14 @@ test('a placeholder constitution may be zero bytes and warns without blocking', 
     manifest: { constitution: { path: CONSTITUTION_PATH, placeholder: true } },
     overrides: { [CONSTITUTION_PATH]: '' },
   });
-  const irBytes = result.irBytes;
-  const ir = JSON.parse(new TextDecoder().decode(irBytes));
-  assert.equal(ir.constitution.length, 1);
-  assert.equal(ir.constitution[0].scope, 'global');
-  assert.equal(ir.constitution[0].placeholder, true);
-  assert.equal(ir.constitution[0].body, '');
-  const irReport = validateIr(irBytes, { sha256: sha256Hex });
-  assert.equal(irReport.ok, true, JSON.stringify(irReport.errors));
+  const compiledWorkflowBytes = result.compiledWorkflowBytes;
+  const compiledWorkflow = JSON.parse(new TextDecoder().decode(compiledWorkflowBytes));
+  assert.equal(compiledWorkflow.constitution.length, 1);
+  assert.equal(compiledWorkflow.constitution[0].scope, 'global');
+  assert.equal(compiledWorkflow.constitution[0].placeholder, true);
+  assert.equal(compiledWorkflow.constitution[0].body, '');
+  const compiledWorkflowReport = validateCompiledWorkflow(compiledWorkflowBytes, { sha256: sha256Hex });
+  assert.equal(compiledWorkflowReport.ok, true, JSON.stringify(compiledWorkflowReport.errors));
 });
 
 test('a zero-byte constitution is only legal as a placeholder and is exempt from the trailing LF rule', () => {
@@ -432,7 +432,7 @@ test('tasks, stages and steps may not declare placeholders', () => {
   assert.equal(stepDiagnostic.pointer, '/steps/0/placeholder');
 });
 
-test('placeholder roles, skills and constitutions keep their ids, declarations and IR entries', () => {
+test('placeholder roles, skills and constitutions keep their ids, declarations and compiled workflow entries', () => {
   const value = compile({
     manifest: { constitution: { path: CONSTITUTION_PATH, placeholder: true } },
     overrides: {
@@ -441,15 +441,15 @@ test('placeholder roles, skills and constitutions keep their ids, declarations a
       [CONSTITUTION_PATH]: '',
     },
   });
-  const ir = JSON.parse(new TextDecoder().decode(value.irBytes));
-  assert.deepEqual(Object.keys(ir.roles), ['worker']);
-  assert.deepEqual(Object.keys(ir.skills), ['helper']);
-  assert.equal(ir.roles.worker.placeholder, true);
-  assert.equal(ir.roles.worker.instructions, '');
-  assert.equal(ir.skills.helper.placeholder, true);
-  assert.equal(ir.constitution.length, 1);
-  assert.equal(ir.constitution[0].placeholder, true);
-  assert.equal(validateIr(value.irBytes, { sha256: sha256Hex }).ok, true);
+  const compiledWorkflow = JSON.parse(new TextDecoder().decode(value.compiledWorkflowBytes));
+  assert.deepEqual(Object.keys(compiledWorkflow.roles), ['worker']);
+  assert.deepEqual(Object.keys(compiledWorkflow.skills), ['helper']);
+  assert.equal(compiledWorkflow.roles.worker.placeholder, true);
+  assert.equal(compiledWorkflow.roles.worker.instructions, '');
+  assert.equal(compiledWorkflow.skills.helper.placeholder, true);
+  assert.equal(compiledWorkflow.constitution.length, 1);
+  assert.equal(compiledWorkflow.constitution[0].placeholder, true);
+  assert.equal(validateCompiledWorkflow(value.compiledWorkflowBytes, { sha256: sha256Hex }).ok, true);
 });
 
 test('entity diagnostics are deterministic and sorted', () => {

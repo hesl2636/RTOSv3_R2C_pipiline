@@ -12,7 +12,7 @@
   ],
   "imports": [
     "core/",
-    "ir/",
+    "compiled/",
     "assembler/",
     "projection/",
     "runtime/shared/"

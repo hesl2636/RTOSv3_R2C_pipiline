@@ -13,6 +13,12 @@ step-by-step across the engine, the payload, and all five agent adapters; see
   runtime receipt is `hm2b.runtime/v1`, the payload manifest is
   `hm2b.release-payload/v1`, and `HM2B_GITHUB_API` replaces the old API
   override.
+- Terminology: the compiled bundle artifact is the **compiled workflow**
+  (`hm2b.compiled-workflow/v2`, `workflow.compiled.json`). The old `IR` name,
+  module, constants, CLI command, API fields and UI labels are retired because
+  Huawei uses IR for *initial requirement*; `hm2b.ir/v2` documents are now
+  rejected. The R2C bundle's own IR/SR/AR references remain domain content and
+  are unchanged.
 - P6 cutover (#111): the engine moved to `runtime/runner/engine/`, the pure
   manifest contract to `runtime/runner/contract/`, and the runtime assets to the
   two runtimes. The legacy directory trees, the declaration-driven install
@@ -24,18 +30,18 @@ step-by-step across the engine, the payload, and all five agent adapters; see
 
 ### Added
 
-- Contract v2 assets: `hm2b.bundle/v2` and `hm2b.ir/v2` carry the optional
+- Contract v2 assets: `hm2b.bundle/v2` and `hm2b.compiled-workflow/v2` carry the optional
   `knowledgeBase`, `checklists`, `hooks` and `mcp` declarations with their
   directories `knowledge-base/`, `checklists/`, `hooks/hooks.json` and
   `mcp.json` (at most 4 path segments each). `compile` embeds every declared
-  body and source hash in the IR; the `runner` projection installs the assets
+  body and source hash in the compiled workflow; the `runner` projection installs the assets
   at the project root and `agent-native` installs them once under
   `.agents/agent-native/<bundle-id>/`.
 - Install from a per-bundle Release (#106): `install.mjs` keeps its name and
   legacy flags and gains `--bundle <id>`, `--version`, `--projection
   runner|agent-native`, repeatable `--target` and `--project`. The bootstrap
   downloads the Release, verifies assets against `SHA256SUMS.txt`, cross-checks
-  the zip / IR / payload manifest (id, version, IR digest, content digest) and
+  the zip / compiled workflow / payload manifest (id, version, compiled workflow digest, content digest) and
   the payload members against the manifest, then hands the verified bytes to
   the framework's installer — never compiling or projecting. Any mismatch exits
   2 before a write. `requires.projections` is a hard whitelist,
@@ -55,7 +61,7 @@ step-by-step across the engine, the payload, and all five agent adapters; see
   upgrades rewrite only `runtime.json` and the engine directory; bundle
   receipts never record an engine version.
 - Install-time `render-roles`: the installer renders `claude-code`, `codex`,
-  `omp` and `opencode` agent definitions from the IR through
+  `omp` and `opencode` agent definitions from the compiled workflow through
   `runtime/shared/render-role.js` as `runner-<id>`, records them (with field-level
   degradations) in the receipt and writes `.hm2b/projection/roles.json`; dsh
   renders no roles.
@@ -65,7 +71,7 @@ step-by-step across the engine, the payload, and all five agent adapters; see
   `hm2b status` gains `installs[]` and trailing install lines without changing
   exit codes or existing lines.
 - Local web build surface: `POST /api/uploads` keeps the uploaded zip and
-  compiled IR in the 0700 session directory; `POST /api/builds` re-runs the
+  compiled workflow in the 0700 session directory; `POST /api/builds` re-runs the
   shared projections in-process and packages through `scripts/release.mjs` as an
   isolated child (`shell:false`, 120 s kill, no `GH_TOKEN`/`GITHUB_TOKEN`,
   JSON-lines stdout, capped and redacted stderr, crash → `WEB_CHILD_FAILED`).
@@ -98,7 +104,7 @@ step-by-step across the engine, the payload, and all five agent adapters; see
   all-or-rollback transaction (legacy/occupancy/V1–V12 preflight before any
   runtime write, and a bundle failure restores the runtime snapshot); the runner
   singleton is re-checked under the install lock; `--publish --out` re-opens
-  the built zip and refuses a zip/IR/tag mismatch or a non-canonical payload
+  the built zip and refuses a zip/compiled workflow/tag mismatch or a non-canonical payload
   (`WEB_PUBLISH_NOT_CANONICAL`) before the first remote call.
 - Correctness: V8 now rejects over-degradation not explained by an exclusive
   skill option; `BUNDLE_STEP_NO_SKILLS` respects S8 and never doubles a
@@ -107,7 +113,7 @@ step-by-step across the engine, the payload, and all five agent adapters; see
   selected skills and record the #82 preload loss at the seam.
 - Shared contracts: one module for result field order, capability vocabulary
   and level ranks, and one `requires.engine` evaluator (projection, web,
-  installer); receipts also carry top-level `ir_path`; the agent-native
+  installer); receipts also carry top-level `compiled_workflow_path`; the agent-native
   manifest declares its static target assets (id/path/sha256).
 - Web hardening: missing `Sec-Fetch-Site` is refused and an oversized header
   returns 413; the engine version (not the framework version) feeds web build

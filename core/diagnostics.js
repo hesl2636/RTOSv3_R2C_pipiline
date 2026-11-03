@@ -4,7 +4,7 @@
  * One rule -> one code; one violation -> one diagnostic. Reports are values:
  * the same bytes produce a byte-identical report (no timestamps, no absolute
  * paths, deterministic order). The summary code (`BUNDLE_INVALID` /
- * `IR_INVALID`) only ever appears in `envelope.error.code`.
+ * `COMPILED_WORKFLOW_INVALID`) only ever appears in `envelope.error.code`.
  */
 import { compareCodePoints, codePointLength, sliceCodePoints } from './code-point.js';
 

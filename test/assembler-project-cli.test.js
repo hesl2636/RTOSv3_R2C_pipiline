@@ -1,7 +1,7 @@
 /**
  * `hm2b-assembler project` end-to-end (#95, CONTEXT §7).
  *
- * The CLI is the highest seam: compile the sample zip to an IR file, project
+ * The CLI is the highest seam: compile the sample zip to a compiled workflow file, project
  * it into a temp directory, and assert the on-disk tree, the single-line
  * envelope and the no-partial-write failure behaviour.
  */
@@ -24,7 +24,7 @@ import { fileURLToPath } from 'node:url';
 import { compileBundle } from '../assembler/compile.js';
 import { inflateRaw } from '../core/node/inflate.js';
 import { sha256Hex } from '../core/node/sha256.js';
-import { IR_FILENAME } from '../ir/schema.js';
+import { COMPILED_WORKFLOW_FILENAME } from '../compiled/schema.js';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const BIN = join(ROOT, 'bin', 'hm2b-assembler.js');
@@ -33,9 +33,9 @@ const ZIP = join(ROOT, 'examples/rtosv3/dist/bundle-rtosv3-drvport-v1.0.0.zip');
 function compileTo(dir) {
   const compiled = compileBundle(new Uint8Array(readFileSync(ZIP)), { inflateRaw, sha256: sha256Hex });
   assert.equal(compiled.ok, true);
-  assert.equal(JSON.parse(new TextDecoder().decode(compiled.irBytes)).schema, 'hm2b.ir/v2');
-  const path = join(dir, IR_FILENAME);
-  writeFileSync(path, compiled.irBytes);
+  assert.equal(JSON.parse(new TextDecoder().decode(compiled.compiledWorkflowBytes)).schema, 'hm2b.compiled-workflow/v2');
+  const path = join(dir, COMPILED_WORKFLOW_FILENAME);
+  writeFileSync(path, compiled.compiledWorkflowBytes);
   return path;
 }
 
@@ -67,9 +67,9 @@ function treeHash(dir) {
 test('project writes the 45-file Claude tree and prints one envelope line', () => {
   const dir = mkdtempSync(join(tmpdir(), 'hm2b-project-cli-'));
   try {
-    const irPath = compileTo(dir);
+    const compiledWorkflowPath = compileTo(dir);
     const out = join(dir, 'out');
-    const result = run([ 'project', irPath, '--projection', 'agent-native', '--target', 'claude-code', '--out', out, '--json' ]);
+    const result = run([ 'project', compiledWorkflowPath, '--projection', 'agent-native', '--target', 'claude-code', '--out', out, '--json' ]);
     assert.equal(result.status, 0, result.stderr);
     const lines = result.stdout.trim().split('\n');
     assert.equal(lines.length, 1);
@@ -99,11 +99,11 @@ test('project writes the 45-file Claude tree and prints one envelope line', () =
 test('project is byte-deterministic across two output directories', () => {
   const dir = mkdtempSync(join(tmpdir(), 'hm2b-project-det-'));
   try {
-    const irPath = compileTo(dir);
+    const compiledWorkflowPath = compileTo(dir);
     const a = join(dir, 'a');
     const b = join(dir, 'b');
-    assert.equal(run(['project', irPath, '--projection', 'agent-native', '--target', 'claude-code', '--out', a]).status, 0);
-    assert.equal(run(['project', irPath, '--projection', 'agent-native', '--target', 'claude-code', '--out', b]).status, 0);
+    assert.equal(run(['project', compiledWorkflowPath, '--projection', 'agent-native', '--target', 'claude-code', '--out', a]).status, 0);
+    assert.equal(run(['project', compiledWorkflowPath, '--projection', 'agent-native', '--target', 'claude-code', '--out', b]).status, 0);
     assert.equal(treeHash(a), treeHash(b));
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -113,10 +113,10 @@ test('project is byte-deterministic across two output directories', () => {
 test('CLI options narrow skills and reorder stages', () => {
   const dir = mkdtempSync(join(tmpdir(), 'hm2b-project-opt-'));
   try {
-    const irPath = compileTo(dir);
+    const compiledWorkflowPath = compileTo(dir);
     const out = join(dir, 'out');
     const result = run([
-      'project', irPath, '--projection', 'agent-native', '--target', 'claude-code',
+      'project', compiledWorkflowPath, '--projection', 'agent-native', '--target', 'claude-code',
       '--stage-order', 'verification,implementation,detailed-design,analysis-design',
       '--skills', 'ar-miner,code-research,codebase-search,design-gen,executing-plans,huawei-c-coding-standard,r2c-build-redblue,r2c-design,r2c-imdesign,r2c-implement-redblue,r2c-push-mr,r2c-review',
       '--out', out, '--json',
@@ -137,9 +137,9 @@ test('CLI options narrow skills and reorder stages', () => {
 test('invalid options fail with a stable code and write nothing', () => {
   const dir = mkdtempSync(join(tmpdir(), 'hm2b-project-bad-'));
   try {
-    const irPath = compileTo(dir);
+    const compiledWorkflowPath = compileTo(dir);
     const out = join(dir, 'out');
-    const result = run(['project', irPath, '--projection', 'agent-native', '--target', 'nope', '--out', out, '--json']);
+    const result = run(['project', compiledWorkflowPath, '--projection', 'agent-native', '--target', 'nope', '--out', out, '--json']);
     assert.equal(result.status, 2);
     const envelope = JSON.parse(result.stdout.trim());
     assert.equal(envelope.ok, false);
@@ -153,11 +153,11 @@ test('invalid options fail with a stable code and write nothing', () => {
 test('all five targets with 12 skills and a reversed stage order: 52 files, warnings only', () => {
   const dir = mkdtempSync(join(tmpdir(), 'hm2b-project-five-'));
   try {
-    const irPath = compileTo(dir);
+    const compiledWorkflowPath = compileTo(dir);
     const out = join(dir, 'out');
-    const skills = Object.keys(JSON.parse(readFileSync(irPath, 'utf8')).skills).sort().slice(0, 12).reverse();
+    const skills = Object.keys(JSON.parse(readFileSync(compiledWorkflowPath, 'utf8')).skills).sort().slice(0, 12).reverse();
     const result = run([
-      'project', irPath, '--projection', 'agent-native',
+      'project', compiledWorkflowPath, '--projection', 'agent-native',
       '--stage-order', 'verification,implementation,detailed-design,analysis-design',
       '--skills', skills.join(','),
       '--out', out, '--json',
@@ -172,7 +172,7 @@ test('all five targets with 12 skills and a reversed stage order: 52 files, warn
     assert.deepEqual(envelope.data.coverage.stages, ['verification', 'implementation', 'detailed-design', 'analysis-design']);
     assert.deepEqual(envelope.data.options.skills, [...skills].sort());
     assert.deepEqual(envelope.data.options.targets, ['claude-code', 'codex', 'dsh', 'omp', 'opencode']);
-    assert.equal(envelope.data.options.ir.digest, sha256Hex(readFileSync(irPath)));
+    assert.equal(envelope.data.options.compiledWorkflow.digest, sha256Hex(readFileSync(compiledWorkflowPath)));
     assert.equal(walk(out).length, 52);
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -182,10 +182,10 @@ test('all five targets with 12 skills and a reversed stage order: 52 files, warn
 test('the runner projection with 12 skills adjusts the payload to 22 files', () => {
   const dir = mkdtempSync(join(tmpdir(), 'hm2b-project-runner-'));
   try {
-    const irPath = compileTo(dir);
+    const compiledWorkflowPath = compileTo(dir);
     const out = join(dir, 'out');
-    const skills = Object.keys(JSON.parse(readFileSync(irPath, 'utf8')).skills).sort().slice(0, 12);
-    const result = run(['project', irPath, '--projection', 'runner', '--skills', skills.join(','), '--out', out, '--json']);
+    const skills = Object.keys(JSON.parse(readFileSync(compiledWorkflowPath, 'utf8')).skills).sort().slice(0, 12);
+    const result = run(['project', compiledWorkflowPath, '--projection', 'runner', '--skills', skills.join(','), '--out', out, '--json']);
     assert.equal(result.status, 0, result.stderr);
     const envelope = JSON.parse(result.stdout.trim());
     assert.equal(envelope.data.counts.files, 22);
@@ -201,13 +201,13 @@ test('the runner projection with 12 skills adjusts the payload to 22 files', () 
 test('unknown skills and stage ids are rejected through the CLI without output', () => {
   const dir = mkdtempSync(join(tmpdir(), 'hm2b-project-reject-'));
   try {
-    const irPath = compileTo(dir);
+    const compiledWorkflowPath = compileTo(dir);
     for (const args of [
       ['--skills', 'nope'],
       ['--stage-order', 'nope,implementation,detailed-design,analysis-design'],
     ]) {
       const out = join(dir, 'out');
-      const result = run(['project', irPath, '--projection', 'agent-native', ...args, '--out', out, '--json']);
+      const result = run(['project', compiledWorkflowPath, '--projection', 'agent-native', ...args, '--out', out, '--json']);
       assert.equal(result.status, 2);
       const envelope = JSON.parse(result.stdout.trim());
       assert.equal(envelope.ok, false);
@@ -224,5 +224,5 @@ test('a missing input is a usage failure, not an internal error', () => {
   assert.equal(result.status, 2);
   const envelope = JSON.parse(result.stdout.trim());
   assert.equal(envelope.ok, false);
-  assert.equal(envelope.error.code, 'IR_INPUT_NOT_FOUND');
+  assert.equal(envelope.error.code, 'COMPILED_WORKFLOW_INPUT_NOT_FOUND');
 });

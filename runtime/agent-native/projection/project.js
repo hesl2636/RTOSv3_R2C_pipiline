@@ -1,13 +1,13 @@
 /**
  * agent-native projection (spec §10, decisions #71/#72/#73/#82).
  *
- * Pure: IR + resolved options in, declarative file set out. Every byte is
- * derived from the IR and the descriptor registry; nothing is read from disk
+ * Pure: compiled workflow + resolved options in, declarative file set out. Every byte is
+ * derived from the compiled workflow and the descriptor registry; nothing is read from disk
  * or the clock. The #95 slice ships the Claude Code target; #96–#99 append
  * descriptors and their capability rows.
  */
 import { canonicalJson } from '../../../core/canonical-json.js';
-import { IR_CHECKLIST_ROOT, IR_KNOWLEDGE_BASE_ROOT, IR_SCHEMA } from '../../../ir/schema.js';
+import { COMPILED_WORKFLOW_CHECKLIST_ROOT, COMPILED_WORKFLOW_KNOWLEDGE_BASE_ROOT, COMPILED_WORKFLOW_SCHEMA } from '../../../compiled/schema.js';
 import { CAPABILITIES, ID_PATTERN as ID_RE, LEVEL_RANK, SEMANTIC_CAPABILITIES as SEMANTIC } from '../../../projection/contract.js';
 import { constitutionBlock, constitutionState } from '../../shared/constitution.js';
 import { ensureText, renderRole, ROLE_FIELD_ORDER, yamlScalar } from '../../shared/render-role.js';
@@ -37,7 +37,7 @@ function assertSupportedTarget(target) {
 
 /** Asset path -> artifact key (`knowledge-base/<...>.md` -> `knowledge-<slug>`). */
 function knowledgeArtifactKey(path) {
-  const prefix = `${IR_KNOWLEDGE_BASE_ROOT}/`;
+  const prefix = `${COMPILED_WORKFLOW_KNOWLEDGE_BASE_ROOT}/`;
   const relative = path.startsWith(prefix) ? path.slice(prefix.length) : path;
   const slug = relative.replace(/\.md$/, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
   return `knowledge-${slug}`;
@@ -55,35 +55,35 @@ function uniqueKey(keys, base) {
  * no target-local copy. User-owned host files (`CLAUDE.md`, `.mcp.json`, …) are
  * never written here; capability rows are not derived from assets.
  */
-function projectAssets(ir, root, targets, addFile) {
+function projectAssets(compiledWorkflow, root, targets, addFile) {
   const artifacts = new Map();
-  for (const entry of ir.knowledgeBase ?? []) {
+  for (const entry of compiledWorkflow.knowledgeBase ?? []) {
     const path = `${root}/${entry.path}`;
     addFile(path, targets, 'knowledge', entry.body);
     artifacts.set(uniqueKey(artifacts, knowledgeArtifactKey(entry.path)), path);
   }
-  for (const entry of ir.checklists ?? []) {
-    const path = `${root}/${IR_CHECKLIST_ROOT}/${entry.id}.md`;
+  for (const entry of compiledWorkflow.checklists ?? []) {
+    const path = `${root}/${COMPILED_WORKFLOW_CHECKLIST_ROOT}/${entry.id}.md`;
     addFile(path, targets, 'checklist', entry.body);
     artifacts.set(uniqueKey(artifacts, `checklist-${entry.id}`), path);
   }
-  if (ir.hooks !== null && ir.hooks !== undefined) {
-    const path = `${root}/${ir.hooks.path}`;
-    addFile(path, targets, 'hooks', ir.hooks.body);
+  if (compiledWorkflow.hooks !== null && compiledWorkflow.hooks !== undefined) {
+    const path = `${root}/${compiledWorkflow.hooks.path}`;
+    addFile(path, targets, 'hooks', compiledWorkflow.hooks.body);
     artifacts.set('hooks', path);
   }
-  if (ir.mcp !== null && ir.mcp !== undefined) {
-    const path = `${root}/${ir.mcp.path}`;
-    addFile(path, targets, 'mcp', ir.mcp.body);
+  if (compiledWorkflow.mcp !== null && compiledWorkflow.mcp !== undefined) {
+    const path = `${root}/${compiledWorkflow.mcp.path}`;
+    addFile(path, targets, 'mcp', compiledWorkflow.mcp.body);
     artifacts.set('mcp', path);
   }
   return artifacts;
 }
 
 export function projectAgentNative(input) {
-  const { ir, irDigest, options } = input;
-  if (ir === null || typeof ir !== 'object' || ir.schema !== IR_SCHEMA) {
-    return failure([nameError('PROJECTION_IR_UNSUPPORTED', `input is not an ${IR_SCHEMA} document`)]);
+  const { compiledWorkflow, compiledWorkflowDigest, options } = input;
+  if (compiledWorkflow === null || typeof compiledWorkflow !== 'object' || compiledWorkflow.schema !== COMPILED_WORKFLOW_SCHEMA) {
+    return failure([nameError('PROJECTION_COMPILED_WORKFLOW_UNSUPPORTED', `input is not an ${COMPILED_WORKFLOW_SCHEMA} document`)]);
   }
   if (options === null || typeof options !== 'object') {
     return failure([nameError('PROJECTION_OPTIONS_INVALID', 'normalized options are required')]);
@@ -92,21 +92,21 @@ export function projectAgentNative(input) {
   const targets = [...options.targets];
   for (const target of targets) assertSupportedTarget(target);
   const selectedSkills = new Set(options.skills);
-  const allSkills = sorted(Object.keys(ir.skills ?? {}));
+  const allSkills = sorted(Object.keys(compiledWorkflow.skills ?? {}));
   const excludedSkills = allSkills.filter((id) => !selectedSkills.has(id));
   const stageOrder = [...options.stageOrder];
-  const stageById = new Map(ir.stages.map((stage) => [stage.id, stage]));
+  const stageById = new Map(compiledWorkflow.stages.map((stage) => [stage.id, stage]));
   const renderedStageOrder = stageOrder.map((id) => stageById.get(id));
   if (renderedStageOrder.some((stage) => stage === undefined)) {
-    return failure([nameError('PROJECTION_IR_UNSUPPORTED', 'stageOrder references a stage that is not in the IR')]);
+    return failure([nameError('PROJECTION_COMPILED_WORKFLOW_UNSUPPORTED', 'stageOrder references a stage that is not in the compiled workflow')]);
   }
   const coverageSteps = renderedStageOrder.flatMap((stage) => stage.steps.map((step) => step.id));
 
-  const roleIds = sorted(Object.keys(ir.roles ?? {}));
-  const workflowName = `${ir.id}-workflow`;
-  const stageNames = ir.stages.map((stage) => `${ir.id}-stage-${stage.id}`);
-  const skillNames = new Map([...selectedSkills].map((id) => [id, `${ir.id}-skill-${id}`]));
-  const roleNames = roleIds.map((id) => `${ir.id}-${id}`);
+  const roleIds = sorted(Object.keys(compiledWorkflow.roles ?? {}));
+  const workflowName = `${compiledWorkflow.id}-workflow`;
+  const stageNames = compiledWorkflow.stages.map((stage) => `${compiledWorkflow.id}-stage-${stage.id}`);
+  const skillNames = new Map([...selectedSkills].map((id) => [id, `${compiledWorkflow.id}-skill-${id}`]));
+  const roleNames = roleIds.map((id) => `${compiledWorkflow.id}-${id}`);
 
   // --- names: kebab, <=64, cross-kind unique within a target --------------
   const nameErrors = [];
@@ -120,11 +120,11 @@ export function projectAgentNative(input) {
     }
   };
   checkName(workflowName, '/id');
-  for (const [index, stage] of ir.stages.entries()) {
-    checkName(`${ir.id}-stage-${stage.id}`, `/stages/${index}`);
+  for (const [index, stage] of compiledWorkflow.stages.entries()) {
+    checkName(`${compiledWorkflow.id}-stage-${stage.id}`, `/stages/${index}`);
   }
   for (const skillId of selectedSkills) checkName(skillNames.get(skillId), `/skills/${skillId}`);
-  for (const roleId of roleIds) checkName(`${ir.id}-${roleId}`, `/roles/${roleId}`);
+  for (const roleId of roleIds) checkName(`${compiledWorkflow.id}-${roleId}`, `/roles/${roleId}`);
   for (const target of targets) {
     const seen = new Set();
     for (const name of [workflowName, ...stageNames, ...sorted([...selectedSkills].map((id) => skillNames.get(id))), ...roleNames]) {
@@ -162,8 +162,8 @@ export function projectAgentNative(input) {
   }
   const skillRoots = [...skillGroups.keys()];
 
-  const constitutionMount = (ir.constitution ?? [])[0] ?? null;
-  constitutionState(ir.constitution ?? []);
+  const constitutionMount = (compiledWorkflow.constitution ?? [])[0] ?? null;
+  constitutionState(compiledWorkflow.constitution ?? []);
 
   // --- stage skills: constitution block first, then one section per step --
   const stageContents = new Map();
@@ -179,7 +179,7 @@ export function projectAgentNative(input) {
       if (step.role === undefined) {
         bullets.push('- 执行者：主会话直接执行。');
       } else {
-        bullets.push(`- 执行者：子 agent \`${ir.id}-${step.role}\`（派发时把本文开头的宪法块与本步骤全文一并交给它）。`);
+        bullets.push(`- 执行者：子 agent \`${compiledWorkflow.id}-${step.role}\`（派发时把本文开头的宪法块与本步骤全文一并交给它）。`);
       }
       const stepSkills = sorted(step.skills.filter((id) => selectedSkills.has(id)).map((id) => skillNames.get(id)));
       if (stepSkills.length > 0) {
@@ -200,41 +200,41 @@ export function projectAgentNative(input) {
       }
       blocks.push(`${bullets.join('\n')}\n`);
 
-      const task = ir.tasks[step.task];
+      const task = compiledWorkflow.tasks[step.task];
       if (task === undefined) {
-        return failure([nameError('PROJECTION_IR_UNSUPPORTED', `step ${step.id} references missing task ${step.task}`)]);
+        return failure([nameError('PROJECTION_COMPILED_WORKFLOW_UNSUPPORTED', `step ${step.id} references missing task ${step.task}`)]);
       }
       const { text } = submitReplacement({ taskId: step.task, stepIds: [step.id], mode: 'receipt' });
       let body;
       try {
         body = replaceSubmitToken(task.body, text);
       } catch (error) {
-        return failure([nameError('PROJECTION_IR_UNSUPPORTED', `task ${step.task}: ${error.message}`)]);
+        return failure([nameError('PROJECTION_COMPILED_WORKFLOW_UNSUPPORTED', `task ${step.task}: ${error.message}`)]);
       }
       const bodyText = body.endsWith('\n') ? body : `${body}\n`;
       blocks.push(`<!-- task:${step.task} -->\n${bodyText.startsWith('\n') ? bodyText : `\n${bodyText}`}`);
     }
     const description = `阶段 ${index + 1}/${renderedStageOrder.length}「${stage.name}」的完整运行手册（${stage.steps.length} 个步骤，含任务书、门禁与产物自检）。`;
-    const frontmatter = `---\nname: ${yamlScalar(`${ir.id}-stage-${stage.id}`)}\ndescription: ${yamlScalar(description)}\n---\n\n`;
+    const frontmatter = `---\nname: ${yamlScalar(`${compiledWorkflow.id}-stage-${stage.id}`)}\ndescription: ${yamlScalar(description)}\n---\n\n`;
     stageContents.set(stage.id, frontmatter + blocks.join('\n'));
   }
 
   // --- entry skill: no constitution block ---------------------------------
-  const workflowDescription = `运行 ${ir.name}（${ir.id}）全流程：${renderedStageOrder.length} 个阶段按顺序执行；agent-native 投影，无 runner。`;
+  const workflowDescription = `运行 ${compiledWorkflow.name}（${compiledWorkflow.id}）全流程：${renderedStageOrder.length} 个阶段按顺序执行；agent-native 投影，无 runner。`;
   const workflowLines = [
     '---',
     `name: ${yamlScalar(workflowName)}`,
     `description: ${yamlScalar(workflowDescription)}`,
     '---',
     '',
-    `# ${ir.name}（\`${ir.id}\`）`,
+    `# ${compiledWorkflow.name}（\`${compiledWorkflow.id}\`）`,
     '',
-    ir.description,
+    compiledWorkflow.description,
     '',
     '本工作流没有 runner：进度由执行者维护，没有状态文件。按顺序执行下列阶段技能，',
     '**上一阶段给出提交回执后才进入下一个**；每个阶段技能开头就是项目宪法块。',
     '',
-    ...renderedStageOrder.map((stage, index) => `${index + 1}. \`${ir.id}-stage-${stage.id}\` — ${stage.name}`),
+    ...renderedStageOrder.map((stage, index) => `${index + 1}. \`${compiledWorkflow.id}-stage-${stage.id}\` — ${stage.name}`),
     '',
     '单跑某一步或某个技能是允许的（各技能可独立加载），但那不会改变流程顺序。',
     '',
@@ -244,7 +244,7 @@ export function projectAgentNative(input) {
   const skillContents = new Map();
   for (const skillId of allSkills) {
     if (!selectedSkills.has(skillId)) continue;
-    const skill = ir.skills[skillId];
+    const skill = compiledWorkflow.skills[skillId];
     skillContents.set(skillId, [
       '---',
       `name: ${yamlScalar(skillNames.get(skillId))}`,
@@ -258,10 +258,10 @@ export function projectAgentNative(input) {
   for (const [root, group] of skillGroups) {
     addFile(`${root}/${workflowName}/SKILL.md`, group, 'workflow', workflowLines);
     for (const stage of renderedStageOrder) {
-      addFile(`${root}/${ir.id}-stage-${stage.id}/SKILL.md`, group, 'stage', stageContents.get(stage.id));
+      addFile(`${root}/${compiledWorkflow.id}-stage-${stage.id}/SKILL.md`, group, 'stage', stageContents.get(stage.id));
     }
     for (const skillId of sorted(selectedSkills)) {
-      addFile(`${root}/${ir.id}-skill-${skillId}/SKILL.md`, group, 'skill', skillContents.get(skillId));
+      addFile(`${root}/${compiledWorkflow.id}-skill-${skillId}/SKILL.md`, group, 'skill', skillContents.get(skillId));
     }
   }
 
@@ -274,7 +274,7 @@ export function projectAgentNative(input) {
   const addWarning = (warning) => warnings.push(warning);
 
   const ctx = {
-    namespace: ir.id,
+    namespace: compiledWorkflow.id,
     skillNames,
     targets: TARGETS,
     roleModels: undefined,
@@ -286,7 +286,7 @@ export function projectAgentNative(input) {
     const renderedByRole = new Map();
     const descriptor = TARGETS[target];
     for (const roleId of roleIds) {
-      const role = { ...ir.roles[roleId], id: roleId };
+      const role = { ...compiledWorkflow.roles[roleId], id: roleId };
       let rendered;
       try {
         rendered = renderRole(role, target, ctx);
@@ -318,7 +318,7 @@ export function projectAgentNative(input) {
       }
     }
     roleResults.set(target, renderedByRole);
-    const renderedTargetFiles = descriptor.renderTargetFiles({ ir, roleIds, renderedByRole, descriptor });
+    const renderedTargetFiles = descriptor.renderTargetFiles({ compiledWorkflow, roleIds, renderedByRole, descriptor });
     const contents = new Map(renderedTargetFiles.files.map((file) => [file.path, file.content]));
     for (const file of renderedTargetFiles.files) addFile(file.path, [target], file.kind, file.content);
     const artifacts = {};
@@ -338,8 +338,8 @@ export function projectAgentNative(input) {
   }
 
   // --- bundle assets: one namespace copy, no user-owned host file ---------
-  const namespaceRoot = `.agents/agent-native/${ir.id}`;
-  const assetArtifacts = projectAssets(ir, namespaceRoot, targets, addFile);
+  const namespaceRoot = `.agents/agent-native/${compiledWorkflow.id}`;
+  const assetArtifacts = projectAssets(compiledWorkflow, namespaceRoot, targets, addFile);
 
   // --- roles.json: one file, sectioned by selected target -----------------
   const rolesJsonPath = `${namespaceRoot}/roles.json`;
@@ -358,7 +358,7 @@ export function projectAgentNative(input) {
       roles.push({
         id: roleId,
         name: value.name,
-        placeholder: ir.roles[roleId].placeholder,
+        placeholder: compiledWorkflow.roles[roleId].placeholder,
         exposure: value.exposure,
         artifact,
         fields,
@@ -368,11 +368,11 @@ export function projectAgentNative(input) {
     for (const role of roles) {
       for (const state of Object.values(role.fields)) summary[state.state] += 1;
     }
-    rolesTargets[target] = { namespace: ir.id, roles, summary };
+    rolesTargets[target] = { namespace: compiledWorkflow.id, roles, summary };
   }
   addFile(rolesJsonPath, targets, 'metadata', canonicalJson({
     schema: 'hm2b.projection.roles/v1',
-    ir: { id: ir.id, version: ir.version, sha256: irDigest },
+    compiledWorkflow: { id: compiledWorkflow.id, version: compiledWorkflow.version, sha256: compiledWorkflowDigest },
     targets: rolesTargets,
   }));
 
@@ -398,7 +398,7 @@ export function projectAgentNative(input) {
       reason: 'agent-native 不生成 runner，没有状态机',
       effect: '没有进度文件、暂停/续跑或阶段强制；提交退化为自证回执',
     });
-    for (const [stageIndex, stage] of ir.stages.entries()) {
+    for (const [stageIndex, stage] of compiledWorkflow.stages.entries()) {
       for (const [stepIndex, step] of stage.steps.entries()) {
         for (const gateIndex of step.gates.keys()) {
           degradations.push({
@@ -424,14 +424,14 @@ export function projectAgentNative(input) {
         }
       }
     }
-    const targetDegradations = TARGETS[target].capabilityDegradations?.({ ir, roleIds }) ?? [];
+    const targetDegradations = TARGETS[target].capabilityDegradations?.({ compiledWorkflow, roleIds }) ?? [];
     for (const record of targetDegradations) degradations.push({ ...record, target });
     const preloadLevel = TARGETS[target].capabilities.preload;
     // Only a target with an intact preload seam can lose a preload to option
     // exclusion; below `adapted` the declared loss is already recorded per use.
     const hasPreloadSeam = LEVEL_RANK[preloadLevel] <= LEVEL_RANK.adapted;
     for (const roleId of roleIds) {
-      const role = ir.roles[roleId];
+      const role = compiledWorkflow.roles[roleId];
       const skillRefs = role.skills ?? [];
       for (const [index, skillId] of skillRefs.entries()) {
         if (!selectedSkills.has(skillId)) {
@@ -478,33 +478,33 @@ export function projectAgentNative(input) {
       let uses = [];
       if (capability === 'state') uses = [''];
       else if (capability === 'gates') {
-        uses = ir.stages.flatMap((stage, stageIndex) => stage.steps.flatMap((step, stepIndex) => step.gates.map((_, gateIndex) => `/stages/${stageIndex}/steps/${stepIndex}/gates/${gateIndex}`)));
+        uses = compiledWorkflow.stages.flatMap((stage, stageIndex) => stage.steps.flatMap((step, stepIndex) => step.gates.map((_, gateIndex) => `/stages/${stageIndex}/steps/${stepIndex}/gates/${gateIndex}`)));
       } else if (capability === 'outputs') {
-        uses = ir.stages.flatMap((stage, stageIndex) => stage.steps.flatMap((step, stepIndex) => step.outputs.map((_, outputIndex) => `/stages/${stageIndex}/steps/${stepIndex}/outputs/${outputIndex}`)));
+        uses = compiledWorkflow.stages.flatMap((stage, stageIndex) => stage.steps.flatMap((step, stepIndex) => step.outputs.map((_, outputIndex) => `/stages/${stageIndex}/steps/${stepIndex}/outputs/${outputIndex}`)));
       } else if (capability === 'subagents') {
-        uses = ir.stages.flatMap((stage, stageIndex) => stage.steps.flatMap((step, stepIndex) => (step.role === undefined ? [] : [`/stages/${stageIndex}/steps/${stepIndex}/role`])));
+        uses = compiledWorkflow.stages.flatMap((stage, stageIndex) => stage.steps.flatMap((step, stepIndex) => (step.role === undefined ? [] : [`/stages/${stageIndex}/steps/${stepIndex}/role`])));
       } else if (capability === 'skills' || capability === 'skill-invocation') {
         uses = sorted(selectedSkills).map((id) => `/skills/${id}`);
       } else if (capability === 'preload') {
         for (const roleId of roleIds) {
-          const role = ir.roles[roleId];
+          const role = compiledWorkflow.roles[roleId];
           for (const [index, skillId] of (role.skills ?? []).entries()) {
             if (selectedSkills.has(skillId)) uses.push(`/roles/${roleId}/skills/${index}`);
           }
         }
         uses = sorted(uses);
       } else if (capability === 'stage-invocation') {
-        uses = ir.stages.map((_, index) => `/stages/${index}`);
+        uses = compiledWorkflow.stages.map((_, index) => `/stages/${index}`);
       }
       capabilityReport.push({ target, capability, level, uses: sorted(uses) });
     }
   }
 
   // --- warnings (never the bundle-layer constitution placeholder) ---------
-  if (options.stageOrder.some((id, index) => id !== ir.stages[index]?.id)) {
-    addWarning({ code: 'STAGE_ORDER_OVERRIDDEN', message: 'options.stageOrder differs from IR order; rendering order follows the option' });
+  if (options.stageOrder.some((id, index) => id !== compiledWorkflow.stages[index]?.id)) {
+    addWarning({ code: 'STAGE_ORDER_OVERRIDDEN', message: 'options.stageOrder differs from compiled workflow order; rendering order follows the option' });
   }
-  if (ir.id === 'runner') {
+  if (compiledWorkflow.id === 'runner') {
     addWarning({
       code: 'NAMESPACE_SHARED_WITH_RUNNER',
       message: 'bundle.id is "runner"; role paths and names overlap with the runner projection',
@@ -527,7 +527,7 @@ export function projectAgentNative(input) {
     idMap[target] = {
       stages: {},
       steps: {},
-      roles: Object.fromEntries(roleIds.map((roleId) => [roleId, `${ir.id}-${roleId}`])),
+      roles: Object.fromEntries(roleIds.map((roleId) => [roleId, `${compiledWorkflow.id}-${roleId}`])),
       skills: Object.fromEntries(sorted(selectedSkills).map((skillId) => [skillId, skillNames.get(skillId)])),
     };
   }
@@ -541,10 +541,10 @@ export function projectAgentNative(input) {
     'roles-json': rolesJsonPath,
   };
   for (const stage of renderedStageOrder) {
-    artifacts[`stage-${stage.id}`] = `${pickSkillRoot}/${ir.id}-stage-${stage.id}/SKILL.md`;
+    artifacts[`stage-${stage.id}`] = `${pickSkillRoot}/${compiledWorkflow.id}-stage-${stage.id}/SKILL.md`;
   }
   for (const skillId of sorted(selectedSkills)) {
-    artifacts[`skill-${skillId}`] = `${pickSkillRoot}/${ir.id}-skill-${skillId}/SKILL.md`;
+    artifacts[`skill-${skillId}`] = `${pickSkillRoot}/${compiledWorkflow.id}-skill-${skillId}/SKILL.md`;
   }
   for (const [key, path] of Object.entries(extraArtifacts)) artifacts[key] = path;
   for (const [key, path] of assetArtifacts) artifacts[key] = path;
@@ -559,9 +559,9 @@ export function projectAgentNative(input) {
   }
 
   const placeholders = {
-    roles: roleIds.filter((id) => ir.roles[id].placeholder),
-    skills: allSkills.filter((id) => ir.skills[id].placeholder),
-    constitution: constitutionState(ir.constitution ?? []),
+    roles: roleIds.filter((id) => compiledWorkflow.roles[id].placeholder),
+    skills: allSkills.filter((id) => compiledWorkflow.skills[id].placeholder),
+    constitution: constitutionState(compiledWorkflow.constitution ?? []),
   };
 
   return {
@@ -577,7 +577,7 @@ export function projectAgentNative(input) {
       artifacts: sortedArtifacts,
       placeholders,
       runtime: {
-        namespace: ir.id,
+        namespace: compiledWorkflow.id,
         targetGroups,
         skillsRoots,
         constitutionPlacement: 'stage-skill-prefix',

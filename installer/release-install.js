@@ -4,15 +4,15 @@
  *
  * The installer consumes the Release assets it was handed and does exactly
  * four things: verify, unpack, write, receipt. It never validates a bundle,
- * compiles an IR or runs a projection; the pre-projected payload is the
+ * compiles a compiled workflow or runs a projection; the pre-projected payload is the
  * authority.
  *
  * Three-way verification before any write:
  *   1. every used asset hashes to its `SHA256SUMS.txt` entry, and the sums
  *      names are exactly the asset set the bundle's `requires` implies;
- *   2. the zip's `bundle.json` (id/version/manifest digest) and the IR's
+ *   2. the zip's `bundle.json` (id/version/manifest digest) and the compiled workflow's
  *      `source.bundle.contentSha256` agree with each other, with the asset
- *      names and with the payload manifest's `ir` block;
+ *      names and with the payload manifest's `compiledWorkflow` block;
  *   3. the payload's member set and hashes agree with its manifest, and the
  *      rebuilt projection result re-passes V1–V12.
  *
@@ -51,7 +51,7 @@ import { readReleaseTarGz } from './release-tar.js';
 import { projectPath } from './paths.js';
 import { lstatOrNull, pruneEmptyDir, unlinkIfExists } from './util.js';
 import { sorted } from '../core/sort.js';
-import { IR_SCHEMA } from '../ir/schema.js';
+import { COMPILED_WORKFLOW_SCHEMA } from '../compiled/schema.js';
 
 /** Exit codes of the release-install surface (decision #74 §5.2). */
 export const RELEASE_EXIT = Object.freeze({ OK: 0, INTEGRITY: 2 });
@@ -65,8 +65,8 @@ function failure(code, message, { exitCode = RELEASE_EXIT.INTEGRITY, details = n
 }
 
 /** `requires.projections` with its default, or `null` when it is malformed. */
-export function allowedProjections(ir) {
-  const declared = ir?.requires?.projections;
+export function allowedProjections(compiledWorkflow) {
+  const declared = compiledWorkflow?.requires?.projections;
   if (declared === undefined || declared === null) return [...DEFAULT_PROJECTIONS];
   if (!Array.isArray(declared) || declared.length === 0) return null;
   if (declared.some((id) => typeof id !== 'string' || id === '')) return null;
@@ -129,23 +129,23 @@ function pickAsset(sumsNames, pattern) {
 /**
  * Rebuild the projection result from the payload and prove it is the one the
  * publisher validated: manifest shape, member self-proof, canonical options
- * and V1–V12 against the Release IR.
+ * and V1–V12 against the Release compiled workflow.
  */
-function verifyPayload({ payloadBytes, ir, irDigest, descriptor, canonical, id, version }) {
+function verifyPayload({ payloadBytes, compiledWorkflow, compiledWorkflowDigest, descriptor, canonical, id, version }) {
   const parsed = readPayloadArchive(payloadBytes);
   if (parsed.manifest !== null
     && JSON.stringify(parsed.manifest.options) !== JSON.stringify(canonical.options)) {
     return failure(
       'RELEASE_PAYLOAD_INVALID',
-      'the payload was built with custom projection options; a Release payload is canonical. Re-project the published IR with the framework CLI or the web front end and install that result',
+      'the payload was built with custom projection options; a Release payload is canonical. Re-project the published compiled workflow with the framework CLI or the web front end and install that result',
       { details: { expected: canonical.options, actual: parsed.manifest.options } },
     );
   }
   const problems = verifyPayloadArchive(payloadBytes, {
     id,
     version,
-    irDigest,
-    contentSha256: ir?.source?.bundle?.contentSha256 ?? null,
+    compiledWorkflowDigest,
+    contentSha256: compiledWorkflow?.source?.bundle?.contentSha256 ?? null,
     projectionId: descriptor.id,
     options: canonical.options,
     targets: canonical.targets,
@@ -171,7 +171,7 @@ function verifyPayload({ payloadBytes, ir, irDigest, descriptor, canonical, id, 
   if (JSON.stringify(result.options) !== JSON.stringify(canonical.normalized)) {
     return failure(
       'RELEASE_PAYLOAD_INVALID',
-      'the payload was built with custom projection options; a Release payload is canonical. Re-project the published IR with the framework CLI or the web front end and install that result',
+      'the payload was built with custom projection options; a Release payload is canonical. Re-project the published compiled workflow with the framework CLI or the web front end and install that result',
       { details: { expected: canonical.normalized, actual: result.options } },
     );
   }
@@ -179,8 +179,8 @@ function verifyPayload({ payloadBytes, ir, irDigest, descriptor, canonical, id, 
     return failure('RELEASE_PAYLOAD_INVALID', `${PAYLOAD_MANIFEST_NAME} result.targets do not match the canonical targets`);
   }
   const validation = validateResult(result, {
-    ir,
-    irDigest,
+    compiledWorkflow,
+    compiledWorkflowDigest,
     manifest: descriptor,
     options: canonical.normalized,
     environment: result.environment,
@@ -194,11 +194,11 @@ function verifyPayload({ payloadBytes, ir, irDigest, descriptor, canonical, id, 
   return { ok: true, result, manifest };
 }
 
-/** Zip ↔ IR: `bundle.json` identity + manifest digest + content digest. */
-function verifyZip({ zipBytes, ir, id, version }) {
+/** Zip ↔ compiled workflow: `bundle.json` identity + manifest digest + content digest. */
+function verifyZip({ zipBytes, compiledWorkflow, id, version }) {
   const analysis = analyzeBundle(zipBytes, { sha256: sha256Hex, inflateRaw });
   if (analysis.report.errors.length > 0) {
-    return failure('RELEASE_IR_MISMATCH', `the bundle zip is not valid: ${analysis.report.errors[0].message}`);
+    return failure('RELEASE_COMPILED_WORKFLOW_MISMATCH', `the bundle zip is not valid: ${analysis.report.errors[0].message}`);
   }
   const manifest = analysis.model.manifest;
   if (manifest?.id !== id || manifest?.version !== version) {
@@ -207,44 +207,44 @@ function verifyZip({ zipBytes, ir, id, version }) {
       `the zip manifest is ${String(manifest?.id)}@${String(manifest?.version)}, the Release is ${id}@${version}`,
     );
   }
-  const entry = analysis.model.entries.get(ir?.source?.manifest?.path ?? 'bundle.json');
+  const entry = analysis.model.entries.get(compiledWorkflow?.source?.manifest?.path ?? 'bundle.json');
   if (entry === undefined) {
-    return failure('RELEASE_IR_MISMATCH', `the IR names ${String(ir?.source?.manifest?.path)}, which the zip does not carry`);
+    return failure('RELEASE_COMPILED_WORKFLOW_MISMATCH', `the compiled workflow names ${String(compiledWorkflow?.source?.manifest?.path)}, which the zip does not carry`);
   }
-  if (sha256Hex(entry.data) !== ir?.source?.manifest?.sha256) {
-    return failure('RELEASE_IR_MISMATCH', 'the zip bundle.json digest does not match the IR source manifest');
+  if (sha256Hex(entry.data) !== compiledWorkflow?.source?.manifest?.sha256) {
+    return failure('RELEASE_COMPILED_WORKFLOW_MISMATCH', 'the zip bundle.json digest does not match the compiled workflow source manifest');
   }
-  for (const [path, digest] of verifyIrSources({ ir })) {
+  for (const [path, digest] of verifyIrSources({ compiledWorkflow })) {
     const member = analysis.model.entries.get(path);
-    if (member === undefined) return failure('RELEASE_IR_MISMATCH', `the IR names ${path}, which the zip does not carry`);
-    if (sha256Hex(member.data) !== digest) return failure('RELEASE_IR_MISMATCH', `${path}: the zip bytes do not match the IR source digest`);
+    if (member === undefined) return failure('RELEASE_COMPILED_WORKFLOW_MISMATCH', `the compiled workflow names ${path}, which the zip does not carry`);
+    if (sha256Hex(member.data) !== digest) return failure('RELEASE_COMPILED_WORKFLOW_MISMATCH', `${path}: the zip bytes do not match the compiled workflow source digest`);
   }
   const content = bundleContentSha256({ sha256: sha256Hex }, analysis.model);
-  if (content !== ir?.source?.bundle?.contentSha256) {
-    return failure('RELEASE_IR_MISMATCH', 'the zip content digest does not match IR source.bundle.contentSha256', {
-      details: { expected: ir?.source?.bundle?.contentSha256, actual: content },
+  if (content !== compiledWorkflow?.source?.bundle?.contentSha256) {
+    return failure('RELEASE_COMPILED_WORKFLOW_MISMATCH', 'the zip content digest does not match compiled workflow source.bundle.contentSha256', {
+      details: { expected: compiledWorkflow?.source?.bundle?.contentSha256, actual: content },
     });
   }
   return { ok: true };
 }
 
-/** Every IR entity's `source` must name a zip member with that digest. */
-function verifyIrSources({ ir }) {
+/** Every compiled workflow entity's `source` must name a zip member with that digest. */
+function verifyIrSources({ compiledWorkflow }) {
   const sources = new Map();
   const add = (source) => {
     if (source === null || typeof source !== 'object') return;
     if (typeof source.path !== 'string' || typeof source.sha256 !== 'string') return;
     sources.set(source.path, source.sha256);
   };
-  for (const stage of ir.stages ?? []) add(stage.source);
-  for (const map of [ir.roles, ir.tasks, ir.skills]) {
+  for (const stage of compiledWorkflow.stages ?? []) add(stage.source);
+  for (const map of [compiledWorkflow.roles, compiledWorkflow.tasks, compiledWorkflow.skills]) {
     for (const value of Object.values(map ?? {})) add(value?.source);
   }
-  for (const item of ir.knowledgeBase ?? []) add(item?.source);
-  for (const item of ir.checklists ?? []) add(item?.source);
-  add(ir.hooks?.source);
-  add(ir.mcp?.source);
-  for (const mount of ir.constitution ?? []) add(mount?.source);
+  for (const item of compiledWorkflow.knowledgeBase ?? []) add(item?.source);
+  for (const item of compiledWorkflow.checklists ?? []) add(item?.source);
+  add(compiledWorkflow.hooks?.source);
+  add(compiledWorkflow.mcp?.source);
+  for (const mount of compiledWorkflow.constitution ?? []) add(mount?.source);
   return sources;
 }
 
@@ -288,29 +288,29 @@ export function verifyRelease(input = {}) {
     return failure('RELEASE_ASSET_SET_MISMATCH', `framework asset does not carry a semver: ${frameworks[0]}`);
   }
 
-  // 2) IR identity, projection whitelist and the expected asset set.
-  const irAsset = assets['workflow.ir.json'];
-  if (!(irAsset instanceof Uint8Array) && !Buffer.isBuffer(irAsset)) {
-    return failure('RELEASE_NOT_FOUND', `${SUMS_ASSET} is present but workflow.ir.json was not downloaded`);
+  // 2) compiled workflow identity, projection whitelist and the expected asset set.
+  const compiledWorkflowAsset = assets['workflow.compiled.json'];
+  if (!(compiledWorkflowAsset instanceof Uint8Array) && !Buffer.isBuffer(compiledWorkflowAsset)) {
+    return failure('RELEASE_NOT_FOUND', `${SUMS_ASSET} is present but workflow.compiled.json was not downloaded`);
   }
-  const irBytes = Buffer.from(irAsset);
-  const irDigest = sha256Hex(irBytes);
-  let ir;
+  const compiledWorkflowBytes = Buffer.from(compiledWorkflowAsset);
+  const compiledWorkflowDigest = sha256Hex(compiledWorkflowBytes);
+  let compiledWorkflow;
   try {
-    ir = JSON.parse(irBytes.toString('utf8'));
+    compiledWorkflow = JSON.parse(compiledWorkflowBytes.toString('utf8'));
   } catch (error) {
-    return failure('RELEASE_IR_MISMATCH', `workflow.ir.json is not JSON: ${error.message}`);
+    return failure('RELEASE_COMPILED_WORKFLOW_MISMATCH', `workflow.compiled.json is not JSON: ${error.message}`);
   }
-  if (ir?.schema !== IR_SCHEMA) {
-    return failure('RELEASE_IR_MISMATCH', `IR schema is ${String(ir?.schema)} (expected ${IR_SCHEMA})`);
+  if (compiledWorkflow?.schema !== COMPILED_WORKFLOW_SCHEMA) {
+    return failure('RELEASE_COMPILED_WORKFLOW_MISMATCH', `compiled workflow schema is ${String(compiledWorkflow?.schema)} (expected ${COMPILED_WORKFLOW_SCHEMA})`);
   }
-  if (ir.id !== bundleId || ir.version !== version) {
+  if (compiledWorkflow.id !== bundleId || compiledWorkflow.version !== version) {
     return failure(
       'RELEASE_TAG_MISMATCH',
-      `the IR is ${String(ir.id)}@${String(ir.version)}, the requested Release is ${bundleId}@${version}`,
+      `the compiled workflow is ${String(compiledWorkflow.id)}@${String(compiledWorkflow.version)}, the requested Release is ${bundleId}@${version}`,
     );
   }
-  const allowed = allowedProjections(ir);
+  const allowed = allowedProjections(compiledWorkflow);
   if (allowed === null) {
     return failure('RELEASE_PROJECTION_NOT_ALLOWED', 'requires.projections must be a non-empty array of projection ids');
   }
@@ -330,7 +330,7 @@ export function verifyRelease(input = {}) {
     if (!isValidVersion(engineVersion)) {
       return failure('RELEASE_ASSET_SET_MISMATCH', `engine asset does not carry a semver: ${engines[0]}`);
     }
-    const required = checkEngineRequirement({ range: ir.requires?.engine, engineVersion });
+    const required = checkEngineRequirement({ range: compiledWorkflow.requires?.engine, engineVersion });
     if (required.ok === false) return required;
   }
 
@@ -349,7 +349,7 @@ export function verifyRelease(input = {}) {
   }
 
   // Every used asset must be present and hash to its sums entry.
-  const wanted = ['install.mjs', 'workflow.ir.json', `bundle-${bundleId}-v${version}.zip`,
+  const wanted = ['install.mjs', 'workflow.compiled.json', `bundle-${bundleId}-v${version}.zip`,
     projectionId === 'runner' ? `hm2b-payload-${bundleId}-v${version}.tgz` : `agent-native-${bundleId}-v${version}.tgz`,
     frameworks[0]];
   if (projectionId === 'runner') wanted.push(engines[0]);
@@ -387,15 +387,15 @@ export function verifyRelease(input = {}) {
     );
   }
 
-  // 3) zip ↔ IR, then payload ↔ IR ↔ manifest.
-  const zip = verifyZip({ zipBytes: Buffer.from(assets[`bundle-${bundleId}-v${version}.zip`]), ir, id: bundleId, version });
+  // 3) zip ↔ compiled workflow, then payload ↔ compiled workflow ↔ manifest.
+  const zip = verifyZip({ zipBytes: Buffer.from(assets[`bundle-${bundleId}-v${version}.zip`]), compiledWorkflow, id: bundleId, version });
   if (zip.ok === false) return zip;
 
   const canonicalInput = canonicalInputOptions(projectionId, descriptor);
   const normalized = normalizeOptions({
     projectionId,
-    ir,
-    irDigest,
+    compiledWorkflow,
+    compiledWorkflowDigest,
     raw: canonicalInput,
     manifest: descriptor,
   });
@@ -412,8 +412,8 @@ export function verifyRelease(input = {}) {
     : `agent-native-${bundleId}-v${version}.tgz`;
   const payload = verifyPayload({
     payloadBytes: Buffer.from(assets[payloadName]),
-    ir,
-    irDigest,
+    compiledWorkflow,
+    compiledWorkflowDigest,
     descriptor,
     canonical,
     id: bundleId,
@@ -425,7 +425,7 @@ export function verifyRelease(input = {}) {
     const projectedEngine = payload.result.environment?.engineVersion ?? null;
     if (projectedEngine !== engineVersion) {
       return failure(
-        'RELEASE_IR_MISMATCH',
+        'RELEASE_COMPILED_WORKFLOW_MISMATCH',
         `the payload was projected for engine ${String(projectedEngine)}, the Release ships ${engineVersion}`,
       );
     }
@@ -452,9 +452,9 @@ export function verifyRelease(input = {}) {
   return {
     ok: true,
     tag,
-    ir,
-    irBytes,
-    irDigest,
+    compiledWorkflow,
+    compiledWorkflowBytes,
+    compiledWorkflowDigest,
     projection: projectionId,
     descriptor,
     allowed,
@@ -648,7 +648,7 @@ export function installRelease(input = {}) {
   // never writes an engine or launcher file.
   const preflight = install({
     result,
-    irBytes: verified.irBytes,
+    compiledWorkflowBytes: verified.compiledWorkflowBytes,
     projectRoot,
     dryRun: true,
     force,
@@ -723,7 +723,7 @@ export function installRelease(input = {}) {
 
     const outcome = install({
       result,
-      irBytes: verified.irBytes,
+      compiledWorkflowBytes: verified.compiledWorkflowBytes,
       projectRoot,
       dryRun,
       force,
@@ -760,8 +760,8 @@ export function installRelease(input = {}) {
       exitCode: 0,
       action: outcome.action,
       projection: verified.projection,
-      bundleId: verified.ir.id,
-      version: verified.ir.version,
+      bundleId: verified.compiledWorkflow.id,
+      version: verified.compiledWorkflow.version,
       engineVersion: verified.engineVersion,
       frameworkVersion: verified.frameworkVersion,
       targets: result.targets,

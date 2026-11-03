@@ -381,7 +381,7 @@ test('the validator is a pure bytes-in/report-out function (no filesystem writes
   }
 });
 
-test('the baseline bundle keeps 0 errors, 2 warnings and the frozen IR', () => {
+test('the baseline bundle keeps 0 errors, 2 warnings and the frozen compiled workflow', () => {
   const bytes = readFileSync(BASELINE);
   assert.equal(bytes.length, 55043);
   assert.equal(sha256Hex(bytes), 'ff1f3004c618be9d5ee6b090e0d635f6a6c7cb49a8c22e188cc11206bbe37cd4');
@@ -395,6 +395,6 @@ test('the baseline bundle keeps 0 errors, 2 warnings and the frozen IR', () => {
   ]);
   const compiled = compileBundle(bytes, PRIMITIVES);
   assert.equal(compiled.ok, true);
-  assert.equal(compiled.irBytes.length, 58904);
-  assert.equal(compiled.digest, '34d55ee62bf284594218d4923b0eafa267799edb1edbbeb7bb313a6f2ab0bc04');
+  assert.equal(compiled.compiledWorkflowBytes.length, 58919);
+  assert.equal(compiled.digest, '518643ab9c92d270a66bd4545cba660d0511243070c3479234edec3225b6d23c');
 });

@@ -171,7 +171,7 @@ export const opencodeTarget = Object.freeze({
         states.title = { state: 'unavailable', reason: 'opencode 无展示名槽', effect: '展示名丢弃，只保留 description' };
       }
       if (role.mode !== undefined) {
-        states.mode = { state: 'native', reason: 'mode: subagent/primary/all 与 IR 三值精确对应' };
+        states.mode = { state: 'native', reason: 'mode: subagent/primary/all 与 compiled workflow 三值精确对应' };
       }
       if (role.model !== undefined) {
         states.model = {

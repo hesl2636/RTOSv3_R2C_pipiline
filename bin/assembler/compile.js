@@ -4,11 +4,11 @@ import { basename, join } from 'node:path';
 import { inflateRaw } from '../../core/node/inflate.js';
 import { sha256Hex } from '../../core/node/sha256.js';
 import { atomicWriteFile } from '../../core/node/atomic-write.js';
-import { IR_FILENAME } from '../../ir/schema.js';
+import { COMPILED_WORKFLOW_FILENAME } from '../../compiled/schema.js';
 import { compileBundle } from '../../assembler/compile.js';
 import { writeZip } from '../../assembler/zip.js';
 import { BUNDLE_SUMMARY_CODE } from '../../assembler/validate-bundle.js';
-import { IR_SUMMARY_CODE } from '../../assembler/validate-ir.js';
+import { COMPILED_WORKFLOW_SUMMARY_CODE } from '../../assembler/validate-compiled.js';
 import {
   EXIT_CODES,
   emitFailure,
@@ -115,13 +115,13 @@ export function run(argv) {
       json: options.json,
       command: COMMAND,
       report: result.report,
-      summaryCode: result.report.target === 'ir' ? IR_SUMMARY_CODE : BUNDLE_SUMMARY_CODE,
+      summaryCode: result.report.target === 'compiled-workflow' ? COMPILED_WORKFLOW_SUMMARY_CODE : BUNDLE_SUMMARY_CODE,
     });
   }
 
-  const target = join(options.out, IR_FILENAME);
+  const target = join(options.out, COMPILED_WORKFLOW_FILENAME);
   try {
-    atomicWriteFile(target, result.irBytes);
+    atomicWriteFile(target, result.compiledWorkflowBytes);
   } catch {
     return emitFailure({
       json: options.json,
@@ -129,29 +129,29 @@ export function run(argv) {
       code: EXIT_CODES.USAGE,
       error: {
         code: 'OUTPUT_UNWRITABLE',
-        message: `could not write ${IR_FILENAME} under the requested directory`,
-        details: { path: IR_FILENAME },
+        message: `could not write ${COMPILED_WORKFLOW_FILENAME} under the requested directory`,
+        details: { path: COMPILED_WORKFLOW_FILENAME },
       },
     });
   }
 
-  const ir = {
-    path: IR_FILENAME,
-    bytes: result.irBytes.length,
+  const compiledWorkflow = {
+    path: COMPILED_WORKFLOW_FILENAME,
+    bytes: result.compiledWorkflowBytes.length,
     sha256: result.digest,
   };
   if (!options.json) {
     for (const warning of result.report.warnings) {
       process.stderr.write(`${formatDiagnostic(warning)}\n`);
     }
-    process.stdout.write(`${IR_FILENAME} written: ${IR_FILENAME} (${ir.bytes} bytes, sha256 ${ir.sha256})\n`);
+    process.stdout.write(`${COMPILED_WORKFLOW_FILENAME} written: ${COMPILED_WORKFLOW_FILENAME} (${compiledWorkflow.bytes} bytes, sha256 ${compiledWorkflow.sha256})\n`);
     return EXIT_CODES.OK;
   }
   return emitReport({
     json: true,
     command: COMMAND,
     report: result.report,
-    data: { ...result.report, ir },
+    data: { ...result.report, compiledWorkflow },
     summaryCode: BUNDLE_SUMMARY_CODE,
   });
 }

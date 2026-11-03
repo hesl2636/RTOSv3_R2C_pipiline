@@ -3,7 +3,7 @@
  *
  * The browser runs the same shared assembler (`validateBundleAsync`) on the
  * uploaded bytes and compares its Report with the server's authoritative
- * Report. It never edits the bundle or the IR; the download uses the server's
+ * Report. It never edits the bundle or the compiled workflow; the download uses the server's
  * bytes. All bundle-derived strings are written with `textContent`/DOM nodes.
  */
 import { validateBundleAsync } from '../assembler/validate-bundle.js';
@@ -30,8 +30,8 @@ const state = {
   floor: null,
   degraded: false,
   mismatch: false,
-  irBytes: null,
-  ir: null,
+  compiledWorkflowBytes: null,
+  compiledWorkflow: null,
   uploadId: null,
   allowed: [],
   options: {},
@@ -116,8 +116,8 @@ function countChip(label, count, tone) {
   return chip;
 }
 
-function constitutionInfo(ir) {
-  const name = constitutionState(ir);
+function constitutionInfo(compiledWorkflow) {
+  const name = constitutionState(compiledWorkflow);
   if (name === 'placeholder') return { name, label: '占位', tone: 'warn' };
   if (name === 'present') return { name, label: '已提供', tone: 'ok' };
   return { name, label: '未声明', tone: 'muted' };
@@ -130,8 +130,8 @@ function renderOverview(report) {
     show(panel, false);
     return;
   }
-  const ir = state.ir?.json ?? null;
-  const assets = ir === null ? null : declaredAssets(ir);
+  const compiledWorkflow = state.compiledWorkflow?.json ?? null;
+  const assets = compiledWorkflow === null ? null : declaredAssets(compiledWorkflow);
   const counts = report.counts ?? {};
   const errors = counts.errors ?? 0;
   const warnings = counts.warnings ?? 0;
@@ -142,18 +142,18 @@ function renderOverview(report) {
     statCard('错误', errors, errors > 0 ? 'bad' : 'muted'),
     statCard('警告', warnings, warnings > 0 ? 'warn' : 'muted'),
   );
-  if (ir !== null && assets !== null) {
+  if (compiledWorkflow !== null && assets !== null) {
     grid.append(
-      statCard('阶段', (ir.stages ?? []).length, 'muted'),
-      statCard('角色', Object.keys(ir.roles ?? {}).length, 'muted'),
-      statCard('任务', Object.keys(ir.tasks ?? {}).length, 'muted'),
-      statCard('技能', Object.keys(ir.skills ?? {}).length, 'muted'),
-      statCard('宪法', constitutionInfo(ir).label, constitutionInfo(ir).tone),
+      statCard('阶段', (compiledWorkflow.stages ?? []).length, 'muted'),
+      statCard('角色', Object.keys(compiledWorkflow.roles ?? {}).length, 'muted'),
+      statCard('任务', Object.keys(compiledWorkflow.tasks ?? {}).length, 'muted'),
+      statCard('技能', Object.keys(compiledWorkflow.skills ?? {}).length, 'muted'),
+      statCard('宪法', constitutionInfo(compiledWorkflow).label, constitutionInfo(compiledWorkflow).tone),
       statCard('四类资产', assets.knowledgeBase.length + assets.checklists.length + assets.hooks.length + assets.mcp.length, 'muted'),
     );
   }
   const chip = byId('overview-bundle');
-  if (chip !== null) chip.textContent = `${ir?.id ?? report.id ?? '—'} @ ${ir?.version ?? report.version ?? '—'}`;
+  if (chip !== null) chip.textContent = `${compiledWorkflow?.id ?? report.id ?? '—'} @ ${compiledWorkflow?.version ?? report.version ?? '—'}`;
 
   const meta = byId('overview-meta');
   clear(meta);
@@ -161,10 +161,10 @@ function renderOverview(report) {
   appendKeyValue(meta, '产物', report.artifact?.path);
   appendKeyValue(meta, '大小', formatBytes(report.artifact?.bytes));
   appendKeyValue(meta, 'zip sha256', report.artifact?.sha256);
-  if (ir !== null) {
-    appendKeyValue(meta, 'IR 摘要', state.ir?.digest);
-    appendKeyValue(meta, 'contentSha256', ir.source?.bundle?.contentSha256);
-    appendKeyValue(meta, 'requires', JSON.stringify(ir.requires ?? {}));
+  if (compiledWorkflow !== null) {
+    appendKeyValue(meta, '编译摘要', state.compiledWorkflow?.digest);
+    appendKeyValue(meta, 'contentSha256', compiledWorkflow.source?.bundle?.contentSha256);
+    appendKeyValue(meta, 'requires', JSON.stringify(compiledWorkflow.requires ?? {}));
   }
   show(panel, true);
 }
@@ -256,7 +256,7 @@ function renderReport(report) {
 }
 
 /* -------------------------------------------------------------------------- */
-/* IR                                                                         */
+/* compiled workflow                                                                         */
 /* -------------------------------------------------------------------------- */
 
 function decodeBase64(text) {
@@ -270,8 +270,8 @@ function labelValue(parent, label, value) {
   parent.append(element('span', 'hint', label), element('span', null, String(value)));
 }
 
-function constitutionState(ir) {
-  const mounts = Array.isArray(ir.constitution) ? ir.constitution : [];
+function constitutionState(compiledWorkflow) {
+  const mounts = Array.isArray(compiledWorkflow.constitution) ? compiledWorkflow.constitution : [];
   if (typeof state.shared?.constitutionState === 'function') {
     return state.shared.constitutionState(mounts);
   }
@@ -279,10 +279,10 @@ function constitutionState(ir) {
   return mounts.some((mount) => mount.placeholder === true) ? 'placeholder' : 'present';
 }
 
-function renderStages(ir) {
-  const list = byId('ir-stages');
+function renderStages(compiledWorkflow) {
+  const list = byId('compiled-workflow-stages');
   clear(list);
-  for (const stage of ir.stages ?? []) {
+  for (const stage of compiledWorkflow.stages ?? []) {
     const item = element('li');
     const head = element('div');
     head.append(element('strong', null, stage.name ?? stage.id), element('span', 'mono', ` ${stage.id}`));
@@ -316,10 +316,10 @@ function sourceLine(source) {
   return parts.join(' · ');
 }
 
-function renderRoles(ir) {
-  const list = byId('ir-roles');
+function renderRoles(compiledWorkflow) {
+  const list = byId('compiled-workflow-roles');
   clear(list);
-  for (const [id, role] of Object.entries(ir.roles ?? {})) {
+  for (const [id, role] of Object.entries(compiledWorkflow.roles ?? {})) {
     const item = element('li');
     item.append(element('strong', null, id));
     if (role.placeholder === true) item.append(element('span', 'badge badge-warn', '占位'));
@@ -336,10 +336,10 @@ function renderRoles(ir) {
   }
 }
 
-function renderTasks(ir) {
-  const list = byId('ir-tasks');
+function renderTasks(compiledWorkflow) {
+  const list = byId('compiled-workflow-tasks');
   clear(list);
-  for (const [id, task] of Object.entries(ir.tasks ?? {})) {
+  for (const [id, task] of Object.entries(compiledWorkflow.tasks ?? {})) {
     const item = element('li');
     item.append(element('strong', null, id));
     if (task.title) item.append(document.createTextNode(` — ${task.title}`));
@@ -353,10 +353,10 @@ function renderTasks(ir) {
   }
 }
 
-function renderSkills(ir) {
-  const list = byId('ir-skills');
+function renderSkills(compiledWorkflow) {
+  const list = byId('compiled-workflow-skills');
   clear(list);
-  for (const [id, skill] of Object.entries(ir.skills ?? {})) {
+  for (const [id, skill] of Object.entries(compiledWorkflow.skills ?? {})) {
     const item = element('li');
     item.append(element('strong', null, id));
     if (skill.placeholder === true) item.append(element('span', 'badge badge-warn', '占位'));
@@ -369,7 +369,7 @@ function renderSkills(ir) {
 
 /**
  * Declared bundle assets (`knowledgeBase`, `checklists`, `hooks`, `mcp`) are
- * rendered verbatim from the IR: the validator owns the rules, so an absent
+ * rendered verbatim from the compiled workflow: the validator owns the rules, so an absent
  * collection is just an empty list and never a client-side failure.
  */
 function renderDeclaredAssets(listId, entries, labelOf) {
@@ -391,55 +391,55 @@ function renderDeclaredAssets(listId, entries, labelOf) {
   }
 }
 
-function declaredAssets(ir) {
-  const knowledgeBase = Array.isArray(ir.knowledgeBase) ? ir.knowledgeBase : [];
-  const checklists = Array.isArray(ir.checklists) ? ir.checklists : [];
+function declaredAssets(compiledWorkflow) {
+  const knowledgeBase = Array.isArray(compiledWorkflow.knowledgeBase) ? compiledWorkflow.knowledgeBase : [];
+  const checklists = Array.isArray(compiledWorkflow.checklists) ? compiledWorkflow.checklists : [];
   return {
     knowledgeBase,
     checklists,
-    hooks: ir.hooks === null || ir.hooks === undefined ? [] : [ir.hooks],
-    mcp: ir.mcp === null || ir.mcp === undefined ? [] : [ir.mcp],
+    hooks: compiledWorkflow.hooks === null || compiledWorkflow.hooks === undefined ? [] : [compiledWorkflow.hooks],
+    mcp: compiledWorkflow.mcp === null || compiledWorkflow.mcp === undefined ? [] : [compiledWorkflow.mcp],
   };
 }
 
-function renderIr(data) {
-  const irBytes = decodeBase64(data.ir.data);
-  state.irBytes = irBytes;
-  const text = new TextDecoder('utf-8', { fatal: true }).decode(irBytes);
-  const ir = JSON.parse(text);
-  state.ir = { json: ir, digest: data.ir.digest, id: ir.id, version: ir.version };
-  state.allowed = allowedProjections(ir);
+function renderCompiledWorkflow(data) {
+  const compiledWorkflowBytes = decodeBase64(data.compiledWorkflow.data);
+  state.compiledWorkflowBytes = compiledWorkflowBytes;
+  const text = new TextDecoder('utf-8', { fatal: true }).decode(compiledWorkflowBytes);
+  const compiledWorkflow = JSON.parse(text);
+  state.compiledWorkflow = { json: compiledWorkflow, digest: data.compiledWorkflow.digest, id: compiledWorkflow.id, version: compiledWorkflow.version };
+  state.allowed = allowedProjections(compiledWorkflow);
 
-  const identity = byId('ir-identity');
+  const identity = byId('compiled-workflow-identity');
   clear(identity);
-  appendKeyValue(identity, 'schema', ir.schema);
-  appendKeyValue(identity, 'id', ir.id);
-  appendKeyValue(identity, '名称', ir.name);
-  appendKeyValue(identity, '版本', ir.version);
-  appendKeyValue(identity, '大小', formatBytes(irBytes.length));
-  const assets = declaredAssets(ir);
+  appendKeyValue(identity, 'schema', compiledWorkflow.schema);
+  appendKeyValue(identity, 'id', compiledWorkflow.id);
+  appendKeyValue(identity, '名称', compiledWorkflow.name);
+  appendKeyValue(identity, '版本', compiledWorkflow.version);
+  appendKeyValue(identity, '大小', formatBytes(compiledWorkflowBytes.length));
+  const assets = declaredAssets(compiledWorkflow);
 
-  renderStages(ir);
-  renderRoles(ir);
-  renderTasks(ir);
-  renderSkills(ir);
-  renderDeclaredAssets('ir-knowledge-base', assets.knowledgeBase, (entry) => entry.path);
-  renderDeclaredAssets('ir-checklists', assets.checklists, (entry) => entry.id);
-  renderDeclaredAssets('ir-hooks', assets.hooks, (entry) => entry.path);
-  renderDeclaredAssets('ir-mcp', assets.mcp, (entry) => entry.path);
+  renderStages(compiledWorkflow);
+  renderRoles(compiledWorkflow);
+  renderTasks(compiledWorkflow);
+  renderSkills(compiledWorkflow);
+  renderDeclaredAssets('compiled-workflow-knowledge-base', assets.knowledgeBase, (entry) => entry.path);
+  renderDeclaredAssets('compiled-workflow-checklists', assets.checklists, (entry) => entry.id);
+  renderDeclaredAssets('compiled-workflow-hooks', assets.hooks, (entry) => entry.path);
+  renderDeclaredAssets('compiled-workflow-mcp', assets.mcp, (entry) => entry.path);
 
-  byId('ir-stage-count').textContent = `· ${(ir.stages ?? []).length} 个阶段`;
-  byId('ir-role-count').textContent = `· ${Object.keys(ir.roles ?? {}).length}`;
-  byId('ir-task-count').textContent = `· ${Object.keys(ir.tasks ?? {}).length}`;
-  byId('ir-skill-count').textContent = `· ${Object.keys(ir.skills ?? {}).length}`;
-  byId('ir-asset-count').textContent = `· ${assets.knowledgeBase.length + assets.checklists.length + assets.hooks.length + assets.mcp.length} 项`;
+  byId('compiled-workflow-stage-count').textContent = `· ${(compiledWorkflow.stages ?? []).length} 个阶段`;
+  byId('compiled-workflow-role-count').textContent = `· ${Object.keys(compiledWorkflow.roles ?? {}).length}`;
+  byId('compiled-workflow-task-count').textContent = `· ${Object.keys(compiledWorkflow.tasks ?? {}).length}`;
+  byId('compiled-workflow-skill-count').textContent = `· ${Object.keys(compiledWorkflow.skills ?? {}).length}`;
+  byId('compiled-workflow-asset-count').textContent = `· ${assets.knowledgeBase.length + assets.checklists.length + assets.hooks.length + assets.mcp.length} 项`;
 
-  const constitution = byId('ir-constitution');
+  const constitution = byId('compiled-workflow-constitution');
   clear(constitution);
-  const mounts = Array.isArray(ir.constitution) ? ir.constitution : [];
-  const constitutionInfoValue = constitutionInfo(ir);
+  const mounts = Array.isArray(compiledWorkflow.constitution) ? compiledWorkflow.constitution : [];
+  const constitutionInfoValue = constitutionInfo(compiledWorkflow);
   const constitutionText = constitutionInfoValue.label;
-  const stateSpan = byId('ir-constitution-state');
+  const stateSpan = byId('compiled-workflow-constitution-state');
   if (stateSpan !== null) stateSpan.textContent = `· ${constitutionText}`;
   constitution.append(element('p', `status constitution-${constitutionInfoValue.name}`, `${constitutionText} · ${mounts.length} 个挂载`));
   for (const mount of mounts) {
@@ -453,19 +453,19 @@ function renderIr(data) {
     constitution.append(item);
   }
 
-  byId('ir-digest').textContent = `sha256 ${data.ir.digest}`;
-  byId('download-ir').disabled = false;
-  const summary = byId('ir-summary');
-  if (summary !== null) summary.textContent = `${ir.id} @ ${ir.version} · ${formatBytes(irBytes.length)}`;
-  byId('ir-raw').textContent = text;
-  show(byId('ir-empty'), false);
-  show(byId('ir-body'), true);
+  byId('compiled-workflow-digest').textContent = `sha256 ${data.compiledWorkflow.digest}`;
+  byId('download-compiled-workflow').disabled = false;
+  const summary = byId('compiled-workflow-summary');
+  if (summary !== null) summary.textContent = `${compiledWorkflow.id} @ ${compiledWorkflow.version} · ${formatBytes(compiledWorkflowBytes.length)}`;
+  byId('compiled-workflow-raw').textContent = text;
+  show(byId('compiled-workflow-empty'), false);
+  show(byId('compiled-workflow-body'), true);
   renderOverview(state.report);
 }
 
-function renderNoIr() {
-  state.irBytes = null;
-  state.ir = null;
+function renderNoCompiledWorkflow() {
+  state.compiledWorkflowBytes = null;
+  state.compiledWorkflow = null;
   state.uploadId = null;
   state.allowed = [];
   state.options = {};
@@ -474,20 +474,20 @@ function renderNoIr() {
   renderOptions();
   const buildBody = byId('build-body');
   if (buildBody !== null) show(buildBody, false);
-  show(byId('ir-body'), false);
-  show(byId('ir-empty'), true);
+  show(byId('compiled-workflow-body'), false);
+  show(byId('compiled-workflow-empty'), true);
   show(byId('overview'), false);
-  byId('download-ir').disabled = true;
-  byId('ir-empty').textContent = '未生成 IR：bundle 必须先无错误通过校验，才能编译。';
+  byId('download-compiled-workflow').disabled = true;
+  byId('compiled-workflow-empty').textContent = '未生成编译产物：bundle 必须先无错误通过校验，才能编译。';
 }
 
-function downloadIr() {
-  if (state.irBytes === null) return;
-  const blob = new Blob([state.irBytes], { type: 'application/json' });
+function downloadCompiledWorkflow() {
+  if (state.compiledWorkflowBytes === null) return;
+  const blob = new Blob([state.compiledWorkflowBytes], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement('a');
   anchor.href = url;
-  anchor.download = 'workflow.ir.json';
+  anchor.download = 'workflow.compiled.json';
   document.body.append(anchor);
   anchor.click();
   anchor.remove();
@@ -501,20 +501,20 @@ function downloadIr() {
 const PREVIEW_DEBOUNCE_MS = 150;
 let previewTimer = null;
 
-function stageIdsOf(ir) {
-  return (ir.stages ?? []).map((stage) => stage.id);
+function stageIdsOf(compiledWorkflow) {
+  return (compiledWorkflow.stages ?? []).map((stage) => stage.id);
 }
 
-function skillIdsOf(ir) {
-  return Object.keys(ir.skills ?? {}).sort(compareCodePoints);
+function skillIdsOf(compiledWorkflow) {
+  return Object.keys(compiledWorkflow.skills ?? {}).sort(compareCodePoints);
 }
 
-function defaultOptionsFor(ir) {
+function defaultOptionsFor(compiledWorkflow) {
   const defaults = {};
   for (const id of state.allowed) {
     defaults[id] = {
-      stageOrder: stageIdsOf(ir),
-      skills: skillIdsOf(ir),
+      stageOrder: stageIdsOf(compiledWorkflow),
+      skills: skillIdsOf(compiledWorkflow),
       targets: defaultTargets(id),
     };
   }
@@ -544,7 +544,7 @@ function schedulePreview() {
 }
 
 function resetOptions(message) {
-  state.options = state.ir === null ? {} : defaultOptionsFor(state.ir.json);
+  state.options = state.compiledWorkflow === null ? {} : defaultOptionsFor(state.compiledWorkflow.json);
   state.previews = {};
   renderOptions();
   const status = byId('options-status');
@@ -555,7 +555,7 @@ function resetOptions(message) {
 function renderStageOrder(list, projectionId) {
   clear(list);
   const current = state.options[projectionId];
-  const stages = new Map((state.ir?.json.stages ?? []).map((stage) => [stage.id, stage]));
+  const stages = new Map((state.compiledWorkflow?.json.stages ?? []).map((stage) => [stage.id, stage]));
   current.stageOrder.forEach((id, index) => {
     const item = element('li');
     item.append(element('strong', null, stages.get(id)?.name ?? id), element('span', 'mono hint', ` ${id}`));
@@ -600,7 +600,7 @@ function renderSkillPicker(container, projectionId, countNode) {
   const syncCount = () => {
     if (countNode !== null) countNode.textContent = `${current.skills.length}/${rows.length}`;
   };
-  for (const [id, skill] of Object.entries(state.ir?.json.skills ?? {})) {
+  for (const [id, skill] of Object.entries(state.compiledWorkflow?.json.skills ?? {})) {
     const label = element('label', 'check-row');
     const box = element('input');
     box.type = 'checkbox';
@@ -665,14 +665,14 @@ function renderOptions() {
   const controls = byId('projection-controls');
   if (body === null || controls === null) return;
   clear(controls);
-  const hasIr = state.ir !== null;
-  show(body, hasIr);
-  if (!hasIr) {
+  const hasCompiledWorkflow = state.compiledWorkflow !== null;
+  show(body, hasCompiledWorkflow);
+  if (!hasCompiledWorkflow) {
     const count = byId('options-count');
     if (count !== null) count.textContent = '—';
     return;
   }
-  byId('options-ir-digest').textContent = state.ir.digest;
+  byId('options-compiled-workflow-digest').textContent = state.compiledWorkflow.digest;
   byId('options-count').textContent = `${state.allowed.length} 个投影`;
   for (const projectionId of state.allowed) {
     const descriptor = getProjection(projectionId);
@@ -685,7 +685,7 @@ function renderOptions() {
       element('strong', null, descriptor.name ?? descriptor.id),
       element('span', 'mono hint', descriptor.id),
       badge,
-      element('span', 'hint', `${skillIdsOf(state.ir.json).length} 个技能 · ${(descriptor.targets ?? []).length} 个目标`),
+      element('span', 'hint', `${skillIdsOf(state.compiledWorkflow.json).length} 个技能 · ${(descriptor.targets ?? []).length} 个目标`),
     );
     block.append(summary);
     const current = state.options[projectionId];
@@ -694,10 +694,10 @@ function renderOptions() {
     orderGroup.append(element('h4', null, '阶段顺序'));
     const orderList = element('ol', 'stage-order');
     renderStageOrder(orderList, projectionId);
-    const restoreOrder = element('button', null, '恢复 IR 顺序');
+    const restoreOrder = element('button', null, '恢复默认顺序');
     restoreOrder.type = 'button';
     restoreOrder.addEventListener('click', () => {
-      current.stageOrder = stageIdsOf(state.ir.json);
+      current.stageOrder = stageIdsOf(state.compiledWorkflow.json);
       renderStageOrder(orderList, projectionId);
       schedulePreview();
     });
@@ -867,14 +867,14 @@ async function preview() {
   if (body === null) return;
   clear(body);
   if (button !== null) button.disabled = true;
-  if (state.ir === null) {
+  if (state.compiledWorkflow === null) {
     show(body, false);
     if (status !== null) status.textContent = '请先上传并通过校验，才能预览投影。';
     return;
   }
   if (state.allowed.length === 0) {
     show(body, false);
-    if (status !== null) status.textContent = '这个 IR 没有可用的已注册投影。';
+    if (status !== null) status.textContent = '这个编译产物没有可用的已注册投影。';
     return;
   }
   show(body, true);
@@ -886,8 +886,8 @@ async function preview() {
     const raw = state.options[projectionId] ? optionsForRequest()[projectionId] : null;
     const normalized = normalizeOptions({
       projectionId,
-      ir: state.ir.json,
-      irDigest: state.ir.digest,
+      compiledWorkflow: state.compiledWorkflow.json,
+      compiledWorkflowDigest: state.compiledWorkflow.digest,
       raw,
       manifest: descriptor,
     });
@@ -903,8 +903,8 @@ async function preview() {
     }
     const result = project({
       projectionId,
-      ir: state.ir.json,
-      irDigest: state.ir.digest,
+      compiledWorkflow: state.compiledWorkflow.json,
+      compiledWorkflowDigest: state.compiledWorkflow.digest,
       options: normalized.options,
       environment: { engineVersion: state.engineVersion },
       assets: {},
@@ -918,8 +918,8 @@ async function preview() {
       continue;
     }
     const validation = validateResult(result, {
-      ir: state.ir.json,
-      irDigest: state.ir.digest,
+      compiledWorkflow: state.compiledWorkflow.json,
+      compiledWorkflowDigest: state.compiledWorkflow.digest,
       manifest: descriptor,
       options: normalized.options,
       environment: { engineVersion: state.engineVersion },
@@ -936,8 +936,8 @@ async function preview() {
     const digest = await sha256Hex(canonicalJson(result));
     const canonical = isCanonicalOptions({
       projectionId,
-      ir: state.ir.json,
-      irDigest: state.ir.digest,
+      compiledWorkflow: state.compiledWorkflow.json,
+      compiledWorkflowDigest: state.compiledWorkflow.digest,
       options: normalized.options,
       manifest: descriptor,
     });
@@ -1127,7 +1127,7 @@ async function publishRelease() {
       },
       body: JSON.stringify({
         confirmTag: state.build.tag,
-        irDigest: state.ir?.digest,
+        compiledWorkflowDigest: state.compiledWorkflow?.digest,
         resultDigests,
       }),
       cache: 'no-store',
@@ -1176,7 +1176,7 @@ function renderBuild(build) {
     body.append(element(
       'p',
       'hint',
-      '自定义选项不是 Release 载荷：需要从框架源码执行每条命令，用选中的选项重新投影下载的 workflow.ir.json，再安装结果。',
+      '自定义选项不是 Release 载荷：需要从框架源码执行每条命令，用选中的选项重新投影下载的 workflow.compiled.json，再安装结果。',
     ));
   }
   appendInstallCommands(body, build.install.commands);
@@ -1204,7 +1204,7 @@ function renderBuild(build) {
 
 async function buildAssets() {
   const status = byId('build-status');
-  if (state.ir === null || state.uploadId === null) return;
+  if (state.compiledWorkflow === null || state.uploadId === null) return;
   if (status !== null) status.textContent = '正在服务端构建…';
   let payload;
   try {
@@ -1216,7 +1216,7 @@ async function buildAssets() {
       },
       body: JSON.stringify({
         uploadId: state.uploadId,
-        irDigest: state.ir.digest,
+        compiledWorkflowDigest: state.compiledWorkflow.digest,
         options: optionsForRequest(),
       }),
       cache: 'no-store',
@@ -1298,7 +1298,7 @@ async function upload() {
   setStatus('正在读取文件…');
   const bytes = new Uint8Array(await file.arrayBuffer());
   if (bytes.length > LIMITS.MAX_ZIP_BYTES) {
-    renderNoIr();
+    renderNoCompiledWorkflow();
     setStatus(`WEB_BODY_TOO_LARGE：${formatBytes(bytes.length)} 超过 ${formatBytes(LIMITS.MAX_ZIP_BYTES)}。`);
     return;
   }
@@ -1313,7 +1313,7 @@ async function upload() {
       return;
     }
   } else {
-    setStatus('当前浏览器缺少 deflate-raw：校验交给服务端，IR 预览仍在浏览器内完成。');
+    setStatus('当前浏览器缺少 deflate-raw：校验交给服务端，编译产物预览仍在浏览器内完成。');
   }
 
   setStatus('正在上传，由服务端做权威校验与编译…');
@@ -1352,24 +1352,24 @@ async function upload() {
   }
   renderReport(data.report);
 
-  if (data.ir) {
+  if (data.compiledWorkflow) {
     try {
-      const digest = await sha256Hex(decodeBase64(data.ir.data));
-      if (digest !== data.ir.digest) {
-        setMismatch(`IR 摘要不一致：浏览器 ${digest}，服务端 ${data.ir.digest}。`);
+      const digest = await sha256Hex(decodeBase64(data.compiledWorkflow.data));
+      if (digest !== data.compiledWorkflow.digest) {
+        setMismatch(`编译摘要不一致：浏览器 ${digest}，服务端 ${data.compiledWorkflow.digest}。`);
       }
-      renderIr(data);
+      renderCompiledWorkflow(data);
       state.uploadId = data.uploadId ?? null;
       const buildBody = byId('build-body');
       if (buildBody !== null) show(buildBody, false);
       state.build = null;
       resetOptions('重新上传后，选项已恢复默认。');
     } catch (error) {
-      setMismatch(`IR 校验失败：${error instanceof Error ? error.message : String(error)}`);
-      renderNoIr();
+      setMismatch(`编译产物校验失败：${error instanceof Error ? error.message : String(error)}`);
+      renderNoCompiledWorkflow();
     }
   } else {
-    renderNoIr();
+    renderNoCompiledWorkflow();
   }
 
   const counts = data.report.counts ?? {};
@@ -1427,7 +1427,7 @@ async function bootstrap() {
   byId('upload-button').addEventListener('click', () => {
     void upload();
   });
-  byId('download-ir').addEventListener('click', downloadIr);
+  byId('download-compiled-workflow').addEventListener('click', downloadCompiledWorkflow);
   byId('reset-options').addEventListener('click', () => resetOptions());
   byId('build-button').addEventListener('click', () => {
     void buildAssets();

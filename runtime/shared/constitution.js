@@ -13,31 +13,31 @@ const BANNER_PLACEHOLDER = '> **占位（placeholder）** 本宪法本期未实�
 
 function assertMount(mount) {
   if (mount === null || typeof mount !== 'object') {
-    throw new Error('PROJECTION_IR_UNSUPPORTED: constitution mount must be an object');
+    throw new Error('PROJECTION_COMPILED_WORKFLOW_UNSUPPORTED: constitution mount must be an object');
   }
   if (mount.scope !== 'global') {
-    throw new Error(`PROJECTION_IR_UNSUPPORTED: constitution scope ${String(mount.scope)} is not supported by v1 consumers`);
+    throw new Error(`PROJECTION_COMPILED_WORKFLOW_UNSUPPORTED: constitution scope ${String(mount.scope)} is not supported by v1 consumers`);
   }
   if (typeof mount.placeholder !== 'boolean') {
-    throw new Error('PROJECTION_IR_UNSUPPORTED: constitution placeholder must be boolean');
+    throw new Error('PROJECTION_COMPILED_WORKFLOW_UNSUPPORTED: constitution placeholder must be boolean');
   }
   if (typeof mount.body !== 'string') {
-    throw new Error('PROJECTION_IR_UNSUPPORTED: constitution body must be a string');
+    throw new Error('PROJECTION_COMPILED_WORKFLOW_UNSUPPORTED: constitution body must be a string');
   }
 }
 
 /**
- * `absent | present | placeholder` for an IR `constitution` array.
+ * `absent | present | placeholder` for a compiled workflow `constitution` array.
  * Non-global and multi-mount arrays are rejected, never silently ignored.
  */
 export function constitutionState(mounts) {
   if (mounts === undefined || mounts === null) return 'absent';
   if (!Array.isArray(mounts)) {
-    throw new Error('PROJECTION_IR_UNSUPPORTED: constitution must be an array');
+    throw new Error('PROJECTION_COMPILED_WORKFLOW_UNSUPPORTED: constitution must be an array');
   }
   if (mounts.length === 0) return 'absent';
   if (mounts.length !== 1) {
-    throw new Error('PROJECTION_IR_UNSUPPORTED: hm2b.ir/v2 carries at most one constitution mount');
+    throw new Error('PROJECTION_COMPILED_WORKFLOW_UNSUPPORTED: hm2b.compiled-workflow/v2 carries at most one constitution mount');
   }
   const mount = mounts[0];
   assertMount(mount);

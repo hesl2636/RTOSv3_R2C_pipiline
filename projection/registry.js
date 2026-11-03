@@ -30,9 +30,9 @@ export function getProjection(id) {
   return PROJECTIONS.find((projection) => projection.id === id) ?? null;
 }
 
-/** The projections a bundle allows (#69 §5): IR order by default, else sorted. */
-export function allowedProjections(ir) {
-  const declared = ir?.requires?.projections;
+/** The projections a bundle allows (#69 §5): compiled workflow order by default, else sorted. */
+export function allowedProjections(compiledWorkflow) {
+  const declared = compiledWorkflow?.requires?.projections;
   if (!Array.isArray(declared)) return ['runner', 'agent-native'];
   return [...new Set(declared)].sort(compareCodePoints);
 }

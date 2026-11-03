@@ -3,9 +3,9 @@
   "id": "agent-native",
   "name": "Agent-native 投影",
   "version": "0.1.0",
-  "description": "把中立 IR 投影成原生 agent runtime 的技能与子 agent 定义；不生成 runner，不写用户自有配置文件。",
+  "description": "把中立 compiled workflow 投影成原生 agent runtime 的技能与子 agent 定义；不生成 runner，不写用户自有配置文件。",
   "api": {
-    "ir": "hm2b.ir/v2",
+    "compiledWorkflow": "hm2b.compiled-workflow/v2",
     "options": "hm2b.projection-options/v1",
     "result": "hm2b.projection-result/v1"
   },

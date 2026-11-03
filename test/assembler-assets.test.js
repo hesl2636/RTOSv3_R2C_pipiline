@@ -1,6 +1,6 @@
 /**
  * Bundle asset contract (`knowledge-base/`, `checklists/`, `hooks/`, `mcp.json`)
- * from declaration through the container whitelist, the compiler and IR v2.
+ * from declaration through the container whitelist, the compiler and compiled workflow v2.
  */
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -9,7 +9,7 @@ import { inflateRaw } from '../core/node/inflate.js';
 import { sha256Hex } from '../core/node/sha256.js';
 import { compileBundle } from '../assembler/compile.js';
 import { validateBundle } from '../assembler/validate-bundle.js';
-import { validateIr } from '../assembler/validate-ir.js';
+import { validateCompiledWorkflow } from '../assembler/validate-compiled.js';
 import { buildZip } from './helpers/zip.js';
 import {
   ASSET_CHECKLISTS,
@@ -44,10 +44,10 @@ function expectSingle(report, { code, path, pointer, rule }) {
   return error;
 }
 
-function irOf(overrides = {}) {
+function compiledWorkflowOf(overrides = {}) {
   const compiled = compileBundle(buildZip(assetFiles(overrides)), PRIMITIVES);
   assert.equal(compiled.ok, true, JSON.stringify(compiled.report.errors));
-  return JSON.parse(decoder.decode(compiled.irBytes));
+  return JSON.parse(decoder.decode(compiled.compiledWorkflowBytes));
 }
 
 function manifestWith(mutate) {
@@ -56,12 +56,12 @@ function manifestWith(mutate) {
   return canonicalJson(manifest);
 }
 
-function irFailures(ir) {
-  return validateIr(encoder.encode(canonicalJson(ir)), { sha256: sha256Hex })
+function compiledWorkflowFailures(compiledWorkflow) {
+  return validateCompiledWorkflow(encoder.encode(canonicalJson(compiledWorkflow)), { sha256: sha256Hex })
     .errors.map((error) => `${error.code}@${error.pointer}`);
 }
 
-test('a bundle with declared assets validates clean and compiles to IR v2', () => {
+test('a bundle with declared assets validates clean and compiles to compiled workflow v2', () => {
   const report = reportFor();
   assert.equal(report.ok, true, JSON.stringify(report.errors, null, 2));
   assert.deepEqual(report.errors, []);
@@ -70,38 +70,38 @@ test('a bundle with declared assets validates clean and compiles to IR v2', () =
 
   const compiled = compileBundle(assetZip(), PRIMITIVES);
   assert.equal(compiled.ok, true, JSON.stringify(compiled.report.errors));
-  const text = decoder.decode(compiled.irBytes);
+  const text = decoder.decode(compiled.compiledWorkflowBytes);
   assert.equal(canonicalJson(JSON.parse(text)), text);
-  const ir = JSON.parse(text);
-  assert.equal(ir.schema, 'hm2b.ir/v2');
-  assert.equal(ir.source.bundle.schema, 'hm2b.bundle/v2');
-  assert.deepEqual(ir.knowledgeBase.map((item) => item.path), [
+  const compiledWorkflow = JSON.parse(text);
+  assert.equal(compiledWorkflow.schema, 'hm2b.compiled-workflow/v2');
+  assert.equal(compiledWorkflow.source.bundle.schema, 'hm2b.bundle/v2');
+  assert.deepEqual(compiledWorkflow.knowledgeBase.map((item) => item.path), [
     'knowledge-base/coding-standards/cleancode/rules.md',
     'knowledge-base/os-api-mapping/freertos.md',
   ]);
-  assert.deepEqual(ir.checklists.map((item) => item.id), ['design', 'impl']);
-  assert.equal(ir.hooks.path, 'hooks/hooks.json');
-  assert.equal(ir.mcp.path, 'mcp.json');
-  assert.deepEqual(ir.constitution, []);
+  assert.deepEqual(compiledWorkflow.checklists.map((item) => item.id), ['design', 'impl']);
+  assert.equal(compiledWorkflow.hooks.path, 'hooks/hooks.json');
+  assert.equal(compiledWorkflow.mcp.path, 'mcp.json');
+  assert.deepEqual(compiledWorkflow.constitution, []);
 
-  for (const item of ir.knowledgeBase) {
+  for (const item of compiledWorkflow.knowledgeBase) {
     assert.equal(item.body, ASSET_KNOWLEDGE_BASE.get(item.path));
     assert.equal(item.source.path, item.path);
     assert.equal(item.source.sha256, sha256Hex(encoder.encode(item.body)));
   }
-  for (const item of ir.checklists) {
+  for (const item of compiledWorkflow.checklists) {
     assert.equal(item.body, ASSET_CHECKLISTS.get(item.id));
     assert.equal(item.source.path, `checklists/${item.id}.md`);
     assert.equal(item.source.sha256, sha256Hex(encoder.encode(item.body)));
   }
-  assert.equal(ir.hooks.body, canonicalJson(ASSET_HOOKS));
-  assert.equal(ir.mcp.body, canonicalJson(ASSET_MCP));
-  assert.equal(ir.hooks.source.sha256, sha256Hex(encoder.encode(ir.hooks.body)));
-  assert.equal(ir.mcp.source.sha256, sha256Hex(encoder.encode(ir.mcp.body)));
+  assert.equal(compiledWorkflow.hooks.body, canonicalJson(ASSET_HOOKS));
+  assert.equal(compiledWorkflow.mcp.body, canonicalJson(ASSET_MCP));
+  assert.equal(compiledWorkflow.hooks.source.sha256, sha256Hex(encoder.encode(compiledWorkflow.hooks.body)));
+  assert.equal(compiledWorkflow.mcp.source.sha256, sha256Hex(encoder.encode(compiledWorkflow.mcp.body)));
 
-  const irReport = validateIr(compiled.irBytes, { sha256: sha256Hex });
-  assert.equal(irReport.ok, true, JSON.stringify(irReport.errors));
-  assert.equal(irReport.schema, 'hm2b.ir/v2');
+  const compiledWorkflowReport = validateCompiledWorkflow(compiled.compiledWorkflowBytes, { sha256: sha256Hex });
+  assert.equal(compiledWorkflowReport.ok, true, JSON.stringify(compiledWorkflowReport.errors));
+  assert.equal(compiledWorkflowReport.schema, 'hm2b.compiled-workflow/v2');
 });
 
 test('assets enter contentSha256 and compilation stays deterministic', () => {
@@ -124,34 +124,34 @@ test('assets enter contentSha256 and compilation stays deterministic', () => {
 
   const first = compileBundle(assetZip(), PRIMITIVES);
   assert.equal(first.ok, true, JSON.stringify(first.report.errors));
-  const ir = JSON.parse(decoder.decode(first.irBytes));
-  assert.equal(ir.source.bundle.contentSha256, expected);
+  const compiledWorkflow = JSON.parse(decoder.decode(first.compiledWorkflowBytes));
+  assert.equal(compiledWorkflow.source.bundle.contentSha256, expected);
 
   const again = compileBundle(assetZip({ method: 'deflate', dataDescriptor: true }), PRIMITIVES);
   assert.equal(again.ok, true, JSON.stringify(again.report.errors));
-  assert.equal(Buffer.compare(Buffer.from(first.irBytes), Buffer.from(again.irBytes)), 0);
+  assert.equal(Buffer.compare(Buffer.from(first.compiledWorkflowBytes), Buffer.from(again.compiledWorkflowBytes)), 0);
 
   const changed = compileBundle(
     buildZip(assetFiles({ 'knowledge-base/os-api-mapping/freertos.md': '# changed mapping\n' })),
     PRIMITIVES,
   );
   assert.equal(changed.ok, true, JSON.stringify(changed.report.errors));
-  const changedIr = JSON.parse(decoder.decode(changed.irBytes));
-  assert.notEqual(changedIr.source.bundle.contentSha256, ir.source.bundle.contentSha256);
+  const changedCompiledWorkflow = JSON.parse(decoder.decode(changed.compiledWorkflowBytes));
+  assert.notEqual(changedCompiledWorkflow.source.bundle.contentSha256, compiledWorkflow.source.bundle.contentSha256);
   assert.notEqual(changed.digest, first.digest);
 });
 
-test('manifest arrays are sets: IR output is sorted by path and id', () => {
+test('manifest arrays are sets: compiled workflow output is sorted by path and id', () => {
   const reversed = manifestWith((value) => {
     value.knowledgeBase.reverse();
     value.checklists.reverse();
   });
-  const ir = irOf({ 'bundle.json': reversed });
-  assert.deepEqual(ir.knowledgeBase.map((item) => item.path), [
+  const compiledWorkflow = compiledWorkflowOf({ 'bundle.json': reversed });
+  assert.deepEqual(compiledWorkflow.knowledgeBase.map((item) => item.path), [
     'knowledge-base/coding-standards/cleancode/rules.md',
     'knowledge-base/os-api-mapping/freertos.md',
   ]);
-  assert.deepEqual(ir.checklists.map((item) => item.id), ['design', 'impl']);
+  assert.deepEqual(compiledWorkflow.checklists.map((item) => item.id), ['design', 'impl']);
 });
 
 test('an undeclared asset file is one BUNDLE_UNEXPECTED_PATH', () => {
@@ -324,48 +324,48 @@ test('the bundle schema rejects v1 and unknown revisions', () => {
     expectSingle(report, { code: 'BUNDLE_SCHEMA_UNSUPPORTED', path: 'bundle.json', pointer: '/schema' });
     const compiled = compileBundle(buildZip(assetFiles({ 'bundle.json': manifestWith((value) => { value.schema = schema; }) })), PRIMITIVES);
     assert.equal(compiled.ok, false);
-    assert.equal(compiled.irBytes, null);
+    assert.equal(compiled.compiledWorkflowBytes, null);
   }
 });
 
-test('IR v2 rejects v1 and checks asset order, source paths and hashes', () => {
-  const ir = irOf();
-  assert.deepEqual(irFailures({ ...ir, schema: 'hm2b.ir/v1' }), ['IR_SCHEMA_UNSUPPORTED@/schema']);
+test('compiled workflow v2 rejects v1 and checks asset order, source paths and hashes', () => {
+  const compiledWorkflow = compiledWorkflowOf();
+  assert.deepEqual(compiledWorkflowFailures({ ...compiledWorkflow, schema: 'hm2b.compiled-workflow/v1' }), ['COMPILED_WORKFLOW_SCHEMA_UNSUPPORTED@/schema']);
 
-  const stale = structuredClone(ir);
+  const stale = structuredClone(compiledWorkflow);
   stale.source.bundle.schema = 'hm2b.bundle/v1';
-  assert.ok(irFailures(stale).includes('IR_SOURCE_MISMATCH@/source/bundle/schema'));
+  assert.ok(compiledWorkflowFailures(stale).includes('COMPILED_WORKFLOW_SOURCE_MISMATCH@/source/bundle/schema'));
 
-  const unsorted = structuredClone(ir);
+  const unsorted = structuredClone(compiledWorkflow);
   unsorted.knowledgeBase.reverse();
-  assert.ok(irFailures(unsorted).includes('IR_ORDER_INVALID@/knowledgeBase'));
+  assert.ok(compiledWorkflowFailures(unsorted).includes('COMPILED_WORKFLOW_ORDER_INVALID@/knowledgeBase'));
 
-  const wrongPath = structuredClone(ir);
+  const wrongPath = structuredClone(compiledWorkflow);
   wrongPath.checklists[0].source.path = 'checklists/other.md';
-  assert.ok(irFailures(wrongPath).includes('IR_SOURCE_PATH_MISMATCH@/checklists/0/source/path'));
+  assert.ok(compiledWorkflowFailures(wrongPath).includes('COMPILED_WORKFLOW_SOURCE_PATH_MISMATCH@/checklists/0/source/path'));
 
-  const tamperedHash = structuredClone(ir);
+  const tamperedHash = structuredClone(compiledWorkflow);
   tamperedHash.knowledgeBase[0].source.sha256 = '0'.repeat(64);
-  assert.ok(irFailures(tamperedHash).includes('IR_HASH_MISMATCH@/source/bundle/contentSha256'));
+  assert.ok(compiledWorkflowFailures(tamperedHash).includes('COMPILED_WORKFLOW_HASH_MISMATCH@/source/bundle/contentSha256'));
 
-  const dropped = structuredClone(ir);
+  const dropped = structuredClone(compiledWorkflow);
   dropped.checklists = [];
-  assert.ok(irFailures(dropped).includes('IR_HASH_MISMATCH@/source/bundle/contentSha256'));
+  assert.ok(compiledWorkflowFailures(dropped).includes('COMPILED_WORKFLOW_HASH_MISMATCH@/source/bundle/contentSha256'));
 
-  const nonCanonicalHooks = structuredClone(ir);
+  const nonCanonicalHooks = structuredClone(compiledWorkflow);
   nonCanonicalHooks.hooks.body = JSON.stringify(ASSET_HOOKS);
-  assert.ok(irFailures(nonCanonicalHooks).includes('IR_ASSET_INVALID@/hooks/body'));
+  assert.ok(compiledWorkflowFailures(nonCanonicalHooks).includes('COMPILED_WORKFLOW_ASSET_INVALID@/hooks/body'));
 
-  const wrongMcpShape = structuredClone(ir);
+  const wrongMcpShape = structuredClone(compiledWorkflow);
   wrongMcpShape.mcp.body = canonicalJson({ servers: {} });
-  assert.ok(irFailures(wrongMcpShape).includes('IR_ASSET_INVALID@/mcp/body'));
+  assert.ok(compiledWorkflowFailures(wrongMcpShape).includes('COMPILED_WORKFLOW_ASSET_INVALID@/mcp/body'));
 
-  const required = structuredClone(ir);
+  const required = structuredClone(compiledWorkflow);
   delete required.hooks;
-  assert.ok(irFailures(required).includes('IR_SCHEMA_INVALID@/hooks'));
+  assert.ok(compiledWorkflowFailures(required).includes('COMPILED_WORKFLOW_SCHEMA_INVALID@/hooks'));
 });
 
-test('an asset-free bundle keeps the empty defaults in IR v2', () => {
+test('an asset-free bundle keeps the empty defaults in compiled workflow v2', () => {
   const compiled = compileBundle(buildZip(assetFiles({
     'bundle.json': canonicalJson({
       schema: 'hm2b.bundle/v2',
@@ -386,9 +386,9 @@ test('an asset-free bundle keeps the empty defaults in IR v2', () => {
     'mcp.json': null,
   })), PRIMITIVES);
   assert.equal(compiled.ok, true, JSON.stringify(compiled.report.errors));
-  const ir = JSON.parse(decoder.decode(compiled.irBytes));
-  assert.deepEqual(ir.knowledgeBase, []);
-  assert.deepEqual(ir.checklists, []);
-  assert.equal(ir.hooks, null);
-  assert.equal(ir.mcp, null);
+  const compiledWorkflow = JSON.parse(decoder.decode(compiled.compiledWorkflowBytes));
+  assert.deepEqual(compiledWorkflow.knowledgeBase, []);
+  assert.deepEqual(compiledWorkflow.checklists, []);
+  assert.equal(compiledWorkflow.hooks, null);
+  assert.equal(compiledWorkflow.mcp, null);
 });

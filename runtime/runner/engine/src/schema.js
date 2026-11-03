@@ -7,7 +7,7 @@
  * table is the runtime allow-list used to reject state written by a newer
  * engine. The id helpers are shared with the framework in `core/schema.js`;
  * the accepted table stays engine-owned so the engine cannot learn upstream
- * bundle/IR revisions.
+ * bundle/compiled workflow revisions.
  */
 import {
   isNewerSchema as isNewerSchemaIn,

@@ -2,9 +2,9 @@
  * Projection option normalization and validation (#69 §5, #82 §2; #100 extends).
  *
  * Inputs may be `null` (meaning "default"), but the returned `options` always
- * echo the resolved arrays, bind the current `ir.digest` and never contain a
+ * echo the resolved arrays, bind the current `compiledWorkflow.digest` and never contain a
  * `null` stageOrder/skills/targets. A stale binding is rejected with
- * `PROJECTION_OPTIONS_IR_MISMATCH`, the code the future web build shares.
+ * `PROJECTION_OPTIONS_COMPILED_WORKFLOW_MISMATCH`, the code the future web build shares.
  */
 import { jsonEqual } from '../core/json.js';
 import { sorted } from '../core/sort.js';
@@ -14,15 +14,15 @@ export const OPTIONS_SCHEMA = 'hm2b.projection-options/v1';
 /**
  * Closed option failure codes (#69 §5.2). CLI, the future web build and
  * direct callers all surface these strings; a stale binding is always
- * `PROJECTION_OPTIONS_IR_MISMATCH` (no better frozen name exists).
+ * `PROJECTION_OPTIONS_COMPILED_WORKFLOW_MISMATCH` (no better frozen name exists).
  */
 export const OPTION_CODES = Object.freeze({
   INVALID: 'PROJECTION_OPTIONS_INVALID',
   TARGET_UNKNOWN: 'PROJECTION_TARGET_UNKNOWN',
-  IR_MISMATCH: 'PROJECTION_OPTIONS_IR_MISMATCH',
+  COMPILED_WORKFLOW_MISMATCH: 'PROJECTION_OPTIONS_COMPILED_WORKFLOW_MISMATCH',
 });
 
-const OPTION_KEYS = new Set(['schema', 'projection', 'ir', 'stageOrder', 'skills', 'targets', 'extra']);
+const OPTION_KEYS = new Set(['schema', 'projection', 'compiledWorkflow', 'stageOrder', 'skills', 'targets', 'extra']);
 
 function isPlainObject(value) {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -54,12 +54,12 @@ function defaultTargets(manifest) {
   return defaults.length > 0 ? defaults : targets.map((target) => target.id);
 }
 
-function irStageIds(ir) {
-  return Array.isArray(ir?.stages) ? ir.stages.map((stage) => stage.id) : [];
+function compiledWorkflowStageIds(compiledWorkflow) {
+  return Array.isArray(compiledWorkflow?.stages) ? compiledWorkflow.stages.map((stage) => stage.id) : [];
 }
 
-function irSkillIds(ir) {
-  return sorted(Object.keys(ir?.skills ?? {}));
+function compiledWorkflowSkillIds(compiledWorkflow) {
+  return sorted(Object.keys(compiledWorkflow?.skills ?? {}));
 }
 
 function uniqueStrings(value) {
@@ -173,8 +173,8 @@ function validateExtra(extra, manifest, projectionId) {
   return errors;
 }
 
-/** Validate already-resolved options against the IR and the manifest. */
-export function validateOptions({ projectionId, ir, irDigest, options, manifest }) {
+/** Validate already-resolved options against the compiled workflow and the manifest. */
+export function validateOptions({ projectionId, compiledWorkflow, compiledWorkflowDigest, options, manifest }) {
   const errors = [];
   if (!isPlainObject(options)) {
     return { ok: false, errors: [error(OPTION_CODES.INVALID, 'options must be an object')] };
@@ -185,23 +185,23 @@ export function validateOptions({ projectionId, ir, irDigest, options, manifest 
   if (options.projection !== projectionId) {
     errors.push(error(OPTION_CODES.INVALID, `options.projection must be ${projectionId}`));
   }
-  const binding = isPlainObject(options.ir) ? options.ir : {};
-  if (binding.digest !== irDigest || binding.id !== ir?.id || binding.version !== ir?.version) {
-    errors.push(error(OPTION_CODES.IR_MISMATCH, 'options.ir does not match the input IR', {
-      hint: `expected digest ${irDigest}`,
+  const binding = isPlainObject(options.compiledWorkflow) ? options.compiledWorkflow : {};
+  if (binding.digest !== compiledWorkflowDigest || binding.id !== compiledWorkflow?.id || binding.version !== compiledWorkflow?.version) {
+    errors.push(error(OPTION_CODES.COMPILED_WORKFLOW_MISMATCH, 'options.compiledWorkflow does not match the input compiled workflow', {
+      hint: `expected digest ${compiledWorkflowDigest}`,
     }));
   }
-  const stageIds = irStageIds(ir);
+  const stageIds = compiledWorkflowStageIds(compiledWorkflow);
   if (!uniqueStrings(options.stageOrder)
     || options.stageOrder.length !== stageIds.length
     || sorted(options.stageOrder).join('\u0000') !== sorted(stageIds).join('\u0000')) {
-    errors.push(error(OPTION_CODES.INVALID, 'stageOrder must be a permutation of IR stage ids', { pointer: '/stageOrder' }));
+    errors.push(error(OPTION_CODES.INVALID, 'stageOrder must be a permutation of compiled workflow stage ids', { pointer: '/stageOrder' }));
   }
-  const skillIds = irSkillIds(ir);
+  const skillIds = compiledWorkflowSkillIds(compiledWorkflow);
   if (!uniqueStrings(options.skills)
     || new Set(options.skills).size !== options.skills.length
     || options.skills.some((id) => !skillIds.includes(id))) {
-    errors.push(error(OPTION_CODES.INVALID, 'skills must be a unique subset of IR skill ids', { pointer: '/skills' }));
+    errors.push(error(OPTION_CODES.INVALID, 'skills must be a unique subset of compiled workflow skill ids', { pointer: '/skills' }));
   }
   const targetIds = manifestTargets(manifest).map((target) => target.id);
   if (!uniqueStrings(options.targets) || options.targets.length === 0) {
@@ -227,7 +227,7 @@ export function validateOptions({ projectionId, ir, irDigest, options, manifest 
  * Returns `{ok, options, errors, warnings}`. `options` is always the resolved
  * echo, even when validation failed, so callers can show what would run.
  */
-export function normalizeOptions({ projectionId, ir, irDigest, raw, manifest }) {
+export function normalizeOptions({ projectionId, compiledWorkflow, compiledWorkflowDigest, raw, manifest }) {
   const errors = [];
   let input = raw;
   if (input === null || input === undefined) input = {};
@@ -250,16 +250,16 @@ export function normalizeOptions({ projectionId, ir, irDigest, raw, manifest }) 
   if (input.projection !== undefined && input.projection !== projectionId) {
     errors.push(error(OPTION_CODES.INVALID, `options.projection must be ${projectionId}`));
   }
-  if (input.ir !== undefined) {
-    const binding = isPlainObject(input.ir) ? input.ir : {};
-    if (binding.digest !== irDigest || binding.id !== ir?.id || binding.version !== ir?.version) {
-      errors.push(error(OPTION_CODES.IR_MISMATCH, 'options.ir does not match the input IR', {
-        hint: `expected digest ${irDigest}`,
+  if (input.compiledWorkflow !== undefined) {
+    const binding = isPlainObject(input.compiledWorkflow) ? input.compiledWorkflow : {};
+    if (binding.digest !== compiledWorkflowDigest || binding.id !== compiledWorkflow?.id || binding.version !== compiledWorkflow?.version) {
+      errors.push(error(OPTION_CODES.COMPILED_WORKFLOW_MISMATCH, 'options.compiledWorkflow does not match the input compiled workflow', {
+        hint: `expected digest ${compiledWorkflowDigest}`,
       }));
     }
   }
 
-  const stageIds = irStageIds(ir);
+  const stageIds = compiledWorkflowStageIds(compiledWorkflow);
   let stageOrder = stageIds;
   if (input.stageOrder !== undefined && input.stageOrder !== null) {
     const value = input.stageOrder;
@@ -267,20 +267,20 @@ export function normalizeOptions({ projectionId, ir, irDigest, raw, manifest }) 
       || value.length !== stageIds.length
       || new Set(value).size !== value.length
       || sorted(value).join('\u0000') !== sorted(stageIds).join('\u0000')) {
-      errors.push(error(OPTION_CODES.INVALID, 'stageOrder must be a permutation of IR stage ids', { pointer: '/stageOrder' }));
+      errors.push(error(OPTION_CODES.INVALID, 'stageOrder must be a permutation of compiled workflow stage ids', { pointer: '/stageOrder' }));
     } else {
       stageOrder = [...value];
     }
   }
 
-  const skillIds = irSkillIds(ir);
+  const skillIds = compiledWorkflowSkillIds(compiledWorkflow);
   let skills = skillIds;
   if (input.skills !== undefined && input.skills !== null) {
     const value = input.skills;
     if (!uniqueStrings(value)
       || new Set(value).size !== value.length
       || value.some((id) => !skillIds.includes(id))) {
-      errors.push(error(OPTION_CODES.INVALID, 'skills must be a unique subset of IR skill ids', { pointer: '/skills' }));
+      errors.push(error(OPTION_CODES.INVALID, 'skills must be a unique subset of compiled workflow skill ids', { pointer: '/skills' }));
     } else {
       skills = sorted(value);
     }
@@ -315,14 +315,14 @@ export function normalizeOptions({ projectionId, ir, irDigest, raw, manifest }) 
   const options = {
     schema: OPTIONS_SCHEMA,
     projection: projectionId,
-    ir: { digest: irDigest, id: ir?.id, version: ir?.version },
+    compiledWorkflow: { digest: compiledWorkflowDigest, id: compiledWorkflow?.id, version: compiledWorkflow?.version },
     stageOrder,
     skills,
     targets,
     extra,
   };
 
-  const check = validateOptions({ projectionId, ir, irDigest, options, manifest });
+  const check = validateOptions({ projectionId, compiledWorkflow, compiledWorkflowDigest, options, manifest });
   for (const item of check.errors) errors.push(item);
   const deduped = dedupe(errors);
   return { ok: deduped.length === 0, options, errors: deduped, warnings: [] };
@@ -346,9 +346,9 @@ function sameStrings(left, right) {
  * True when the resolved options equal the published defaults field by field.
  * Only canonical builds may become a Release (#74 §3.4, #75 §6.5).
  */
-export function isCanonicalOptions({ projectionId, ir, irDigest, options, manifest }) {
+export function isCanonicalOptions({ projectionId, compiledWorkflow, compiledWorkflowDigest, options, manifest }) {
   if (!isPlainObject(options)) return false;
-  const canonical = normalizeOptions({ projectionId, ir, irDigest, raw: null, manifest });
+  const canonical = normalizeOptions({ projectionId, compiledWorkflow, compiledWorkflowDigest, raw: null, manifest });
   if (!canonical.ok || !isPlainObject(options.extra)) return false;
   return sameStrings(options.stageOrder, canonical.options.stageOrder)
     && sameStrings(options.skills, canonical.options.skills)
@@ -361,8 +361,8 @@ export function isCanonicalOptions({ projectionId, ir, irDigest, options, manife
  * input (`null` overrides), custom local builds record the actual selection
  * (#74 §3.5, #75 §7.1 step 4).
  */
-export function payloadInputOptions({ projectionId, ir, irDigest, options, manifest }) {
-  if (isCanonicalOptions({ projectionId, ir, irDigest, options, manifest })) {
+export function payloadInputOptions({ projectionId, compiledWorkflow, compiledWorkflowDigest, options, manifest }) {
+  if (isCanonicalOptions({ projectionId, compiledWorkflow, compiledWorkflowDigest, options, manifest })) {
     return canonicalInputOptions(projectionId, manifest);
   }
   return {

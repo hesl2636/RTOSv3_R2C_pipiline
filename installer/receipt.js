@@ -3,7 +3,7 @@
  *
  * One receipt per install identity `(projection.id, bundle.id)`, project
  * relative, canonical JSON, no absolute paths. `files[]` records every path the
- * identity owns, with hashes computed from disk after the write; the IR copy
+ * identity owns, with hashes computed from disk after the write; the compiled workflow copy
  * and the receipt itself are installer bookkeeping and never appear in
  * `files[]` (#76 R3).
  */
@@ -53,7 +53,7 @@ export function fileEntry({ path, kind, targets, sha256, mode, origin, source })
 export function buildReceipt({
   projection,
   bundle,
-  ir,
+  compiledWorkflow,
   mode,
   hostTargets,
   options,
@@ -78,10 +78,10 @@ export function buildReceipt({
       targets: [...projection.targets].sort(compareCodePoints),
     },
     bundle: { id: bundle.id, version: bundle.version },
-    // Spec §12 spells the IR copy at the top level; the nested object stays
-    // for readers that already bind `ir.digest`/`ir.contentSha256`.
-    ir_path: ir.path,
-    ir: { path: ir.path, digest: ir.digest, contentSha256: ir.contentSha256 },
+    // Spec §12 spells the compiled workflow copy at the top level; the nested object stays
+    // for readers that already bind `compiledWorkflow.digest`/`compiledWorkflow.contentSha256`.
+    compiled_workflow_path: compiledWorkflow.path,
+    compiledWorkflow: { path: compiledWorkflow.path, digest: compiledWorkflow.digest, contentSha256: compiledWorkflow.contentSha256 },
     root: 'project',
     scope: 'project',
     mode,

@@ -45,9 +45,9 @@ test('a legacy r2c.install/v1 receipt refuses a new install with a migration hin
   const projectRoot = tempProject(t);
   writeLegacyReceipt(projectRoot);
   const before = walk(projectRoot);
-  const { result, irBytes } = sample('runner');
+  const { result, compiledWorkflowBytes } = sample('runner');
 
-  const outcome = installProjection({ result, irBytes, projectRoot, force: true, clock: CLOCK });
+  const outcome = installProjection({ result, compiledWorkflowBytes, projectRoot, force: true, clock: CLOCK });
   assert.equal(outcome.code, 'LEGACY_INSTALL_PRESENT');
   assert.deepEqual(outcome.legacy.map((item) => item.path), ['.r2c/install/claude.json']);
   assert.match(outcome.hint, /--migrate-legacy/);
@@ -67,9 +67,9 @@ test('r2c.plugin/v1 is neither read nor written and no .r2c/payload appears', (t
   mkdirSync(pluginDir, { recursive: true });
   const plugin = `${JSON.stringify({ schema: 'r2c.plugin/v1', payload: { version: '0.0.0', files: [] } }, null, 2)}\n`;
   writeFileSync(join(pluginDir, 'plugin.json'), plugin);
-  const { result, irBytes } = sample('runner');
+  const { result, compiledWorkflowBytes } = sample('runner');
 
-  const outcome = installProjection({ result, irBytes, projectRoot, clock: CLOCK });
+  const outcome = installProjection({ result, compiledWorkflowBytes, projectRoot, clock: CLOCK });
   assert.equal(outcome.code, 'OK');
   assert.equal(readFileSync(join(projectRoot, '.r2c/plugin.json'), 'utf8'), plugin);
   assert.equal(existsSync(join(projectRoot, '.r2c/payload')), false);
@@ -77,12 +77,12 @@ test('r2c.plugin/v1 is neither read nor written and no .r2c/payload appears', (t
 
 test('an invalid result is refused before any write, even in dry-run', (t) => {
   const projectRoot = tempProject(t);
-  const { result, irBytes } = sample('runner');
+  const { result, compiledWorkflowBytes } = sample('runner');
   const broken = cloneResult(result);
   [broken.capabilityReport[0], broken.capabilityReport[1]] = [broken.capabilityReport[1], broken.capabilityReport[0]];
 
   for (const dryRun of [false, true]) {
-    const outcome = installProjection({ result: broken, irBytes, projectRoot, dryRun, clock: CLOCK });
+    const outcome = installProjection({ result: broken, compiledWorkflowBytes, projectRoot, dryRun, clock: CLOCK });
     assert.equal(outcome.code, 'PROJECTION_RESULT_INVALID');
     assert.ok(outcome.diagnostics.length > 0);
     assert.ok(outcome.diagnostics.every((diagnostic) => diagnostic.code === 'PROJECTION_RESULT_INVALID'));
@@ -92,21 +92,21 @@ test('an invalid result is refused before any write, even in dry-run', (t) => {
 
 test('a result with ok:false is refused like any other invalid result', (t) => {
   const projectRoot = tempProject(t);
-  const { result, irBytes } = sample('runner');
+  const { result, compiledWorkflowBytes } = sample('runner');
   const broken = cloneResult(result);
   broken.ok = false;
-  const outcome = installProjection({ result: broken, irBytes, projectRoot, clock: CLOCK });
+  const outcome = installProjection({ result: broken, compiledWorkflowBytes, projectRoot, clock: CLOCK });
   assert.equal(outcome.code, 'PROJECTION_RESULT_INVALID');
   assert.deepEqual(walk(projectRoot), []);
 });
 
 test('a receipt with an unknown schema is reported, not silently replaced', (t) => {
   const projectRoot = tempProject(t);
-  const { result, irBytes } = sample('runner');
+  const { result, compiledWorkflowBytes } = sample('runner');
   const dir = join(projectRoot, '.r2c/install/receipts/r2c');
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, 'stale.json'), '{"schema":"r2c.install/v9"}\n');
-  const outcome = installProjection({ result, irBytes, projectRoot, clock: CLOCK });
+  const outcome = installProjection({ result, compiledWorkflowBytes, projectRoot, clock: CLOCK });
   // The unknown receipt owns nothing, so the install proceeds and leaves it.
   assert.equal(outcome.code, 'OK');
   assert.equal(readFileSync(join(dir, 'stale.json'), 'utf8'), '{"schema":"r2c.install/v9"}\n');

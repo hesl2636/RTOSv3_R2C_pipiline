@@ -130,7 +130,7 @@ function partsOf(file) {
 /**
  * Protected in-project surfaces (spec §4/I6, #6 comment 2):
  * `.hm2b/runs/**`, `.hm2b/usage/**`, `.hm2b/latest.json`, `workflows/*.yaml`.
- * Business artefacts (`.hm2b/ir.md`, `.hm2b/sr-map.md`, `.hm2b/artifacts/**`)
+ * Business artefacts (`.hm2b/compiledWorkflow.md`, `.hm2b/sr-map.md`, `.hm2b/artifacts/**`)
  * and everything else are writable.
  */
 function isProtectedRelative(relativePath) {

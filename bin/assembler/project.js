@@ -1,4 +1,4 @@
-/** `hm2b-assembler project <ir> --projection <id> [options] [--json]`. */
+/** `hm2b-assembler project <compiledWorkflow> --projection <id> [options] [--json]`. */
 import { chmodSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { canonicalJson } from '../../core/canonical-json.js';
@@ -6,7 +6,7 @@ import { toEnvelope } from '../../core/diagnostics.js';
 import { isInside } from '../../core/paths.js';
 import { atomicWriteFile } from '../../core/node/atomic-write.js';
 import { sha256Hex } from '../../core/node/sha256.js';
-import { IR_SUMMARY_CODE, validateIr } from '../../assembler/validate-ir.js';
+import { COMPILED_WORKFLOW_SUMMARY_CODE, validateCompiledWorkflow } from '../../assembler/validate-compiled.js';
 import { normalizeOptions } from '../../projection/options.js';
 import { failureRow, project } from '../../projection/project.js';
 import { getProjection } from '../../projection/registry.js';
@@ -24,7 +24,7 @@ import {
 } from './common.js';
 
 const COMMAND = 'project';
-const USAGE = 'usage: project <workflow.ir.json> --projection <id> [--target <id> ...] [--stage-order a,b] [--skills a,b] [--out <dir> | --result <dir>] [--json]';
+const USAGE = 'usage: project <workflow.compiled.json> --projection <id> [--target <id> ...] [--stage-order a,b] [--skills a,b] [--out <dir> | --result <dir>] [--json]';
 
 function list(value) {
   return value === undefined ? null : value.split(',');
@@ -34,7 +34,7 @@ function summary(result) {
   const bytes = result.files.reduce((sum, file) => sum + Buffer.byteLength(file.content, 'utf8'), 0);
   return {
     projection: result.projection,
-    ir: result.ir,
+    compiledWorkflow: result.compiledWorkflow,
     targets: result.targets,
     options: result.options,
     coverage: result.coverage,
@@ -109,28 +109,28 @@ export function run(argv) {
   }
 
   const input = readInput(options.positionals[0], {
-    notFound: 'IR_INPUT_NOT_FOUND',
-    unreadable: 'IR_INPUT_UNREADABLE',
+    notFound: 'COMPILED_WORKFLOW_INPUT_NOT_FOUND',
+    unreadable: 'COMPILED_WORKFLOW_INPUT_UNREADABLE',
   });
   if (!input.ok) {
     return emitFailure({ json: options.json, command: COMMAND, code: EXIT_CODES.USAGE, error: input.error });
   }
-  const report = validateIr(input.bytes, { sha256: sha256Hex });
+  const report = validateCompiledWorkflow(input.bytes, { sha256: sha256Hex });
   if (!report.ok) {
     return emitReport({
       json: options.json,
       command: COMMAND,
       report,
-      summaryCode: IR_SUMMARY_CODE,
+      summaryCode: COMPILED_WORKFLOW_SUMMARY_CODE,
     });
   }
 
-  const ir = JSON.parse(new TextDecoder().decode(input.bytes));
-  const irDigest = sha256Hex(input.bytes);
+  const compiledWorkflow = JSON.parse(new TextDecoder().decode(input.bytes));
+  const compiledWorkflowDigest = sha256Hex(input.bytes);
   const normalized = normalizeOptions({
     projectionId,
-    ir,
-    irDigest,
+    compiledWorkflow,
+    compiledWorkflowDigest,
     raw: {
       stageOrder: list(options.values['stage-order']),
       skills: list(options.values.skills),
@@ -159,8 +159,8 @@ export function run(argv) {
 
   const result = project({
     projectionId,
-    ir,
-    irDigest,
+    compiledWorkflow,
+    compiledWorkflowDigest,
     options: normalized.options,
     environment: {},
     assets: {},
@@ -184,8 +184,8 @@ export function run(argv) {
   }
 
   const validation = validateResult(result, {
-    ir,
-    irDigest,
+    compiledWorkflow,
+    compiledWorkflowDigest,
     options: normalized.options,
     manifest: descriptor,
     environment: {},
@@ -234,10 +234,10 @@ export function run(argv) {
     }
     if (asResult) {
       // The installer consumes exactly `projection-result.json` + `files/` +
-      // the IR it was projected from (`installer/cli.js --result`).
+      // the compiled workflow it was projected from (`installer/cli.js --result`).
       try {
         atomicWriteFile(join(root, 'projection-result.json'), canonicalJson(result));
-        atomicWriteFile(join(root, 'workflow.ir.json'), input.bytes);
+        atomicWriteFile(join(root, 'workflow.compiled.json'), input.bytes);
       } catch {
         return emitFailure({
           json: options.json,

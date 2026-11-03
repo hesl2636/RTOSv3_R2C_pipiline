@@ -42,15 +42,15 @@ function failure(code, message, details = {}) {
 function sharedIrWarnings(receipt, shared) {
   if (!shared) return [];
   return [{
-    code: 'IR_SHARED',
-    path: receipt.ir?.path ?? '',
-    message: 'the IR copy is still referenced by another receipt and is kept',
+    code: 'COMPILED_WORKFLOW_SHARED',
+    path: receipt.compiledWorkflow?.path ?? '',
+    message: 'the compiled workflow copy is still referenced by another receipt and is kept',
   }];
 }
 
-function irStillReferenced(receipts, receiptPath, irPath) {
+function compiledWorkflowStillReferenced(receipts, receiptPath, compiledWorkflowPath) {
   return receipts.some((item) => item.path !== receiptPath
-    && item.receipt?.ir?.path === irPath);
+    && item.receipt?.compiledWorkflow?.path === compiledWorkflowPath);
 }
 
 /**
@@ -89,14 +89,14 @@ export function planUninstall({ projectRoot, receipt, force = false }) {
     }
   }
 
-  const irPath = receipt.ir?.path;
-  if (typeof irPath === 'string' && isInstallPath(irPath)) {
-    const absolute = projectPath(projectRoot, irPath);
+  const compiledWorkflowPath = receipt.compiledWorkflow?.path;
+  if (typeof compiledWorkflowPath === 'string' && isInstallPath(compiledWorkflowPath)) {
+    const absolute = projectPath(projectRoot, compiledWorkflowPath);
     const info = absolute === null ? null : lstatOrNull(absolute);
     if (info !== null && info.isFile()) {
-      if (sha256File(absolute) === receipt.ir.digest) deletions.push({ path: irPath, backup: true, ir: true, irRemoved: true });
-      else if (force) deletions.push({ path: irPath, backup: true, forced: true, ir: true, irRemoved: true });
-      else leftovers.push({ path: irPath, reason: 'ir-modified' });
+      if (sha256File(absolute) === receipt.compiledWorkflow.digest) deletions.push({ path: compiledWorkflowPath, backup: true, compiledWorkflow: true, compiledWorkflowRemoved: true });
+      else if (force) deletions.push({ path: compiledWorkflowPath, backup: true, forced: true, compiledWorkflow: true, compiledWorkflowRemoved: true });
+      else leftovers.push({ path: compiledWorkflowPath, reason: 'compiledWorkflow-modified' });
     }
   }
 
@@ -107,7 +107,7 @@ export function planUninstall({ projectRoot, receipt, force = false }) {
     deletions,
     leftovers: leftovers.sort((left, right) => comparePaths(left.path, right.path)),
     warnings,
-    irRemoved: deletions.some((entry) => entry.irRemoved === true),
+    compiledWorkflowRemoved: deletions.some((entry) => entry.compiledWorkflowRemoved === true),
   };
 }
 
@@ -164,11 +164,11 @@ export function uninstallProjection(input = {}) {
   }
 
   const { receipts } = readReceipts(projectRoot);
-  const sharedIr = irStillReferenced(receipts, own.path, own.receipt.ir?.path);
+  const sharedCompiledWorkflow = compiledWorkflowStillReferenced(receipts, own.path, own.receipt.compiledWorkflow?.path);
   const plan = planUninstall({ projectRoot, receipt: own.receipt, force });
-  plan.warnings.push(...sharedIrWarnings(own.receipt, sharedIr));
-  const effectiveDeletions = sharedIr
-    ? plan.deletions.filter((entry) => entry.ir !== true)
+  plan.warnings.push(...sharedIrWarnings(own.receipt, sharedCompiledWorkflow));
+  const effectiveDeletions = sharedCompiledWorkflow
+    ? plan.deletions.filter((entry) => entry.compiledWorkflow !== true)
     : plan.deletions;
 
   const report = {
@@ -181,12 +181,12 @@ export function uninstallProjection(input = {}) {
     leftover: plan.leftovers,
     warnings: plan.warnings,
     pruned: [],
-    irRemoved: false,
+    compiledWorkflowRemoved: false,
   };
 
   if (dryRun) {
     report.wouldRemove = effectiveDeletions.map((entry) => entry.path).sort(comparePaths);
-    report.irRemoved = effectiveDeletions.some((entry) => entry.irRemoved === true);
+    report.compiledWorkflowRemoved = effectiveDeletions.some((entry) => entry.compiledWorkflowRemoved === true);
     return report;
   }
 
@@ -209,9 +209,9 @@ export function uninstallProjection(input = {}) {
     if (fresh === null) return failure('NOT_INSTALLED', `no ${input.projectionId}/${input.bundleId} receipt in this project`);
     const freshPlan = planUninstall({ projectRoot, receipt: fresh.receipt, force });
     const freshReceipts = readReceipts(projectRoot).receipts;
-    const sharedIrFresh = irStillReferenced(freshReceipts, fresh.path, fresh.receipt.ir?.path);
+    const sharedIrFresh = compiledWorkflowStillReferenced(freshReceipts, fresh.path, fresh.receipt.compiledWorkflow?.path);
     const freshDeletions = sharedIrFresh
-      ? freshPlan.deletions.filter((entry) => entry.ir !== true)
+      ? freshPlan.deletions.filter((entry) => entry.compiledWorkflow !== true)
       : freshPlan.deletions;
 
     const stamp = timestampSlug(clock);
@@ -259,7 +259,7 @@ export function uninstallProjection(input = {}) {
         leftover: freshPlan.leftovers,
         warnings: [...freshPlan.warnings, ...sharedIrWarnings(fresh.receipt, sharedIrFresh)],
         pruned,
-        irRemoved: freshDeletions.some((entry) => entry.irRemoved === true),
+        compiledWorkflowRemoved: freshDeletions.some((entry) => entry.compiledWorkflowRemoved === true),
       };
     } catch (error) {
       const outcome = rollbackJournal(projectRoot, journal);

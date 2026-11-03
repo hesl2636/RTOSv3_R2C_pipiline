@@ -6,7 +6,7 @@
  * zip, the framework checkout and the engine checkout:
  *
  *   bundle-<id>-v<version>.zip          always
- *   workflow.ir.json                    always
+ *   workflow.compiled.json                    always
  *   hm2b-payload-<id>-v<version>.tgz    runner in requires.projections
  *   agent-native-<id>-v<version>.tgz    agent-native in requires.projections
  *   hm2b-engine-<E>.tgz                 runner in requires.projections
@@ -33,7 +33,7 @@ import { foldCase, hasFileDirPrefixConflict } from '../../core/paths.js';
 import { isValidRange, isValidVersion, satisfiesRange } from '../../core/semver.js';
 import {
   INSTALL_ASSET,
-  IR_ASSET,
+  COMPILED_WORKFLOW_ASSET,
   SUMS_ASSET,
   bundleAssetNames,
   bundleTag,
@@ -65,7 +65,7 @@ export const CANONICAL_PROJECTIONS = Object.freeze(['runner', 'agent-native']);
 // publisher (#107); this module re-exports it so #105 callers keep working.
 export {
   INSTALL_ASSET,
-  IR_ASSET,
+  COMPILED_WORKFLOW_ASSET,
   SUMS_ASSET,
   bundleAssetNames,
   bundleTag,
@@ -79,7 +79,7 @@ export { PAYLOAD_FILE_KINDS, PAYLOAD_MANIFEST_NAME, RELEASE_PAYLOAD_SCHEMA, veri
 /** Framework source roots (#77 §5.5, decision #74 §3.3). */
 const FRAMEWORK_DIRS = Object.freeze([
   'core',
-  'ir',
+  'compiled',
   'assembler',
   'projection',
   'installer',
@@ -270,19 +270,19 @@ export function readEngine(root) {
  * Resolve one projection's options. `raw` is the caller's request (canonical
  * `null` for a Release build, or the exact local selection from the web/CLI).
  */
-function validateProjectionOptions({ projectionId, ir, irDigest, raw = null }) {
+function validateProjectionOptions({ projectionId, compiledWorkflow, compiledWorkflowDigest, raw = null }) {
   const descriptor = getProjection(projectionId);
   const normalized = normalizeOptions({
     projectionId,
-    ir,
-    irDigest,
+    compiledWorkflow,
+    compiledWorkflowDigest,
     raw,
     manifest: descriptor,
   });
   const canonical = normalized.ok && isCanonicalOptions({
     projectionId,
-    ir,
-    irDigest,
+    compiledWorkflow,
+    compiledWorkflowDigest,
     options: normalized.options,
     manifest: descriptor,
   });
@@ -290,8 +290,8 @@ function validateProjectionOptions({ projectionId, ir, irDigest, raw = null }) {
     ? canonicalInputOptions(projectionId, descriptor)
     : payloadInputOptions({
       projectionId,
-      ir,
-      irDigest,
+      compiledWorkflow,
+      compiledWorkflowDigest,
       options: normalized.options,
       manifest: descriptor,
     });
@@ -308,7 +308,7 @@ function payloadFileName(projectionId, id, version) {
  * Build the canonical payload manifest for one projection. `options` records
  * the canonical *input* (nulls), never `result.options`.
  */
-export function buildPayloadManifest({ id, version, projection, ir, irDigest, options, targets, files, result = null }) {
+export function buildPayloadManifest({ id, version, projection, compiledWorkflow, compiledWorkflowDigest, options, targets, files, result = null }) {
   const sorted = [...files]
     .map((file) => {
       const entry = {
@@ -326,9 +326,9 @@ export function buildPayloadManifest({ id, version, projection, ir, irDigest, op
   const manifest = {
     schema: RELEASE_PAYLOAD_SCHEMA,
     bundle: { id, version },
-    ir: {
-      digest: irDigest,
-      contentSha256: ir?.source?.bundle?.contentSha256 ?? null,
+    compiledWorkflow: {
+      digest: compiledWorkflowDigest,
+      contentSha256: compiledWorkflow?.source?.bundle?.contentSha256 ?? null,
     },
     projection: { id: projection.id, version: projection.version },
     options: {
@@ -354,12 +354,12 @@ function payloadEntries(result) {
 }
 
 /**
- * IR assets are part of the projected result, not bundle-internal bytes: a
- * Release whose IR carries an asset kind must ship one payload member per
+ * compiled workflow assets are part of the projected result, not bundle-internal bytes: a
+ * Release whose compiled workflow carries an asset kind must ship one payload member per
  * declared asset, otherwise the install would silently drop the asset. Paths
- * are projection-owned, so the proof is by kind and count, not by IR path.
+ * are projection-owned, so the proof is by kind and count, not by compiled workflow path.
  */
-function missingIrAssetKinds(ir, result) {
+function missingIrAssetKinds(compiledWorkflow, result) {
   const present = new Map();
   for (const file of result.files) present.set(file.kind, (present.get(file.kind) ?? 0) + 1);
   const missing = [];
@@ -367,18 +367,18 @@ function missingIrAssetKinds(ir, result) {
     const actual = present.get(kind) ?? 0;
     if (actual < count) missing.push(`${kind} (${actual}/${count})`);
   };
-  need('knowledge', (ir.knowledgeBase ?? []).length);
-  need('checklist', (ir.checklists ?? []).length);
-  need('hooks', ir.hooks === null || ir.hooks === undefined ? 0 : 1);
-  need('mcp', ir.mcp === null || ir.mcp === undefined ? 0 : 1);
+  need('knowledge', (compiledWorkflow.knowledgeBase ?? []).length);
+  need('checklist', (compiledWorkflow.checklists ?? []).length);
+  need('hooks', compiledWorkflow.hooks === null || compiledWorkflow.hooks === undefined ? 0 : 1);
+  need('mcp', compiledWorkflow.mcp === null || compiledWorkflow.mcp === undefined ? 0 : 1);
   return missing;
 }
 
-function buildPayload({ ir, irDigest, id, version, projectionId, engineVersion, raw = null }) {
+function buildPayload({ compiledWorkflow, compiledWorkflowDigest, id, version, projectionId, engineVersion, raw = null }) {
   const { descriptor, options, canonical, normalized } = validateProjectionOptions({
     projectionId,
-    ir,
-    irDigest,
+    compiledWorkflow,
+    compiledWorkflowDigest,
     raw,
   });
   if (!normalized.ok) {
@@ -390,8 +390,8 @@ function buildPayload({ ir, irDigest, id, version, projectionId, engineVersion, 
   const environment = { engineVersion };
   const result = project({
     projectionId,
-    ir,
-    irDigest,
+    compiledWorkflow,
+    compiledWorkflowDigest,
     options: normalized.options,
     environment,
     assets: {},
@@ -403,8 +403,8 @@ function buildPayload({ ir, irDigest, id, version, projectionId, engineVersion, 
     );
   }
   const validation = validateResult(result, {
-    ir,
-    irDigest,
+    compiledWorkflow,
+    compiledWorkflowDigest,
     manifest: descriptor,
     options: normalized.options,
     environment,
@@ -416,11 +416,11 @@ function buildPayload({ ir, irDigest, id, version, projectionId, engineVersion, 
       `${projectionId} result failed V1–V12: ${validation.diagnostics.map((item) => item.message).join('; ')}`,
     );
   }
-  const missingAssets = missingIrAssetKinds(ir, result);
+  const missingAssets = missingIrAssetKinds(compiledWorkflow, result);
   if (missingAssets.length > 0) {
     throw new ReleaseError(
       'RELEASE_PAYLOAD_INVALID',
-      `${projectionId} projection omitted IR assets: ${missingAssets.join(', ')}`,
+      `${projectionId} projection omitted compiled workflow assets: ${missingAssets.join(', ')}`,
     );
   }
 
@@ -428,8 +428,8 @@ function buildPayload({ ir, irDigest, id, version, projectionId, engineVersion, 
     id,
     version,
     projection: descriptor,
-    ir,
-    irDigest,
+    compiledWorkflow,
+    compiledWorkflowDigest,
     options,
     targets: result.targets,
     files: result.files,
@@ -441,8 +441,8 @@ function buildPayload({ ir, irDigest, id, version, projectionId, engineVersion, 
   const problems = verifyPayloadArchive(data, {
     id,
     version,
-    irDigest,
-    contentSha256: ir?.source?.bundle?.contentSha256 ?? null,
+    compiledWorkflowDigest,
+    contentSha256: compiledWorkflow?.source?.bundle?.contentSha256 ?? null,
     projectionId,
     options: manifest.options,
     targets: manifest.targets,
@@ -546,12 +546,12 @@ export function buildBundleRelease({ root, bundlePath, tag = null, options = nul
     failures.push(...buildReportErrors(compiled.report));
     return failureResult(failures, notes);
   }
-  const irBytes = Buffer.from(compiled.irBytes);
-  const ir = JSON.parse(irBytes.toString('utf8'));
-  const irDigest = compiled.digest;
-  if (ir.id !== id || ir.version !== version) {
+  const compiledWorkflowBytes = Buffer.from(compiled.compiledWorkflowBytes);
+  const compiledWorkflow = JSON.parse(compiledWorkflowBytes.toString('utf8'));
+  const compiledWorkflowDigest = compiled.digest;
+  if (compiledWorkflow.id !== id || compiledWorkflow.version !== version) {
     failures.push(
-      `RELEASE_TAG_MISMATCH: zip bundle.json ${id}@${version} != IR ${String(ir.id)}@${String(ir.version)}`,
+      `RELEASE_TAG_MISMATCH: zip bundle.json ${id}@${version} != compiled workflow ${String(compiledWorkflow.id)}@${String(compiledWorkflow.version)}`,
     );
   }
   if (tag !== null) {
@@ -559,12 +559,12 @@ export function buildBundleRelease({ root, bundlePath, tag = null, options = nul
     if (parsed === null) {
       failures.push(`RELEASE_TAG_MISMATCH: ${tag} is not a bundle tag for ${id}`);
     } else if (parsed.version !== version) {
-      failures.push(`RELEASE_TAG_MISMATCH: tag ${tag} carries ${parsed.version} but the zip/IR carry ${version}`);
+      failures.push(`RELEASE_TAG_MISMATCH: tag ${tag} carries ${parsed.version} but the zip/compiled workflow carry ${version}`);
     }
   }
   if (failures.length > 0) return failureResult(failures, notes);
 
-  const declared = ir?.requires?.projections;
+  const declared = compiledWorkflow?.requires?.projections;
   const allowed = Array.isArray(declared) ? [...declared].sort(compareCodePoints) : [...CANONICAL_PROJECTIONS];
   if (allowed.length === 0) failures.push('RELEASE_ASSET_SET_MISMATCH: requires.projections is empty');
   for (const projectionId of allowed) {
@@ -585,7 +585,7 @@ export function buildBundleRelease({ root, bundlePath, tag = null, options = nul
     failures.push(`RELEASE_VERSION_MISMATCH: engine version ${String(engineVersion)} is not a valid semver`);
   }
   failures.push(...sourceProblemMessages(engine.problems, 'RELEASE_SOURCE_SET_MISMATCH'));
-  const requiredEngine = ir?.requires?.engine;
+  const requiredEngine = compiledWorkflow?.requires?.engine;
   if (allowed.includes('runner')) {
     if (requiredEngine !== undefined) {
       if (!isValidRange(requiredEngine)) {
@@ -626,8 +626,8 @@ export function buildBundleRelease({ root, bundlePath, tag = null, options = nul
   try {
     for (const projectionId of allowed) {
       payloads.set(projectionId, buildPayload({
-        ir,
-        irDigest,
+        compiledWorkflow,
+        compiledWorkflowDigest,
         id,
         version,
         projectionId,
@@ -645,7 +645,7 @@ export function buildBundleRelease({ root, bundlePath, tag = null, options = nul
 
   const assets = [];
   assets.push({ name: `bundle-${id}-v${version}.zip`, data: Buffer.from(source.bytes) });
-  assets.push({ name: IR_ASSET, data: irBytes });
+  assets.push({ name: COMPILED_WORKFLOW_ASSET, data: compiledWorkflowBytes });
   for (const payload of payloads.values()) assets.push({ name: payload.file, data: payload.data });
   if (allowed.includes('runner')) {
     assets.push({ name: engineAssetName(engineVersion), data: engineArchive(engine.files) });
@@ -689,9 +689,9 @@ export function buildBundleRelease({ root, bundlePath, tag = null, options = nul
     publishable: canonical,
     engineVersion,
     frameworkVersion,
-    ir,
-    irBytes,
-    irDigest,
+    compiledWorkflow,
+    compiledWorkflowBytes,
+    compiledWorkflowDigest,
     payloads,
     projections: [...payloads.values()].map((payload) => ({
       id: payload.projectionId,
@@ -829,8 +829,8 @@ export function checkBundleRelease({ root, bundlePath, tag = null, outDir = null
     const problems = verifyPayloadArchive(payload.data, {
       id: first.id,
       version: first.version,
-      irDigest: first.irDigest,
-      contentSha256: first.ir?.source?.bundle?.contentSha256 ?? null,
+      compiledWorkflowDigest: first.compiledWorkflowDigest,
+      contentSha256: first.compiledWorkflow?.source?.bundle?.contentSha256 ?? null,
       projectionId: payload.projectionId,
       options: payload.manifest.options,
       targets: payload.manifest.targets,

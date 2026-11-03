@@ -5,7 +5,7 @@
  * It consumes an already projected, already validated result — it never
  * compiles a bundle and never re-projects:
  *
- *   node installer/cli.js --result <dir|result.json> --project <dir> [--ir <file>]
+ *   node installer/cli.js --result <dir|result.json> --project <dir> [--compiled-workflow <file>]
  *                         [--runtime <engineSource>] [--engine-version <V>]
  *                         [--engine-home <dir>] [--dry-run] [--force] [--json]
  *   node installer/cli.js --uninstall --bundle <id> --projection <id>
@@ -13,8 +13,9 @@
  *   node installer/cli.js --status|--doctor --project <dir> [--json]
  *
  * A result directory is `projection-result.json` + `files/<path>` and the
- * `workflow.ir.json` it was projected from. `V1–V12` bind the result to that
- * IR, so the IR is required; `--ir` wins over the directory copy.
+ * `workflow.compiled.json` it was projected from. `V1–V12` bind the result to
+ * that compiled workflow, so it is required; `--compiled-workflow` wins over
+ * the directory copy.
  */
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
@@ -29,13 +30,13 @@ import { formatStatus, installStatus } from './status.js';
 import { uninstallProjection } from './uninstall.js';
 
 const USAGE = [
-  'usage: installer/cli.js --result <dir|result.json> --project <dir> [--ir <file>] [--dry-run] [--force] [--migrate-legacy] [--json]',
+  'usage: installer/cli.js --result <dir|result.json> --project <dir> [--compiled-workflow <file>] [--dry-run] [--force] [--migrate-legacy] [--json]',
   '       installer/cli.js --runtime <engineSource> [--engine-version <V>] [--engine-home <dir>] --project <dir> [--dry-run] [--force] [--json]',
   '       installer/cli.js --uninstall --bundle <id> --projection <id> --project <dir> [--force] [--dry-run] [--json]',
   '       installer/cli.js --status|--doctor --project <dir> [--json]',
 ].join('\n');
 
-const VALUES = new Set(['result', 'project', 'ir', 'bundle', 'projection', 'runtime', 'engine-version', 'engine-home']);
+const VALUES = new Set(['result', 'project', 'compiled-workflow', 'bundle', 'projection', 'runtime', 'engine-version', 'engine-home']);
 const LIST_VALUES = new Set(['target']);
 const FLAGS = new Set(['dry-run', 'force', 'uninstall', 'json', 'migrate-legacy', 'help', 'status', 'doctor']);
 
@@ -118,10 +119,10 @@ function payloadProblems(result, payloadDir) {
 }
 
 /**
- * Load `{result, irBytes}` from a result directory or an inline result JSON.
+ * Load `{result, compiledWorkflowBytes}` from a result directory or an inline result JSON.
  * Errors are values (`{ok:false, error}`) so the CLI can emit one envelope.
  */
-export function loadResultInput({ result: resultPath, ir: irPath }) {
+export function loadResultInput({ result: resultPath, compiledWorkflow: compiledWorkflowPath }) {
   const absolute = resolve(resultPath);
   if (!existsSync(absolute)) {
     return { ok: false, error: { code: 'RESULT_INPUT_NOT_FOUND', message: `result not found: ${basename(absolute)}`, details: null } };
@@ -142,25 +143,25 @@ export function loadResultInput({ result: resultPath, ir: irPath }) {
       },
     };
   }
-  const irFile = irPath !== undefined
-    ? resolve(irPath)
-    : [join(directory, 'workflow.ir.json'), join(directory, 'ir', 'workflow.ir.json')]
+  const compiledWorkflowFile = compiledWorkflowPath !== undefined
+    ? resolve(compiledWorkflowPath)
+    : [join(directory, 'workflow.compiled.json'), join(directory, 'compiled', 'workflow.compiled.json')]
       .find((candidate) => existsSync(candidate)) ?? null;
-  if (irFile === null) {
+  if (compiledWorkflowFile === null) {
     return {
       ok: false,
       error: {
-        code: 'IR_INPUT_REQUIRED',
-        message: 'the result directory must contain workflow.ir.json (or pass --ir)',
+        code: 'COMPILED_WORKFLOW_INPUT_REQUIRED',
+        message: 'the result directory must contain workflow.compiled.json (or pass --compiled-workflow)',
         details: null,
       },
     };
   }
-  let irBytes;
+  let compiledWorkflowBytes;
   try {
-    irBytes = readFileSync(irFile);
+    compiledWorkflowBytes = readFileSync(compiledWorkflowFile);
   } catch {
-    return { ok: false, error: { code: 'IR_INPUT_UNREADABLE', message: `${basename(irFile)} is unreadable`, details: null } };
+    return { ok: false, error: { code: 'COMPILED_WORKFLOW_INPUT_UNREADABLE', message: `${basename(compiledWorkflowFile)} is unreadable`, details: null } };
   }
   const payloadDir = join(directory, 'files');
   const problems = payloadProblems(result, payloadDir);
@@ -170,7 +171,7 @@ export function loadResultInput({ result: resultPath, ir: irPath }) {
       error: { code: problems[0].code, message: problems[0].message, details: { problems } },
     };
   }
-  return { ok: true, result, irBytes };
+  return { ok: true, result, compiledWorkflowBytes };
 }
 
 function exitCodeFor(outcome) {
@@ -214,7 +215,7 @@ function summaryData(outcome) {
     occupied: outcome.occupied ?? undefined,
     migration: outcome.migration ?? undefined,
     manual_steps: outcome.manualSteps ?? undefined,
-    ir_removed: outcome.irRemoved,
+    compiled_workflow_removed: outcome.compiledWorkflowRemoved,
     ignore_suggestions: outcome.ignoreSuggestions ?? undefined,
   };
 }
@@ -387,13 +388,13 @@ export function run(argv, io = {}) {
     process.stdout.write(`runtime/engine/${runtimeOutcome.engine.version}: ${runtimeOutcome.files} file(s) ${runtimeOutcome.action}\n`);
     return EXIT_CODES.OK;
   }
-  const loaded = loadResultInput({ result: resultPath, ir: options.values.ir });
+  const loaded = loadResultInput({ result: resultPath, compiledWorkflow: options.values['compiled-workflow'] });
   if (!loaded.ok) {
     return emit({ json, code: EXIT_CODES.USAGE, data: null, error: loaded.error });
   }
   const outcome = installRunnerProject({
     result: loaded.result,
-    irBytes: loaded.irBytes,
+    compiledWorkflowBytes: loaded.compiledWorkflowBytes,
     projectRoot,
     dryRun,
     force,

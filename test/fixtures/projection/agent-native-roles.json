@@ -1,9 +1,9 @@
 {
   "schema": "hm2b.projection.roles/v1",
-  "ir": {
+  "compiledWorkflow": {
     "id": "rtosv3-drvport",
     "version": "1.0.0",
-    "sha256": "34d55ee62bf284594218d4923b0eafa267799edb1edbbeb7bb313a6f2ab0bc04"
+    "sha256": "518643ab9c92d270a66bd4545cba660d0511243070c3479234edec3225b6d23c"
   },
   "targets": {
     "claude-code": {
@@ -728,7 +728,7 @@
             },
             "mode": {
               "state": "native",
-              "reason": "mode: subagent/primary/all 与 IR 三值精确对应"
+              "reason": "mode: subagent/primary/all 与 compiled workflow 三值精确对应"
             },
             "model": {
               "state": "degraded",
@@ -769,7 +769,7 @@
             },
             "mode": {
               "state": "native",
-              "reason": "mode: subagent/primary/all 与 IR 三值精确对应"
+              "reason": "mode: subagent/primary/all 与 compiled workflow 三值精确对应"
             },
             "model": {
               "state": "degraded",
@@ -810,7 +810,7 @@
             },
             "mode": {
               "state": "native",
-              "reason": "mode: subagent/primary/all 与 IR 三值精确对应"
+              "reason": "mode: subagent/primary/all 与 compiled workflow 三值精确对应"
             },
             "model": {
               "state": "degraded",
@@ -851,7 +851,7 @@
             },
             "mode": {
               "state": "native",
-              "reason": "mode: subagent/primary/all 与 IR 三值精确对应"
+              "reason": "mode: subagent/primary/all 与 compiled workflow 三值精确对应"
             },
             "model": {
               "state": "degraded",

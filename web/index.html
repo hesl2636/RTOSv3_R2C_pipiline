@@ -14,7 +14,7 @@
       <span class="brand-mark" aria-hidden="true">h</span>
       <div>
         <h1>hm2b bundle 检查器</h1>
-        <p class="subtitle">上传 → 校验 → IR 预览 → 投影 → 构建。只读操作，不写入项目；浏览器不接触 GitHub token。</p>
+        <p class="subtitle">上传 → 校验 → 编译产物预览 → 投影 → 构建。只读操作，不写入项目；浏览器不接触 GitHub token。</p>
       </div>
     </div>
     <div class="badges">
@@ -101,72 +101,72 @@ node bin/hm2b-assembler.js compile ./bundle.zip --out ./dist</code></pre>
       </div>
     </section>
 
-    <section class="panel" aria-labelledby="ir-title">
+    <section class="panel" aria-labelledby="compiled-workflow-title">
       <div class="panel-head">
         <div class="title-group">
           <span class="step" aria-hidden="true">04</span>
-          <h2 id="ir-title">IR 预览</h2>
+          <h2 id="compiled-workflow-title">编译产物</h2>
         </div>
         <div class="panel-actions">
           <span class="chip">只读</span>
-          <button id="download-ir" class="btn-secondary" type="button" disabled>下载 IR</button>
+          <button id="download-compiled-workflow" class="btn-secondary" type="button" disabled>下载编译产物</button>
         </div>
       </div>
-      <div id="ir-empty" class="hint">编译成功后在这里显示 IR。</div>
-      <details id="ir-body" class="fold ir-body" hidden>
-        <summary>IR 内容 <span id="ir-summary" class="count"></span></summary>
-        <div class="ir-top">
-          <div class="ir-identity" id="ir-identity"></div>
-          <div class="ir-actions">
-            <span id="ir-digest" class="mono hint"></span>
+      <div id="compiled-workflow-empty" class="hint">编译成功后在这里显示编译产物。</div>
+      <details id="compiled-workflow-body" class="fold compiled-workflow-body" hidden>
+        <summary>产物内容 <span id="compiled-workflow-summary" class="count"></span></summary>
+        <div class="compiled-workflow-top">
+          <div class="compiled-workflow-identity" id="compiled-workflow-identity"></div>
+          <div class="compiled-workflow-actions">
+            <span id="compiled-workflow-digest" class="mono hint"></span>
           </div>
         </div>
         <details class="fold">
-          <summary>阶段与步骤 <span id="ir-stage-count" class="count"></span></summary>
-          <ol id="ir-stages" class="stages"></ol>
+          <summary>阶段与步骤 <span id="compiled-workflow-stage-count" class="count"></span></summary>
+          <ol id="compiled-workflow-stages" class="stages"></ol>
         </details>
         <div class="grid-2">
           <details class="fold">
-            <summary>角色 <span id="ir-role-count" class="count"></span></summary>
-            <ul id="ir-roles" class="entities"></ul>
+            <summary>角色 <span id="compiled-workflow-role-count" class="count"></span></summary>
+            <ul id="compiled-workflow-roles" class="entities"></ul>
           </details>
           <details class="fold">
-            <summary>任务 <span id="ir-task-count" class="count"></span></summary>
-            <ul id="ir-tasks" class="entities"></ul>
+            <summary>任务 <span id="compiled-workflow-task-count" class="count"></span></summary>
+            <ul id="compiled-workflow-tasks" class="entities"></ul>
           </details>
           <details class="fold">
-            <summary>技能 <span id="ir-skill-count" class="count"></span></summary>
-            <ul id="ir-skills" class="entities"></ul>
+            <summary>技能 <span id="compiled-workflow-skill-count" class="count"></span></summary>
+            <ul id="compiled-workflow-skills" class="entities"></ul>
           </details>
         </div>
         <details class="fold">
-          <summary>声明的资产 <span id="ir-asset-count" class="count"></span></summary>
+          <summary>声明的资产 <span id="compiled-workflow-asset-count" class="count"></span></summary>
           <div class="asset-grid">
             <div>
               <h4>知识库</h4>
-              <ul id="ir-knowledge-base" class="entities"></ul>
+              <ul id="compiled-workflow-knowledge-base" class="entities"></ul>
             </div>
             <div>
               <h4>检查单</h4>
-              <ul id="ir-checklists" class="entities"></ul>
+              <ul id="compiled-workflow-checklists" class="entities"></ul>
             </div>
             <div>
               <h4>Hooks</h4>
-              <ul id="ir-hooks" class="entities"></ul>
+              <ul id="compiled-workflow-hooks" class="entities"></ul>
             </div>
             <div>
               <h4>MCP</h4>
-              <ul id="ir-mcp" class="entities"></ul>
+              <ul id="compiled-workflow-mcp" class="entities"></ul>
             </div>
           </div>
         </details>
         <details class="fold">
-          <summary>宪法 <span id="ir-constitution-state" class="count"></span></summary>
-          <div id="ir-constitution"></div>
+          <summary>宪法 <span id="compiled-workflow-constitution-state" class="count"></span></summary>
+          <div id="compiled-workflow-constitution"></div>
         </details>
         <details class="fold">
-          <summary>原始 IR</summary>
-          <pre id="ir-raw" class="raw"></pre>
+          <summary>原始 JSON</summary>
+          <pre id="compiled-workflow-raw" class="raw"></pre>
         </details>
       </details>
     </section>
@@ -179,11 +179,11 @@ node bin/hm2b-assembler.js compile ./bundle.zip --out ./dist</code></pre>
         </div>
         <span class="chip" id="options-count">—</span>
       </div>
-      <p class="hint">选项绑定到当前 IR 摘要，每次重新上传都会重置。IR 本身不会被修改；服务端会重新校验每个选择。</p>
+      <p class="hint">选项绑定到当前编译摘要，每次重新上传都会重置。编译产物本身不会被修改；服务端会重新校验每个选择。</p>
       <p id="options-status" class="status" role="status"></p>
       <div id="options-body" hidden>
         <div class="row options-top">
-          <span class="mono hint">IR 摘要 <span id="options-ir-digest"></span></span>
+          <span class="mono hint">编译摘要 <span id="options-compiled-workflow-digest"></span></span>
           <button id="reset-options" class="btn-secondary" type="button">恢复默认</button>
         </div>
         <div id="projection-controls"></div>

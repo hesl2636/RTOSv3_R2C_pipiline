@@ -140,9 +140,9 @@ test('a legacy receipt refuses a new install and points at --migrate-legacy', (t
   const projectRoot = tempDir(t, 'r2c-migrate-refuse-');
   writeLegacyProject(projectRoot);
   const before = snapshot(projectRoot);
-  const { result, irBytes } = sample('runner');
+  const { result, compiledWorkflowBytes } = sample('runner');
 
-  const outcome = installProjection({ result, irBytes, projectRoot, force: true, clock: CLOCK });
+  const outcome = installProjection({ result, compiledWorkflowBytes, projectRoot, force: true, clock: CLOCK });
   assert.equal(outcome.code, 'LEGACY_INSTALL_PRESENT');
   assert.deepEqual(outcome.legacy.map((item) => item.path), ['.r2c/install/claude.json']);
   assert.match(outcome.hint, /--migrate-legacy/);
@@ -153,9 +153,9 @@ test('--migrate-legacy verifies hashes, backs up, revokes pointers and retires r
   const projectRoot = tempDir(t, 'r2c-migrate-ok-');
   const legacy = writeLegacyProject(projectRoot);
   const oldReceiptBytes = readFileSync(legacy.receiptPath, 'utf8');
-  const { result, irBytes } = sample('runner');
+  const { result, compiledWorkflowBytes } = sample('runner');
 
-  const outcome = installProjection({ result, irBytes, projectRoot, clock: CLOCK, migrateLegacy: true });
+  const outcome = installProjection({ result, compiledWorkflowBytes, projectRoot, clock: CLOCK, migrateLegacy: true });
   assert.equal(outcome.code, 'OK');
   assert.equal(outcome.mode, 'migrated');
   assert.deepEqual(outcome.migration.receipts, ['.r2c/install/claude.json']);
@@ -210,14 +210,14 @@ test('a legacy hash mismatch refuses migration unless --force backs it up', (t) 
   writeLegacyProject(projectRoot);
   writeFileSync(absolute(projectRoot, 'tasks/legacy-task.md'), '# edited after install\n');
   const before = snapshot(projectRoot);
-  const { result, irBytes } = sample('runner');
+  const { result, compiledWorkflowBytes } = sample('runner');
 
-  const refused = installProjection({ result, irBytes, projectRoot, clock: CLOCK, migrateLegacy: true });
+  const refused = installProjection({ result, compiledWorkflowBytes, projectRoot, clock: CLOCK, migrateLegacy: true });
   assert.equal(refused.code, 'LEGACY_HASH_MISMATCH');
   assert.deepEqual(refused.conflicts.map((conflict) => conflict.path), ['tasks/legacy-task.md']);
   assert.deepEqual(snapshot(projectRoot), before);
 
-  const forced = installProjection({ result, irBytes, projectRoot, clock: CLOCK, migrateLegacy: true, force: true });
+  const forced = installProjection({ result, compiledWorkflowBytes, projectRoot, clock: CLOCK, migrateLegacy: true, force: true });
   assert.equal(forced.code, 'OK');
   const backup = walk(projectRoot).find((path) => path.startsWith('.hm2b/install/backup/') && path.endsWith('/tasks/legacy-task.md'));
   assert.ok(backup !== undefined, 'the edited file is backed up before takeover');
@@ -230,10 +230,10 @@ test('user-scope leftovers are printed as manual steps and never touched', (t) =
   writeLegacyProject(projectRoot);
   const userReceipt = writeUserLegacy(userHome);
   const userBytes = readFileSync(userReceipt, 'utf8');
-  const { result, irBytes } = sample('runner');
+  const { result, compiledWorkflowBytes } = sample('runner');
 
   const outcome = installProjection({
-    result, irBytes, projectRoot, clock: CLOCK, migrateLegacy: true, userHome,
+    result, compiledWorkflowBytes, projectRoot, clock: CLOCK, migrateLegacy: true, userHome,
   });
   assert.equal(outcome.code, 'OK');
   assert.equal(readFileSync(userReceipt, 'utf8'), userBytes, 'user scope is read-only');
@@ -250,9 +250,9 @@ test('an unknown legacy schema aborts migration without touching the project', (
   const unknown = join(projectRoot, '.r2c/install/codex.json');
   writeFileSync(unknown, '{"schema":"r2c.install/v9"}\n');
   const before = snapshot(projectRoot);
-  const { result, irBytes } = sample('runner');
+  const { result, compiledWorkflowBytes } = sample('runner');
 
-  const outcome = installProjection({ result, irBytes, projectRoot, clock: CLOCK, migrateLegacy: true });
+  const outcome = installProjection({ result, compiledWorkflowBytes, projectRoot, clock: CLOCK, migrateLegacy: true });
   assert.equal(outcome.code, 'LEGACY_RECEIPT_UNSUPPORTED');
   assert.deepEqual(outcome.unsupported.map((item) => item.path), ['.r2c/install/codex.json']);
   assert.deepEqual(snapshot(projectRoot), before);
@@ -266,9 +266,9 @@ test('a failed migration rolls back every legacy deletion', (t) => {
   writeFileSync(join(projectRoot, 'constitution'), 'blocker\n');
   const stable = () => snapshot(projectRoot).filter(([path]) => !path.startsWith('.hm2b/install/backup/'));
   const before = stable();
-  const { result, irBytes } = sample('runner');
+  const { result, compiledWorkflowBytes } = sample('runner');
 
-  const outcome = installProjection({ result, irBytes, projectRoot, clock: CLOCK, migrateLegacy: true });
+  const outcome = installProjection({ result, compiledWorkflowBytes, projectRoot, clock: CLOCK, migrateLegacy: true });
   assert.notEqual(outcome.code, 'OK');
   assert.deepEqual(stable(), before, 'legacy bytes and the receipt are restored');
   assert.equal(existsSync(absolute(projectRoot, '.hm2b/install/legacy/claude.json.retired')), false);

@@ -1,13 +1,13 @@
 /**
- * runner projection: IR -> project-root payload (#70, spec §9, #93).
+ * runner projection: compiled workflow -> project-root payload (#70, spec §9, #93).
  *
- * Pure: IR + resolved options in, declarative file set out. Only the manifest
+ * Pure: compiled workflow + resolved options in, declarative file set out. Only the manifest
  * `writeRoots` are produced; engine assets (`commands/`, `adapters/`,
  * `schema/`, `shims/`, `hm2b-payload.json`) belong to the installer.
  * Declared bundle assets (`knowledgeBase`, `checklists`, `hooks`, `mcp`) are
- * projected verbatim at their bundle paths; an IR without them emits nothing.
+ * projected verbatim at their bundle paths; a compiled workflow without them emits nothing.
  */
-import { IR_CHECKLIST_ROOT, IR_KNOWLEDGE_BASE_ROOT, IR_SCHEMA } from '../../../ir/schema.js';
+import { COMPILED_WORKFLOW_CHECKLIST_ROOT, COMPILED_WORKFLOW_KNOWLEDGE_BASE_ROOT, COMPILED_WORKFLOW_SCHEMA } from '../../../compiled/schema.js';
 import { checkEngineRequirement } from '../../../projection/engine-requirement.js';
 import { constitutionBlock, constitutionState } from '../../shared/constitution.js';
 import { placeholderInstructions } from '../../shared/placeholder.js';
@@ -58,8 +58,8 @@ function capabilityLevel(capability, excludedSkills) {
   return MANIFEST_TARGET.capabilities[capability].level;
 }
 
-function capabilityUses(capability, ir, allSkills, selectedSkills) {
-  const stages = ir.stages ?? [];
+function capabilityUses(capability, compiledWorkflow, allSkills, selectedSkills) {
+  const stages = compiledWorkflow.stages ?? [];
   if (capability === 'state') return [''];
   if (capability === 'gates') {
     return stages.flatMap((stage, stageIndex) => stage.steps.flatMap((step, stepIndex) => step.gates.map((_, gateIndex) => `/stages/${stageIndex}/steps/${stepIndex}/gates/${gateIndex}`)));
@@ -75,8 +75,8 @@ function capabilityUses(capability, ir, allSkills, selectedSkills) {
   }
   if (capability === 'preload') {
     const uses = [];
-    for (const roleId of sorted(Object.keys(ir.roles ?? {}))) {
-      for (const [index, skillId] of (ir.roles[roleId].skills ?? []).entries()) {
+    for (const roleId of sorted(Object.keys(compiledWorkflow.roles ?? {}))) {
+      for (const [index, skillId] of (compiledWorkflow.roles[roleId].skills ?? []).entries()) {
         if (selectedSkills.has(skillId)) uses.push(`/roles/${roleId}/skills/${index}`);
       }
     }
@@ -90,7 +90,7 @@ function capabilityUses(capability, ir, allSkills, selectedSkills) {
 
 /** Asset path -> artifact key (`knowledge-base/<...>.md` -> `knowledge-<slug>`). */
 function knowledgeArtifactKey(path) {
-  const prefix = `${IR_KNOWLEDGE_BASE_ROOT}/`;
+  const prefix = `${COMPILED_WORKFLOW_KNOWLEDGE_BASE_ROOT}/`;
   const relative = path.startsWith(prefix) ? path.slice(prefix.length) : path;
   const slug = relative.replace(/\.md$/, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
   return `knowledge-${slug}`;
@@ -105,34 +105,34 @@ function uniqueKey(keys, base) {
 
 /**
  * Declared bundle assets at their bundle paths (project root). `knowledge-base/`,
- * `checklists/`, `hooks/hooks.json` and `mcp.json` are the only locations the IR
+ * `checklists/`, `hooks/hooks.json` and `mcp.json` are the only locations the compiled workflow
  * admits; an absent collection emits nothing and no artifact entry.
  */
-function projectAssets(ir, addFile) {
+function projectAssets(compiledWorkflow, addFile) {
   const artifacts = new Map();
-  for (const entry of ir.knowledgeBase ?? []) {
+  for (const entry of compiledWorkflow.knowledgeBase ?? []) {
     addFile(entry.path, 'knowledge', entry.body);
     const key = uniqueKey(artifacts, knowledgeArtifactKey(entry.path));
     artifacts.set(key, entry.path);
   }
-  for (const entry of ir.checklists ?? []) {
-    const path = `${IR_CHECKLIST_ROOT}/${entry.id}.md`;
+  for (const entry of compiledWorkflow.checklists ?? []) {
+    const path = `${COMPILED_WORKFLOW_CHECKLIST_ROOT}/${entry.id}.md`;
     addFile(path, 'checklist', entry.body);
     artifacts.set(uniqueKey(artifacts, `checklist-${entry.id}`), path);
   }
-  if (ir.hooks !== null && ir.hooks !== undefined) {
-    addFile(ir.hooks.path, 'hooks', ir.hooks.body);
-    artifacts.set('hooks', ir.hooks.path);
+  if (compiledWorkflow.hooks !== null && compiledWorkflow.hooks !== undefined) {
+    addFile(compiledWorkflow.hooks.path, 'hooks', compiledWorkflow.hooks.body);
+    artifacts.set('hooks', compiledWorkflow.hooks.path);
   }
-  if (ir.mcp !== null && ir.mcp !== undefined) {
-    addFile(ir.mcp.path, 'mcp', ir.mcp.body);
-    artifacts.set('mcp', ir.mcp.path);
+  if (compiledWorkflow.mcp !== null && compiledWorkflow.mcp !== undefined) {
+    addFile(compiledWorkflow.mcp.path, 'mcp', compiledWorkflow.mcp.body);
+    artifacts.set('mcp', compiledWorkflow.mcp.path);
   }
   return artifacts;
 }
 
-function engineFailure(ir, environment) {
-  const range = ir.requires?.engine;
+function engineFailure(compiledWorkflow, environment) {
+  const range = compiledWorkflow.requires?.engine;
   if (range === undefined) return null;
   const version = environment?.engineVersion;
   if (typeof version !== 'string' || version === '') {
@@ -146,31 +146,31 @@ function engineFailure(ir, environment) {
 }
 
 export function projectRunner(input) {
-  const { ir, options } = input;
-  if (ir === null || typeof ir !== 'object' || ir.schema !== IR_SCHEMA) {
-    return failure([nameError('PROJECTION_IR_UNSUPPORTED', `input is not an ${IR_SCHEMA} document`)]);
+  const { compiledWorkflow, options } = input;
+  if (compiledWorkflow === null || typeof compiledWorkflow !== 'object' || compiledWorkflow.schema !== COMPILED_WORKFLOW_SCHEMA) {
+    return failure([nameError('PROJECTION_COMPILED_WORKFLOW_UNSUPPORTED', `input is not an ${COMPILED_WORKFLOW_SCHEMA} document`)]);
   }
   if (options === null || typeof options !== 'object' || !Array.isArray(options.stageOrder)) {
     return failure([nameError('PROJECTION_OPTIONS_INVALID', 'normalized options are required')]);
   }
 
-  const engineError = engineFailure(ir, input.environment);
+  const engineError = engineFailure(compiledWorkflow, input.environment);
   if (engineError !== null) return failure([engineError]);
 
-  const stages = Array.isArray(ir.stages) ? ir.stages : [];
+  const stages = Array.isArray(compiledWorkflow.stages) ? compiledWorkflow.stages : [];
   if (stages.length === 0) {
-    return failure([nameError('PROJECTION_IR_UNSUPPORTED', 'IR must declare at least one stage', { pointer: '/stages' })]);
+    return failure([nameError('PROJECTION_COMPILED_WORKFLOW_UNSUPPORTED', 'compiled workflow must declare at least one stage', { pointer: '/stages' })]);
   }
   const stageIndex = new Map();
   const seenSteps = new Set();
   for (const [index, stage] of stages.entries()) {
     if (!Array.isArray(stage.steps) || stage.steps.length === 0) {
-      return failure([nameError('PROJECTION_IR_UNSUPPORTED', `stage ${stage.id} has no steps`, { pointer: `/stages/${index}` })]);
+      return failure([nameError('PROJECTION_COMPILED_WORKFLOW_UNSUPPORTED', `stage ${stage.id} has no steps`, { pointer: `/stages/${index}` })]);
     }
     stageIndex.set(stage.id, index);
     for (const [indexInStage, step] of stage.steps.entries()) {
       if (seenSteps.has(step.id)) {
-        return failure([nameError('PROJECTION_IR_UNSUPPORTED', `duplicate step id ${step.id}`, { pointer: `/stages/${index}/steps/${indexInStage}` })]);
+        return failure([nameError('PROJECTION_COMPILED_WORKFLOW_UNSUPPORTED', `duplicate step id ${step.id}`, { pointer: `/stages/${index}/steps/${indexInStage}` })]);
       }
       seenSteps.add(step.id);
     }
@@ -179,13 +179,13 @@ export function projectRunner(input) {
   const stageById = new Map(stages.map((stage) => [stage.id, stage]));
   const orderedStages = options.stageOrder.map((id) => stageById.get(id));
   if (orderedStages.some((stage) => stage === undefined)) {
-    return failure([nameError('PROJECTION_IR_UNSUPPORTED', 'stageOrder references a stage that is not in the IR')]);
+    return failure([nameError('PROJECTION_COMPILED_WORKFLOW_UNSUPPORTED', 'stageOrder references a stage that is not in the compiled workflow')]);
   }
 
-  const allSkills = sorted(Object.keys(ir.skills ?? {}));
+  const allSkills = sorted(Object.keys(compiledWorkflow.skills ?? {}));
   const selectedSkills = new Set(options.skills);
   const excludedSkills = allSkills.filter((id) => !selectedSkills.has(id));
-  const roleIds = sorted(Object.keys(ir.roles ?? {}));
+  const roleIds = sorted(Object.keys(compiledWorkflow.roles ?? {}));
   for (const roleId of roleIds) {
     const problem = checkRoleName(roleId);
     if (problem !== null) return failure([problem]);
@@ -223,12 +223,12 @@ export function projectRunner(input) {
       return stepDoc;
     }),
   }));
-  addFile(`workflows/${ir.id}.yaml`, 'workflow', dumpWorkflowYaml({
+  addFile(`workflows/${compiledWorkflow.id}.yaml`, 'workflow', dumpWorkflowYaml({
     schema: 'hm2b.workflow/v1',
-    id: ir.id,
-    name: ir.name,
-    version: ir.version,
-    description: ir.description,
+    id: compiledWorkflow.id,
+    name: compiledWorkflow.name,
+    version: compiledWorkflow.version,
+    description: compiledWorkflow.description,
     stages: workflowStages,
   }));
 
@@ -252,9 +252,9 @@ export function projectRunner(input) {
       usedBy.set(step.task, refs);
     }
   }
-  const taskIds = sorted(Object.keys(ir.tasks ?? {}));
+  const taskIds = sorted(Object.keys(compiledWorkflow.tasks ?? {}));
   for (const taskId of taskIds) {
-    const task = ir.tasks[taskId];
+    const task = compiledWorkflow.tasks[taskId];
     if (countSubmitTokens(task.body) !== 1) {
       return failure([nameError(
         'PROJECTION_SUBMIT_TOKEN_COUNT',
@@ -294,7 +294,7 @@ export function projectRunner(input) {
   // --- skills -------------------------------------------------------------
   for (const skillId of allSkills) {
     if (!selectedSkills.has(skillId)) continue;
-    const skill = ir.skills[skillId];
+    const skill = compiledWorkflow.skills[skillId];
     const content = [
       '---',
       `name: ${quote(skillId)}`,
@@ -319,7 +319,7 @@ export function projectRunner(input) {
 
   // --- roles --------------------------------------------------------------
   for (const roleId of roleIds) {
-    const role = ir.roles[roleId];
+    const role = compiledWorkflow.roles[roleId];
     const lines = ['---', `id: ${quote(roleId)}`, `agent: ${quote(`${TARGET}-${roleId}`)}`];
     if (role.description !== undefined) lines.push(`description: ${quote(role.description)}`);
     if (role.title !== undefined) lines.push(`title: ${quote(role.title)}`);
@@ -341,17 +341,17 @@ export function projectRunner(input) {
   for (const stage of stages) {
     const stagePosition = stageIndex.get(stage.id);
     for (const [stepPosition, step] of stage.steps.entries()) {
-      if (ir.tasks?.[step.task] === undefined) {
+      if (compiledWorkflow.tasks?.[step.task] === undefined) {
         return failure([nameError(
-          'PROJECTION_IR_UNSUPPORTED',
+          'PROJECTION_COMPILED_WORKFLOW_UNSUPPORTED',
           `step ${step.id} references missing task ${step.task}`,
           { pointer: `/stages/${stagePosition}/steps/${stepPosition}/task` },
         )]);
       }
       if (step.role === undefined) continue;
-      if (ir.roles?.[step.role] === undefined) {
+      if (compiledWorkflow.roles?.[step.role] === undefined) {
         return failure([nameError(
-          'PROJECTION_IR_UNSUPPORTED',
+          'PROJECTION_COMPILED_WORKFLOW_UNSUPPORTED',
           `step ${step.id} references missing role ${step.role}`,
           { pointer: `/stages/${stagePosition}/steps/${stepPosition}/role` },
         )]);
@@ -370,7 +370,7 @@ export function projectRunner(input) {
 
   // --- preload: unavailable at every selected role skill use --------------
   for (const roleId of roleIds) {
-    const role = ir.roles[roleId];
+    const role = compiledWorkflow.roles[roleId];
     for (const [index, skillId] of (role.skills ?? []).entries()) {
       if (!selectedSkills.has(skillId)) continue;
       degradations.push({
@@ -387,14 +387,14 @@ export function projectRunner(input) {
   }
 
   // --- constitution -------------------------------------------------------
-  const constitutionMount = (ir.constitution ?? [])[0] ?? null;
-  const constitution = constitutionState(ir.constitution ?? []);
+  const constitutionMount = (compiledWorkflow.constitution ?? [])[0] ?? null;
+  const constitution = constitutionState(compiledWorkflow.constitution ?? []);
   if (constitutionMount !== null) {
     addFile('constitution/CONSTITUTION.md', 'constitution', constitutionBlock(constitutionMount));
   }
 
   // --- bundle assets ------------------------------------------------------
-  const assetArtifacts = projectAssets(ir, addFile);
+  const assetArtifacts = projectAssets(compiledWorkflow, addFile);
 
   // --- warnings -----------------------------------------------------------
   if (options.stageOrder.some((id, index) => id !== stages[index]?.id)) {
@@ -410,7 +410,7 @@ export function projectRunner(input) {
   const rolesMap = {};
   for (const roleId of roleIds) rolesMap[roleId] = `${TARGET}-${roleId}`;
   const artifacts = new Map([
-    ['workflow', `workflows/${ir.id}.yaml`],
+    ['workflow', `workflows/${compiledWorkflow.id}.yaml`],
   ]);
   for (const taskId of taskIds) artifacts.set(`task-${taskId}`, `tasks/${taskId}.md`);
   for (const skillId of allSkills) {
@@ -426,8 +426,8 @@ export function projectRunner(input) {
     },
     artifacts: recordOf([...artifacts.entries()]),
     placeholders: {
-      roles: roleIds.filter((id) => ir.roles[id].placeholder),
-      skills: allSkills.filter((id) => ir.skills[id].placeholder),
+      roles: roleIds.filter((id) => compiledWorkflow.roles[id].placeholder),
+      skills: allSkills.filter((id) => compiledWorkflow.skills[id].placeholder),
       constitution,
     },
     runtime: {
@@ -443,7 +443,7 @@ export function projectRunner(input) {
       target: TARGET,
       capability,
       level: capabilityLevel(capability, excludedSkills),
-      uses: sorted(capabilityUses(capability, ir, allSkills, selectedSkills)),
+      uses: sorted(capabilityUses(capability, compiledWorkflow, allSkills, selectedSkills)),
     });
   }
 

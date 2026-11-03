@@ -1,9 +1,9 @@
 /**
  * Task-book Markdown structure (decision #67 §9.3).
  *
- * One implementation shared by bundle validation (`checks/tasks.js`) and IR
- * validation (`IR_TASK_BODY_INVALID`), so a task that compiles can never fail
- * the IR's own section check (or vice versa).
+ * One implementation shared by bundle validation (`checks/tasks.js`) and compiled workflow
+ * validation (`COMPILED_WORKFLOW_TASK_BODY_INVALID`), so a task that compiles can never fail
+ * the compiled workflow's own section check (or vice versa).
  */
 export const TASK_HEADINGS = Object.freeze(['Agent 角色设定', '任务', '约束条件', '提交']);
 

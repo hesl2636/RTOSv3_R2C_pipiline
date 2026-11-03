@@ -11,9 +11,9 @@
  *   `tools`, `model`, `thinking-level`, `autoloadSkills`, `spawns`;
  * - no primary-agent concept: `mode: primary` has no entry and is skipped;
  * - `autoloadSkills` injects skills of the parent session by name; unknown
- *   names are ignored (hence rendered names, never bare IR ids);
+ *   names are ignored (hence rendered names, never bare compiled workflow ids);
  * - supported effort levels are `minimal|low|medium|high|xhigh|max`, a
- *   superset of the IR ladder `low..max`, so every valid IR effort maps 1:1.
+ *   superset of the compiled workflow ladder `low..max`, so every valid compiled workflow effort maps 1:1.
  */
 import { perRoleRoleFiles } from '../role-files.js';
 import { layoutSmoke, hostProfile } from './host.js';
@@ -65,10 +65,10 @@ function ompToolList(tokens) {
 }
 
 /**
- * Map an IR effort onto omp's `thinking-level` ladder.
+ * Map a compiled workflow effort onto omp's `thinking-level` ladder.
  *
- * The omp ladder is wider than the IR ladder, so `low..max` are identities.
- * A level from outside the ladder (a forward IR version) clamps down to the
+ * The omp ladder is wider than the compiled workflow ladder, so `low..max` are identities.
+ * A level from outside the ladder (a forward compiled workflow version) clamps down to the
  * nearest supported level — the top one — and the caller records the loss.
  */
 export function clampEffort(effort) {

@@ -7,14 +7,14 @@
  *
  * The server binds loopback only (there is deliberately no `--host`), serves a
  * fixed whitelist of source directories, and exposes exactly one authoritative
- * operation: upload one zip, receive the shared `Report` plus the compiled IR.
+ * operation: upload one zip, receive the shared `Report` plus the compiled workflow.
  * Uploads are handled entirely in memory; the only filesystem writes are the
  * 0700 session directory under `os.tmpdir()`.
  *
  * This file is the wiring only. HTTP hardening lives in `http.js`, upload /
  * build orchestration in `build.js`, and publish orchestration in `publish.js`.
  * Everything under `web/` except the server modules is browser-loadable ESM
- * and runs the same shared modules (`core/`, `ir/`, `assembler/`) as the CLI.
+ * and runs the same shared modules (`core/`, `compiled/`, `assembler/`) as the CLI.
  */
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { createServer } from 'node:http';
@@ -356,7 +356,7 @@ async function main() {
       status = 200;
       const data = await runValidation(bytes);
       if (path === '/api/uploads') {
-        data.uploadId = data.ir === null ? null : await builds.persistUpload(bytes, data);
+        data.uploadId = data.compiledWorkflow === null ? null : await builds.persistUpload(bytes, data);
       }
       sendJson(response, status, { ok: data.report.ok, data });
       return;
@@ -556,9 +556,9 @@ async function main() {
         });
         return;
       }
-      if (body.irDigest !== undefined && body.irDigest !== build.summary.ir.digest) {
+      if (body.compiledWorkflowDigest !== undefined && body.compiledWorkflowDigest !== build.summary.compiledWorkflow.digest) {
         status = 409;
-        sendWebError(response, status, 'WEB_CLIENT_SERVER_MISMATCH', 'the browser and the server disagree about the IR digest');
+        sendWebError(response, status, 'WEB_CLIENT_SERVER_MISMATCH', 'the browser and the server disagree about the compiled workflow digest');
         return;
       }
       if (body.resultDigests !== null) {

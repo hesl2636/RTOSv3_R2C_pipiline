@@ -3,13 +3,13 @@
   "$id": "https://hm2b.runner/schema/projection-options/v1",
   "title": "hm2b.projection-options/v1",
   "description": "Resolved projection options, echoed into a projection result. Documentation only: projection/options.js is authoritative (normalizeOptions / validateOptions). Raw input may omit fields or pass null for stageOrder, skills and targets; the resolved echo always carries concrete arrays.",
-  "$comment": "Rules the caller enforces and this document does not express: options.ir.digest/id/version must equal the input IR and its digest; stageOrder is a permutation of the IR stage ids; skills is a unique subset of the IR skill ids, sorted by code point; targets is a non-empty unique subset of the manifest targets in manifest order; extra keys are sorted recursively and validated against the manifest optionsSchema (empty extra when none is declared); options bind the IR and are never written back to the bundle or IR.",
+  "$comment": "Rules the caller enforces and this document does not express: options.compiledWorkflow.digest/id/version must equal the input compiled workflow and its digest; stageOrder is a permutation of the compiled workflow stage ids; skills is a unique subset of the compiled workflow skill ids, sorted by code point; targets is a non-empty unique subset of the manifest targets in manifest order; extra keys are sorted recursively and validated against the manifest optionsSchema (empty extra when none is declared); options bind the compiled workflow and are never written back to the bundle or compiled workflow.",
   "type": "object",
   "additionalProperties": false,
   "required": [
     "schema",
     "projection",
-    "ir",
+    "compiledWorkflow",
     "stageOrder",
     "skills",
     "targets",
@@ -26,7 +26,7 @@
       ],
       "description": "Must equal the projection being called."
     },
-    "ir": {
+    "compiledWorkflow": {
       "type": "object",
       "additionalProperties": false,
       "required": [

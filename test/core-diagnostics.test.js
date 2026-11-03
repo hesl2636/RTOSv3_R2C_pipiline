@@ -140,13 +140,13 @@ test('toEnvelope mirrors the hm2b envelope contract', () => {
     },
   );
   const failure = toEnvelope({
-    command: 'ir.validate',
+    command: 'compiled-workflow.validate',
     code: 2,
     data: { ok: false },
-    error: { code: 'IR_INVALID', message: 'x', details: null },
+    error: { code: 'COMPILED_WORKFLOW_INVALID', message: 'x', details: null },
   });
   assert.equal(failure.ok, false);
-  assert.equal(failure.error.code, 'IR_INVALID');
+  assert.equal(failure.error.code, 'COMPILED_WORKFLOW_INVALID');
 });
 
 test('reportFailureSummary uses a single distinct code and the summary otherwise', () => {

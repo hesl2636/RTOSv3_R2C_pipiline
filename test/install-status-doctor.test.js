@@ -49,8 +49,8 @@ function walk(root, current = root, out = []) {
 
 function installedProject(t, { runtime = true } = {}) {
   const projectRoot = tempDir(t, 'hm2b-project-');
-  const { result, irBytes } = sample('runner');
-  const bundle = installRunnerProject({ result, irBytes, projectRoot, clock: CLOCK });
+  const { result, compiledWorkflowBytes } = sample('runner');
+  const bundle = installRunnerProject({ result, compiledWorkflowBytes, projectRoot, clock: CLOCK });
   assert.equal(bundle.code, 'OK', bundle.message);
   if (runtime) {
     const source = writeEngineSource(tempDir(t, 'hm2b-engine-'));
@@ -73,11 +73,11 @@ test('installer status works without a run and reports install, engine and manif
   assert.equal(status.installs.length, 1);
   const [install] = status.installs;
   assert.equal(install.projection, 'runner');
-  assert.equal(install.bundle, result.ir.id);
-  assert.equal(install.version, result.ir.version);
+  assert.equal(install.bundle, result.compiledWorkflow.id);
+  assert.equal(install.version, result.compiledWorkflow.version);
   assert.equal(install.mode, 'fresh');
   assert.deepEqual(install.targets, ['claude-code', 'codex', 'omp', 'opencode']);
-  assert.equal(install.receipt, `.hm2b/install/receipts/runner/${result.ir.id}.json`);
+  assert.equal(install.receipt, `.hm2b/install/receipts/runner/${result.compiledWorkflow.id}.json`);
   assert.equal(install.files, install.receiptFiles);
   assert.deepEqual(install.problems, []);
 
@@ -88,15 +88,15 @@ test('installer status works without a run and reports install, engine and manif
   });
   assert.deepEqual(status.manifest, {
     selection: 'single',
-    path: `workflows/${result.ir.id}.yaml`,
-    candidates: [`workflows/${result.ir.id}.yaml`],
+    path: `workflows/${result.compiledWorkflow.id}.yaml`,
+    candidates: [`workflows/${result.compiledWorkflow.id}.yaml`],
   });
   assert.equal(status.journal, null);
 
   const text = formatStatus(status);
-  assert.match(text, new RegExp(`^install/runner/${result.ir.id} ${result.ir.version} targets=claude-code,codex,omp,opencode files=\\d+$`, 'm'));
+  assert.match(text, new RegExp(`^install/runner/${result.compiledWorkflow.id} ${result.compiledWorkflow.version} targets=claude-code,codex,omp,opencode files=\\d+$`, 'm'));
   assert.match(text, /^engine\/1\.2\.3$/m);
-  assert.match(text, new RegExp(`^manifest/workflows/${result.ir.id}\\.yaml$`, 'm'));
+  assert.match(text, new RegExp(`^manifest/workflows/${result.compiledWorkflow.id}\\.yaml$`, 'm'));
 });
 
 test('installer status on an empty project is stable', (t) => {
@@ -118,7 +118,7 @@ test('installer status reports ambiguous manifests and unsupported receipts', (t
 
   const status = installStatus(projectRoot);
   assert.equal(status.manifest.selection, 'ambiguous');
-  assert.deepEqual(status.manifest.candidates, [`workflows/${result.ir.id}.yaml`, 'workflows/second.yaml']);
+  assert.deepEqual(status.manifest.candidates, [`workflows/${result.compiledWorkflow.id}.yaml`, 'workflows/second.yaml']);
   assert.equal(status.manifest.path, null);
   const unsupported = status.installs.find((install) => install.bundle === 'unknown');
   assert.equal(unsupported.schema, 'hm2b.install/v9');
@@ -138,41 +138,41 @@ test('doctor passes a clean runner install with exactly one workflow manifest', 
   assert.equal(check(report, 'manifest.selection').status, 'pass');
   assert.equal(check(report, 'transaction.residue').status, 'pass');
   const files = readdirSync(join(projectRoot, 'workflows')).filter((name) => name.endsWith('.yaml'));
-  assert.deepEqual(files, [`${result.ir.id}.yaml`]);
+  assert.deepEqual(files, [`${result.compiledWorkflow.id}.yaml`]);
   const summary = check(report, 'summary');
   assert.equal(summary.status, 'info');
   assert.match(summary.message, /degradation/);
   assert.match(summary.message, /placeholder/);
-  assert.equal(check(report, 'ir.orphan').status, 'pass', 'a clean install leaves no orphan IR');
+  assert.equal(check(report, 'compiledWorkflow.orphan').status, 'pass', 'a clean install leaves no orphan compiled workflow');
 });
 
-test('doctor warns about an orphan IR copy and stays green otherwise', (t) => {
+test('doctor warns about an orphan compiled workflow copy and stays green otherwise', (t) => {
   const { projectRoot, result } = installedProject(t);
-  const referenced = `.hm2b/bundles/${result.ir.id}/${result.ir.version}/workflow.ir.json`;
-  const orphan = '.hm2b/bundles/ghost/0.9.0/workflow.ir.json';
+  const referenced = `.hm2b/bundles/${result.compiledWorkflow.id}/${result.compiledWorkflow.version}/workflow.compiled.json`;
+  const orphan = '.hm2b/bundles/ghost/0.9.0/workflow.compiled.json';
   mkdirSync(join(projectRoot, '.hm2b/bundles/ghost/0.9.0'), { recursive: true });
   writeFileSync(join(projectRoot, ...orphan.split('/')), '{}\n');
 
   const report = doctor(projectRoot, { clock: CLOCK });
-  assert.equal(report.ok, true, 'an orphan IR copy never fails the doctor');
-  const orphans = report.checks.filter((item) => item.id === 'ir.orphan');
-  assert.equal(orphans.length, 1, 'the receipt-referenced IR copy is not reported');
+  assert.equal(report.ok, true, 'an orphan compiled workflow copy never fails the doctor');
+  const orphans = report.checks.filter((item) => item.id === 'compiledWorkflow.orphan');
+  assert.equal(orphans.length, 1, 'the receipt-referenced compiled workflow copy is not reported');
   assert.equal(orphans[0].status, 'warn');
   assert.equal(orphans[0].message, orphan);
   assert.equal(orphans[0].details.path, orphan);
-  assert.match(orphans[0].details.fix, /ghost\/0\.9\.0\/workflow\.ir\.json/);
+  assert.match(orphans[0].details.fix, /ghost\/0\.9\.0\/workflow\.compiled\.json/);
   assert.equal(report.checks.some((item) => item.status === 'fail'), false);
   assert.match(
     formatDoctor(report),
-    /^warn\/ir\.orphan: \.hm2b\/bundles\/ghost\/0\.9\.0\/workflow\.ir\.json$/m,
+    /^warn\/compiledWorkflow\.orphan: \.hm2b\/bundles\/ghost\/0\.9\.0\/workflow\.compiled\.json$/m,
   );
-  assert.equal(existsSync(join(projectRoot, ...referenced.split('/'))), true, 'the owned IR copy is untouched');
+  assert.equal(existsSync(join(projectRoot, ...referenced.split('/'))), true, 'the owned compiled workflow copy is untouched');
   assert.equal(existsSync(join(projectRoot, ...orphan.split('/'))), true, 'doctor never deletes');
 });
 
 test('doctor fails on a modified receipt-owned file and on a missing file', (t) => {
   const { projectRoot, result } = installedProject(t);
-  const receipt = JSON.parse(readFileSync(join(projectRoot, `.hm2b/install/receipts/runner/${result.ir.id}.json`), 'utf8'));
+  const receipt = JSON.parse(readFileSync(join(projectRoot, `.hm2b/install/receipts/runner/${result.compiledWorkflow.id}.json`), 'utf8'));
   const roleFile = receipt.files.find((file) => file.path.startsWith('.claude/agents/')).path;
   const missing = receipt.files.find((file) => file.path.startsWith('.opencode/agents/')).path;
 
@@ -200,7 +200,7 @@ test('doctor fails when the engine entry, launcher or manifest selection is brok
   // Recreate the launcher but break the engine entry; the version probe fails too.
   const launcher = check(report, 'engine.launcher').details;
   assert.ok(Array.isArray(launcher.problems));
-  writeFileSync(join(projectRoot, '.hm2b/bin/hm2b.js'), readFileSync(join(projectRoot, 'workflows', `${result.ir.id}.yaml`)) ? '#!/usr/bin/env node\n' : '');
+  writeFileSync(join(projectRoot, '.hm2b/bin/hm2b.js'), readFileSync(join(projectRoot, 'workflows', `${result.compiledWorkflow.id}.yaml`)) ? '#!/usr/bin/env node\n' : '');
   unlinkSync(join(projectRoot, '.hm2b/engine/1.2.3/bin/hm2b.js'));
   const second = doctor(projectRoot, { clock: CLOCK });
   assert.equal(second.ok, false);
@@ -239,7 +239,7 @@ test('doctor reports transaction residue and extra files without deleting anythi
   const rolled = doctor(projectRoot, { clock: CLOCK });
   assert.equal(rolled.ok, false);
   assert.equal(check(rolled, 'transaction.residue').status, 'fail');
-  assert.equal(result.ir.id.length > 0, true);
+  assert.equal(result.compiledWorkflow.id.length > 0, true);
 });
 
 test('doctor reports host detection and missing roles.json', (t) => {
@@ -255,7 +255,7 @@ test('doctor reports host detection and missing roles.json', (t) => {
 
 test('installer status reports cross-receipt ownership conflicts', (t) => {
   const { projectRoot, result } = installedProject(t);
-  const receipt = JSON.parse(readFileSync(join(projectRoot, `.hm2b/install/receipts/runner/${result.ir.id}.json`), 'utf8'));
+  const receipt = JSON.parse(readFileSync(join(projectRoot, `.hm2b/install/receipts/runner/${result.compiledWorkflow.id}.json`), 'utf8'));
   const shared = receipt.files[0].path;
   const otherDir = join(projectRoot, '.hm2b/install/receipts/agent-native');
   mkdirSync(otherDir, { recursive: true });

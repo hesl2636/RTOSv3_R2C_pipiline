@@ -66,7 +66,7 @@ function receiptPaths(receipt) {
 }
 
 function install(projectRoot, set, extra = {}) {
-  return installProjection({ result: set.result, irBytes: set.irBytes, projectRoot, clock: CLOCK, ...extra });
+  return installProjection({ result: set.result, compiledWorkflowBytes: set.compiledWorkflowBytes, projectRoot, clock: CLOCK, ...extra });
 }
 
 function codes(outcome) {
@@ -78,7 +78,7 @@ function writeReceipt(projectRoot, { projection = 'agent-native', bundle = 'othe
     schema: 'hm2b.install/v2',
     projection: { id: projection, version: '1.0.0', targets: [] },
     bundle: { id: bundle, version: '1.0.0' },
-    ir: { path: `.hm2b/bundles/${bundle}/1.0.0/workflow.ir.json`, digest: '0'.repeat(64), contentSha256: '0'.repeat(64) },
+    compiledWorkflow: { path: `.hm2b/bundles/${bundle}/1.0.0/workflow.compiled.json`, digest: '0'.repeat(64), contentSha256: '0'.repeat(64) },
     root: 'project',
     scope: 'project',
     mode: 'fresh',
@@ -113,7 +113,7 @@ function writeReceipt(projectRoot, { projection = 'agent-native', bundle = 'othe
 test('two agent-native bundles with different ids coexist and uninstall independently', (t) => {
   const projectRoot = tempProject(t);
   const first = sample('agent-native');
-  const second = customSample({ projectionId: 'agent-native', irPatch: { id: 'alpha-flow' } });
+  const second = customSample({ projectionId: 'agent-native', compiledWorkflowPatch: { id: 'alpha-flow' } });
 
   assert.equal(install(projectRoot, first).code, 'OK');
   assert.equal(install(projectRoot, second, { clock: LATER }).code, 'OK');
@@ -142,7 +142,7 @@ test('two agent-native bundles with different ids coexist and uninstall independ
 test('agent-native and runner bundles with different ids coexist with zero path overlap', (t) => {
   const projectRoot = tempProject(t);
   const native = sample('agent-native');
-  const runnerSet = customSample({ irPatch: { id: 'other-workflow' } });
+  const runnerSet = customSample({ compiledWorkflowPatch: { id: 'other-workflow' } });
 
   assert.equal(install(projectRoot, native).code, 'OK');
   assert.equal(install(projectRoot, runnerSet, { clock: LATER }).code, 'OK');
@@ -206,7 +206,7 @@ test('a second runner bundle is refused with RUNNER_ROOT_OCCUPIED before any wri
   assert.equal(install(projectRoot, first).code, 'OK');
   const before = snapshot(projectRoot);
 
-  const second = customSample({ irPatch: { id: 'other-workflow' } });
+  const second = customSample({ compiledWorkflowPatch: { id: 'other-workflow' } });
   for (const force of [false, true]) {
     const outcome = install(projectRoot, second, { clock: LATER, force });
     assert.equal(outcome.ok, false);
@@ -221,13 +221,13 @@ test('a second runner bundle is refused with RUNNER_ROOT_OCCUPIED before any wri
 
 test('an unowned workflows/*.yaml that is byte-identical is adopted, not refused', (t) => {
   const projectRoot = tempProject(t);
-  const { result, irBytes } = sample('runner');
+  const { result, compiledWorkflowBytes } = sample('runner');
   const workflow = result.files.find((file) => file.path.startsWith('workflows/'));
   const target = absolute(projectRoot, workflow.path);
   mkdirSync(dirname(target), { recursive: true });
   writeFileSync(target, workflow.content);
 
-  const outcome = installProjection({ result, irBytes, projectRoot, clock: CLOCK });
+  const outcome = installProjection({ result, compiledWorkflowBytes, projectRoot, clock: CLOCK });
   assert.equal(outcome.code, 'OK');
   assert.ok(outcome.decisions.some((decision) => decision.path === workflow.path && decision.action === 'adopt'));
   assert.equal(readFileSync(target, 'utf8'), workflow.content);
@@ -236,14 +236,14 @@ test('an unowned workflows/*.yaml that is byte-identical is adopted, not refused
 
 test('an unowned workflows/*.yaml with different bytes is refused even with --force', (t) => {
   const projectRoot = tempProject(t);
-  const { result, irBytes } = sample('runner');
+  const { result, compiledWorkflowBytes } = sample('runner');
   const workflow = result.files.find((file) => file.path.startsWith('workflows/'));
   const target = absolute(projectRoot, workflow.path);
   mkdirSync(dirname(target), { recursive: true });
   writeFileSync(target, 'name: someone-elses-workflow\n');
 
   for (const force of [false, true]) {
-    const outcome = installProjection({ result, irBytes, projectRoot, clock: CLOCK, force });
+    const outcome = installProjection({ result, compiledWorkflowBytes, projectRoot, clock: CLOCK, force });
     assert.equal(outcome.code, 'RUNNER_ROOT_OCCUPIED');
     assert.deepEqual(outcome.occupied, [workflow.path]);
     assert.equal(outcome.occupier.reason, 'UNOWNED_DIFFERENT');
@@ -279,13 +279,13 @@ const COLLISION_MATRIX = [
 for (const row of COLLISION_MATRIX) {
   test(`cross-receipt collision is refused, never last-wins: ${row.name}`, (t) => {
     const projectRoot = tempProject(t);
-    const { result, irBytes } = sample('runner');
+    const { result, compiledWorkflowBytes } = sample('runner');
     const otherPath = row.otherPath(result);
     writeReceipt(projectRoot, { paths: [otherPath] });
     const before = snapshot(projectRoot);
 
     for (const force of [false, true]) {
-      const outcome = installProjection({ result, irBytes, projectRoot, clock: CLOCK, force });
+      const outcome = installProjection({ result, compiledWorkflowBytes, projectRoot, clock: CLOCK, force });
       assert.equal(outcome.code, 'INSTALL_CONFLICTS');
       assert.deepEqual(codes(outcome), ['INSTALL_PATH_CONFLICT']);
       assert.equal(outcome.conflicts[0].details.kind, row.kind);
@@ -301,7 +301,7 @@ test('the full agent-native flow stays correct through uninstall, reinstall, upg
   const v1 = sample('agent-native');
   assert.equal(v1.result.files.length, 98);
 
-  const first = installProjection({ result: v1.result, irBytes: v1.irBytes, projectRoot, clock: CLOCK });
+  const first = installProjection({ result: v1.result, compiledWorkflowBytes: v1.compiledWorkflowBytes, projectRoot, clock: CLOCK });
   assert.equal(first.code, 'OK');
   assert.equal(first.mode, 'fresh');
   assert.equal(first.receipt.files.length, 98);
@@ -318,22 +318,22 @@ test('the full agent-native flow stays correct through uninstall, reinstall, upg
     'only the shared roots and empty installer dirs remain',
   );
 
-  const reinstalled = installProjection({ result: v1.result, irBytes: v1.irBytes, projectRoot, clock: LATER });
+  const reinstalled = installProjection({ result: v1.result, compiledWorkflowBytes: v1.compiledWorkflowBytes, projectRoot, clock: LATER });
   assert.equal(reinstalled.code, 'OK');
   assert.equal(reinstalled.mode, 'fresh', 'the receipt was removed with the install');
-  const idempotent = installProjection({ result: v1.result, irBytes: v1.irBytes, projectRoot, clock: LATER });
+  const idempotent = installProjection({ result: v1.result, compiledWorkflowBytes: v1.compiledWorkflowBytes, projectRoot, clock: LATER });
   assert.equal(idempotent.code, 'OK');
   assert.equal(idempotent.action, 'unchanged');
   assert.equal(idempotent.wrote, undefined, 'an unchanged install writes nothing');
 
-  const v2 = customSample({ projectionId: 'agent-native', irPatch: { version: '1.1.0' } });
-  const upgraded = installProjection({ result: v2.result, irBytes: v2.irBytes, projectRoot, clock: LATER });
+  const v2 = customSample({ projectionId: 'agent-native', compiledWorkflowPatch: { version: '1.1.0' } });
+  const upgraded = installProjection({ result: v2.result, compiledWorkflowBytes: v2.compiledWorkflowBytes, projectRoot, clock: LATER });
   assert.equal(upgraded.code, 'OK');
   assert.equal(upgraded.mode, 'upgrade');
   assert.equal(upgraded.receipt.bundle.version, '1.1.0');
   assert.equal(upgraded.receipt.files.length, 98);
 
-  const rolledBack = installProjection({ result: v1.result, irBytes: v1.irBytes, projectRoot, clock: LATER });
+  const rolledBack = installProjection({ result: v1.result, compiledWorkflowBytes: v1.compiledWorkflowBytes, projectRoot, clock: LATER });
   assert.equal(rolledBack.code, 'OK');
   assert.equal(rolledBack.receipt.bundle.version, '1.0.0');
   assert.equal(rolledBack.receipt.previous.version, '1.1.0');

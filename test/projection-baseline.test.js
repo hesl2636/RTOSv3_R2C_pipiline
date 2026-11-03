@@ -36,7 +36,7 @@ import { sha256Hex } from '../core/node/sha256.js';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const BIN = join(ROOT, 'bin', 'hm2b-assembler.js');
-const IR = join(ROOT, 'test/fixtures/ir/workflow.ir.json');
+const COMPILED_WORKFLOW_PATH = join(ROOT, 'test/fixtures/compiled/workflow.compiled.json');
 const FIXTURES = join(ROOT, 'test/fixtures/projection');
 const SNAPSHOT = JSON.parse(readFileSync(join(FIXTURES, 'agent-native-baseline.json'), 'utf8'));
 const ROLES_JSON_FIXTURE = join(FIXTURES, 'agent-native-roles.json');
@@ -45,10 +45,10 @@ const TARGETS = ['claude-code', 'codex', 'dsh', 'omp', 'opencode'];
 const SHARED = ['codex', 'dsh', 'omp', 'opencode'];
 const AGENT_CARRIERS = ['claude-code', 'codex', 'omp', 'opencode'];
 const NS = 'rtosv3-drvport';
-const IR_DIGEST = '34d55ee62bf284594218d4923b0eafa267799edb1edbbeb7bb313a6f2ab0bc04';
+const COMPILED_WORKFLOW_DIGEST = '518643ab9c92d270a66bd4545cba660d0511243070c3479234edec3225b6d23c';
 
 // Hard anchors from the ticket; the byte total is the recomputed baseline.
-const BASELINE = { files: 98, bytes: 142657, degradations: 45, capabilities: 40, warnings: 1 };
+const BASELINE = { files: 98, bytes: 142731, degradations: 45, capabilities: 40, warnings: 1 };
 const RUNNER = { files: 45, degradations: 4, capabilities: 8, warnings: 0 };
 
 function sha256(value) {
@@ -59,7 +59,7 @@ function sha256(value) {
 function snapshotDigest(data) {
   return sha256Hex(canonicalJson({
     projection: data.projection,
-    ir: data.ir,
+    compiledWorkflow: data.compiledWorkflow,
     targets: data.targets,
     coverage: data.coverage,
     options: data.options,
@@ -75,8 +75,8 @@ function run(args) {
   return spawnSync(process.execPath, [BIN, ...args], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
 }
 
-function project({ projection = 'agent-native', ir = IR, out, extra = [] } = {}) {
-  const args = ['project', ir, '--projection', projection];
+function project({ projection = 'agent-native', compiledWorkflow = COMPILED_WORKFLOW_PATH, out, extra = [] } = {}) {
+  const args = ['project', compiledWorkflow, '--projection', projection];
   if (out !== undefined) args.push('--out', out);
   args.push(...extra, '--json');
   const result = run(args);
@@ -130,10 +130,10 @@ test('agent-native baseline matches the frozen contract snapshot', () => {
 
     assert.deepEqual(data.counts, { ...BASELINE });
     assert.deepEqual(data.targets, TARGETS);
-    assert.deepEqual({ id: data.ir.id, version: data.ir.version, digest: data.ir.digest }, {
+    assert.deepEqual({ id: data.compiledWorkflow.id, version: data.compiledWorkflow.version, digest: data.compiledWorkflow.digest }, {
       id: NS,
       version: '1.0.0',
-      digest: IR_DIGEST,
+      digest: COMPILED_WORKFLOW_DIGEST,
     });
 
     assert.deepEqual(data.options, SNAPSHOT.options, 'resolved options echo');
@@ -269,21 +269,21 @@ test('runner baseline stays at 45 files / 4 degradations / 8 capability rows', (
   }
 });
 
-test('one changed IR byte changes the IR digest, the result digest and the dependent hashes', () => {
+test('one changed compiled workflow byte changes the compiled workflow digest, the result digest and the dependent hashes', () => {
   const dir = mkdtempSync(join(tmpdir(), 'hm2b-baseline-mut-'));
   try {
-    const bytes = Buffer.from(readFileSync(IR));
+    const bytes = Buffer.from(readFileSync(COMPILED_WORKFLOW_PATH));
     const marker = Buffer.from('"description": "');
     const offset = bytes.indexOf(marker) + marker.length;
     assert.ok(bytes.indexOf(marker) > 0 && bytes[offset] >= 0xe4 && bytes[offset] <= 0xe9);
     bytes[offset] = bytes[offset] === 0xe5 ? 0xe4 : 0xe5; // stays valid UTF-8
-    const mutated = join(dir, 'workflow.ir.json');
+    const mutated = join(dir, 'workflow.compiled.json');
     writeFileSync(mutated, bytes);
-    assert.notEqual(sha256(readFileSync(mutated)), sha256(readFileSync(IR)));
+    assert.notEqual(sha256(readFileSync(mutated)), sha256(readFileSync(COMPILED_WORKFLOW_PATH)));
 
-    const data = project({ ir: mutated, out: join(dir, 'out') });
+    const data = project({ compiledWorkflow: mutated, out: join(dir, 'out') });
     assert.equal(data.counts.files, BASELINE.files);
-    assert.notEqual(data.ir.digest, IR_DIGEST);
+    assert.notEqual(data.compiledWorkflow.digest, COMPILED_WORKFLOW_DIGEST);
     assert.notEqual(snapshotDigest(data), SNAPSHOT.resultDigest);
     assert.notEqual(data.files.find((file) => file.path === `.agents/skills/${NS}-workflow/SKILL.md`).sha256,
       SNAPSHOT.files.find((file) => file.path === `.agents/skills/${NS}-workflow/SKILL.md`).sha256);

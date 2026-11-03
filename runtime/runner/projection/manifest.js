@@ -6,7 +6,7 @@
  * the whole supported Node range). A test asserts the file is exactly
  * `canonicalJson(RUNNER_MANIFEST)`, so the two cannot drift.
  */
-import { IR_SCHEMA } from '../../../ir/schema.js';
+import { COMPILED_WORKFLOW_SCHEMA } from '../../../compiled/schema.js';
 
 export const RUNNER_CAPABILITIES = Object.freeze([
   'state',
@@ -59,9 +59,9 @@ export const RUNNER_MANIFEST = Object.freeze({
   id: 'runner',
   name: 'runner 运行时投影',
   version: '0.1.0',
-  description: '把中立 IR 投影成 runner 项目根载荷（workflows/tasks/skills/roles/constitution/knowledge-base/checklists/hooks/mcp）；一个 target，不生成引擎资产。',
+  description: '把中立 compiled workflow 投影成 runner 项目根载荷（workflows/tasks/skills/roles/constitution/knowledge-base/checklists/hooks/mcp）；一个 target，不生成引擎资产。',
   api: {
-    ir: IR_SCHEMA,
+    compiledWorkflow: COMPILED_WORKFLOW_SCHEMA,
     options: 'hm2b.projection-options/v1',
     result: 'hm2b.projection-result/v1',
   },

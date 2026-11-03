@@ -8,7 +8,7 @@
  *
  * `ctx = { namespace, skillNames, targets, roleModels?, roleEfforts?, trailer? }`
  * is required: `targets` is the projection-owned descriptor map (target id ->
- * descriptor) and `skillNames` maps IR skill ids to runtime-visible names.
+ * descriptor) and `skillNames` maps compiled workflow skill ids to runtime-visible names.
  */
 import { placeholderInstructions } from './placeholder.js';
 import { TARGETS as DEFAULT_TARGETS } from '../agent-native/projection/targets/index.js';
@@ -152,12 +152,12 @@ export function tomlMultiline(instructions) {
 }
 
 /**
- * Render one IR role for one target.
+ * Render one compiled workflow role for one target.
  *
  * Returns `{name, basename, format, content, exposure, fields}` where
  * `content === null` only when the descriptor refuses to expose the role
  * (`exposure: "skipped"`). `fields` always covers exactly the role fields the
- * IR actually set, plus `id`.
+ * compiled workflow actually set, plus `id`.
  */
 export function renderRole(role, targetId, ctx) {
   if (role === null || typeof role !== 'object') {

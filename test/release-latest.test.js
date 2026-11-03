@@ -250,7 +250,7 @@ test('missing assets carry the projection-specific code, including for anonymous
     'RELEASE_PAYLOAD_MISSING',
   );
   await rejectsWith(downloadAsset({ client, repo: REPO, release, name: 'hm2b-framework-0.1.0.tgz' }), 'RELEASE_FRAMEWORK_MISSING');
-  await rejectsWith(downloadAsset({ client, repo: REPO, release, name: 'workflow.ir.json' }), 'RELEASE_NOT_FOUND');
+  await rejectsWith(downloadAsset({ client, repo: REPO, release, name: 'workflow.compiled.json' }), 'RELEASE_NOT_FOUND');
 
   const anonymous = await resolveVersion({ client: clientFor(fixture.origin), repo: REPO, bundleId: ID, version: '1.0.0' });
   await rejectsWith(
@@ -283,32 +283,32 @@ test('anonymous asset 403 points at --version or GH_TOKEN', async (t) => {
 
 test('verifySums checks every listed asset and refuses missing, extra or tampered bytes', () => {
   const engine = Buffer.from('engine', 'utf8');
-  const ir = Buffer.from('ir', 'utf8');
-  const sums = `${sha256Hex(engine)}  hm2b-engine-0.1.0.tgz\n${sha256Hex(ir)}  workflow.ir.json\n`;
+  const compiledWorkflow = Buffer.from('compiled workflow', 'utf8');
+  const sums = `${sha256Hex(engine)}  hm2b-engine-0.1.0.tgz\n${sha256Hex(compiledWorkflow)}  workflow.compiled.json\n`;
   const parsed = parseSums(sums);
   assert.equal(parsed.failures.length, 0);
   assert.equal(parsed.entries.size, 2);
 
   const good = verifySums(sums, [
     { name: 'hm2b-engine-0.1.0.tgz', data: engine },
-    { name: 'workflow.ir.json', data: ir },
+    { name: 'workflow.compiled.json', data: compiledWorkflow },
   ]);
   assert.deepEqual(good, { ok: true, failures: [] });
 
   const tampered = verifySums(sums, [
     { name: 'hm2b-engine-0.1.0.tgz', data: engine },
-    { name: 'workflow.ir.json', data: Buffer.from('IR', 'utf8') },
+    { name: 'workflow.compiled.json', data: Buffer.from('compiled workflow tampered', 'utf8') },
   ]);
   assert.equal(tampered.ok, false);
-  assert.match(tampered.failures[0], /^RELEASE_CHECKSUM_MISMATCH: workflow\.ir\.json/);
+  assert.match(tampered.failures[0], /^RELEASE_CHECKSUM_MISMATCH: workflow\.compiled\.json/);
 
   const missing = verifySums(sums, [{ name: 'hm2b-engine-0.1.0.tgz', data: engine }]);
   assert.equal(missing.ok, false);
-  assert.match(missing.failures[0], /workflow\.ir\.json is listed .* but not provided/);
+  assert.match(missing.failures[0], /workflow\.compiled\.json is listed .* but not provided/);
 
   const extra = verifySums(sums, [
     { name: 'hm2b-engine-0.1.0.tgz', data: engine },
-    { name: 'workflow.ir.json', data: ir },
+    { name: 'workflow.compiled.json', data: compiledWorkflow },
     { name: 'stowaway.txt', data: Buffer.from('x') },
   ]);
   assert.equal(extra.ok, false);

@@ -51,7 +51,7 @@ const SAMPLE_ZIP = join(ROOT, 'examples/rtosv3/dist/bundle-rtosv3-drvport-v1.0.0
 function buildLocal() {
   const assets = [
     { name: `bundle-${ID}-v${VERSION}.zip`, data: Buffer.from('zip-bytes', 'utf8') },
-    { name: 'workflow.ir.json', data: Buffer.from('{"schema":"hm2b.ir/v2"}\n', 'utf8') },
+    { name: 'workflow.compiled.json', data: Buffer.from('{"schema":"hm2b.compiled-workflow/v2"}\n', 'utf8') },
     { name: 'hm2b-engine-0.1.0.tgz', data: Buffer.from('engine-bytes', 'utf8') },
     { name: 'install.mjs', data: Buffer.from('// install\n', 'utf8') },
   ];
@@ -226,7 +226,7 @@ test('a remote verify mismatch deletes the draft and never publishes', async (t)
         id: asset.id,
         name: asset.name,
         size: asset.data.length,
-        digest: asset.name === 'workflow.ir.json' ? tamperedDigest : `sha256:${sha256Hex(asset.data)}`,
+        digest: asset.name === 'workflow.compiled.json' ? tamperedDigest : `sha256:${sha256Hex(asset.data)}`,
         url: `${fixture.origin}/repos/${REPO}/releases/assets/${asset.id}`,
       }));
       return jsonResponse(200, remote);
@@ -243,7 +243,7 @@ test('a remote verify mismatch deletes the draft and never publishes', async (t)
   });
 
   assert.equal(result.ok, false);
-  assert.match(result.failures[0], /^RELEASE_DRAFT_VERIFY_FAILED: workflow\.ir\.json/);
+  assert.match(result.failures[0], /^RELEASE_DRAFT_VERIFY_FAILED: workflow\.compiled\.json/);
   assert.equal(result.published, false);
   assert.equal(calls(fixture, 'PATCH').length, 0);
   assert.deepEqual(result.cleanup, { draftDeleted: true, tagDeleted: false });
@@ -287,7 +287,7 @@ test('a same-name upload with different bytes is refused, never replaced', async
   const existing = Buffer.from('older-sums', 'utf8');
   const fixture = await startGithubFixture(t, {
     repo: REPO,
-    releases: [{ tag: TAG, draft: true, assets: [{ name: 'workflow.ir.json', data: existing }] }],
+    releases: [{ tag: TAG, draft: true, assets: [{ name: 'workflow.compiled.json', data: existing }] }],
   });
 
   const result = await publishBundle({
@@ -299,20 +299,20 @@ test('a same-name upload with different bytes is refused, never replaced', async
   });
 
   assert.equal(result.ok, false);
-  assert.match(result.failures[0], /^RELEASE_ASSET_IMMUTABLE: workflow\.ir\.json/);
+  assert.match(result.failures[0], /^RELEASE_ASSET_IMMUTABLE: workflow\.compiled\.json/);
   assert.equal(result.published, false);
   assert.equal(calls(fixture, 'PATCH').length, 0);
   assert.equal(uploadCalls(fixture).length, plan.assets.length, 'each asset is attempted exactly once');
-  assert.equal(fixture.assetData(TAG, 'workflow.ir.json'), null);
+  assert.equal(fixture.assetData(TAG, 'workflow.compiled.json'), null);
   assert.equal(fixture.release(TAG), null);
 });
 
 test('a same-name upload with identical bytes resumes instead of failing', async (t) => {
   const { plan, assets } = buildLocal();
-  const ir = assets.find((asset) => asset.name === 'workflow.ir.json');
+  const compiledWorkflow = assets.find((asset) => asset.name === 'workflow.compiled.json');
   const fixture = await startGithubFixture(t, {
     repo: REPO,
-    releases: [{ tag: TAG, draft: true, assets: [{ name: 'workflow.ir.json', data: ir.data }] }],
+    releases: [{ tag: TAG, draft: true, assets: [{ name: 'workflow.compiled.json', data: compiledWorkflow.data }] }],
   });
 
   const result = await publishBundle({
@@ -488,19 +488,19 @@ test('a canonical build is publishable and a custom build is refused before any 
   assert.equal(fixture.calls.length, 0, 'the canonical gate runs before the first remote call');
 });
 
-test('--publish --out refuses an IR that is not hm2b.ir/v2', (t) => {
+test('--publish --out refuses a compiled workflow that is not hm2b.compiled-workflow/v2', (t) => {
   const built = writeBuiltRelease(t);
-  const irFile = join(built.dir, 'workflow.ir.json');
-  const ir = JSON.parse(readFileSync(irFile, 'utf8'));
-  ir.schema = 'hm2b.ir/v1';
-  writeFileSync(irFile, canonicalJson(ir));
+  const compiledWorkflowFile = join(built.dir, 'workflow.compiled.json');
+  const compiledWorkflow = JSON.parse(readFileSync(compiledWorkflowFile, 'utf8'));
+  compiledWorkflow.schema = 'hm2b.compiled-workflow/v1';
+  writeFileSync(compiledWorkflowFile, canonicalJson(compiledWorkflow));
 
   const refused = readBuiltRelease(built.dir);
   assert.equal(refused.ok, false);
-  assert.match(refused.failures[0], /^RELEASE_IR_MISMATCH: workflow\.ir\.json schema is hm2b\.ir\/v1 \(expected hm2b\.ir\/v2\)/);
+  assert.match(refused.failures[0], /^RELEASE_COMPILED_WORKFLOW_MISMATCH: workflow\.compiled\.json schema is hm2b\.compiled-workflow\/v1 \(expected hm2b\.compiled-workflow\/v2\)/);
 });
 
-test('--publish --out refuses a zip whose manifest disagrees with the IR', (t) => {
+test('--publish --out refuses a zip whose manifest disagrees with the compiled workflow', (t) => {
   const built = writeBuiltRelease(t);
   const zipName = `bundle-${ID}-v${VERSION}.zip`;
   const zipPath = join(built.dir, zipName);

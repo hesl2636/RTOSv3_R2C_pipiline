@@ -1,9 +1,9 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://hm2b.runner/schema/ir/v2",
-  "title": "hm2b.ir/v2",
-  "description": "Neutral intermediate representation (workflow.ir.json). Documentation only: assembler/validate-ir.js is authoritative and reports IR_SCHEMA_INVALID plus the cross-field IR_* codes.",
-  "$comment": "Rules the validator enforces and this document does not express: top-level and member order is fixed by ir/schema.js; dynamic map keys are sorted by code point; knowledgeBase is sorted by path and checklists by id; step skills and role tools/skills/projections are sorted; stages order and steps order are execution order; every embedded source hash must recompute and source.bundle.contentSha256 must match the asset manifest; hooks and mcp bodies are canonical JSON and mcp carries an object under mcpServers; step role/task/skills must exist in the maps; v2 allows at most one global constitution mount; knowledgeBase/checklists are empty arrays and hooks/mcp are null when the bundle declares no such asset; the file must be canonical JSON (two-space indent, trailing LF).",
+  "$id": "https://hm2b.runner/schema/compiled/v2",
+  "title": "hm2b.compiled-workflow/v2",
+  "description": "Neutral compiled workflow (workflow.compiled.json). Documentation only: assembler/validate-compiled.js is authoritative and reports COMPILED_WORKFLOW_SCHEMA_INVALID plus the cross-field COMPILED_WORKFLOW_* codes.",
+  "$comment": "Rules the validator enforces and this document does not express: top-level and member order is fixed by compiled/schema.js; dynamic map keys are sorted by code point; knowledgeBase is sorted by path and checklists by id; step skills and role tools/skills/projections are sorted; stages order and steps order are execution order; every embedded source hash must recompute and source.bundle.contentSha256 must match the asset manifest; hooks and mcp bodies are canonical JSON and mcp carries an object under mcpServers; step role/task/skills must exist in the maps; v2 allows at most one global constitution mount; knowledgeBase/checklists are empty arrays and hooks/mcp are null when the bundle declares no such asset; the file must be canonical JSON (two-space indent, trailing LF).",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -25,7 +25,7 @@
   ],
   "properties": {
     "schema": {
-      "const": "hm2b.ir/v2"
+      "const": "hm2b.compiled-workflow/v2"
     },
     "id": {
       "$ref": "#/$defs/bundleId"

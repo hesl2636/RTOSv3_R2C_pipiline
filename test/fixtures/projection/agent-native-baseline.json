@@ -5,17 +5,16 @@
     "id": "agent-native",
     "version": "0.1.0"
   },
-  "ir": {
+  "compiledWorkflow": {
     "id": "rtosv3-drvport",
     "version": "1.0.0",
-    "digest": "34d55ee62bf284594218d4923b0eafa267799edb1edbbeb7bb313a6f2ab0bc04",
-    "contentSha256": "2093b03b97c90c6e77dfeb26c69d585ef78a11170032151171c31272ac7dbbf2",
-    "bytes": 58904
+    "digest": "518643ab9c92d270a66bd4545cba660d0511243070c3479234edec3225b6d23c",
+    "contentSha256": "2093b03b97c90c6e77dfeb26c69d585ef78a11170032151171c31272ac7dbbf2"
   },
-  "resultDigest": "b67aa212922ed4eed7d49133a569d3a51663f5d2ba6d5482aee99ef4eae63d6e",
+  "resultDigest": "c3c0e75ffb7802e6a237ed002dfd6e54c8862f4d3008382c1357f04e9cb5d47f",
   "counts": {
     "files": 98,
-    "bytes": 142657,
+    "bytes": 142731,
     "degradations": 45,
     "warnings": 1,
     "capabilities": 40
@@ -44,8 +43,8 @@
   "options": {
     "schema": "hm2b.projection-options/v1",
     "projection": "agent-native",
-    "ir": {
-      "digest": "34d55ee62bf284594218d4923b0eafa267799edb1edbbeb7bb313a6f2ab0bc04",
+    "compiledWorkflow": {
+      "digest": "518643ab9c92d270a66bd4545cba660d0511243070c3479234edec3225b6d23c",
       "id": "rtosv3-drvport",
       "version": "1.0.0"
     },
@@ -101,6 +100,400 @@
     ],
     "extra": {}
   },
+  "files": [
+    {
+      "path": ".agents/agent-native/rtosv3-drvport/roles.json",
+      "sha256": "a44b921db799373d26fd27fcdbbec4dd22f6c43d6890660033e3dafd315f32a0"
+    },
+    {
+      "path": ".agents/skills/rtosv3-drvport-skill-aceharness-rag/SKILL.md",
+      "sha256": "74c338495db395cec8be04c298826fb6d1a31901cbb95e7a23183eb8fbc40ac6"
+    },
+    {
+      "path": ".agents/skills/rtosv3-drvport-skill-all-build-single-package/SKILL.md",
+      "sha256": "eec39cf1cd2dda1d77547829284e21787676053ede57bd1d84b9d3b39ce2d2fd"
+    },
+    {
+      "path": ".agents/skills/rtosv3-drvport-skill-all-cleancode/SKILL.md",
+      "sha256": "6d4530772a63ebd80a4d7486f6e61c008898d5542d13b70a0fef0315fe901b23"
+    },
+    {
+      "path": ".agents/skills/rtosv3-drvport-skill-all-multirepo-upload/SKILL.md",
+      "sha256": "2e48b87769cc82eb809c40bdfb91a8f154d863dcbee00a7664eb497bd5a84510"
+    },
+    {
+      "path": ".agents/skills/rtosv3-drvport-skill-all-securec-replace/SKILL.md",
+      "sha256": "e2fd2fa3154e3e2a9ea6031be20a9686bfd2a4f71d199a5b2482a475b01aee6b"
+    },
+    {
+      "path": ".agents/skills/rtosv3-drvport-skill-ar-miner/SKILL.md",
+      "sha256": "f7823d7ab51b2f9dd55f44e9bfc81e2a885f75ab4695ae19a399e5dfaca9f7f8"
+    },
+    {
+      "path": ".agents/skills/rtosv3-drvport-skill-cleancode-scanfix/SKILL.md",
+      "sha256": "e8a98593747ec78e89d312e86af31365c9e68834f1a3d0f08de10322592ff860"
+    },
+    {
+      "path": ".agents/skills/rtosv3-drvport-skill-code-research/SKILL.md",
+      "sha256": "61b938a5432fc25ce69e67dd75d42ca50b901d30eb276ba5ffc1f7d7e540d00b"
+    },
+    {
+      "path": ".agents/skills/rtosv3-drvport-skill-codebase-search/SKILL.md",
+      "sha256": "2684e2bfbd3ed6799a490d7856e2e6b28e069619d2c7f866a6c60be71f4c9caf"
+    },
+    {
+      "path": ".agents/skills/rtosv3-drvport-skill-design-gen/SKILL.md",
+      "sha256": "0614b60a22f3ed35e69c5d93e6cba3725ff0fff7d4248fef466ca0106edba78c"
+    },
+    {
+      "path": ".agents/skills/rtosv3-drvport-skill-executing-plans/SKILL.md",
+      "sha256": "22f77f0792b0316d098e38a5325e9f9e9d24072a2818568508fa1320624b93bf"
+    },
+    {
+      "path": ".agents/skills/rtosv3-drvport-skill-huawei-c-coding-standard/SKILL.md",
+      "sha256": "bc3d4c4e88b17eab41916a8ce0ea65e44eaa66d5051a3af4a4d8c61a3915c3b5"
+    },
+    {
+      "path": ".agents/skills/rtosv3-drvport-skill-r2c-build-redblue/SKILL.md",
+      "sha256": "a6e65ac3e39ee1f92e729d7d8545bbc08021661236b2a320a7b6fea17046d67d"
+    },
+    {
+      "path": ".agents/skills/rtosv3-drvport-skill-r2c-design/SKILL.md",
+      "sha256": "75b08d9c8e3a3260d13aac7747cee57ce399dbba00ae73b0b3f9a4b15e154e89"
+    },
+    {
+      "path": ".agents/skills/rtosv3-drvport-skill-r2c-imdesign/SKILL.md",
+      "sha256": "98e58889d2f097a34a143958c99f7ecdced9cbcc17dd77f607c49c97a7479d04"
+    },
+    {
+      "path": ".agents/skills/rtosv3-drvport-skill-r2c-implement-redblue/SKILL.md",
+      "sha256": "8c2a760d6e843c5a5553d46c1754a99c628b97051f8332adee61748bd2595a5e"
+    },
+    {
+      "path": ".agents/skills/rtosv3-drvport-skill-r2c-push-mr/SKILL.md",
+      "sha256": "b6041243b2e8d439a876e284dbf13ec2470a8c583de2121ffb5044719dee813e"
+    },
+    {
+      "path": ".agents/skills/rtosv3-drvport-skill-r2c-review/SKILL.md",
+      "sha256": "853dd8ab148a689e0ceb724f522a16c652f6312b62ce1b86eb860a3df46194b2"
+    },
+    {
+      "path": ".agents/skills/rtosv3-drvport-skill-r2c-verify-rb/SKILL.md",
+      "sha256": "23a883fe8ed11ddb0b6866066df9ca2ac03db8c2e3d9f311d574efbf16f9f7f1"
+    },
+    {
+      "path": ".agents/skills/rtosv3-drvport-skill-red-blue/SKILL.md",
+      "sha256": "30de7530eddaf3b11b84a5fc1fa46ebec8ea198c56cb2c457f9a2882759274c0"
+    },
+    {
+      "path": ".agents/skills/rtosv3-drvport-skill-req-analysis/SKILL.md",
+      "sha256": "49496919291dc0bad9ab430b6f768f487b947708fc498052e64a7def4cab12d2"
+    },
+    {
+      "path": ".agents/skills/rtosv3-drvport-skill-req-design/SKILL.md",
+      "sha256": "b79e7a046e3d6725a0fda7d21c056c1a9b604cf5af84dc8fb770de2e2a330384"
+    },
+    {
+      "path": ".agents/skills/rtosv3-drvport-skill-req-formal-verif/SKILL.md",
+      "sha256": "1fbe1d961b5c5f41273ca846f1d13c59775edf65bc7adaad33dbc971e18137ca"
+    },
+    {
+      "path": ".agents/skills/rtosv3-drvport-skill-semantic-equiv/SKILL.md",
+      "sha256": "3be746736ba12b1f162d0e5057f676b99234890e290464533a3524091fffd9a4"
+    },
+    {
+      "path": ".agents/skills/rtosv3-drvport-skill-sr-miner/SKILL.md",
+      "sha256": "ace94459ad9ee5ef3b0f0f7a8d36a0135fc81355d05c8fb3634bde5dd5974aa0"
+    },
+    {
+      "path": ".agents/skills/rtosv3-drvport-skill-subagent-driven-development/SKILL.md",
+      "sha256": "addd69821153d86c72966f2295c81029fc7c014a6bd2bb98618e6a54715362c6"
+    },
+    {
+      "path": ".agents/skills/rtosv3-drvport-skill-using-workflow/SKILL.md",
+      "sha256": "7d606348b2d5cd3bef6f65e06a7091173d719458b35a01a3d5032f345c94ee16"
+    },
+    {
+      "path": ".agents/skills/rtosv3-drvport-skill-v3-check-symbol-context/SKILL.md",
+      "sha256": "b3b10b5756fefa89197b172fee1a43b46f2d69b38559641a09062ebe708006d9"
+    },
+    {
+      "path": ".agents/skills/rtosv3-drvport-skill-v3-commit/SKILL.md",
+      "sha256": "ac91a262207d24e692141d3c125f4bceb5bc43e91af8dde52b093358c5b48f1f"
+    },
+    {
+      "path": ".agents/skills/rtosv3-drvport-skill-v3-hm-kernel/SKILL.md",
+      "sha256": "0278f73c79c8b1a873020fd3ea2f96e3a84e09e8f1364b7896459e202d0d0164"
+    },
+    {
+      "path": ".agents/skills/rtosv3-drvport-skill-v3-kb/SKILL.md",
+      "sha256": "e9ededd4af3d8f674c902c2bf2229b5a946b76105a2875b0a20ecd949509fbef"
+    },
+    {
+      "path": ".agents/skills/rtosv3-drvport-skill-v3-personal-pipeline/SKILL.md",
+      "sha256": "5e95be7c37eb2a7ccc827af26f89c28f00376b3981b3d3211887765b27f68bf1"
+    },
+    {
+      "path": ".agents/skills/rtosv3-drvport-skill-v3-query-symbol/SKILL.md",
+      "sha256": "aa0c1f85b3bd96346e601333cbf020d47af138a09df1f6a355489a3d4a5a8ab1"
+    },
+    {
+      "path": ".agents/skills/rtosv3-drvport-skill-workflow-core/SKILL.md",
+      "sha256": "ffb2182859418561fc04e340dfafce03082537e69f271cae26c6ce5e9d0719fd"
+    },
+    {
+      "path": ".agents/skills/rtosv3-drvport-skill-writing-plans/SKILL.md",
+      "sha256": "99db8f5c6a6a3601d71979d265eedd4f672f4f97c29334c0546739c93abdddfc"
+    },
+    {
+      "path": ".agents/skills/rtosv3-drvport-stage-analysis-design/SKILL.md",
+      "sha256": "8a9d4e84659e4ceadca6bf802b8c469414ff8df2a7a13a0fcb8e0508bc04ee7b"
+    },
+    {
+      "path": ".agents/skills/rtosv3-drvport-stage-detailed-design/SKILL.md",
+      "sha256": "59055e00c59ed3a564a2af0081f62b52c0e50b46556f1ed764d2dc5464316aa7"
+    },
+    {
+      "path": ".agents/skills/rtosv3-drvport-stage-implementation/SKILL.md",
+      "sha256": "1c53e56af098103098cca4ee0e03bf272563d5c4cda62efe75ec7b9a52c0b752"
+    },
+    {
+      "path": ".agents/skills/rtosv3-drvport-stage-verification/SKILL.md",
+      "sha256": "310090f2eb6b9444b9574a8a203344bfe5cbeaa2676d1a06ec8f31b5cc4aa06e"
+    },
+    {
+      "path": ".agents/skills/rtosv3-drvport-workflow/SKILL.md",
+      "sha256": "e0e097a0092c9584f20956f8ad381eb6aa465578ab87f46e5e8d5d55e9e9d68f"
+    },
+    {
+      "path": ".claude/agents/rtosv3-drvport-bys-architect.md",
+      "sha256": "1c689ab30c3e4b4aec4f3ee8e04e244b91739b8c36922ae47f6603a43c805dc4"
+    },
+    {
+      "path": ".claude/agents/rtosv3-drvport-bys-designer.md",
+      "sha256": "061d1ac313479984538ccb955319a81b66cae44d43890dbb1ed24049fce6ebac"
+    },
+    {
+      "path": ".claude/agents/rtosv3-drvport-bys-impl-lead.md",
+      "sha256": "c5c60bc295103fb137e99a06b371b87524bac6572b4529be529ff9b4d4f93caf"
+    },
+    {
+      "path": ".claude/agents/rtosv3-drvport-bys-release-lead.md",
+      "sha256": "b2f621c5babee8492da63b7c5b6e39517efa1a03c78ef65fd1d7481aaaa9d279"
+    },
+    {
+      "path": ".claude/skills/rtosv3-drvport-skill-aceharness-rag/SKILL.md",
+      "sha256": "74c338495db395cec8be04c298826fb6d1a31901cbb95e7a23183eb8fbc40ac6"
+    },
+    {
+      "path": ".claude/skills/rtosv3-drvport-skill-all-build-single-package/SKILL.md",
+      "sha256": "eec39cf1cd2dda1d77547829284e21787676053ede57bd1d84b9d3b39ce2d2fd"
+    },
+    {
+      "path": ".claude/skills/rtosv3-drvport-skill-all-cleancode/SKILL.md",
+      "sha256": "6d4530772a63ebd80a4d7486f6e61c008898d5542d13b70a0fef0315fe901b23"
+    },
+    {
+      "path": ".claude/skills/rtosv3-drvport-skill-all-multirepo-upload/SKILL.md",
+      "sha256": "2e48b87769cc82eb809c40bdfb91a8f154d863dcbee00a7664eb497bd5a84510"
+    },
+    {
+      "path": ".claude/skills/rtosv3-drvport-skill-all-securec-replace/SKILL.md",
+      "sha256": "e2fd2fa3154e3e2a9ea6031be20a9686bfd2a4f71d199a5b2482a475b01aee6b"
+    },
+    {
+      "path": ".claude/skills/rtosv3-drvport-skill-ar-miner/SKILL.md",
+      "sha256": "f7823d7ab51b2f9dd55f44e9bfc81e2a885f75ab4695ae19a399e5dfaca9f7f8"
+    },
+    {
+      "path": ".claude/skills/rtosv3-drvport-skill-cleancode-scanfix/SKILL.md",
+      "sha256": "e8a98593747ec78e89d312e86af31365c9e68834f1a3d0f08de10322592ff860"
+    },
+    {
+      "path": ".claude/skills/rtosv3-drvport-skill-code-research/SKILL.md",
+      "sha256": "61b938a5432fc25ce69e67dd75d42ca50b901d30eb276ba5ffc1f7d7e540d00b"
+    },
+    {
+      "path": ".claude/skills/rtosv3-drvport-skill-codebase-search/SKILL.md",
+      "sha256": "2684e2bfbd3ed6799a490d7856e2e6b28e069619d2c7f866a6c60be71f4c9caf"
+    },
+    {
+      "path": ".claude/skills/rtosv3-drvport-skill-design-gen/SKILL.md",
+      "sha256": "0614b60a22f3ed35e69c5d93e6cba3725ff0fff7d4248fef466ca0106edba78c"
+    },
+    {
+      "path": ".claude/skills/rtosv3-drvport-skill-executing-plans/SKILL.md",
+      "sha256": "22f77f0792b0316d098e38a5325e9f9e9d24072a2818568508fa1320624b93bf"
+    },
+    {
+      "path": ".claude/skills/rtosv3-drvport-skill-huawei-c-coding-standard/SKILL.md",
+      "sha256": "bc3d4c4e88b17eab41916a8ce0ea65e44eaa66d5051a3af4a4d8c61a3915c3b5"
+    },
+    {
+      "path": ".claude/skills/rtosv3-drvport-skill-r2c-build-redblue/SKILL.md",
+      "sha256": "a6e65ac3e39ee1f92e729d7d8545bbc08021661236b2a320a7b6fea17046d67d"
+    },
+    {
+      "path": ".claude/skills/rtosv3-drvport-skill-r2c-design/SKILL.md",
+      "sha256": "75b08d9c8e3a3260d13aac7747cee57ce399dbba00ae73b0b3f9a4b15e154e89"
+    },
+    {
+      "path": ".claude/skills/rtosv3-drvport-skill-r2c-imdesign/SKILL.md",
+      "sha256": "98e58889d2f097a34a143958c99f7ecdced9cbcc17dd77f607c49c97a7479d04"
+    },
+    {
+      "path": ".claude/skills/rtosv3-drvport-skill-r2c-implement-redblue/SKILL.md",
+      "sha256": "8c2a760d6e843c5a5553d46c1754a99c628b97051f8332adee61748bd2595a5e"
+    },
+    {
+      "path": ".claude/skills/rtosv3-drvport-skill-r2c-push-mr/SKILL.md",
+      "sha256": "b6041243b2e8d439a876e284dbf13ec2470a8c583de2121ffb5044719dee813e"
+    },
+    {
+      "path": ".claude/skills/rtosv3-drvport-skill-r2c-review/SKILL.md",
+      "sha256": "853dd8ab148a689e0ceb724f522a16c652f6312b62ce1b86eb860a3df46194b2"
+    },
+    {
+      "path": ".claude/skills/rtosv3-drvport-skill-r2c-verify-rb/SKILL.md",
+      "sha256": "23a883fe8ed11ddb0b6866066df9ca2ac03db8c2e3d9f311d574efbf16f9f7f1"
+    },
+    {
+      "path": ".claude/skills/rtosv3-drvport-skill-red-blue/SKILL.md",
+      "sha256": "30de7530eddaf3b11b84a5fc1fa46ebec8ea198c56cb2c457f9a2882759274c0"
+    },
+    {
+      "path": ".claude/skills/rtosv3-drvport-skill-req-analysis/SKILL.md",
+      "sha256": "49496919291dc0bad9ab430b6f768f487b947708fc498052e64a7def4cab12d2"
+    },
+    {
+      "path": ".claude/skills/rtosv3-drvport-skill-req-design/SKILL.md",
+      "sha256": "b79e7a046e3d6725a0fda7d21c056c1a9b604cf5af84dc8fb770de2e2a330384"
+    },
+    {
+      "path": ".claude/skills/rtosv3-drvport-skill-req-formal-verif/SKILL.md",
+      "sha256": "1fbe1d961b5c5f41273ca846f1d13c59775edf65bc7adaad33dbc971e18137ca"
+    },
+    {
+      "path": ".claude/skills/rtosv3-drvport-skill-semantic-equiv/SKILL.md",
+      "sha256": "3be746736ba12b1f162d0e5057f676b99234890e290464533a3524091fffd9a4"
+    },
+    {
+      "path": ".claude/skills/rtosv3-drvport-skill-sr-miner/SKILL.md",
+      "sha256": "ace94459ad9ee5ef3b0f0f7a8d36a0135fc81355d05c8fb3634bde5dd5974aa0"
+    },
+    {
+      "path": ".claude/skills/rtosv3-drvport-skill-subagent-driven-development/SKILL.md",
+      "sha256": "addd69821153d86c72966f2295c81029fc7c014a6bd2bb98618e6a54715362c6"
+    },
+    {
+      "path": ".claude/skills/rtosv3-drvport-skill-using-workflow/SKILL.md",
+      "sha256": "7d606348b2d5cd3bef6f65e06a7091173d719458b35a01a3d5032f345c94ee16"
+    },
+    {
+      "path": ".claude/skills/rtosv3-drvport-skill-v3-check-symbol-context/SKILL.md",
+      "sha256": "b3b10b5756fefa89197b172fee1a43b46f2d69b38559641a09062ebe708006d9"
+    },
+    {
+      "path": ".claude/skills/rtosv3-drvport-skill-v3-commit/SKILL.md",
+      "sha256": "ac91a262207d24e692141d3c125f4bceb5bc43e91af8dde52b093358c5b48f1f"
+    },
+    {
+      "path": ".claude/skills/rtosv3-drvport-skill-v3-hm-kernel/SKILL.md",
+      "sha256": "0278f73c79c8b1a873020fd3ea2f96e3a84e09e8f1364b7896459e202d0d0164"
+    },
+    {
+      "path": ".claude/skills/rtosv3-drvport-skill-v3-kb/SKILL.md",
+      "sha256": "e9ededd4af3d8f674c902c2bf2229b5a946b76105a2875b0a20ecd949509fbef"
+    },
+    {
+      "path": ".claude/skills/rtosv3-drvport-skill-v3-personal-pipeline/SKILL.md",
+      "sha256": "5e95be7c37eb2a7ccc827af26f89c28f00376b3981b3d3211887765b27f68bf1"
+    },
+    {
+      "path": ".claude/skills/rtosv3-drvport-skill-v3-query-symbol/SKILL.md",
+      "sha256": "aa0c1f85b3bd96346e601333cbf020d47af138a09df1f6a355489a3d4a5a8ab1"
+    },
+    {
+      "path": ".claude/skills/rtosv3-drvport-skill-workflow-core/SKILL.md",
+      "sha256": "ffb2182859418561fc04e340dfafce03082537e69f271cae26c6ce5e9d0719fd"
+    },
+    {
+      "path": ".claude/skills/rtosv3-drvport-skill-writing-plans/SKILL.md",
+      "sha256": "99db8f5c6a6a3601d71979d265eedd4f672f4f97c29334c0546739c93abdddfc"
+    },
+    {
+      "path": ".claude/skills/rtosv3-drvport-stage-analysis-design/SKILL.md",
+      "sha256": "8a9d4e84659e4ceadca6bf802b8c469414ff8df2a7a13a0fcb8e0508bc04ee7b"
+    },
+    {
+      "path": ".claude/skills/rtosv3-drvport-stage-detailed-design/SKILL.md",
+      "sha256": "59055e00c59ed3a564a2af0081f62b52c0e50b46556f1ed764d2dc5464316aa7"
+    },
+    {
+      "path": ".claude/skills/rtosv3-drvport-stage-implementation/SKILL.md",
+      "sha256": "1c53e56af098103098cca4ee0e03bf272563d5c4cda62efe75ec7b9a52c0b752"
+    },
+    {
+      "path": ".claude/skills/rtosv3-drvport-stage-verification/SKILL.md",
+      "sha256": "310090f2eb6b9444b9574a8a203344bfe5cbeaa2676d1a06ec8f31b5cc4aa06e"
+    },
+    {
+      "path": ".claude/skills/rtosv3-drvport-workflow/SKILL.md",
+      "sha256": "e0e097a0092c9584f20956f8ad381eb6aa465578ab87f46e5e8d5d55e9e9d68f"
+    },
+    {
+      "path": ".codex/agents/rtosv3-drvport-bys-architect.toml",
+      "sha256": "8c9da9ed40dda49dacf2072f5eebaa78bf16999de1dcaad60d5283a204f0f3bd"
+    },
+    {
+      "path": ".codex/agents/rtosv3-drvport-bys-designer.toml",
+      "sha256": "2747f7cedf0eaf3d1cf11e6b1f9e4468f6c7fffd411c529e6b8f2fcf863bf1ba"
+    },
+    {
+      "path": ".codex/agents/rtosv3-drvport-bys-impl-lead.toml",
+      "sha256": "8e9249c147be284b841201c5416dd8d6209d980afe7ad3b8600d1188e31535fe"
+    },
+    {
+      "path": ".codex/agents/rtosv3-drvport-bys-release-lead.toml",
+      "sha256": "b0365bca01634865717de621348b79e6f4b4a50fc25571ef0e1c3fdaff2ae445"
+    },
+    {
+      "path": ".dsh/agent-native/rtosv3-drvport.roles.md",
+      "sha256": "3ec5e2a357d3587b683890c239e050c372baca8d5b089c9fa18c9cf923255809"
+    },
+    {
+      "path": ".omp/agents/rtosv3-drvport-bys-architect.md",
+      "sha256": "adf799b37a3e0b904109d930d259e3e8578e45cc57937c4bc65e8a4ade1b3cee"
+    },
+    {
+      "path": ".omp/agents/rtosv3-drvport-bys-designer.md",
+      "sha256": "62dbe92405a8109bde8e58926bff6c54771fdfffff62558a4363dcd4b211c105"
+    },
+    {
+      "path": ".omp/agents/rtosv3-drvport-bys-impl-lead.md",
+      "sha256": "8544abe18bbeed178bfbd08cd8c827015ad0c4e1a6dba8ddf5b22930ab48afc1"
+    },
+    {
+      "path": ".omp/agents/rtosv3-drvport-bys-release-lead.md",
+      "sha256": "d7244a17980b06a97a635d5f8556a3b0508f93deac07d55d81d60a5fa04c1c43"
+    },
+    {
+      "path": ".opencode/agents/rtosv3-drvport-bys-architect.md",
+      "sha256": "caa5393db87cb14e97a12b5f26f34cad52cfb30d1b702de608eb660d15563bae"
+    },
+    {
+      "path": ".opencode/agents/rtosv3-drvport-bys-designer.md",
+      "sha256": "e9545bb6aaaa4923a1c7cd6624cfeee1e4fe35c9c86f8763ba8e86882ba14dda"
+    },
+    {
+      "path": ".opencode/agents/rtosv3-drvport-bys-impl-lead.md",
+      "sha256": "bb157589b52e23d94e11a8dfca29d86f4a1abdc05a79729d774e5a807307931d"
+    },
+    {
+      "path": ".opencode/agents/rtosv3-drvport-bys-release-lead.md",
+      "sha256": "06178969e1a1496d4c36e6ca08c9dc3c6bb645f7afefbfd7505257dc6e6435ea"
+    }
+  ],
   "metadata": {
     "idMap": {
       "claude-code": {
@@ -1567,403 +1960,9 @@
       "message": "skills are written byte-identically to .claude/skills and .agents/skills; omp may list the same skill twice (content identical, display only)"
     }
   ],
-  "files": [
-    {
-      "path": ".agents/agent-native/rtosv3-drvport/roles.json",
-      "sha256": "5dfd3cbe7086a1009f95ef516d28a316f604f4e896075aea3043dfde724b0c28"
-    },
-    {
-      "path": ".agents/skills/rtosv3-drvport-skill-aceharness-rag/SKILL.md",
-      "sha256": "74c338495db395cec8be04c298826fb6d1a31901cbb95e7a23183eb8fbc40ac6"
-    },
-    {
-      "path": ".agents/skills/rtosv3-drvport-skill-all-build-single-package/SKILL.md",
-      "sha256": "eec39cf1cd2dda1d77547829284e21787676053ede57bd1d84b9d3b39ce2d2fd"
-    },
-    {
-      "path": ".agents/skills/rtosv3-drvport-skill-all-cleancode/SKILL.md",
-      "sha256": "6d4530772a63ebd80a4d7486f6e61c008898d5542d13b70a0fef0315fe901b23"
-    },
-    {
-      "path": ".agents/skills/rtosv3-drvport-skill-all-multirepo-upload/SKILL.md",
-      "sha256": "2e48b87769cc82eb809c40bdfb91a8f154d863dcbee00a7664eb497bd5a84510"
-    },
-    {
-      "path": ".agents/skills/rtosv3-drvport-skill-all-securec-replace/SKILL.md",
-      "sha256": "e2fd2fa3154e3e2a9ea6031be20a9686bfd2a4f71d199a5b2482a475b01aee6b"
-    },
-    {
-      "path": ".agents/skills/rtosv3-drvport-skill-ar-miner/SKILL.md",
-      "sha256": "f7823d7ab51b2f9dd55f44e9bfc81e2a885f75ab4695ae19a399e5dfaca9f7f8"
-    },
-    {
-      "path": ".agents/skills/rtosv3-drvport-skill-cleancode-scanfix/SKILL.md",
-      "sha256": "e8a98593747ec78e89d312e86af31365c9e68834f1a3d0f08de10322592ff860"
-    },
-    {
-      "path": ".agents/skills/rtosv3-drvport-skill-code-research/SKILL.md",
-      "sha256": "61b938a5432fc25ce69e67dd75d42ca50b901d30eb276ba5ffc1f7d7e540d00b"
-    },
-    {
-      "path": ".agents/skills/rtosv3-drvport-skill-codebase-search/SKILL.md",
-      "sha256": "2684e2bfbd3ed6799a490d7856e2e6b28e069619d2c7f866a6c60be71f4c9caf"
-    },
-    {
-      "path": ".agents/skills/rtosv3-drvport-skill-design-gen/SKILL.md",
-      "sha256": "0614b60a22f3ed35e69c5d93e6cba3725ff0fff7d4248fef466ca0106edba78c"
-    },
-    {
-      "path": ".agents/skills/rtosv3-drvport-skill-executing-plans/SKILL.md",
-      "sha256": "22f77f0792b0316d098e38a5325e9f9e9d24072a2818568508fa1320624b93bf"
-    },
-    {
-      "path": ".agents/skills/rtosv3-drvport-skill-huawei-c-coding-standard/SKILL.md",
-      "sha256": "bc3d4c4e88b17eab41916a8ce0ea65e44eaa66d5051a3af4a4d8c61a3915c3b5"
-    },
-    {
-      "path": ".agents/skills/rtosv3-drvport-skill-r2c-build-redblue/SKILL.md",
-      "sha256": "a6e65ac3e39ee1f92e729d7d8545bbc08021661236b2a320a7b6fea17046d67d"
-    },
-    {
-      "path": ".agents/skills/rtosv3-drvport-skill-r2c-design/SKILL.md",
-      "sha256": "75b08d9c8e3a3260d13aac7747cee57ce399dbba00ae73b0b3f9a4b15e154e89"
-    },
-    {
-      "path": ".agents/skills/rtosv3-drvport-skill-r2c-imdesign/SKILL.md",
-      "sha256": "98e58889d2f097a34a143958c99f7ecdced9cbcc17dd77f607c49c97a7479d04"
-    },
-    {
-      "path": ".agents/skills/rtosv3-drvport-skill-r2c-implement-redblue/SKILL.md",
-      "sha256": "8c2a760d6e843c5a5553d46c1754a99c628b97051f8332adee61748bd2595a5e"
-    },
-    {
-      "path": ".agents/skills/rtosv3-drvport-skill-r2c-push-mr/SKILL.md",
-      "sha256": "b6041243b2e8d439a876e284dbf13ec2470a8c583de2121ffb5044719dee813e"
-    },
-    {
-      "path": ".agents/skills/rtosv3-drvport-skill-r2c-review/SKILL.md",
-      "sha256": "853dd8ab148a689e0ceb724f522a16c652f6312b62ce1b86eb860a3df46194b2"
-    },
-    {
-      "path": ".agents/skills/rtosv3-drvport-skill-r2c-verify-rb/SKILL.md",
-      "sha256": "23a883fe8ed11ddb0b6866066df9ca2ac03db8c2e3d9f311d574efbf16f9f7f1"
-    },
-    {
-      "path": ".agents/skills/rtosv3-drvport-skill-red-blue/SKILL.md",
-      "sha256": "30de7530eddaf3b11b84a5fc1fa46ebec8ea198c56cb2c457f9a2882759274c0"
-    },
-    {
-      "path": ".agents/skills/rtosv3-drvport-skill-req-analysis/SKILL.md",
-      "sha256": "49496919291dc0bad9ab430b6f768f487b947708fc498052e64a7def4cab12d2"
-    },
-    {
-      "path": ".agents/skills/rtosv3-drvport-skill-req-design/SKILL.md",
-      "sha256": "b79e7a046e3d6725a0fda7d21c056c1a9b604cf5af84dc8fb770de2e2a330384"
-    },
-    {
-      "path": ".agents/skills/rtosv3-drvport-skill-req-formal-verif/SKILL.md",
-      "sha256": "1fbe1d961b5c5f41273ca846f1d13c59775edf65bc7adaad33dbc971e18137ca"
-    },
-    {
-      "path": ".agents/skills/rtosv3-drvport-skill-semantic-equiv/SKILL.md",
-      "sha256": "3be746736ba12b1f162d0e5057f676b99234890e290464533a3524091fffd9a4"
-    },
-    {
-      "path": ".agents/skills/rtosv3-drvport-skill-sr-miner/SKILL.md",
-      "sha256": "ace94459ad9ee5ef3b0f0f7a8d36a0135fc81355d05c8fb3634bde5dd5974aa0"
-    },
-    {
-      "path": ".agents/skills/rtosv3-drvport-skill-subagent-driven-development/SKILL.md",
-      "sha256": "addd69821153d86c72966f2295c81029fc7c014a6bd2bb98618e6a54715362c6"
-    },
-    {
-      "path": ".agents/skills/rtosv3-drvport-skill-using-workflow/SKILL.md",
-      "sha256": "7d606348b2d5cd3bef6f65e06a7091173d719458b35a01a3d5032f345c94ee16"
-    },
-    {
-      "path": ".agents/skills/rtosv3-drvport-skill-v3-check-symbol-context/SKILL.md",
-      "sha256": "b3b10b5756fefa89197b172fee1a43b46f2d69b38559641a09062ebe708006d9"
-    },
-    {
-      "path": ".agents/skills/rtosv3-drvport-skill-v3-commit/SKILL.md",
-      "sha256": "ac91a262207d24e692141d3c125f4bceb5bc43e91af8dde52b093358c5b48f1f"
-    },
-    {
-      "path": ".agents/skills/rtosv3-drvport-skill-v3-hm-kernel/SKILL.md",
-      "sha256": "0278f73c79c8b1a873020fd3ea2f96e3a84e09e8f1364b7896459e202d0d0164"
-    },
-    {
-      "path": ".agents/skills/rtosv3-drvport-skill-v3-kb/SKILL.md",
-      "sha256": "e9ededd4af3d8f674c902c2bf2229b5a946b76105a2875b0a20ecd949509fbef"
-    },
-    {
-      "path": ".agents/skills/rtosv3-drvport-skill-v3-personal-pipeline/SKILL.md",
-      "sha256": "5e95be7c37eb2a7ccc827af26f89c28f00376b3981b3d3211887765b27f68bf1"
-    },
-    {
-      "path": ".agents/skills/rtosv3-drvport-skill-v3-query-symbol/SKILL.md",
-      "sha256": "aa0c1f85b3bd96346e601333cbf020d47af138a09df1f6a355489a3d4a5a8ab1"
-    },
-    {
-      "path": ".agents/skills/rtosv3-drvport-skill-workflow-core/SKILL.md",
-      "sha256": "ffb2182859418561fc04e340dfafce03082537e69f271cae26c6ce5e9d0719fd"
-    },
-    {
-      "path": ".agents/skills/rtosv3-drvport-skill-writing-plans/SKILL.md",
-      "sha256": "99db8f5c6a6a3601d71979d265eedd4f672f4f97c29334c0546739c93abdddfc"
-    },
-    {
-      "path": ".agents/skills/rtosv3-drvport-stage-analysis-design/SKILL.md",
-      "sha256": "8a9d4e84659e4ceadca6bf802b8c469414ff8df2a7a13a0fcb8e0508bc04ee7b"
-    },
-    {
-      "path": ".agents/skills/rtosv3-drvport-stage-detailed-design/SKILL.md",
-      "sha256": "59055e00c59ed3a564a2af0081f62b52c0e50b46556f1ed764d2dc5464316aa7"
-    },
-    {
-      "path": ".agents/skills/rtosv3-drvport-stage-implementation/SKILL.md",
-      "sha256": "1c53e56af098103098cca4ee0e03bf272563d5c4cda62efe75ec7b9a52c0b752"
-    },
-    {
-      "path": ".agents/skills/rtosv3-drvport-stage-verification/SKILL.md",
-      "sha256": "310090f2eb6b9444b9574a8a203344bfe5cbeaa2676d1a06ec8f31b5cc4aa06e"
-    },
-    {
-      "path": ".agents/skills/rtosv3-drvport-workflow/SKILL.md",
-      "sha256": "e0e097a0092c9584f20956f8ad381eb6aa465578ab87f46e5e8d5d55e9e9d68f"
-    },
-    {
-      "path": ".claude/agents/rtosv3-drvport-bys-architect.md",
-      "sha256": "1c689ab30c3e4b4aec4f3ee8e04e244b91739b8c36922ae47f6603a43c805dc4"
-    },
-    {
-      "path": ".claude/agents/rtosv3-drvport-bys-designer.md",
-      "sha256": "061d1ac313479984538ccb955319a81b66cae44d43890dbb1ed24049fce6ebac"
-    },
-    {
-      "path": ".claude/agents/rtosv3-drvport-bys-impl-lead.md",
-      "sha256": "c5c60bc295103fb137e99a06b371b87524bac6572b4529be529ff9b4d4f93caf"
-    },
-    {
-      "path": ".claude/agents/rtosv3-drvport-bys-release-lead.md",
-      "sha256": "b2f621c5babee8492da63b7c5b6e39517efa1a03c78ef65fd1d7481aaaa9d279"
-    },
-    {
-      "path": ".claude/skills/rtosv3-drvport-skill-aceharness-rag/SKILL.md",
-      "sha256": "74c338495db395cec8be04c298826fb6d1a31901cbb95e7a23183eb8fbc40ac6"
-    },
-    {
-      "path": ".claude/skills/rtosv3-drvport-skill-all-build-single-package/SKILL.md",
-      "sha256": "eec39cf1cd2dda1d77547829284e21787676053ede57bd1d84b9d3b39ce2d2fd"
-    },
-    {
-      "path": ".claude/skills/rtosv3-drvport-skill-all-cleancode/SKILL.md",
-      "sha256": "6d4530772a63ebd80a4d7486f6e61c008898d5542d13b70a0fef0315fe901b23"
-    },
-    {
-      "path": ".claude/skills/rtosv3-drvport-skill-all-multirepo-upload/SKILL.md",
-      "sha256": "2e48b87769cc82eb809c40bdfb91a8f154d863dcbee00a7664eb497bd5a84510"
-    },
-    {
-      "path": ".claude/skills/rtosv3-drvport-skill-all-securec-replace/SKILL.md",
-      "sha256": "e2fd2fa3154e3e2a9ea6031be20a9686bfd2a4f71d199a5b2482a475b01aee6b"
-    },
-    {
-      "path": ".claude/skills/rtosv3-drvport-skill-ar-miner/SKILL.md",
-      "sha256": "f7823d7ab51b2f9dd55f44e9bfc81e2a885f75ab4695ae19a399e5dfaca9f7f8"
-    },
-    {
-      "path": ".claude/skills/rtosv3-drvport-skill-cleancode-scanfix/SKILL.md",
-      "sha256": "e8a98593747ec78e89d312e86af31365c9e68834f1a3d0f08de10322592ff860"
-    },
-    {
-      "path": ".claude/skills/rtosv3-drvport-skill-code-research/SKILL.md",
-      "sha256": "61b938a5432fc25ce69e67dd75d42ca50b901d30eb276ba5ffc1f7d7e540d00b"
-    },
-    {
-      "path": ".claude/skills/rtosv3-drvport-skill-codebase-search/SKILL.md",
-      "sha256": "2684e2bfbd3ed6799a490d7856e2e6b28e069619d2c7f866a6c60be71f4c9caf"
-    },
-    {
-      "path": ".claude/skills/rtosv3-drvport-skill-design-gen/SKILL.md",
-      "sha256": "0614b60a22f3ed35e69c5d93e6cba3725ff0fff7d4248fef466ca0106edba78c"
-    },
-    {
-      "path": ".claude/skills/rtosv3-drvport-skill-executing-plans/SKILL.md",
-      "sha256": "22f77f0792b0316d098e38a5325e9f9e9d24072a2818568508fa1320624b93bf"
-    },
-    {
-      "path": ".claude/skills/rtosv3-drvport-skill-huawei-c-coding-standard/SKILL.md",
-      "sha256": "bc3d4c4e88b17eab41916a8ce0ea65e44eaa66d5051a3af4a4d8c61a3915c3b5"
-    },
-    {
-      "path": ".claude/skills/rtosv3-drvport-skill-r2c-build-redblue/SKILL.md",
-      "sha256": "a6e65ac3e39ee1f92e729d7d8545bbc08021661236b2a320a7b6fea17046d67d"
-    },
-    {
-      "path": ".claude/skills/rtosv3-drvport-skill-r2c-design/SKILL.md",
-      "sha256": "75b08d9c8e3a3260d13aac7747cee57ce399dbba00ae73b0b3f9a4b15e154e89"
-    },
-    {
-      "path": ".claude/skills/rtosv3-drvport-skill-r2c-imdesign/SKILL.md",
-      "sha256": "98e58889d2f097a34a143958c99f7ecdced9cbcc17dd77f607c49c97a7479d04"
-    },
-    {
-      "path": ".claude/skills/rtosv3-drvport-skill-r2c-implement-redblue/SKILL.md",
-      "sha256": "8c2a760d6e843c5a5553d46c1754a99c628b97051f8332adee61748bd2595a5e"
-    },
-    {
-      "path": ".claude/skills/rtosv3-drvport-skill-r2c-push-mr/SKILL.md",
-      "sha256": "b6041243b2e8d439a876e284dbf13ec2470a8c583de2121ffb5044719dee813e"
-    },
-    {
-      "path": ".claude/skills/rtosv3-drvport-skill-r2c-review/SKILL.md",
-      "sha256": "853dd8ab148a689e0ceb724f522a16c652f6312b62ce1b86eb860a3df46194b2"
-    },
-    {
-      "path": ".claude/skills/rtosv3-drvport-skill-r2c-verify-rb/SKILL.md",
-      "sha256": "23a883fe8ed11ddb0b6866066df9ca2ac03db8c2e3d9f311d574efbf16f9f7f1"
-    },
-    {
-      "path": ".claude/skills/rtosv3-drvport-skill-red-blue/SKILL.md",
-      "sha256": "30de7530eddaf3b11b84a5fc1fa46ebec8ea198c56cb2c457f9a2882759274c0"
-    },
-    {
-      "path": ".claude/skills/rtosv3-drvport-skill-req-analysis/SKILL.md",
-      "sha256": "49496919291dc0bad9ab430b6f768f487b947708fc498052e64a7def4cab12d2"
-    },
-    {
-      "path": ".claude/skills/rtosv3-drvport-skill-req-design/SKILL.md",
-      "sha256": "b79e7a046e3d6725a0fda7d21c056c1a9b604cf5af84dc8fb770de2e2a330384"
-    },
-    {
-      "path": ".claude/skills/rtosv3-drvport-skill-req-formal-verif/SKILL.md",
-      "sha256": "1fbe1d961b5c5f41273ca846f1d13c59775edf65bc7adaad33dbc971e18137ca"
-    },
-    {
-      "path": ".claude/skills/rtosv3-drvport-skill-semantic-equiv/SKILL.md",
-      "sha256": "3be746736ba12b1f162d0e5057f676b99234890e290464533a3524091fffd9a4"
-    },
-    {
-      "path": ".claude/skills/rtosv3-drvport-skill-sr-miner/SKILL.md",
-      "sha256": "ace94459ad9ee5ef3b0f0f7a8d36a0135fc81355d05c8fb3634bde5dd5974aa0"
-    },
-    {
-      "path": ".claude/skills/rtosv3-drvport-skill-subagent-driven-development/SKILL.md",
-      "sha256": "addd69821153d86c72966f2295c81029fc7c014a6bd2bb98618e6a54715362c6"
-    },
-    {
-      "path": ".claude/skills/rtosv3-drvport-skill-using-workflow/SKILL.md",
-      "sha256": "7d606348b2d5cd3bef6f65e06a7091173d719458b35a01a3d5032f345c94ee16"
-    },
-    {
-      "path": ".claude/skills/rtosv3-drvport-skill-v3-check-symbol-context/SKILL.md",
-      "sha256": "b3b10b5756fefa89197b172fee1a43b46f2d69b38559641a09062ebe708006d9"
-    },
-    {
-      "path": ".claude/skills/rtosv3-drvport-skill-v3-commit/SKILL.md",
-      "sha256": "ac91a262207d24e692141d3c125f4bceb5bc43e91af8dde52b093358c5b48f1f"
-    },
-    {
-      "path": ".claude/skills/rtosv3-drvport-skill-v3-hm-kernel/SKILL.md",
-      "sha256": "0278f73c79c8b1a873020fd3ea2f96e3a84e09e8f1364b7896459e202d0d0164"
-    },
-    {
-      "path": ".claude/skills/rtosv3-drvport-skill-v3-kb/SKILL.md",
-      "sha256": "e9ededd4af3d8f674c902c2bf2229b5a946b76105a2875b0a20ecd949509fbef"
-    },
-    {
-      "path": ".claude/skills/rtosv3-drvport-skill-v3-personal-pipeline/SKILL.md",
-      "sha256": "5e95be7c37eb2a7ccc827af26f89c28f00376b3981b3d3211887765b27f68bf1"
-    },
-    {
-      "path": ".claude/skills/rtosv3-drvport-skill-v3-query-symbol/SKILL.md",
-      "sha256": "aa0c1f85b3bd96346e601333cbf020d47af138a09df1f6a355489a3d4a5a8ab1"
-    },
-    {
-      "path": ".claude/skills/rtosv3-drvport-skill-workflow-core/SKILL.md",
-      "sha256": "ffb2182859418561fc04e340dfafce03082537e69f271cae26c6ce5e9d0719fd"
-    },
-    {
-      "path": ".claude/skills/rtosv3-drvport-skill-writing-plans/SKILL.md",
-      "sha256": "99db8f5c6a6a3601d71979d265eedd4f672f4f97c29334c0546739c93abdddfc"
-    },
-    {
-      "path": ".claude/skills/rtosv3-drvport-stage-analysis-design/SKILL.md",
-      "sha256": "8a9d4e84659e4ceadca6bf802b8c469414ff8df2a7a13a0fcb8e0508bc04ee7b"
-    },
-    {
-      "path": ".claude/skills/rtosv3-drvport-stage-detailed-design/SKILL.md",
-      "sha256": "59055e00c59ed3a564a2af0081f62b52c0e50b46556f1ed764d2dc5464316aa7"
-    },
-    {
-      "path": ".claude/skills/rtosv3-drvport-stage-implementation/SKILL.md",
-      "sha256": "1c53e56af098103098cca4ee0e03bf272563d5c4cda62efe75ec7b9a52c0b752"
-    },
-    {
-      "path": ".claude/skills/rtosv3-drvport-stage-verification/SKILL.md",
-      "sha256": "310090f2eb6b9444b9574a8a203344bfe5cbeaa2676d1a06ec8f31b5cc4aa06e"
-    },
-    {
-      "path": ".claude/skills/rtosv3-drvport-workflow/SKILL.md",
-      "sha256": "e0e097a0092c9584f20956f8ad381eb6aa465578ab87f46e5e8d5d55e9e9d68f"
-    },
-    {
-      "path": ".codex/agents/rtosv3-drvport-bys-architect.toml",
-      "sha256": "8c9da9ed40dda49dacf2072f5eebaa78bf16999de1dcaad60d5283a204f0f3bd"
-    },
-    {
-      "path": ".codex/agents/rtosv3-drvport-bys-designer.toml",
-      "sha256": "2747f7cedf0eaf3d1cf11e6b1f9e4468f6c7fffd411c529e6b8f2fcf863bf1ba"
-    },
-    {
-      "path": ".codex/agents/rtosv3-drvport-bys-impl-lead.toml",
-      "sha256": "8e9249c147be284b841201c5416dd8d6209d980afe7ad3b8600d1188e31535fe"
-    },
-    {
-      "path": ".codex/agents/rtosv3-drvport-bys-release-lead.toml",
-      "sha256": "b0365bca01634865717de621348b79e6f4b4a50fc25571ef0e1c3fdaff2ae445"
-    },
-    {
-      "path": ".dsh/agent-native/rtosv3-drvport.roles.md",
-      "sha256": "3ec5e2a357d3587b683890c239e050c372baca8d5b089c9fa18c9cf923255809"
-    },
-    {
-      "path": ".omp/agents/rtosv3-drvport-bys-architect.md",
-      "sha256": "adf799b37a3e0b904109d930d259e3e8578e45cc57937c4bc65e8a4ade1b3cee"
-    },
-    {
-      "path": ".omp/agents/rtosv3-drvport-bys-designer.md",
-      "sha256": "62dbe92405a8109bde8e58926bff6c54771fdfffff62558a4363dcd4b211c105"
-    },
-    {
-      "path": ".omp/agents/rtosv3-drvport-bys-impl-lead.md",
-      "sha256": "8544abe18bbeed178bfbd08cd8c827015ad0c4e1a6dba8ddf5b22930ab48afc1"
-    },
-    {
-      "path": ".omp/agents/rtosv3-drvport-bys-release-lead.md",
-      "sha256": "d7244a17980b06a97a635d5f8556a3b0508f93deac07d55d81d60a5fa04c1c43"
-    },
-    {
-      "path": ".opencode/agents/rtosv3-drvport-bys-architect.md",
-      "sha256": "caa5393db87cb14e97a12b5f26f34cad52cfb30d1b702de608eb660d15563bae"
-    },
-    {
-      "path": ".opencode/agents/rtosv3-drvport-bys-designer.md",
-      "sha256": "e9545bb6aaaa4923a1c7cd6624cfeee1e4fe35c9c86f8763ba8e86882ba14dda"
-    },
-    {
-      "path": ".opencode/agents/rtosv3-drvport-bys-impl-lead.md",
-      "sha256": "bb157589b52e23d94e11a8dfca29d86f4a1abdc05a79729d774e5a807307931d"
-    },
-    {
-      "path": ".opencode/agents/rtosv3-drvport-bys-release-lead.md",
-      "sha256": "06178969e1a1496d4c36e6ca08c9dc3c6bb645f7afefbfd7505257dc6e6435ea"
-    }
-  ],
   "rolesJson": {
     "path": ".agents/agent-native/rtosv3-drvport/roles.json",
-    "sha256": "5dfd3cbe7086a1009f95ef516d28a316f604f4e896075aea3043dfde724b0c28",
-    "bytes": 29890
+    "bytes": 29964,
+    "sha256": "a44b921db799373d26fd27fcdbbec4dd22f6c43d6890660033e3dafd315f32a0"
   }
 }

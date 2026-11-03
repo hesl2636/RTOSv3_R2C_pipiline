@@ -53,9 +53,9 @@ function snapshot(projectRoot) {
   return walk(projectRoot).map((path) => [path, sha256File(absolute(projectRoot, path))]);
 }
 
-/** Every installer IR copy under `.hm2b/bundles`, project-relative. */
-function irCopies(projectRoot) {
-  return walk(projectRoot).filter((path) => path.startsWith('.hm2b/bundles/') && path.endsWith('/workflow.ir.json'));
+/** Every installer compiled workflow copy under `.hm2b/bundles`, project-relative. */
+function compiledWorkflowCopies(projectRoot) {
+  return walk(projectRoot).filter((path) => path.startsWith('.hm2b/bundles/') && path.endsWith('/workflow.compiled.json'));
 }
 
 function byPath(left, right) {
@@ -87,7 +87,7 @@ function changeFile(result, path, content) {
 
 /** A v1.1.0 payload: one change, one removal, one addition. */
 function changedPayload() {
-  const variant = customSample({ irPatch: { version: '1.1.0' } });
+  const variant = customSample({ compiledWorkflowPatch: { version: '1.1.0' } });
   const result = cloneResult(variant.result);
   changeFile(result, 'roles/bys-architect.md', `${result.files.find((file) => file.path === 'roles/bys-architect.md').content}\ncustomized in 1.1.0\n`);
   removeFile(result, 'roles/bys-designer.md');
@@ -98,7 +98,7 @@ function changedPayload() {
 test('an upgrade reports add/remove/change/keep and deletes untouched removals', (t) => {
   const projectRoot = tempProject(t);
   const v1 = sample('runner');
-  const first = installProjection({ result: v1.result, irBytes: v1.irBytes, projectRoot, clock: CLOCK });
+  const first = installProjection({ result: v1.result, compiledWorkflowBytes: v1.compiledWorkflowBytes, projectRoot, clock: CLOCK });
   assert.equal(first.code, 'OK');
   const v2 = changedPayload();
   const changedPath = 'roles/bys-architect.md';
@@ -107,7 +107,7 @@ test('an upgrade reports add/remove/change/keep and deletes untouched removals',
   const addedPath = 'skills/upgrade-only/SKILL.md';
   const changedPaths = [changedPath, workflowPath];
 
-  const outcome = installProjection({ result: v2.result, irBytes: v2.irBytes, projectRoot, clock: LATER });
+  const outcome = installProjection({ result: v2.result, compiledWorkflowBytes: v2.compiledWorkflowBytes, projectRoot, clock: LATER });
   assert.equal(outcome.code, 'OK');
   assert.equal(outcome.mode, 'upgrade');
   assert.deepEqual(outcome.diff, {
@@ -133,63 +133,63 @@ test('an upgrade reports add/remove/change/keep and deletes untouched removals',
     receipt: first.receiptPath,
     version: '1.0.0',
     digest: previousOptions.digest,
-    ir_digest: v1.irDigest,
+    compiled_workflow_digest: v1.compiledWorkflowDigest,
     options: previousOptions,
   });
 });
 
-test('an upgrade from 1.0.0 to 1.1.0 leaves only the new IR copy', (t) => {
+test('an upgrade from 1.0.0 to 1.1.0 leaves only the new compiled workflow copy', (t) => {
   const projectRoot = tempProject(t);
   const v1 = sample('runner');
-  const first = installProjection({ result: v1.result, irBytes: v1.irBytes, projectRoot, clock: CLOCK });
+  const first = installProjection({ result: v1.result, compiledWorkflowBytes: v1.compiledWorkflowBytes, projectRoot, clock: CLOCK });
   assert.equal(first.code, 'OK');
-  const oldIr = `.hm2b/bundles/${v1.ir.id}/1.0.0/workflow.ir.json`;
-  assert.equal(first.receipt.ir.path, oldIr);
-  assert.deepEqual(irCopies(projectRoot), [oldIr]);
+  const oldCompiledWorkflow = `.hm2b/bundles/${v1.compiledWorkflow.id}/1.0.0/workflow.compiled.json`;
+  assert.equal(first.receipt.compiledWorkflow.path, oldCompiledWorkflow);
+  assert.deepEqual(compiledWorkflowCopies(projectRoot), [oldCompiledWorkflow]);
 
   const v2 = changedPayload();
-  const newIr = `.hm2b/bundles/${v2.ir.id}/1.1.0/workflow.ir.json`;
-  const outcome = installProjection({ result: v2.result, irBytes: v2.irBytes, projectRoot, clock: LATER });
+  const newCompiledWorkflow = `.hm2b/bundles/${v2.compiledWorkflow.id}/1.1.0/workflow.compiled.json`;
+  const outcome = installProjection({ result: v2.result, compiledWorkflowBytes: v2.compiledWorkflowBytes, projectRoot, clock: LATER });
   assert.equal(outcome.code, 'OK');
   assert.equal(outcome.mode, 'upgrade');
-  assert.equal(outcome.supersededIr, oldIr, 'the replaced IR copy is named');
-  assert.equal(outcome.receipt.ir.path, newIr);
-  assert.equal(existsSync(absolute(projectRoot, oldIr)), false, 'the unreferenced 1.0.0 IR is deleted');
+  assert.equal(outcome.supersededCompiledWorkflow, oldCompiledWorkflow, 'the replaced compiled workflow copy is named');
+  assert.equal(outcome.receipt.compiledWorkflow.path, newCompiledWorkflow);
+  assert.equal(existsSync(absolute(projectRoot, oldCompiledWorkflow)), false, 'the unreferenced 1.0.0 compiled workflow is deleted');
   assert.equal(
-    existsSync(absolute(projectRoot, `.hm2b/bundles/${v1.ir.id}/1.0.0`)),
+    existsSync(absolute(projectRoot, `.hm2b/bundles/${v1.compiledWorkflow.id}/1.0.0`)),
     false,
     'the now-empty version directory is pruned',
   );
-  assert.ok(outcome.pruned.includes(`.hm2b/bundles/${v1.ir.id}/1.0.0`));
-  assert.deepEqual(irCopies(projectRoot), [newIr], 'only the new IR survives the upgrade');
-  assert.equal(sha256File(absolute(projectRoot, newIr)), v2.irDigest, 'the new IR copy is byte-identical to the installed IR');
-  assert.equal(outcome.receipt.ir.digest, v2.irDigest);
+  assert.ok(outcome.pruned.includes(`.hm2b/bundles/${v1.compiledWorkflow.id}/1.0.0`));
+  assert.deepEqual(compiledWorkflowCopies(projectRoot), [newCompiledWorkflow], 'only the new compiled workflow survives the upgrade');
+  assert.equal(sha256File(absolute(projectRoot, newCompiledWorkflow)), v2.compiledWorkflowDigest, 'the new compiled workflow copy is byte-identical to the installed compiled workflow');
+  assert.equal(outcome.receipt.compiledWorkflow.digest, v2.compiledWorkflowDigest);
   assert.equal(
-    existsSync(absolute(projectRoot, `.hm2b/bundles/${v1.ir.id}`)),
+    existsSync(absolute(projectRoot, `.hm2b/bundles/${v1.compiledWorkflow.id}`)),
     true,
     'the bundle directory still holds 1.1.0',
   );
   assert.equal(
-    outcome.warnings.some((warning) => warning.code === 'IR_STALE_KEPT'),
+    outcome.warnings.some((warning) => warning.code === 'COMPILED_WORKFLOW_STALE_KEPT'),
     false,
     'a writable project never needs the cleanup warning',
   );
 });
 
-test('an IR copy another receipt still references survives the upgrade', (t) => {
+test('a compiled workflow copy another receipt still references survives the upgrade', (t) => {
   const projectRoot = tempProject(t);
   const v1 = sample('runner');
-  assert.equal(installProjection({ result: v1.result, irBytes: v1.irBytes, projectRoot, clock: CLOCK }).code, 'OK');
-  const oldIr = `.hm2b/bundles/${v1.ir.id}/1.0.0/workflow.ir.json`;
+  assert.equal(installProjection({ result: v1.result, compiledWorkflowBytes: v1.compiledWorkflowBytes, projectRoot, clock: CLOCK }).code, 'OK');
+  const oldCompiledWorkflow = `.hm2b/bundles/${v1.compiledWorkflow.id}/1.0.0/workflow.compiled.json`;
 
-  // A second identity pinning the same 1.0.0 IR copy: the upgrade must keep it.
-  const otherReceipt = '.hm2b/install/receipts/agent-native/ir-pin.json';
+  // A second identity pinning the same 1.0.0 compiled workflow copy: the upgrade must keep it.
+  const otherReceipt = '.hm2b/install/receipts/agent-native/compiled-workflow-pin.json';
   mkdirSync(absolute(projectRoot, '.hm2b/install/receipts/agent-native'), { recursive: true });
   writeFileSync(absolute(projectRoot, otherReceipt), canonicalJson({
     schema: 'hm2b.install/v2',
     projection: { id: 'agent-native', version: '1.0.0', targets: [] },
-    bundle: { id: 'ir-pin', version: '1.0.0' },
-    ir: { path: oldIr, digest: v1.irDigest, contentSha256: null },
+    bundle: { id: 'compiled-workflow-pin', version: '1.0.0' },
+    compiledWorkflow: { path: oldCompiledWorkflow, digest: v1.compiledWorkflowDigest, contentSha256: null },
     root: 'project',
     scope: 'project',
     mode: 'fresh',
@@ -210,24 +210,24 @@ test('an IR copy another receipt still references survives the upgrade', (t) => 
   }));
 
   const v2 = changedPayload();
-  const newIr = `.hm2b/bundles/${v2.ir.id}/1.1.0/workflow.ir.json`;
-  const outcome = installProjection({ result: v2.result, irBytes: v2.irBytes, projectRoot, clock: LATER });
+  const newCompiledWorkflow = `.hm2b/bundles/${v2.compiledWorkflow.id}/1.1.0/workflow.compiled.json`;
+  const outcome = installProjection({ result: v2.result, compiledWorkflowBytes: v2.compiledWorkflowBytes, projectRoot, clock: LATER });
   assert.equal(outcome.code, 'OK');
-  assert.equal(outcome.supersededIr, null, 'a referenced IR copy is never a deletion candidate');
-  assert.equal(existsSync(absolute(projectRoot, oldIr)), true, 'the other receipt keeps its IR copy');
+  assert.equal(outcome.supersededCompiledWorkflow, null, 'a referenced compiled workflow copy is never a deletion candidate');
+  assert.equal(existsSync(absolute(projectRoot, oldCompiledWorkflow)), true, 'the other receipt keeps its compiled workflow copy');
   assert.equal(existsSync(absolute(projectRoot, otherReceipt)), true);
-  assert.deepEqual(irCopies(projectRoot), [oldIr, newIr].sort());
+  assert.deepEqual(compiledWorkflowCopies(projectRoot), [oldCompiledWorkflow, newCompiledWorkflow].sort());
 });
 
 test('a removal whose disk bytes were edited is kept with a warning', (t) => {
   const projectRoot = tempProject(t);
   const v1 = sample('runner');
-  assert.equal(installProjection({ result: v1.result, irBytes: v1.irBytes, projectRoot, clock: CLOCK }).code, 'OK');
+  assert.equal(installProjection({ result: v1.result, compiledWorkflowBytes: v1.compiledWorkflowBytes, projectRoot, clock: CLOCK }).code, 'OK');
   const removedPath = 'roles/bys-designer.md';
   writeFileSync(absolute(projectRoot, removedPath), 'edited by the user\n');
 
   const v2 = changedPayload();
-  const outcome = installProjection({ result: v2.result, irBytes: v2.irBytes, projectRoot, clock: LATER });
+  const outcome = installProjection({ result: v2.result, compiledWorkflowBytes: v2.compiledWorkflowBytes, projectRoot, clock: LATER });
   assert.equal(outcome.code, 'OK');
   assert.ok(outcome.diff.remove.includes(removedPath));
   assert.deepEqual(outcome.warnings.find((warning) => warning.path === removedPath), {
@@ -242,12 +242,12 @@ test('a removal whose disk bytes were edited is kept with a warning', (t) => {
 test('the same version with different options is an upgrade, not unchanged', (t) => {
   const projectRoot = tempProject(t);
   const base = sample('runner');
-  const first = installProjection({ result: base.result, irBytes: base.irBytes, projectRoot, clock: CLOCK });
+  const first = installProjection({ result: base.result, compiledWorkflowBytes: base.compiledWorkflowBytes, projectRoot, clock: CLOCK });
   assert.equal(first.code, 'OK');
 
   const subset = ['r2c-design', 'req-analysis'];
   const narrowed = sample('runner', { skills: subset });
-  const outcome = installProjection({ result: narrowed.result, irBytes: narrowed.irBytes, projectRoot, clock: LATER });
+  const outcome = installProjection({ result: narrowed.result, compiledWorkflowBytes: narrowed.compiledWorkflowBytes, projectRoot, clock: LATER });
 
   assert.equal(outcome.code, 'OK');
   assert.equal(outcome.mode, 'upgrade');
@@ -267,15 +267,15 @@ test('the same version with different options is an upgrade, not unchanged', (t)
 test('rollback installs the older payload through the same identity and keeps previous', (t) => {
   const projectRoot = tempProject(t);
   const v1 = sample('runner');
-  assert.equal(installProjection({ result: v1.result, irBytes: v1.irBytes, projectRoot, clock: CLOCK }).code, 'OK');
+  assert.equal(installProjection({ result: v1.result, compiledWorkflowBytes: v1.compiledWorkflowBytes, projectRoot, clock: CLOCK }).code, 'OK');
 
   const v2 = changedPayload();
-  const upgraded = installProjection({ result: v2.result, irBytes: v2.irBytes, projectRoot, clock: LATER });
+  const upgraded = installProjection({ result: v2.result, compiledWorkflowBytes: v2.compiledWorkflowBytes, projectRoot, clock: LATER });
   assert.equal(upgraded.code, 'OK');
 
   const rolledBack = installProjection({
     result: v1.result,
-    irBytes: v1.irBytes,
+    compiledWorkflowBytes: v1.compiledWorkflowBytes,
     projectRoot,
     clock: fixedClock('2026-05-01T00:00:00.000Z'),
   });
@@ -286,7 +286,7 @@ test('rollback installs the older payload through the same identity and keeps pr
   assert.equal(rolledBack.receipt.previous.digest, upgraded.receipt.options.digest);
   assert.deepEqual(rolledBack.receipt.previous.options, upgraded.receipt.options);
   assert.equal(rolledBack.receipt.previous.path, rolledBack.receiptPath);
-  assert.equal(rolledBack.receipt.previous.ir_digest, v2.irDigest);
+  assert.equal(rolledBack.receipt.previous.compiled_workflow_digest, v2.compiledWorkflowDigest);
 
   for (const file of v1.result.files) {
     assert.equal(
@@ -303,11 +303,11 @@ test('rollback installs the older payload through the same identity and keeps pr
 test('a changed bundle id is a new identity, never an in-place migration', (t) => {
   const projectRoot = tempProject(t);
   const v1 = sample('runner');
-  assert.equal(installProjection({ result: v1.result, irBytes: v1.irBytes, projectRoot, clock: CLOCK }).code, 'OK');
+  assert.equal(installProjection({ result: v1.result, compiledWorkflowBytes: v1.compiledWorkflowBytes, projectRoot, clock: CLOCK }).code, 'OK');
   const before = snapshot(projectRoot);
 
-  const other = customSample({ irPatch: { id: 'other-workflow' } });
-  const refused = installProjection({ result: other.result, irBytes: other.irBytes, projectRoot, clock: LATER });
+  const other = customSample({ compiledWorkflowPatch: { id: 'other-workflow' } });
+  const refused = installProjection({ result: other.result, compiledWorkflowBytes: other.compiledWorkflowBytes, projectRoot, clock: LATER });
   // #103 / #76 §4.2: the runner roots hold one bundle, so a second runner identity is
   // refused at the root before the path-level conflict matrix runs.
   assert.equal(refused.code, 'RUNNER_ROOT_OCCUPIED');
@@ -318,11 +318,11 @@ test('a changed bundle id is a new identity, never an in-place migration', (t) =
 test('a different bundle id on another projection is a separate identity that can coexist', (t) => {
   const projectRoot = tempProject(t);
   const first = sample('agent-native');
-  assert.equal(installProjection({ result: first.result, irBytes: first.irBytes, projectRoot, clock: CLOCK }).code, 'OK');
+  assert.equal(installProjection({ result: first.result, compiledWorkflowBytes: first.compiledWorkflowBytes, projectRoot, clock: CLOCK }).code, 'OK');
   const firstPaths = first.result.files.map((file) => file.path);
 
-  const other = customSample({ projectionId: 'agent-native', irPatch: { id: 'other-workflow' } });
-  const second = installProjection({ result: other.result, irBytes: other.irBytes, projectRoot, clock: LATER });
+  const other = customSample({ projectionId: 'agent-native', compiledWorkflowPatch: { id: 'other-workflow' } });
+  const second = installProjection({ result: other.result, compiledWorkflowBytes: other.compiledWorkflowBytes, projectRoot, clock: LATER });
   assert.equal(second.code, 'OK');
   assert.equal(second.mode, 'fresh');
   assert.equal(second.receiptPath, '.hm2b/install/receipts/agent-native/other-workflow.json');
@@ -342,16 +342,16 @@ test('switching projection needs an explicit uninstall; installing never removes
   const projectRoot = tempProject(t);
   const runnerSet = sample('runner');
   const native = sample('agent-native');
-  assert.equal(installProjection({ result: runnerSet.result, irBytes: runnerSet.irBytes, projectRoot, clock: CLOCK }).code, 'OK');
+  assert.equal(installProjection({ result: runnerSet.result, compiledWorkflowBytes: runnerSet.compiledWorkflowBytes, projectRoot, clock: CLOCK }).code, 'OK');
 
-  const second = installProjection({ result: native.result, irBytes: native.irBytes, projectRoot, clock: LATER });
+  const second = installProjection({ result: native.result, compiledWorkflowBytes: native.compiledWorkflowBytes, projectRoot, clock: LATER });
   assert.equal(second.code, 'OK');
   assert.equal(existsSync(absolute(projectRoot, '.hm2b/install/receipts/runner/rtosv3-drvport.json')), true);
   for (const file of runnerSet.result.files) {
     assert.equal(existsSync(absolute(projectRoot, file.path)), true, `runner keeps ${file.path}`);
   }
 
-  const removed = uninstallProjection({ projectRoot, projectionId: 'runner', bundleId: runnerSet.ir.id, clock: LATER });
+  const removed = uninstallProjection({ projectRoot, projectionId: 'runner', bundleId: runnerSet.compiledWorkflow.id, clock: LATER });
   assert.equal(removed.code, 'OK');
   for (const file of native.result.files) {
     assert.equal(existsSync(absolute(projectRoot, file.path)), true, `agent-native keeps ${file.path}`);
@@ -364,14 +364,14 @@ test('switching projection needs an explicit uninstall; installing never removes
 test('uninstall after an upgrade removes the new set and preserves shared roots', (t) => {
   const projectRoot = tempProject(t);
   const v1 = sample('runner');
-  assert.equal(installProjection({ result: v1.result, irBytes: v1.irBytes, projectRoot, clock: CLOCK }).code, 'OK');
+  assert.equal(installProjection({ result: v1.result, compiledWorkflowBytes: v1.compiledWorkflowBytes, projectRoot, clock: CLOCK }).code, 'OK');
   const v2 = changedPayload();
-  const upgraded = installProjection({ result: v2.result, irBytes: v2.irBytes, projectRoot, clock: LATER });
+  const upgraded = installProjection({ result: v2.result, compiledWorkflowBytes: v2.compiledWorkflowBytes, projectRoot, clock: LATER });
   assert.equal(upgraded.code, 'OK');
 
   const plan = planUninstall({ projectRoot, receipt: upgraded.receipt, force: false });
   assert.deepEqual(plan.leftovers, []);
-  const outcome = uninstallProjection({ projectRoot, projectionId: 'runner', bundleId: v1.ir.id, clock: LATER });
+  const outcome = uninstallProjection({ projectRoot, projectionId: 'runner', bundleId: v1.compiledWorkflow.id, clock: LATER });
   assert.equal(outcome.code, 'OK');
   assert.deepEqual(outcome.leftover, []);
   for (const file of upgraded.receipt.files) {

@@ -2,7 +2,7 @@
 
 Single npm package at the root (`hm2b-framework`, private, no workspaces), with
 a nested engine package. The dependency direction is
-`core → ir → assembler → projection → runtime/*`; `installer/`, `bin/` and
+`core → compiled → assembler → projection → runtime/*`; `installer/`, `bin/` and
 `web/` are composition roots.
 
 ```text
@@ -14,7 +14,7 @@ a nested engine package. The dependency direction is
 ├── CHANGELOG.md
 ├── GLOSSARY.md
 ├── bin/
-│   ├── hm2b-assembler.js         # framework CLI: bundle validate | ir validate | compile | project
+│   ├── hm2b-assembler.js         # framework CLI: bundle validate | compiled-workflow validate | compile | project
 │   └── assembler/                # one module per command
 ├── core/                         # pure predicates (no node:*, no third party)
 │   ├── canonical-json.js
@@ -29,8 +29,8 @@ a nested engine package. The dependency direction is
 │       ├── atomic-write.js
 │       ├── inflate.js
 │       └── sha256.js
-├── ir/                           # hm2b.ir/v2 contract (revision, serialize, paths)
-├── assembler/                    # bundle → IR: zip reader, validate, compile, limits, checks/assets.js
+├── compiled/                           # hm2b.compiled-workflow/v2 contract (revision, serialize, paths)
+├── assembler/                    # bundle → compiled workflow: zip reader, validate, compile, limits, checks/assets.js
 ├── projection/                   # registry, options, project, validate-result
 ├── runtime/
 │   ├── shared/                   # renderRole, constitution, placeholder, submit, YAML writer
@@ -58,7 +58,7 @@ a nested engine package. The dependency direction is
 
 Notes:
 
-- Module paths, in dependency order: `core/`, `ir/`, `assembler/`,
+- Module paths, in dependency order: `core/`, `compiled/`, `assembler/`,
   `projection/`, `runtime/shared`, `runtime/runner/contract`,
   `runtime/runner/schema`, `runtime/runner/projection`, `runtime/runner/engine`, `runtime/agent-native`,
   `installer/`, `bin/`, `web/`.
@@ -69,13 +69,13 @@ Notes:
 - `runtime/runner/assets` and `runtime/agent-native/targets/*/assets` are
   payload content, not modules: the installer renders them for hosts.
 - `web/serve.mjs` is the single Node entry of the front end; the browser
-  imports the same `core/`, `ir/`, `assembler/`, `projection/` and
+  imports the same `core/`, `compiled/`, `assembler/`, `projection/` and
   `runtime/shared/` modules by relative URL.
 
-## Bundle and IR contract (v2)
+## Bundle and compiled workflow contract (v2)
 
-`hm2b.bundle/v2` describes the bundle zip; `hm2b.ir/v2` describes the compiled
-`workflow.ir.json`. The manifest validator in `assembler/validate-bundle.js`
+`hm2b.bundle/v2` describes the bundle zip; `hm2b.compiled-workflow/v2` describes the compiled
+`workflow.compiled.json`. The manifest validator in `assembler/validate-bundle.js`
 and the checks under `assembler/checks/` are authoritative; the schema
 documents next to them are descriptive.
 
@@ -103,14 +103,14 @@ declaration-driven: an asset file under `knowledge-base/`, `checklists/`,
 rules; both must be canonical JSON, and `mcp.json` must carry an object under
 `mcpServers`.
 
-IR fields, in canonical order: `schema`, `id`, `name`, `version`,
+Compiled workflow fields, in canonical order: `schema`, `id`, `name`, `version`,
 `description`, `source`, `requires` (absent when the bundle has none),
 `stages`, `roles`, `tasks`, `skills`, `knowledgeBase`, `checklists`, `hooks`,
 `mcp`, `constitution`. `knowledgeBase` entries are `{path, body, source}`
 sorted by path, `checklists` entries are `{id, body, source}` sorted by id,
 and `hooks`/`mcp` are one `{path, body, source}` record or `null`.
-`assembler/compile.js` embeds every asset body and its source hash, so the IR
-is the only input the projections read; `assembler/validate-ir.js` re-checks
+`assembler/compile.js` embeds every asset body and its source hash, so the compiled workflow
+is the only input the projections read; `assembler/validate-compiled.js` re-checks
 the asset shapes, canonical JSON and sort order.
 
 The projections install the embedded assets: `runner` writes
@@ -129,7 +129,7 @@ runtime dependency is added.
 | --- | --- |
 | `assembler/schema/bundle.schema.json` | `assembler/validate-bundle.js` |
 | `assembler/schema/stage.schema.json` | `assembler/checks/stages.js` |
-| `ir/schema/ir.schema.json` | `assembler/validate-ir.js` |
+| `compiled/schema/compiled-workflow.schema.json` | `assembler/validate-compiled.js` |
 | `projection/schema/options.schema.json` | `projection/options.js` |
 | `projection/schema/result.schema.json` | `projection/validate-result.js` |
 | `projection/schema/roles.schema.json` | `runtime/shared/render-role.js` |

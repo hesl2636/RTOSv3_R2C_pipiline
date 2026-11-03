@@ -18,7 +18,7 @@ import { fileURLToPath } from 'node:url';
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const SAMPLE = join(ROOT, 'examples', 'rtosv3', 'dist', 'bundle-rtosv3-drvport-v1.0.0.zip');
 const SAMPLE_SHA256 = 'ff1f3004c618be9d5ee6b090e0d635f6a6c7cb49a8c22e188cc11206bbe37cd4';
-const IR_DIGEST = '34d55ee62bf284594218d4923b0eafa267799edb1edbbeb7bb313a6f2ab0bc04';
+const COMPILED_WORKFLOW_DIGEST = '518643ab9c92d270a66bd4545cba660d0511243070c3479234edec3225b6d23c';
 
 const delay = (ms) => new Promise((resolveDelay) => setTimeout(resolveDelay, ms));
 
@@ -135,7 +135,7 @@ function cliJson(args) {
   return JSON.parse(lines[lines.length - 1]);
 }
 
-test('upload returns the CLI report field-by-field and the frozen IR', async (t) => {
+test('upload returns the CLI report field-by-field and the frozen compiled workflow', async (t) => {
   const server = await startServer(t);
   const { csrf } = await session(server);
   const zip = readFileSync(SAMPLE);
@@ -172,11 +172,11 @@ test('upload returns the CLI report field-by-field and the frozen IR', async (t)
   mkdirSync(outDir);
   const cliCompile = cliJson(['bin/hm2b-assembler.js', 'compile', zipPath, '--out', outDir, '--json']).data;
   assert.equal(cliCompile.schema, 'hm2b.bundle/v2');
-  assert.equal(response.json.data.ir.schema, 'hm2b.ir/v2');
-  assert.equal(response.json.data.ir.digest, cliCompile.ir.sha256);
-  assert.equal(response.json.data.ir.digest, IR_DIGEST);
-  assert.equal(response.json.data.ir.bytes, 58904);
-  assert.ok(readFileSync(join(outDir, 'workflow.ir.json')).equals(Buffer.from(response.json.data.ir.data, 'base64')));
+  assert.equal(response.json.data.compiledWorkflow.schema, 'hm2b.compiled-workflow/v2');
+  assert.equal(response.json.data.compiledWorkflow.digest, cliCompile.compiledWorkflow.sha256);
+  assert.equal(response.json.data.compiledWorkflow.digest, COMPILED_WORKFLOW_DIGEST);
+  assert.equal(response.json.data.compiledWorkflow.bytes, 58919);
+  assert.ok(readFileSync(join(outDir, 'workflow.compiled.json')).equals(Buffer.from(response.json.data.compiledWorkflow.data, 'base64')));
 });
 
 test('transport limits: 411 without Content-Length, 413 above the upload cap', async (t) => {

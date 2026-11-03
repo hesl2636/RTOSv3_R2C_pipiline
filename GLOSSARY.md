@@ -9,7 +9,7 @@ hm2b 的词汇表。新文档只使用本表术语；文末“退役词汇”列
 _Avoid_: 工作流包、pack、plugin、载荷
 
 **asset**:
-bundle 携带的非流程内容：知识库、检查单、hooks 与 MCP 声明。资产按清单声明接纳、随 IR 一起发布；投影把它们写成 runner 项目根的文件，或 agent-native 命名空间 `.agents/agent-native/<bundle-id>/` 下的文件。
+bundle 携带的非流程内容：知识库、检查单、hooks 与 MCP 声明。资产按清单声明接纳、随编译工作流一起发布；投影把它们写成 runner 项目根的文件，或 agent-native 命名空间 `.agents/agent-native/<bundle-id>/` 下的文件。
 _Avoid_: 附件、资源、插件
 
 **knowledge-base**:
@@ -17,15 +17,15 @@ _Avoid_: 附件、资源、插件
 _Avoid_: 文档库、KB
 
 **checklist**:
-`checklists[]` 里的检查单 id；文件恒为 `checklists/<id>.md`，正文与 `source.sha256` 进入 IR。
+`checklists[]` 里的检查单 id；文件恒为 `checklists/<id>.md`，正文与 `source.sha256` 进入编译工作流。
 _Avoid_: 清单、todo
 
 **hooks**:
-bundle 的 `hooks.path` 声明 `hooks/hooks.json`；该文件必须是规范 JSON，只按声明接纳，未声明时 IR 的 `hooks` 为 `null`。
+bundle 的 `hooks.path` 声明 `hooks/hooks.json`；该文件必须是规范 JSON，只按声明接纳，未声明时编译工作流的 `hooks` 为 `null`。
 _Avoid_: 钩子脚本、hook 载体
 
 **mcp**:
-bundle 的 `mcp.path` 声明 `mcp.json`；该文件必须是规范 JSON 且在 `mcpServers` 下携带对象，未声明时 IR 的 `mcp` 为 `null`。
+bundle 的 `mcp.path` 声明 `mcp.json`；该文件必须是规范 JSON 且在 `mcpServers` 下携带对象，未声明时编译工作流的 `mcp` 为 `null`。
 _Avoid_: MCP 配置、server 列表
 
 **manifest**:
@@ -37,7 +37,7 @@ bundle 里的一个阶段（如“分析设计”），按数组顺序执行；�
 _Avoid_: 环节、phase
 
 **step**:
-stage 内的一个可执行节点。bundle 的 step 引用一个 task、一个 role 和技能子集；IR 的 step 是编译后的稳定形状。
+stage 内的一个可执行节点。bundle 的 step 引用一个 task、一个 role 和技能子集；编译工作流的 step 是编译后的稳定形状。
 _Avoid_: 节点、stage
 
 **task**:
@@ -60,12 +60,13 @@ _Avoid_: 规则、policy
 显式标注「本期未实现、只声明契约」的产物；只允许 role、skill、constitution 三类。角色占位正文可空、投影生成统一占位 instructions；技能占位必须在正文前导区带可见横幅；宪法占位由 `bundle.json.constitution.placeholder` 声明，文件可为 0 字节。占位必须带机读标记，不得用空正文伪装。
 _Avoid_: stub、空实现
 
-**IR**:
-`hm2b.ir/v2` 中立中间表示：`workflow.ir.json`，bundle 编译后的唯一输入，带 digest 与 `contentSha256`。顶层字段固定为 `schema`、`id`、`name`、`version`、`description`、`source`、`requires`、`stages`、`roles`、`tasks`、`skills`、`knowledgeBase`、`checklists`、`hooks`、`mcp`、`constitution`；资产正文内嵌，未声明的资产是 `[]` 或 `null`。投影、发布与 Web 都只读 IR。
-_Avoid_: AST、中间文件
+**compiled workflow**:
+（中文：编译产物）
+`hm2b.compiled-workflow/v2` 是 bundle 编译后的中立产物：`workflow.compiled.json`，投影的唯一输入，带 digest 与 `contentSha256`。顶层字段固定为 `schema`、`id`、`name`、`version`、`description`、`source`、`requires`、`stages`、`roles`、`tasks`、`skills`、`knowledgeBase`、`checklists`、`hooks`、`mcp`、`constitution`；资产正文内嵌，未声明的资产是 `[]` 或 `null`。投影、发布与 Web 都只读它。它不是华为的 IR（initial requirement），也不是跨产品标准；只是本流水线的编译产物与投影输入。
+_Avoid_: IR（华为术语，指 initial requirement）、中间文件、AST
 
 **projection**:
-把一个 IR 渲染成某个 runtime 的文件集的纯函数（`runner` / `agent-native`）。输入 IR + canonical options，输出 `hm2b.projection-result/v1`。
+把一个编译工作流渲染成某个 runtime 的文件集的纯函数（`runner` / `agent-native`）。输入编译工作流 + canonical options，输出 `hm2b.projection-result/v1`。
 _Avoid_: 适配、转换
 
 **target**:
@@ -109,7 +110,7 @@ _Avoid_: 安装时组装、动态载荷
 _Avoid_: 参数、配置
 
 **projection options**:
-解析后的投影选项 `hm2b.projection-options/v1`：`stageOrder`、`skills`、`targets` 与 `extra` 的回显，绑定 `ir.digest`。缺省归一化为 IR 顺序、全部技能、清单默认目标与 `extra: {}`；只缩小或重排渲染面，不回写 bundle 或 IR。
+解析后的投影选项 `hm2b.projection-options/v1`：`stageOrder`、`skills`、`targets` 与 `extra` 的回显，绑定 `compiledWorkflow.digest`。缺省归一化为编译工作流顺序、全部技能、清单默认目标与 `extra: {}`；只缩小或重排渲染面，不回写 bundle 或编译工作流。
 _Avoid_: 参数、配置字段
 
 **ownership**:

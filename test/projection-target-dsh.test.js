@@ -52,21 +52,21 @@ const BANNER = [
 ].join('\n');
 
 let sample;
-function sampleIr() {
+function sampleCompiledWorkflow() {
   if (sample !== undefined) return sample;
   const compiled = compileBundle(new Uint8Array(readFileSync(ZIP)), { inflateRaw, sha256: sha256Hex });
   assert.equal(compiled.ok, true);
-  sample = { ir: JSON.parse(new TextDecoder().decode(compiled.irBytes)), irDigest: compiled.digest };
+  sample = { compiledWorkflow: JSON.parse(new TextDecoder().decode(compiled.compiledWorkflowBytes)), compiledWorkflowDigest: compiled.digest };
   return sample;
 }
 
-function runProject({ ir, irDigest, raw }) {
-  const normalized = normalizeOptions({ projectionId: 'agent-native', ir, irDigest, raw, manifest: MANIFEST });
+function runProject({ compiledWorkflow, compiledWorkflowDigest, raw }) {
+  const normalized = normalizeOptions({ projectionId: 'agent-native', compiledWorkflow, compiledWorkflowDigest, raw, manifest: MANIFEST });
   assert.equal(normalized.ok, true, JSON.stringify(normalized.errors));
   return project({
     projectionId: 'agent-native',
-    ir,
-    irDigest,
+    compiledWorkflow,
+    compiledWorkflowDigest,
     options: normalized.options,
     environment: {},
     assets: {},
@@ -74,13 +74,13 @@ function runProject({ ir, irDigest, raw }) {
 }
 
 function dshSample() {
-  const { ir, irDigest } = sampleIr();
-  return { ir, irDigest, result: runProject({ ir, irDigest, raw: { targets: ['dsh'] } }) };
+  const { compiledWorkflow, compiledWorkflowDigest } = sampleCompiledWorkflow();
+  return { compiledWorkflow, compiledWorkflowDigest, result: runProject({ compiledWorkflow, compiledWorkflowDigest, raw: { targets: ['dsh'] } }) };
 }
 
 const source = (path, fill) => ({ path, sha256: fill.repeat(64) });
 
-function miniIr({ roles, stages, skills = {} } = {}) {
+function miniCompiledWorkflow({ roles, stages, skills = {} } = {}) {
   const roleRecord = roles ?? {
     worker: {
       description: 'Runs the miniature step.',
@@ -91,7 +91,7 @@ function miniIr({ roles, stages, skills = {} } = {}) {
     },
   };
   return {
-    schema: 'hm2b.ir/v2',
+    schema: 'hm2b.compiled-workflow/v2',
     id: 'mini',
     name: 'Mini workflow',
     version: '1.0.0',
@@ -158,9 +158,9 @@ test('dsh-only baseline: 42 files = 40 shared skills + role catalogue + roles.js
 });
 
 test('shared skills are byte-identical to the claude-code copies', () => {
-  const { ir, irDigest } = sampleIr();
-  const claude = runProject({ ir, irDigest, raw: { targets: ['claude-code'] } });
-  const shared = runProject({ ir, irDigest, raw: { targets: ['dsh'] } });
+  const { compiledWorkflow, compiledWorkflowDigest } = sampleCompiledWorkflow();
+  const claude = runProject({ compiledWorkflow, compiledWorkflowDigest, raw: { targets: ['claude-code'] } });
+  const shared = runProject({ compiledWorkflow, compiledWorkflowDigest, raw: { targets: ['dsh'] } });
   const byPath = new Map(claude.files.map((file) => [file.path, file.content]));
   let compared = 0;
   for (const file of shared.files.filter((item) => item.path.startsWith('.agents/skills/'))) {
@@ -177,7 +177,7 @@ test('shared skills are byte-identical to the claude-code copies', () => {
 // --- the catalogue --------------------------------------------------------
 
 test('the catalogue has the fixed banner and one section per role in role-id order', () => {
-  const { ir, result } = dshSample();
+  const { compiledWorkflow, result } = dshSample();
   const file = result.files.find((item) => item.path === CATALOGUE);
   assert.equal(file.kind, 'role');
   assert.deepEqual(file.targets, ['dsh']);
@@ -185,11 +185,11 @@ test('the catalogue has the fixed banner and one section per role in role-id ord
   assert.equal(file.origin, 'generated');
 
   assert.ok(file.content.startsWith(`${BANNER}\n\n`), 'fixed banner');
-  const roleIds = Object.keys(ir.roles).sort();
+  const roleIds = Object.keys(compiledWorkflow.roles).sort();
   const headings = roleIds.map((id) => `## ${NS}-${id}\n`);
   let cursor = file.content.indexOf(BANNER) + BANNER.length;
   for (const [index, roleId] of roleIds.entries()) {
-    const role = ir.roles[roleId];
+    const role = compiledWorkflow.roles[roleId];
     const heading = file.content.indexOf(headings[index], cursor);
     assert.ok(heading > cursor, `heading order at ${roleId}`);
     const instructions = role.placeholder === true ? placeholderInstructions(roleId) : role.instructions;
@@ -238,8 +238,8 @@ test('role bodies stay byte-verbatim (awkward whitespace, placeholders)', () => 
       source: source('roles/beta.md', '3'),
     },
   };
-  const ir = miniIr({ roles });
-  const result = runProject({ ir, irDigest: 'f'.repeat(64), raw: { targets: ['dsh'] } });
+  const compiledWorkflow = miniCompiledWorkflow({ roles });
+  const result = runProject({ compiledWorkflow, compiledWorkflowDigest: 'f'.repeat(64), raw: { targets: ['dsh'] } });
   assert.equal(result.ok, true);
   const content = result.files.find((file) => file.path === '.dsh/agent-native/mini.roles.md').content;
   const sections = content.split('\n## ').slice(1);
@@ -256,8 +256,8 @@ test('role bodies stay byte-verbatim (awkward whitespace, placeholders)', () => 
 });
 
 test('R = 0 produces no catalogue but still emits roles.json', () => {
-  const ir = miniIr({ roles: {} });
-  const result = runProject({ ir, irDigest: 'f'.repeat(64), raw: { targets: ['dsh'] } });
+  const compiledWorkflow = miniCompiledWorkflow({ roles: {} });
+  const result = runProject({ compiledWorkflow, compiledWorkflowDigest: 'f'.repeat(64), raw: { targets: ['dsh'] } });
   assert.equal(result.ok, true);
   assert.equal(result.files.some((file) => file.path.endsWith('.roles.md')), false);
   assert.equal(result.files.some((file) => file.path === '.dsh/agent-native/mini.roles.md'), false);
@@ -270,18 +270,18 @@ test('R = 0 produces no catalogue but still emits roles.json', () => {
 // --- roles.json and the capability surface --------------------------------
 
 test('roles.json has a complete dsh section that points at the catalogue', () => {
-  const { ir, result } = dshSample();
+  const { compiledWorkflow, result } = dshSample();
   const file = result.files.find((item) => item.path === `.agents/agent-native/${NS}/roles.json`);
   const roles = JSON.parse(file.content);
   assert.deepEqual(Object.keys(roles.targets), ['dsh']);
   const section = roles.targets.dsh;
   assert.equal(section.namespace, NS);
-  const roleIds = Object.keys(ir.roles).sort();
+  const roleIds = Object.keys(compiledWorkflow.roles).sort();
   assert.deepEqual(section.roles.map((role) => role.id), roleIds);
   const catalogue = result.files.find((item) => item.path === CATALOGUE).content;
   for (const role of section.roles) {
     assert.equal(role.name, result.metadata.idMap.dsh.roles[role.id]);
-    assert.equal(role.placeholder, ir.roles[role.id].placeholder);
+    assert.equal(role.placeholder, compiledWorkflow.roles[role.id].placeholder);
     assert.deepEqual(role.artifact, {
       path: CATALOGUE,
       format: 'md',
@@ -302,7 +302,7 @@ test('roles.json has a complete dsh section that points at the catalogue', () =>
 });
 
 test('dsh capability report: subagents unavailable, every use point carries a degradation', () => {
-  const { ir, result } = dshSample();
+  const { compiledWorkflow, result } = dshSample();
   assert.deepEqual(result.capabilityReport.map((row) => row.capability), CAPABILITIES);
   const levels = Object.fromEntries(result.capabilityReport.map((row) => [row.capability, row.level]));
   assert.deepEqual(levels, {
@@ -317,7 +317,7 @@ test('dsh capability report: subagents unavailable, every use point carries a de
   });
 
   const subagents = result.capabilityReport.find((row) => row.capability === 'subagents');
-  const expectedUses = ir.stages.flatMap((stage, stageIndex) => stage.steps.flatMap((step, stepIndex) => (
+  const expectedUses = compiledWorkflow.stages.flatMap((stage, stageIndex) => stage.steps.flatMap((step, stepIndex) => (
     step.role === undefined ? [] : [`/stages/${stageIndex}/steps/${stepIndex}/role`]
   )));
   assert.deepEqual(subagents.uses, expectedUses);
@@ -333,7 +333,7 @@ test('dsh capability report: subagents unavailable, every use point carries a de
   const preload = result.degradations.filter((item) => item.capability === 'preload');
   assert.deepEqual(preload, [], 'the sample roles preload no skills');
 
-  const withPreload = miniIr({
+  const withPreload = miniCompiledWorkflow({
     roles: {
       worker: {
         description: 'Preloads one skill.',
@@ -353,7 +353,7 @@ test('dsh capability report: subagents unavailable, every use point carries a de
       },
     },
   });
-  const preloaded = runProject({ ir: withPreload, irDigest: 'f'.repeat(64), raw: { targets: ['dsh'] } });
+  const preloaded = runProject({ compiledWorkflow: withPreload, compiledWorkflowDigest: 'f'.repeat(64), raw: { targets: ['dsh'] } });
   const records = preloaded.degradations.filter((item) => item.capability === 'preload');
   assert.equal(records.length, 1);
   assert.equal(records[0].code, 'CAP_PRELOAD_UNAVAILABLE');
@@ -366,13 +366,13 @@ test('dsh capability report: subagents unavailable, every use point carries a de
 
 test('deterministic: the same input twice is byte-identical', () => {
   const first = dshSample().result;
-  const second = runProject({ ...sampleIr(), raw: { targets: ['dsh'] } });
+  const second = runProject({ ...sampleCompiledWorkflow(), raw: { targets: ['dsh'] } });
   assert.equal(JSON.stringify(second), JSON.stringify(first));
 });
 
 test('V1–V12 pass and the manifest declares the dsh target', () => {
-  const { ir, irDigest, result } = dshSample();
-  const validation = validateResult(result, { ir, irDigest, options: result.options, manifest: MANIFEST });
+  const { compiledWorkflow, compiledWorkflowDigest, result } = dshSample();
+  const validation = validateResult(result, { compiledWorkflow, compiledWorkflowDigest, options: result.options, manifest: MANIFEST });
   assert.equal(validation.ok, true, JSON.stringify(validation.diagnostics, null, 2));
 
   const onDisk = readFileSync(join(ROOT, 'runtime/agent-native/projection/projection.json'), 'utf8');

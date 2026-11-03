@@ -75,11 +75,11 @@ function isPlainObject(value) {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-/** `{confirmTag, resume?, irDigest?, resultDigests?}` (decision #75 §8.4/§8.5). */
+/** `{confirmTag, resume?, compiledWorkflowDigest?, resultDigests?}` (decision #75 §8.4/§8.5). */
 export function parsePublishBody(body) {
   if (!isPlainObject(body)) return webError(400, 'WEB_BODY_INVALID', 'publish body must be a JSON object');
   for (const key of Object.keys(body)) {
-    if (!['confirmTag', 'resume', 'irDigest', 'resultDigests'].includes(key)) {
+    if (!['confirmTag', 'resume', 'compiledWorkflowDigest', 'resultDigests'].includes(key)) {
       return webError(400, 'WEB_BODY_INVALID', `unknown field ${key}`);
     }
   }
@@ -89,8 +89,8 @@ export function parsePublishBody(body) {
   if (body.resume !== undefined && typeof body.resume !== 'boolean') {
     return webError(400, 'WEB_BODY_INVALID', 'resume must be a boolean');
   }
-  if (body.irDigest !== undefined && (typeof body.irDigest !== 'string' || !/^[0-9a-f]{64}$/.test(body.irDigest))) {
-    return webError(400, 'WEB_BODY_INVALID', 'irDigest must be a sha256 digest');
+  if (body.compiledWorkflowDigest !== undefined && (typeof body.compiledWorkflowDigest !== 'string' || !/^[0-9a-f]{64}$/.test(body.compiledWorkflowDigest))) {
+    return webError(400, 'WEB_BODY_INVALID', 'compiledWorkflowDigest must be a sha256 digest');
   }
   if (body.resultDigests !== undefined && body.resultDigests !== null) {
     if (!isPlainObject(body.resultDigests)) {
@@ -105,7 +105,7 @@ export function parsePublishBody(body) {
   return {
     confirmTag: body.confirmTag,
     resume: body.resume === true,
-    irDigest: body.irDigest,
+    compiledWorkflowDigest: body.compiledWorkflowDigest,
     resultDigests: body.resultDigests ?? null,
   };
 }
@@ -163,8 +163,8 @@ export function createPublishService({
 
   /** Release-form install commands for a published build (§13 frozen shape). */
   const publishedInstall = (build) => installCommands({
-    id: build.summary.ir.id,
-    version: build.summary.ir.version,
+    id: build.summary.compiledWorkflow.id,
+    version: build.summary.compiledWorkflow.version,
     projections: build.summary.projections,
     publishable: true,
   });

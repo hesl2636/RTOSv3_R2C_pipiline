@@ -378,9 +378,9 @@ label input, label select { margin-left: 0.35rem; }
 .diagnostics .location { color: var(--muted); overflow-wrap: anywhere; }
 .diagnostics .message { overflow-wrap: anywhere; }
 
-/* IR -------------------------------------------------------------------- */
+/* compiled workflow -------------------------------------------------------------------- */
 
-.ir-top {
+.compiled-workflow-top {
   display: flex;
   flex-wrap: wrap;
   gap: 0.75rem 1.25rem;
@@ -389,7 +389,7 @@ label input, label select { margin-left: 0.35rem; }
   padding: 0.2rem 0 0.4rem;
 }
 
-.ir-identity {
+.compiled-workflow-identity {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
   gap: 0.25rem 1rem;
@@ -397,8 +397,8 @@ label input, label select { margin-left: 0.35rem; }
   min-width: 0;
 }
 
-.ir-actions { display: flex; gap: 0.6rem; align-items: center; flex-wrap: wrap; }
-.ir-actions .mono { max-width: 26rem; overflow-wrap: anywhere; word-break: break-all; }
+.compiled-workflow-actions { display: flex; gap: 0.6rem; align-items: center; flex-wrap: wrap; }
+.compiled-workflow-actions .mono { max-width: 26rem; overflow-wrap: anywhere; word-break: break-all; }
 
 .stages, .entities { margin: 0.2rem 0; padding-left: 1.1rem; }
 .entities { list-style: none; padding-left: 0; }
@@ -509,6 +509,6 @@ label input, label select { margin-left: 0.35rem; }
   .panel { padding: 0.95rem; }
   .stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .diagnostics li { grid-template-columns: 1fr; gap: 0.15rem; }
-  .ir-actions { width: 100%; justify-content: space-between; }
+  .compiled-workflow-actions { width: 100%; justify-content: space-between; }
   .summary-item { flex-direction: column; gap: 0.05rem; }
 }

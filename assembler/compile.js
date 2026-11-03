@@ -1,5 +1,5 @@
 /**
- * Bundle -> canonical IR compiler (spec §5, decision #68).
+ * Bundle -> canonical compiled workflow compiler (spec §5, decision #68).
  *
  * The fixed 11 steps and where they run:
  *   1 validate                 analyzeBundle (errors gate, nothing produced)
@@ -8,25 +8,25 @@
  *   4 per-file SHA-256         fileHash()
  *   5 contentSha256            contentSha256()
  *   6 parse stages/steps       analyzeBundle -> model.stages (author order)
- *   7 assets into maps         buildIr() (roles/tasks/skills sorted by id)
- *   8 re-check references      analyzeBundle crossrefs + validateIr self-check
- *   9 assemble in schema order buildIr()
- *  10 canonical serialization  serializeIr()
- *  11 self-check               validateIr() + cardinalityIssues()
+ *   7 assets into maps         buildCompiledWorkflow() (roles/tasks/skills sorted by id)
+ *   8 re-check references      analyzeBundle crossrefs + validateCompiledWorkflow self-check
+ *   9 assemble in schema order buildCompiledWorkflow()
+ *  10 canonical serialization  serializeCompiledWorkflow()
+ *  11 self-check               validateCompiledWorkflow() + cardinalityIssues()
  *
  * The compiler never re-implements validation and never emits a partial
- * artifact: any error yields `irBytes: null`.
+ * artifact: any error yields `compiledWorkflowBytes: null`.
  */
 import { compareCodePoints } from '../core/code-point.js';
 import { buildReport, makeDiagnostic, SEVERITY } from '../core/diagnostics.js';
 import {
-  IR_BUNDLE_SCHEMA,
-  IR_FILENAME,
-  IR_SCHEMA,
-} from '../ir/schema.js';
-import { serializeIr } from '../ir/serialize.js';
+  COMPILED_WORKFLOW_BUNDLE_SCHEMA,
+  COMPILED_WORKFLOW_FILENAME,
+  COMPILED_WORKFLOW_SCHEMA,
+} from '../compiled/schema.js';
+import { serializeCompiledWorkflow } from '../compiled/serialize.js';
 import { analyzeBundle } from './validate-bundle.js';
-import { validateIr } from './validate-ir.js';
+import { validateCompiledWorkflow } from './validate-compiled.js';
 import { HOOKS_PATH, MCP_PATH, checklistPath } from './checks/assets.js';
 import { sorted } from '../core/sort.js';
 
@@ -38,7 +38,7 @@ function fileHash(primitives, model, path) {
 
 /**
  * `contentSha256` of a bundle model (step 5): the digest of the declared
- * member hashes. Exported so an installer can re-derive the zip ↔ IR binding
+ * member hashes. Exported so an installer can re-derive the zip ↔ compiled workflow binding
  * without compiling (#106).
  */
 export function bundleContentSha256(primitives, model) {
@@ -74,7 +74,7 @@ function buildSteps(stageRecord) {
   });
 }
 
-function buildIr(primitives, model) {
+function buildCompiledWorkflow(primitives, model) {
   const manifest = model.manifest;
   const stages = model.stages.map((record) => {
     const stage = { id: record.id, name: record.value.name };
@@ -161,15 +161,15 @@ function buildIr(primitives, model) {
     });
   }
 
-  const ir = {
-    schema: IR_SCHEMA,
+  const compiledWorkflow = {
+    schema: COMPILED_WORKFLOW_SCHEMA,
     id: manifest.id,
     name: manifest.name,
     version: manifest.version,
     description: manifest.description,
     source: {
       bundle: {
-        schema: IR_BUNDLE_SCHEMA,
+        schema: COMPILED_WORKFLOW_BUNDLE_SCHEMA,
         id: manifest.id,
         version: manifest.version,
         contentSha256: bundleContentSha256(primitives, model),
@@ -178,67 +178,67 @@ function buildIr(primitives, model) {
     },
   };
   if (manifest.requires !== undefined) {
-    ir.requires = {};
-    if (manifest.requires.engine !== undefined) ir.requires.engine = manifest.requires.engine;
+    compiledWorkflow.requires = {};
+    if (manifest.requires.engine !== undefined) compiledWorkflow.requires.engine = manifest.requires.engine;
     if (manifest.requires.projections !== undefined) {
-      ir.requires.projections = sorted(manifest.requires.projections);
+      compiledWorkflow.requires.projections = sorted(manifest.requires.projections);
     }
   }
-  ir.stages = stages;
-  ir.roles = roles;
-  ir.tasks = tasks;
-  ir.skills = skills;
-  ir.knowledgeBase = knowledgeBase;
-  ir.checklists = checklists;
-  ir.hooks = hooks;
-  ir.mcp = mcp;
-  ir.constitution = constitution;
-  return ir;
+  compiledWorkflow.stages = stages;
+  compiledWorkflow.roles = roles;
+  compiledWorkflow.tasks = tasks;
+  compiledWorkflow.skills = skills;
+  compiledWorkflow.knowledgeBase = knowledgeBase;
+  compiledWorkflow.checklists = checklists;
+  compiledWorkflow.hooks = hooks;
+  compiledWorkflow.mcp = mcp;
+  compiledWorkflow.constitution = constitution;
+  return compiledWorkflow;
 }
 
-function cardinalityIssues(ir, model) {
+function cardinalityIssues(compiledWorkflow, model) {
   const issues = [];
   const add = (kind, declared, embedded) => {
     issues.push(makeDiagnostic({
       severity: SEVERITY.ERROR,
-      code: 'IR_CARDINALITY_MISMATCH',
-      path: IR_FILENAME,
+      code: 'COMPILED_WORKFLOW_CARDINALITY_MISMATCH',
+      path: COMPILED_WORKFLOW_FILENAME,
       pointer: '',
-      message: `IR ${kind} do not match the source bundle`,
+      message: `compiled workflow ${kind} do not match the source bundle`,
       details: { kind, declared, embedded },
     }));
   };
-  const stageIds = ir.stages.map((stage) => stage.id);
+  const stageIds = compiledWorkflow.stages.map((stage) => stage.id);
   if (stageIds.join('\u0000') !== model.declared.stages.join('\u0000')) {
     add('stages', model.declared.stages, stageIds);
   }
   const declaredSteps = model.stages.flatMap((record) => record.value.steps.map((step) => step.id));
-  const embeddedSteps = ir.stages.flatMap((stage) => stage.steps.map((step) => step.id));
+  const embeddedSteps = compiledWorkflow.stages.flatMap((stage) => stage.steps.map((step) => step.id));
   if (declaredSteps.join('\u0000') !== embeddedSteps.join('\u0000')) {
     add('steps', declaredSteps, embeddedSteps);
   }
   for (const kind of ['roles', 'tasks', 'skills']) {
     const declared = sorted(model.declared[kind]);
-    const embedded = sorted(Object.keys(ir[kind]));
+    const embedded = sorted(Object.keys(compiledWorkflow[kind]));
     if (declared.join('\u0000') !== embedded.join('\u0000')) add(kind, declared, embedded);
   }
   const declaredConstitution = model.constitutionDeclaration?.declared ? 1 : 0;
-  if (declaredConstitution !== ir.constitution.length) {
-    add('constitution', declaredConstitution, ir.constitution.length);
+  if (declaredConstitution !== compiledWorkflow.constitution.length) {
+    add('constitution', declaredConstitution, compiledWorkflow.constitution.length);
   }
   const declaredKnowledgeBase = sorted(model.declared.knowledgeBase ?? []);
-  const embeddedKnowledgeBase = ir.knowledgeBase.map((item) => item.path);
+  const embeddedKnowledgeBase = compiledWorkflow.knowledgeBase.map((item) => item.path);
   if (declaredKnowledgeBase.join('\u0000') !== embeddedKnowledgeBase.join('\u0000')) {
     add('knowledgeBase', declaredKnowledgeBase, embeddedKnowledgeBase);
   }
   const declaredChecklists = sorted(model.declared.checklists ?? []);
-  const embeddedChecklists = ir.checklists.map((item) => item.id);
+  const embeddedChecklists = compiledWorkflow.checklists.map((item) => item.id);
   if (declaredChecklists.join('\u0000') !== embeddedChecklists.join('\u0000')) {
     add('checklists', declaredChecklists, embeddedChecklists);
   }
   for (const kind of ['hooks', 'mcp']) {
     const declared = model.assetDeclaration?.[kind]?.declared === true ? 1 : 0;
-    const embedded = ir[kind] === null ? 0 : 1;
+    const embedded = compiledWorkflow[kind] === null ? 0 : 1;
     if (declared !== embedded) add(kind, declared, embedded);
   }
   return issues;
@@ -250,7 +250,7 @@ function cardinalityIssues(ir, model) {
  * @param {Uint8Array} input
  * @param {{ inflateRaw?: Function, sha256: Function }} primitives
  * @param {{ path?: string }} [options]
- * @returns {{ ok: boolean, irBytes: Uint8Array|null, report: object, digest: string|null, irReport?: object }}
+ * @returns {{ ok: boolean, compiledWorkflowBytes: Uint8Array|null, report: object, digest: string|null, compiledWorkflowReport?: object }}
  */
 export function compileBundle(input, primitives = {}, options = {}) {
   if (typeof primitives.sha256 !== 'function') {
@@ -258,30 +258,30 @@ export function compileBundle(input, primitives = {}, options = {}) {
   }
   const { report, model } = analyzeBundle(input, primitives, options);
   if (!report.ok) {
-    return { ok: false, irBytes: null, report, digest: null };
+    return { ok: false, compiledWorkflowBytes: null, report, digest: null };
   }
 
-  const ir = buildIr(primitives, model);
-  const irBytes = encoder.encode(serializeIr(ir));
-  const digest = primitives.sha256(irBytes);
-  const irReport = validateIr(irBytes, primitives);
+  const compiledWorkflow = buildCompiledWorkflow(primitives, model);
+  const compiledWorkflowBytes = encoder.encode(serializeCompiledWorkflow(compiledWorkflow));
+  const digest = primitives.sha256(compiledWorkflowBytes);
+  const compiledWorkflowReport = validateCompiledWorkflow(compiledWorkflowBytes, primitives);
 
-  const issues = cardinalityIssues(ir, model);
+  const issues = cardinalityIssues(compiledWorkflow, model);
   if (issues.length > 0) {
     const failure = buildReport({
-      target: 'ir',
-      schema: IR_SCHEMA,
-      artifact: { path: IR_FILENAME, bytes: irBytes.length, sha256: digest },
-      id: ir.id,
-      version: ir.version,
-      counts: irReport.counts,
+      target: 'compiled-workflow',
+      schema: COMPILED_WORKFLOW_SCHEMA,
+      artifact: { path: COMPILED_WORKFLOW_FILENAME, bytes: compiledWorkflowBytes.length, sha256: digest },
+      id: compiledWorkflow.id,
+      version: compiledWorkflow.version,
+      counts: compiledWorkflowReport.counts,
       errors: issues,
       warnings: [],
     });
-    return { ok: false, irBytes: null, report: failure, digest: null, irReport: failure };
+    return { ok: false, compiledWorkflowBytes: null, report: failure, digest: null, compiledWorkflowReport: failure };
   }
-  if (!irReport.ok) {
-    return { ok: false, irBytes: null, report: irReport, digest: null, irReport };
+  if (!compiledWorkflowReport.ok) {
+    return { ok: false, compiledWorkflowBytes: null, report: compiledWorkflowReport, digest: null, compiledWorkflowReport };
   }
-  return { ok: true, irBytes, report, digest, irReport };
+  return { ok: true, compiledWorkflowBytes, report, digest, compiledWorkflowReport };
 }

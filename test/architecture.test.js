@@ -27,7 +27,7 @@ const MODULES = [
   'runtime/agent-native',
   'runtime/shared',
   'core',
-  'ir',
+  'compiled',
   'assembler',
   'projection',
   'installer',
@@ -37,7 +37,7 @@ const MODULES = [
 const PURE_EXEMPT = new Set(['core/node']);
 const PURE_MODULES = [
   'core',
-  'ir',
+  'compiled',
   'assembler',
   'projection',
   'runtime/shared',
@@ -72,7 +72,7 @@ const LEGACY_R2C_ALLOWLIST = new Set([
 const SCHEMA_DOCUMENTS = [
   ['assembler/schema/bundle.schema.json', 'assembler/validate-bundle.js'],
   ['assembler/schema/stage.schema.json', 'assembler/checks/stages.js'],
-  ['ir/schema/ir.schema.json', 'assembler/validate-ir.js'],
+  ['compiled/schema/compiled-workflow.schema.json', 'assembler/validate-compiled.js'],
   ['projection/schema/options.schema.json', 'projection/options.js'],
   ['projection/schema/result.schema.json', 'projection/validate-result.js'],
   ['projection/schema/roles.schema.json', 'runtime/shared/render-role.js'],
@@ -351,7 +351,7 @@ test('release source sets are disjoint and exclude retired trees', () => {
   const engine = collectEngine(ROOT);
   assert.deepEqual(engine.problems, []);
   const engineRels = new Set(engine.files.map((file) => file.rel));
-  for (const forbidden of ['test/', 'docs/', 'scripts/', 'examples/', 'web/', 'installer/', 'projection/', 'assembler/', 'ir/', 'bin/hm2b-assembler.js']) {
+  for (const forbidden of ['test/', 'docs/', 'scripts/', 'examples/', 'web/', 'installer/', 'projection/', 'assembler/', 'compiled/', 'bin/hm2b-assembler.js']) {
     assert.equal([...engineRels].some((rel) => rel.startsWith(forbidden) || rel === forbidden.slice(0, -1)), false, `engine ships ${forbidden}`);
   }
   assert.equal(engine.version, JSON.parse(readFileSync(join(ROOT, 'runtime/runner/engine/package.json'), 'utf8')).version);

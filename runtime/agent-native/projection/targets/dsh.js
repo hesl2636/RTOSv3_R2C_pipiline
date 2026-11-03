@@ -76,16 +76,16 @@ function renderSection({ role, name, instructions }) {
   return `${lines.join('\n')}\n${instructions}`;
 }
 
-function roleCatalogue({ ir, roleIds, renderedByRole }) {
+function roleCatalogue({ compiledWorkflow, roleIds, renderedByRole }) {
   const files = [];
   const artifacts = {};
   if (roleIds.length === 0) return { files, artifacts };
-  const path = `${AGENTS_ROOT}/${ir.id}.roles.md`;
+  const path = `${AGENTS_ROOT}/${compiledWorkflow.id}.roles.md`;
   const sections = roleIds.map((roleId) => renderedByRole.get(roleId).content);
   files.push({
     path,
     kind: 'role',
-    content: `${banner(ir.id)}\n\n${sections.join('\n')}`,
+    content: `${banner(compiledWorkflow.id)}\n\n${sections.join('\n')}`,
   });
   for (const roleId of roleIds) artifacts[roleId] = { path, format: 'md' };
   return { files, artifacts, metadataArtifacts: { 'dsh-roles': path } };
@@ -95,9 +95,9 @@ function roleCatalogue({ ir, roleIds, renderedByRole }) {
  * Every delegation use point loses the native seam in v1: the record carries
  * the step pointer (#82 keeps `/stages/<i>/steps/<j>/role`).
  */
-function capabilityDegradations({ ir }) {
+function capabilityDegradations({ compiledWorkflow }) {
   const records = [];
-  for (const [stageIndex, stage] of ir.stages.entries()) {
+  for (const [stageIndex, stage] of compiledWorkflow.stages.entries()) {
     for (const [stepIndex, step] of stage.steps.entries()) {
       if (step.role === undefined) continue;
       records.push({

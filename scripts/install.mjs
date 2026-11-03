@@ -4,7 +4,7 @@
  *
  * The per-bundle channel (#106, decision #74 §9) runs `--bundle <id>`: it
  * downloads the bundle Release's assets, verifies the three-way
- * asset/zip/IR/payload chain, unpacks the Release's framework archive to a
+ * asset/zip/compiled workflow/payload chain, unpacks the Release's framework archive to a
  * temporary directory and hands the verified bytes to that framework's
  * installer. It never compiles a bundle and never projects one. The bundle
  * channel names everything `hm2b-*` (`hm2b-framework-<F>.tgz`,
@@ -49,7 +49,7 @@ const RELEASE_REPO = 'hesl2636/hm2B_drvport_pipiline';
 const DEFAULT_RELEASE_BASE = `https://github.com/${RELEASE_REPO}/releases/download`;
 const GITHUB_API = `https://api.github.com`;
 const SUMS_ASSET = 'SHA256SUMS.txt';
-const IR_ASSET = 'workflow.ir.json';
+const COMPILED_WORKFLOW_ASSET = 'workflow.compiled.json';
 const INSTALL_ASSET = 'install.mjs';
 const PROJECTIONS = Object.freeze(['runner', 'agent-native']);
 const BUNDLE_ID_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -119,7 +119,7 @@ const USAGE = `Usage: node install.mjs --agent <id> [--version <V>] [--scope pro
                         [--project <dir>] [--release-base <dir|url>] [--force]
 
 Downloads a bundle Release's assets, verifies them against its
-SHA256SUMS.txt, checks the zip / IR / payload manifest against each other,
+SHA256SUMS.txt, checks the zip / compiled workflow / payload manifest against each other,
 then installs the pre-projected payload — never compiling or projecting.
 The bundle channel writes the runtime under <project>/.hm2b/ (launcher
 .hm2b/bin/hm2b.js, engine .hm2b/engine/<E>/).
@@ -202,7 +202,7 @@ function parseArgs(argv) {
       if (PROJECTION_OPTION_FLAGS.has(name)) {
         fail(
           'RELEASE_OPTION_CONFLICT',
-          `custom projection options are not accepted at install (${name}): the Release payload is already projected. Re-project the published IR with the framework CLI (bin/hm2b-assembler.js project) or the web front end, then install that result`,
+          `custom projection options are not accepted at install (${name}): the Release payload is already projected. Re-project the published compiled workflow with the framework CLI (bin/hm2b-assembler.js project) or the web front end, then install that result`,
           2,
         );
       }
@@ -919,15 +919,15 @@ async function runBundle(options, projectDir) {
       throw error;
     }
 
-    const irBytes = await fetchBundleAsset(source, tag, IR_ASSET, credential);
-    verifyAssetDigest(IR_ASSET, irBytes, sums);
-    let ir;
+    const compiledWorkflowBytes = await fetchBundleAsset(source, tag, COMPILED_WORKFLOW_ASSET, credential);
+    verifyAssetDigest(COMPILED_WORKFLOW_ASSET, compiledWorkflowBytes, sums);
+    let compiledWorkflow;
     try {
-      ir = JSON.parse(irBytes.toString('utf8'));
+      compiledWorkflow = JSON.parse(compiledWorkflowBytes.toString('utf8'));
     } catch (error) {
-      fail('RELEASE_IR_MISMATCH', `${IR_ASSET} is not JSON: ${error.message}`, 2);
+      fail('RELEASE_COMPILED_WORKFLOW_MISMATCH', `${COMPILED_WORKFLOW_ASSET} is not JSON: ${error.message}`, 2);
     }
-    const allowed = framework.install.allowedProjections(ir);
+    const allowed = framework.install.allowedProjections(compiledWorkflow);
     if (allowed === null) {
       fail('RELEASE_PROJECTION_NOT_ALLOWED', 'requires.projections must be a non-empty array of projection ids', 2);
     }
@@ -939,7 +939,7 @@ async function runBundle(options, projectDir) {
 
     const assets = {
       [INSTALL_ASSET]: readFileSync(fileURLToPath(import.meta.url)),
-      [IR_ASSET]: irBytes,
+      [COMPILED_WORKFLOW_ASSET]: compiledWorkflowBytes,
       [frameworkName]: frameworkBytes,
     };
     const needed = [

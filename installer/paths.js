@@ -82,15 +82,15 @@ export function receiptPath(projectionId, bundleId) {
   return `${RECEIPTS_DIR}/${projectionId}/${bundleId}.json`;
 }
 
-/** Root of the installer-owned per-bundle IR copies. */
+/** Root of the installer-owned per-bundle compiled workflow copies. */
 export const BUNDLES_DIR = '.hm2b/bundles';
 
-/** The IR file name inside one bundle version directory. */
-export const IR_FILENAME = 'workflow.ir.json';
+/** The compiled workflow file name inside one bundle version directory. */
+export const COMPILED_WORKFLOW_FILENAME = 'workflow.compiled.json';
 
-/** Installer-owned IR copy; not a receipt entry (#76 §3.3). */
-export function irPath(bundleId, version) {
-  return `${BUNDLES_DIR}/${bundleId}/${version}/${IR_FILENAME}`;
+/** Installer-owned compiled workflow copy; not a receipt entry (#76 §3.3). */
+export function compiledWorkflowPath(bundleId, version) {
+  return `${BUNDLES_DIR}/${bundleId}/${version}/${COMPILED_WORKFLOW_FILENAME}`;
 }
 
 /** POSIX separators, no trailing slash; the only form receipts may contain. */

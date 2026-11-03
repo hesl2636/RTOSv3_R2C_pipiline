@@ -43,48 +43,48 @@ function base64(bytes) {
 export function parseBuildBody(body) {
   if (!isPlainObject(body)) return webError(400, 'WEB_BODY_INVALID', 'build body must be a JSON object');
   for (const key of Object.keys(body)) {
-    if (!['uploadId', 'options', 'irDigest'].includes(key)) {
+    if (!['uploadId', 'options', 'compiledWorkflowDigest'].includes(key)) {
       return webError(400, 'WEB_BODY_INVALID', `unknown field ${key}`);
     }
   }
   if (typeof body.uploadId !== 'string' || !/^[0-9a-f]{16}$/.test(body.uploadId)) {
     return webError(400, 'WEB_BODY_INVALID', 'uploadId must be 16 hex characters');
   }
-  if (body.irDigest !== undefined && (typeof body.irDigest !== 'string' || !/^[0-9a-f]{64}$/.test(body.irDigest))) {
-    return webError(400, 'WEB_BODY_INVALID', 'irDigest must be a sha256 digest');
+  if (body.compiledWorkflowDigest !== undefined && (typeof body.compiledWorkflowDigest !== 'string' || !/^[0-9a-f]{64}$/.test(body.compiledWorkflowDigest))) {
+    return webError(400, 'WEB_BODY_INVALID', 'compiledWorkflowDigest must be a sha256 digest');
   }
   if (body.options !== undefined && body.options !== null && !isPlainObject(body.options)) {
     return webError(400, 'WEB_BODY_INVALID', 'options must be an object keyed by projection id');
   }
-  return { uploadId: body.uploadId, options: body.options ?? null, irDigest: body.irDigest };
+  return { uploadId: body.uploadId, options: body.options ?? null, compiledWorkflowDigest: body.compiledWorkflowDigest };
 }
 
 export async function runValidation(bytes) {
   const primitives = { inflateRaw, sha256: sha256Hex };
   const compiled = compileBundle(bytes, primitives, { path: 'bundle.zip' });
-  let ir = null;
-  if (compiled.ok && compiled.irBytes !== null) {
-    let schema = compiled.irReport?.schema ?? null;
+  let compiledWorkflow = null;
+  if (compiled.ok && compiled.compiledWorkflowBytes !== null) {
+    let schema = compiled.compiledWorkflowReport?.schema ?? null;
     let contentSha256 = null;
     try {
-      const parsed = JSON.parse(new TextDecoder().decode(compiled.irBytes));
+      const parsed = JSON.parse(new TextDecoder().decode(compiled.compiledWorkflowBytes));
       schema = parsed?.schema ?? schema;
       contentSha256 = parsed?.source?.bundle?.contentSha256 ?? null;
     } catch {
       contentSha256 = null;
     }
-    ir = {
+    compiledWorkflow = {
       schema,
-      id: compiled.irReport?.id ?? null,
-      version: compiled.irReport?.version ?? null,
+      id: compiled.compiledWorkflowReport?.id ?? null,
+      version: compiled.compiledWorkflowReport?.version ?? null,
       digest: compiled.digest,
-      bytes: compiled.irBytes.length,
+      bytes: compiled.compiledWorkflowBytes.length,
       contentSha256,
       encoding: 'base64',
-      data: base64(compiled.irBytes),
+      data: base64(compiled.compiledWorkflowBytes),
     };
   }
-  return { report: compiled.report, ir };
+  return { report: compiled.report, compiledWorkflow };
 }
 
 function projectBytes(result) {
@@ -139,7 +139,7 @@ function releaseCommand({ id, version, projection, target }) {
 
 /**
  * A custom payload is not a Release payload (`release-install.js` refuses
- * non-canonical options), so the local chain re-projects the downloaded IR
+ * non-canonical options), so the local chain re-projects the downloaded compiled workflow
  * with the same options into a result directory and feeds that directory to
  * `installer/cli.js --result` (#106's reproject path).
  */
@@ -157,7 +157,7 @@ function localCommand({ projection, target, options }) {
   if (!Array.isArray(skills) || !skills.every((item) => typeof item === 'string')) return null;
   const resultDir = target === null ? `.hm2b/build/${projection}` : `.hm2b/build/${projection}-${target}`;
   const parts = [
-    PROJECT_CLI, 'project', 'workflow.ir.json',
+    PROJECT_CLI, 'project', 'workflow.compiled.json',
     '--projection', shellToken(projection),
   ];
   if (target !== null) {
@@ -168,7 +168,7 @@ function localCommand({ projection, target, options }) {
   if (stageOrder.length > 0) parts.push('--stage-order', shellToken(stageOrder.join(',')));
   if (skills.length > 0) parts.push('--skills', shellToken(skills.join(',')));
   parts.push('--result', shellToken(resultDir));
-  return `${parts.join(' ')} && ${INSTALLER_CLI} --result ${shellToken(resultDir)} --ir workflow.ir.json --project .`;
+  return `${parts.join(' ')} && ${INSTALLER_CLI} --result ${shellToken(resultDir)} --compiled-workflow workflow.compiled.json --project .`;
 }
 
 /** One install command per projection (and per selected agent target). */
@@ -221,7 +221,7 @@ function expectedSums(assets) {
  * The server is the authority: it recomputes every asset byte and compares the
  * child's payload manifests with its own projection results (#75 §7.1 step 5).
  */
-async function verifyChildBuild({ result, projectionEvents, expected, outDir, upload, ir, irDigest, node }) {
+async function verifyChildBuild({ result, projectionEvents, expected, outDir, upload, compiledWorkflow, compiledWorkflowDigest, node }) {
   const { readdir, readFile, resolve } = node;
   const problems = [];
   if (result.ok !== true) problems.push('child result is not ok');
@@ -271,8 +271,8 @@ async function verifyChildBuild({ result, projectionEvents, expected, outDir, up
     if (event.digest !== entry.digest) problems.push(`${entry.id}: result digest differs`);
     const options = payloadInputOptions({
       projectionId: entry.id,
-      ir,
-      irDigest,
+      compiledWorkflow,
+      compiledWorkflowDigest,
       options: entry.normalized.options,
       manifest: entry.descriptor,
     });
@@ -280,7 +280,7 @@ async function verifyChildBuild({ result, projectionEvents, expected, outDir, up
       problems.push(`${entry.id}: payload options differ`);
     }
     const manifest = event.manifest ?? {};
-    if (manifest.ir?.digest !== irDigest) problems.push(`${entry.id}: payload IR digest differs`);
+    if (manifest.compiledWorkflow?.digest !== compiledWorkflowDigest) problems.push(`${entry.id}: payload compiled workflow digest differs`);
     if (JSON.stringify(manifest.bundle) !== JSON.stringify({ id: upload.bundleId, version: upload.version })) {
       problems.push(`${entry.id}: payload bundle identity differs`);
     }
@@ -361,16 +361,16 @@ export function createBuildService({
     const uploadId = randomBytes(8).toString('hex');
     const dir = resolve(tempRoot, 'uploads', uploadId);
     await mkdir(dir, { mode: 0o700 });
-    const irBytes = Buffer.from(data.ir.data, 'base64');
+    const compiledWorkflowBytes = Buffer.from(data.compiledWorkflow.data, 'base64');
     await writeFile(resolve(dir, 'input.zip'), bytes, { mode: 0o600 });
-    await writeFile(resolve(dir, 'workflow.ir.json'), irBytes, { mode: 0o600 });
+    await writeFile(resolve(dir, 'workflow.compiled.json'), compiledWorkflowBytes, { mode: 0o600 });
     const record = {
       uploadId,
       dir,
-      bundleId: data.ir.id,
-      version: data.ir.version,
-      digest: data.ir.digest,
-      contentSha256: data.ir.contentSha256,
+      bundleId: data.compiledWorkflow.id,
+      version: data.compiledWorkflow.version,
+      digest: data.compiledWorkflow.digest,
+      contentSha256: data.compiledWorkflow.contentSha256,
       sha256: data.report.artifact.sha256,
       report: data.report,
       createdAt: Date.now(),
@@ -390,36 +390,36 @@ export function createBuildService({
   };
 
   /**
-   * Authoritative build (#75 §7.1): the uploaded zip and IR come from the
+   * Authoritative build (#75 §7.1): the uploaded zip and compiled workflow come from the
    * session dir, the shared projections run in-process, the release packager
    * runs as an isolated child, and the child's payload manifests must equal
    * the in-process results byte for byte.
    */
   const buildOnce = async (upload, parsed) => {
-    const irBytes = await readFile(resolve(upload.dir, 'workflow.ir.json')).catch(() => null);
-    if (irBytes === null) return webError(404, 'WEB_UPLOAD_UNKNOWN', 'the upload is gone');
-    const irDigest = sha256Hex(irBytes);
-    if (irDigest !== upload.digest) {
-      return webError(500, 'WEB_INTERNAL', 'the stored IR does not match its digest');
+    const compiledWorkflowBytes = await readFile(resolve(upload.dir, 'workflow.compiled.json')).catch(() => null);
+    if (compiledWorkflowBytes === null) return webError(404, 'WEB_UPLOAD_UNKNOWN', 'the upload is gone');
+    const compiledWorkflowDigest = sha256Hex(compiledWorkflowBytes);
+    if (compiledWorkflowDigest !== upload.digest) {
+      return webError(500, 'WEB_INTERNAL', 'the stored compiled workflow does not match its digest');
     }
-    let ir;
+    let compiledWorkflow;
     try {
-      ir = JSON.parse(irBytes.toString('utf8'));
+      compiledWorkflow = JSON.parse(compiledWorkflowBytes.toString('utf8'));
     } catch {
-      return webError(500, 'WEB_INTERNAL', 'the stored IR is not JSON');
+      return webError(500, 'WEB_INTERNAL', 'the stored compiled workflow is not JSON');
     }
-    if (ir.id !== upload.bundleId || ir.version !== upload.version) {
-      return webError(500, 'WEB_INTERNAL', 'the stored IR identity differs from the upload');
+    if (compiledWorkflow.id !== upload.bundleId || compiledWorkflow.version !== upload.version) {
+      return webError(500, 'WEB_INTERNAL', 'the stored compiled workflow identity differs from the upload');
     }
-    if (parsed.irDigest !== undefined && parsed.irDigest !== irDigest) {
-      return webError(409, 'PROJECTION_OPTIONS_IR_MISMATCH', 'the options are bound to a different IR digest');
+    if (parsed.compiledWorkflowDigest !== undefined && parsed.compiledWorkflowDigest !== compiledWorkflowDigest) {
+      return webError(409, 'PROJECTION_OPTIONS_COMPILED_WORKFLOW_MISMATCH', 'the options are bound to a different compiled workflow digest');
     }
 
-    const allowed = allowedProjections(ir);
+    const allowed = allowedProjections(compiledWorkflow);
     // `requires.engine` constrains the engine package, not the framework, and
     // only when the runner runtime is part of this bundle (spec §13).
     if (allowed.includes('runner')) {
-      const requirement = checkEngineRequirement({ range: ir.requires?.engine, engineVersion });
+      const requirement = checkEngineRequirement({ range: compiledWorkflow.requires?.engine, engineVersion });
       if (!requirement.ok) {
         return webError(409, requirement.code, requirement.message);
       }
@@ -445,14 +445,14 @@ export function createBuildService({
       }
       const normalized = normalizeOptions({
         projectionId,
-        ir,
-        irDigest,
+        compiledWorkflow,
+        compiledWorkflowDigest,
         raw: requested[projectionId] ?? null,
         manifest: descriptor,
       });
       if (!normalized.ok) {
         const first = normalized.errors[0];
-        const status = normalized.errors.some((item) => item.code === 'PROJECTION_OPTIONS_IR_MISMATCH')
+        const status = normalized.errors.some((item) => item.code === 'PROJECTION_OPTIONS_COMPILED_WORKFLOW_MISMATCH')
           ? 409
           : 400;
         return webError(status, first.code, first.message, {
@@ -462,8 +462,8 @@ export function createBuildService({
       }
       const result = project({
         projectionId,
-        ir,
-        irDigest,
+        compiledWorkflow,
+        compiledWorkflowDigest,
         options: normalized.options,
         environment: { engineVersion },
         assets: {},
@@ -473,8 +473,8 @@ export function createBuildService({
         return webError(400, first.code, first.message, { errors: result.errors ?? [] });
       }
       const validation = validateResult(result, {
-        ir,
-        irDigest,
+        compiledWorkflow,
+        compiledWorkflowDigest,
         manifest: descriptor,
         options: normalized.options,
         environment: { engineVersion },
@@ -492,8 +492,8 @@ export function createBuildService({
         result,
         canonical: isCanonicalOptions({
           projectionId,
-          ir,
-          irDigest,
+          compiledWorkflow,
+          compiledWorkflowDigest,
           options: normalized.options,
           manifest: descriptor,
         }),
@@ -559,8 +559,8 @@ export function createBuildService({
       expected: { canonical, allowed, projections: expected },
       outDir,
       upload,
-      ir,
-      irDigest,
+      compiledWorkflow,
+      compiledWorkflowDigest,
       node,
     });
     if (problems.length > 0) {
@@ -623,11 +623,11 @@ export function createBuildService({
       tag: resultEvent.tag,
       canonical,
       publishable: canonical,
-      ir: {
-        schema: ir.schema,
+      compiledWorkflow: {
+        schema: compiledWorkflow.schema,
         id: upload.bundleId,
         version: upload.version,
-        digest: irDigest,
+        digest: compiledWorkflowDigest,
         contentSha256: upload.contentSha256,
       },
       engineVersion,

@@ -3,7 +3,7 @@
  *
  * Tasks may omit frontmatter, but the body must carry the four fixed H2
  * sections and exactly one `{{submit}}` code block. The structural scanner is
- * shared with IR validation.
+ * shared with compiled workflow validation.
  */
 import { codePointLength } from '../../core/code-point.js';
 import { parseFrontmatter } from '../frontmatter.js';

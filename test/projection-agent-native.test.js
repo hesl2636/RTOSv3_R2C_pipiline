@@ -1,7 +1,7 @@
 /**
  * agent-native projection + Claude Code target (#95).
  *
- * The sample bundle compiles to the frozen IR; projecting it with only the
+ * The sample bundle compiles to the frozen compiled workflow; projecting it with only the
  * `claude-code` target must produce the closed 45-file set, 8 capability rows
  * and a result that passes V1–V12 twice byte-identically.
  */
@@ -40,27 +40,27 @@ const CAPABILITIES = [
 ];
 
 let sample;
-function sampleIr() {
+function sampleCompiledWorkflow() {
   if (sample !== undefined) return sample;
   const compiled = compileBundle(new Uint8Array(readFileSync(ZIP)), { inflateRaw, sha256: sha256Hex });
   assert.equal(compiled.ok, true);
-  sample = { ir: JSON.parse(new TextDecoder().decode(compiled.irBytes)), irDigest: compiled.digest };
+  sample = { compiledWorkflow: JSON.parse(new TextDecoder().decode(compiled.compiledWorkflowBytes)), compiledWorkflowDigest: compiled.digest };
   return sample;
 }
 
-function runProject({ ir, irDigest, raw }) {
+function runProject({ compiledWorkflow, compiledWorkflowDigest, raw }) {
   const normalized = normalizeOptions({
     projectionId: 'agent-native',
-    ir,
-    irDigest,
+    compiledWorkflow,
+    compiledWorkflowDigest,
     raw,
     manifest: MANIFEST,
   });
   assert.equal(normalized.ok, true, JSON.stringify(normalized.errors));
   return project({
     projectionId: 'agent-native',
-    ir,
-    irDigest,
+    compiledWorkflow,
+    compiledWorkflowDigest,
     options: normalized.options,
     environment: {},
     assets: {},
@@ -68,14 +68,14 @@ function runProject({ ir, irDigest, raw }) {
 }
 
 function claudeSample() {
-  const { ir, irDigest } = sampleIr();
-  return { ir, irDigest, result: runProject({ ir, irDigest, raw: { targets: ['claude-code'] } }) };
+  const { compiledWorkflow, compiledWorkflowDigest } = sampleCompiledWorkflow();
+  return { compiledWorkflow, compiledWorkflowDigest, result: runProject({ compiledWorkflow, compiledWorkflowDigest, raw: { targets: ['claude-code'] } }) };
 }
 
-function miniIr({ id = 'mini', roleId = 'worker', stages, gates = [], outputs = [], skills = {} } = {}) {
+function miniCompiledWorkflow({ id = 'mini', roleId = 'worker', stages, gates = [], outputs = [], skills = {} } = {}) {
   const source = (path, fill) => ({ path, sha256: fill.repeat(64) });
   return {
-    schema: 'hm2b.ir/v2',
+    schema: 'hm2b.compiled-workflow/v2',
     id,
     name: 'Mini workflow',
     version: '1.0.0',
@@ -125,7 +125,7 @@ function miniIr({ id = 'mini', roleId = 'worker', stages, gates = [], outputs = 
 // --- the frozen baseline --------------------------------------------------
 
 test('claude-only baseline: 45 files, 8 capability rows, 5 degradations, V1–V12 pass', () => {
-  const { ir, irDigest, result } = claudeSample();
+  const { compiledWorkflow, compiledWorkflowDigest, result } = claudeSample();
   assert.equal(result.ok, true);
   assert.equal(result.schema, 'hm2b.projection-result/v1');
   assert.deepEqual(result.targets, ['claude-code']);
@@ -137,7 +137,7 @@ test('claude-only baseline: 45 files, 8 capability rows, 5 degradations, V1–V1
   assert.equal(result.options.skills.length, 35);
   assert.deepEqual(result.options.targets, ['claude-code']);
 
-  const validation = validateResult(result, { ir, irDigest, options: result.options, manifest: MANIFEST });
+  const validation = validateResult(result, { compiledWorkflow, compiledWorkflowDigest, options: result.options, manifest: MANIFEST });
   assert.equal(validation.ok, true, JSON.stringify(validation.diagnostics, null, 2));
 });
 
@@ -170,12 +170,12 @@ test('the file set is the closed three-tree layout (no user files, commands or .
 test('declared bundle assets project once under the namespace root for every selected target', () => {
   const compiled = compileBundle(new Uint8Array(assetZip()), { inflateRaw, sha256: sha256Hex });
   assert.equal(compiled.ok, true);
-  const ir = JSON.parse(new TextDecoder().decode(compiled.irBytes));
-  const irDigest = compiled.digest;
-  const result = runProject({ ir, irDigest, raw: { targets: ['claude-code', 'codex'] } });
+  const compiledWorkflow = JSON.parse(new TextDecoder().decode(compiled.compiledWorkflowBytes));
+  const compiledWorkflowDigest = compiled.digest;
+  const result = runProject({ compiledWorkflow, compiledWorkflowDigest, raw: { targets: ['claude-code', 'codex'] } });
   assert.equal(result.ok, true, JSON.stringify(result.errors));
 
-  const root = `.agents/agent-native/${ir.id}`;
+  const root = `.agents/agent-native/${compiledWorkflow.id}`;
   const assets = result.files.filter((file) => ['knowledge', 'checklist', 'hooks', 'mcp'].includes(file.kind));
   assert.deepEqual(assets.map((file) => [file.kind, file.path]), [
     ['checklist', `${root}/checklists/design.md`],
@@ -218,10 +218,10 @@ test('declared bundle assets project once under the namespace root for every sel
   assert.equal(result.capabilityReport.length, result.targets.length * CAPABILITIES.length);
   assert.deepEqual(result.capabilityReport.map((row) => row.capability), result.targets.flatMap(() => CAPABILITIES));
 
-  const validation = validateResult(result, { ir, irDigest, options: result.options, manifest: MANIFEST });
+  const validation = validateResult(result, { compiledWorkflow, compiledWorkflowDigest, options: result.options, manifest: MANIFEST });
   assert.equal(validation.ok, true, JSON.stringify(validation.diagnostics, null, 2));
 
-  const again = runProject({ ir, irDigest, raw: { targets: ['claude-code', 'codex'] } });
+  const again = runProject({ compiledWorkflow, compiledWorkflowDigest, raw: { targets: ['claude-code', 'codex'] } });
   assert.equal(JSON.stringify(again), JSON.stringify(result));
 });
 
@@ -233,7 +233,7 @@ test('generated bytes match the prototype oracle', () => {
     '.claude/skills/rtosv3-drvport-stage-analysis-design/SKILL.md': '8a9d4e84659e4ceadca6bf802b8c469414ff8df2a7a13a0fcb8e0508bc04ee7b',
     '.claude/skills/rtosv3-drvport-skill-ar-miner/SKILL.md': 'f7823d7ab51b2f9dd55f44e9bfc81e2a885f75ab4695ae19a399e5dfaca9f7f8',
     '.claude/agents/rtosv3-drvport-bys-architect.md': '1c689ab30c3e4b4aec4f3ee8e04e244b91739b8c36922ae47f6603a43c805dc4',
-    '.agents/agent-native/rtosv3-drvport/roles.json': '37d7d172bb56d11c7fbba802c8e79bc0fcc046d2f6a6e22db0997eb4b46ab272',
+    '.agents/agent-native/rtosv3-drvport/roles.json': 'd764330717dbd86477f35e1dd3f96a797539497b1e92115836fa3eadf572030b',
   };
   for (const [path, hash] of Object.entries(hashes)) {
     assert.equal(sha256(byPath.get(path)), hash, path);
@@ -266,7 +266,7 @@ test('{{submit}} is replaced exactly once per task and never survives', () => {
 });
 
 test('roles.json is one canonical file sectioned by target and consistent with idMap', () => {
-  const { ir, result } = claudeSample();
+  const { compiledWorkflow, result } = claudeSample();
   const file = result.files.find((item) => item.path.endsWith('/roles.json'));
   assert.equal(file.kind, 'metadata');
   assert.deepEqual(file.targets, ['claude-code']);
@@ -274,13 +274,13 @@ test('roles.json is one canonical file sectioned by target and consistent with i
   const roles = JSON.parse(file.content);
   assert.equal(roles.schema, 'hm2b.projection.roles/v1');
   assert.deepEqual(Object.keys(roles.targets), ['claude-code']);
-  assert.equal(roles.ir.sha256, result.ir.digest);
+  assert.equal(roles.compiledWorkflow.sha256, result.compiledWorkflow.digest);
   const section = roles.targets['claude-code'];
   assert.equal(section.namespace, 'rtosv3-drvport');
-  assert.deepEqual(section.roles.map((role) => role.id), Object.keys(ir.roles).sort());
+  assert.deepEqual(section.roles.map((role) => role.id), Object.keys(compiledWorkflow.roles).sort());
   for (const role of section.roles) {
     assert.equal(role.name, result.metadata.idMap['claude-code'].roles[role.id]);
-    assert.equal(role.placeholder, ir.roles[role.id].placeholder);
+    assert.equal(role.placeholder, compiledWorkflow.roles[role.id].placeholder);
     assert.equal(role.artifact.path, `.claude/agents/${role.name}.md`);
     assert.equal(role.artifact.sha256, sha256(result.files.find((item) => item.path === role.artifact.path).content));
     for (const [field, state] of Object.entries(role.fields)) {
@@ -322,26 +322,26 @@ test('capability report is the claude-code matrix in fixed order', () => {
 
 test('the same input twice yields byte-identical results', () => {
   const first = claudeSample().result;
-  const second = runProject({ ...sampleIr(), raw: { targets: ['claude-code'] } });
+  const second = runProject({ ...sampleCompiledWorkflow(), raw: { targets: ['claude-code'] } });
   assert.equal(JSON.stringify(second), JSON.stringify(first));
   assert.deepEqual(second.files.map((file) => [file.path, file.content]), first.files.map((file) => [file.path, file.content]));
 });
 
 test('stage order options reorder coverage and only warn', () => {
-  const { ir, irDigest } = sampleIr();
-  const stages = ir.stages.map((stage) => stage.id).reverse();
-  const { result } = { result: runProject({ ir, irDigest, raw: { targets: ['claude-code'], stageOrder: stages } }) };
+  const { compiledWorkflow, compiledWorkflowDigest } = sampleCompiledWorkflow();
+  const stages = compiledWorkflow.stages.map((stage) => stage.id).reverse();
+  const { result } = { result: runProject({ compiledWorkflow, compiledWorkflowDigest, raw: { targets: ['claude-code'], stageOrder: stages } }) };
   assert.equal(result.ok, true);
   assert.deepEqual(result.coverage.stages, stages);
   assert.deepEqual(result.options.stageOrder, stages);
-  assert.deepEqual(result.warnings, [{ code: 'STAGE_ORDER_OVERRIDDEN', message: 'options.stageOrder differs from IR order; rendering order follows the option' }]);
+  assert.deepEqual(result.warnings, [{ code: 'STAGE_ORDER_OVERRIDDEN', message: 'options.stageOrder differs from compiled workflow order; rendering order follows the option' }]);
   assert.equal(result.files.length, 45);
 });
 
 test('a skill subset drops copies and records option losses', () => {
-  const { ir, irDigest } = sampleIr();
-  const skills = Object.keys(ir.skills).sort().slice(0, 12);
-  const { result } = { result: runProject({ ir, irDigest, raw: { targets: ['claude-code'], skills } }) };
+  const { compiledWorkflow, compiledWorkflowDigest } = sampleCompiledWorkflow();
+  const skills = Object.keys(compiledWorkflow.skills).sort().slice(0, 12);
+  const { result } = { result: runProject({ compiledWorkflow, compiledWorkflowDigest, raw: { targets: ['claude-code'], skills } }) };
   assert.equal(result.ok, true);
   assert.equal(result.files.length, 22);
   assert.deepEqual(result.options.skills, skills);
@@ -354,12 +354,12 @@ test('a skill subset drops copies and records option losses', () => {
     assert.equal(record.level, 'unavailable');
   }
   assert.equal(result.capabilityReport.find((row) => row.capability === 'skills').level, 'unavailable');
-  const validation = validateResult(result, { ir, irDigest, options: result.options, manifest: MANIFEST });
+  const validation = validateResult(result, { compiledWorkflow, compiledWorkflowDigest, options: result.options, manifest: MANIFEST });
   assert.equal(validation.ok, true, JSON.stringify(validation.diagnostics));
 });
 
 test('gates and outputs degrade per use point and stay visible in the stage skill', () => {
-  const ir = miniIr({
+  const compiledWorkflow = miniCompiledWorkflow({
     gates: [{ command: 'node --test', timeout: 600 }],
     outputs: ['reports/*.md'],
     skills: {
@@ -371,8 +371,8 @@ test('gates and outputs degrade per use point and stay visible in the stage skil
       },
     },
   });
-  const irDigest = 'a'.repeat(64);
-  const result = runProject({ ir, irDigest, raw: { targets: ['claude-code'] } });
+  const compiledWorkflowDigest = 'a'.repeat(64);
+  const result = runProject({ compiledWorkflow, compiledWorkflowDigest, raw: { targets: ['claude-code'] } });
   assert.equal(result.ok, true);
   const gates = result.degradations.filter((record) => record.capability === 'gates');
   const outputs = result.degradations.filter((record) => record.capability === 'outputs');
@@ -382,7 +382,7 @@ test('gates and outputs degrade per use point and stay visible in the stage skil
   assert.ok(stage.content.includes('node --test'));
   assert.ok(stage.content.includes('reports/*.md'));
   assert.ok(stage.content.includes('超时：600 秒'));
-  const validation = validateResult(result, { ir, irDigest, options: result.options, manifest: MANIFEST });
+  const validation = validateResult(result, { compiledWorkflow, compiledWorkflowDigest, options: result.options, manifest: MANIFEST });
   assert.equal(validation.ok, true, JSON.stringify(validation.diagnostics, null, 2));
 });
 
@@ -414,23 +414,23 @@ test('projection.json is the canonical manifest and derives from the target regi
   );
 });
 
-test('an hm2b.ir/v1 document is rejected before any file is produced', () => {
-  const ir = { ...miniIr(), schema: 'hm2b.ir/v1' };
-  const result = runProject({ ir, irDigest: 'a'.repeat(64), raw: { targets: ['claude-code'] } });
+test('an hm2b.compiled-workflow/v1 document is rejected before any file is produced', () => {
+  const compiledWorkflow = { ...miniCompiledWorkflow(), schema: 'hm2b.compiled-workflow/v1' };
+  const result = runProject({ compiledWorkflow, compiledWorkflowDigest: 'a'.repeat(64), raw: { targets: ['claude-code'] } });
   assert.equal(result.ok, false);
   assert.equal(result.files, undefined);
   assert.deepEqual(result.errors, [{
     severity: 'error',
-    code: 'PROJECTION_IR_UNSUPPORTED',
+    code: 'PROJECTION_COMPILED_WORKFLOW_UNSUPPORTED',
     path: '',
     pointer: null,
-    message: 'unsupported IR schema hm2b.ir/v1',
+    message: 'unsupported compiled workflow schema hm2b.compiled-workflow/v1',
   }]);
 });
 
 test('name collisions fail with PROJECTION_ID_COLLISION instead of silently renaming', () => {
-  const ir = miniIr({ roleId: 'stage-one' });
-  const result = runProject({ ir, irDigest: 'a'.repeat(64), raw: { targets: ['claude-code'] } });
+  const compiledWorkflow = miniCompiledWorkflow({ roleId: 'stage-one' });
+  const result = runProject({ compiledWorkflow, compiledWorkflowDigest: 'a'.repeat(64), raw: { targets: ['claude-code'] } });
   assert.equal(result.ok, false);
   assert.equal(result.files, undefined);
   assert.ok(result.errors.some((error) => error.code === 'PROJECTION_ID_COLLISION'));
@@ -443,8 +443,8 @@ test('name collisions fail with PROJECTION_ID_COLLISION instead of silently rena
 
 test('over-long rendered names fail instead of being truncated', () => {
   const roleId = `worker-${'x'.repeat(50)}`;
-  const ir = miniIr({ id: `bundle-${'y'.repeat(20)}`, roleId });
-  const result = runProject({ ir, irDigest: 'a'.repeat(64), raw: { targets: ['claude-code'] } });
+  const compiledWorkflow = miniCompiledWorkflow({ id: `bundle-${'y'.repeat(20)}`, roleId });
+  const result = runProject({ compiledWorkflow, compiledWorkflowDigest: 'a'.repeat(64), raw: { targets: ['claude-code'] } });
   assert.equal(result.ok, false);
   assert.ok(result.errors.some((error) => error.code === 'PROJECTION_NAME_TOO_LONG'));
 });

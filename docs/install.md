@@ -37,8 +37,8 @@ installer writes those bytes verbatim and records them in the receipt.
 The installer verifies the asset chain before any write:
 
 1. every asset against the Release's `SHA256SUMS.txt`;
-2. the bundle zip, `workflow.ir.json` and the pre-projected payload against
-   each other (id, version, IR digest, content digest);
+2. the bundle zip, `workflow.compiled.json` and the pre-projected payload against
+   each other (id, version, compiled workflow digest, content digest);
 3. every payload member against `manifest.json`;
 4. the payload's `V1–V12` result and the install plan.
 

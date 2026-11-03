@@ -48,9 +48,9 @@ const RETIRED = [
   ['legacy engine name', /\br2c-runner\b/],
   ['legacy engine asset', /\br2c-engine-/],
   ['legacy bundle schema', /\br2c\.bundle\//],
-  ['legacy IR schema', /\br2c\.ir\//],
+  ['legacy compiled workflow schema', /\br2c\.ir\//],
   ['legacy bundle revision', /\bhm2b\.bundle\/v1\b/],
-  ['legacy IR revision', /\bhm2b\.ir\/v1\b/],
+  ['legacy compiled workflow revision', /\bhm2b\.ir\/v1\b/],
   ['legacy workflow schema', /\br2c\.workflow\//],
   ['legacy runtime receipt', /\br2c\.runtime\//],
   ['legacy projection report', /\br2c\.projection/],
@@ -208,11 +208,11 @@ test('the dsh report keeps the first-hand Cordis evidence', () => {
   assert.match(report, /config\.plugins/);
 });
 
-test('docs describe the v2 bundle and IR contract', () => {
+test('docs describe the v2 bundle and compiled workflow contract', () => {
   for (const rel of ['README.md', 'GLOSSARY.md', 'docs/layout.md']) {
     const text = read(rel);
     assert.match(text, /hm2b\.bundle\/v2/, `${rel} does not name hm2b.bundle/v2`);
-    assert.match(text, /hm2b\.ir\/v2/, `${rel} does not name hm2b.ir/v2`);
+    assert.match(text, /hm2b\.compiled-workflow\/v2/, `${rel} does not name hm2b.compiled-workflow/v2`);
     for (const dir of ['knowledge-base/', 'checklists/', 'hooks/hooks.json', 'mcp.json']) {
       assert.ok(text.includes(dir), `${rel} does not document ${dir}`);
     }
@@ -222,13 +222,13 @@ test('docs describe the v2 bundle and IR contract', () => {
   assert.match(read('README.md'), /\.agents\/agent-native\/<bundle-id>\//);
   const help = helpOf('bin/hm2b-assembler.js');
   assert.match(help, /hm2b\.bundle\/v2/);
-  assert.match(help, /hm2b\.ir\/v2/);
+  assert.match(help, /hm2b\.compiled-workflow\/v2/);
 });
 
 test('the layout document lists every top-level module that exists', () => {
   const layout = read('docs/layout.md');
   const dirs = [
-    'assembler', 'bin', 'core', 'docs', 'examples', 'installer', 'ir', 'projection',
+    'assembler', 'bin', 'core', 'docs', 'examples', 'installer', 'compiled', 'projection',
     'runtime/agent-native', 'runtime/runner/contract', 'runtime/runner/engine', 'runtime/runner/projection',
     'runtime/runner/schema', 'runtime/shared', 'scripts', 'test', 'web',
   ];
@@ -242,7 +242,7 @@ test('the layout document lists every top-level module that exists', () => {
 
 test('GLOSSARY carries the new vocabulary and marks the retired one', () => {
   const glossary = read('GLOSSARY.md');
-  for (const term of ['bundle', 'manifest', 'stage', 'step', 'task', 'role', 'skill', 'constitution', 'IR',
+  for (const term of ['bundle', 'manifest', 'stage', 'step', 'task', 'role', 'skill', 'constitution', 'compiled workflow',
     'projection', 'target', 'capability', 'obligation', 'degradation', 'receipt', 'runtime receipt',
     'pre-projected payload', 'canonical options', 'ownership', 'shared root', 'adopt', 'takeover']) {
     assert.match(glossary, new RegExp(`\\*\\*${term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\*\\*|^\\| \`?${term}`, 'im'), `GLOSSARY is missing ${term}`);

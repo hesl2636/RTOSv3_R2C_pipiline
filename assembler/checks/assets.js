@@ -11,31 +11,31 @@
  */
 import { MAX_PATH_BYTES, utf8Length } from '../../core/paths.js';
 import {
-  IR_CHECKLIST_ROOT,
-  IR_HOOKS_PATH,
-  IR_KNOWLEDGE_BASE_ROOT,
-  IR_MCP_PATH,
-  irChecklistPath,
-} from '../../ir/schema.js';
+  COMPILED_WORKFLOW_CHECKLIST_ROOT,
+  COMPILED_WORKFLOW_HOOKS_PATH,
+  COMPILED_WORKFLOW_KNOWLEDGE_BASE_ROOT,
+  COMPILED_WORKFLOW_MCP_PATH,
+  compiledWorkflowChecklistPath,
+} from '../../compiled/schema.js';
 import { LIMITS } from '../limits.js';
 import { isPlainObject } from '../util.js';
 import { readJsonDocument } from './json.js';
 
-export const HOOKS_PATH = IR_HOOKS_PATH;
-export const MCP_PATH = IR_MCP_PATH;
-const KNOWLEDGE_BASE_ROOT = `${IR_KNOWLEDGE_BASE_ROOT}/`;
-const CHECKLIST_ROOT = `${IR_CHECKLIST_ROOT}/`;
+export const HOOKS_PATH = COMPILED_WORKFLOW_HOOKS_PATH;
+export const MCP_PATH = COMPILED_WORKFLOW_MCP_PATH;
+const KNOWLEDGE_BASE_ROOT = `${COMPILED_WORKFLOW_KNOWLEDGE_BASE_ROOT}/`;
+const CHECKLIST_ROOT = `${COMPILED_WORKFLOW_CHECKLIST_ROOT}/`;
 const HOOKS_ROOT = 'hooks/';
 
 /** File classification kinds owned by this module. */
 export const ASSET_KINDS = Object.freeze(['knowledge-base', 'checklist', 'hooks', 'mcp']);
 
 const SEGMENT = '[A-Za-z0-9._-]+';
-const KNOWLEDGE_BASE_RE = new RegExp(`^${IR_KNOWLEDGE_BASE_ROOT}/(?:${SEGMENT}/)*${SEGMENT}\\.md$`);
+const KNOWLEDGE_BASE_RE = new RegExp(`^${COMPILED_WORKFLOW_KNOWLEDGE_BASE_ROOT}/(?:${SEGMENT}/)*${SEGMENT}\\.md$`);
 
 /** Declared asset path -> `checklists/<id>.md`. */
 export function checklistPath(id) {
-  return irChecklistPath(id);
+  return compiledWorkflowChecklistPath(id);
 }
 
 /** True when `path` is a legal declared knowledge-base markdown path. */

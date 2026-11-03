@@ -29,9 +29,9 @@ import { canonicalJson } from '../core/canonical-json.js';
 import { compareCodePoints } from '../core/code-point.js';
 import { sha256Hex } from '../core/node/sha256.js';
 import { installRelease, selectProjection } from '../installer/release-install.js';
-import { serializeIr } from '../ir/serialize.js';
+import { serializeCompiledWorkflow } from '../compiled/serialize.js';
 import { LAUNCHER_TEXT, RUNTIME_RECEIPT_PATH } from '../installer/runtime.js';
-import { irPath as irRelPath } from '../installer/paths.js';
+import { compiledWorkflowPath as compiledWorkflowRelPath } from '../installer/paths.js';
 import { createReleaseTarGz, readReleaseTarGz } from '../installer/release-tar.js';
 import { rawResponse, startGithubFixture, startHttpFixture } from './helpers/release-fixture.js';
 import {
@@ -132,7 +132,7 @@ function payloadManifest(dir, name) {
   };
 }
 
-/** Local Release of the minimal bundle plus every v2 IR asset kind. */
+/** Local Release of the minimal bundle plus every v2 compiled workflow asset kind. */
 function buildAssetRelease(t) {
   const source = join(tempDir(t, 'asset-source'), 'bundle-minimal-demo-v1.0.0.zip');
   writeFileSync(source, assetZip());
@@ -274,7 +274,7 @@ test('runner installs the runtime and the pre-projected tree without compiling',
   assert.equal(roles.schema, 'hm2b.projection.roles/v1');
   assert.deepEqual(Object.keys(roles.targets), ['claude-code', 'codex', 'omp', 'opencode']);
 
-  // Receipt: every owned path hashes from disk, the IR copy matches its digest.
+  // Receipt: every owned path hashes from disk, the compiled workflow copy matches its digest.
   const own = receipt(target);
   assert.equal(own.data.schema, 'hm2b.install/v2');
   assert.equal(own.data.projection.id, 'runner');
@@ -289,8 +289,8 @@ test('runner installs the runtime and the pre-projected tree without compiling',
   for (const file of own.data.files) {
     assert.equal(sha256File(join(target, ...file.path.split('/'))), file.sha256, file.path);
   }
-  const irCopy = join(target, ...own.data.ir.path.split('/'));
-  assert.equal(sha256File(irCopy), own.data.ir.digest);
+  const compiledWorkflowCopy = join(target, ...own.data.compiledWorkflow.path.split('/'));
+  assert.equal(sha256File(compiledWorkflowCopy), own.data.compiledWorkflow.digest);
   assert.equal(own.data.metadata.placeholders.constitution, 'placeholder');
   assert.equal(own.data.capability_report.length, 8);
 
@@ -300,7 +300,7 @@ test('runner installs the runtime and the pre-projected tree without compiling',
   assert.equal(walk(target).some((path) => path.endsWith('bundle.json')), false);
 });
 
-test('an IR with assets round-trips through payload build and install', (t) => {
+test('a compiled workflow with assets round-trips through payload build and install', (t) => {
   const release = buildAssetRelease(t);
 
   const payload = payloadManifest(release, 'hm2b-payload-minimal-demo-v1.0.0.tgz');
@@ -338,12 +338,12 @@ test('an IR with assets round-trips through payload build and install', (t) => {
   }
 });
 
-test('an IR asset digest that disagrees with the zip refuses before writing', (t) => {
+test('a compiled workflow asset digest that disagrees with the zip refuses before writing', (t) => {
   const release = buildAssetRelease(t);
   const assets = releaseAssets(release);
-  const ir = JSON.parse(assets.get('workflow.ir.json').toString('utf8'));
-  ir.knowledgeBase[0].source.sha256 = '0'.repeat(64);
-  assets.set('workflow.ir.json', Buffer.from(canonicalJson(ir), 'utf8'));
+  const compiledWorkflow = JSON.parse(assets.get('workflow.compiled.json').toString('utf8'));
+  compiledWorkflow.knowledgeBase[0].source.sha256 = '0'.repeat(64);
+  assets.set('workflow.compiled.json', Buffer.from(canonicalJson(compiledWorkflow), 'utf8'));
   assets.set('SHA256SUMS.txt', sumsFor(assets));
   const patched = writeAssets(t, assets);
   const target = project(t);
@@ -355,9 +355,9 @@ test('an IR asset digest that disagrees with the zip refuses before writing', (t
     { env },
   );
   assert.equal(result.status, 2, `${result.stdout}\n${result.stderr}`);
-  assert.match(result.stderr, /RELEASE_IR_MISMATCH/);
+  assert.match(result.stderr, /RELEASE_COMPILED_WORKFLOW_MISMATCH/);
   assert.match(result.stderr, /knowledge-base/);
-  assert.match(result.stderr, /zip bytes do not match the IR source digest/);
+  assert.match(result.stderr, /zip bytes do not match the compiled workflow source digest/);
   assert.equal(walk(target).length, 0);
 });
 
@@ -558,7 +558,7 @@ test('three-way tampering refuses with zero writes', (t) => {
     cases.push({ dir, label: 'payload member hash' });
   }
 
-  // 4) zip member edited in place + sums re-frozen: IR's manifest digest breaks.
+  // 4) zip member edited in place + sums re-frozen: compiled workflow's manifest digest breaks.
   {
     const dir = copy('zip-member');
     const name = `bundle-${ID}-v${VERSION}.zip`;
@@ -603,7 +603,7 @@ test('a wrong --version or unknown --target refuses before writing', (t) => {
     { env },
   );
   assert.equal(wrong.status, 2, `${wrong.stdout}\n${wrong.stderr}`);
-  assert.match(wrong.stderr, /workflow\.ir\.json|RELEASE_/);
+  assert.match(wrong.stderr, /workflow\.compiled\.json|RELEASE_/);
 
   const unknown = install(
     ['--bundle', ID, '--version', VERSION, '--projection', 'agent-native', '--target', 'cursor',
@@ -761,22 +761,22 @@ function writeAssets(t, assets) {
   return dir;
 }
 
-/** A coherent Release whose IR asks for an engine the Release does not ship. */
+/** A coherent Release whose compiled workflow asks for an engine the Release does not ship. */
 function withEngineRequirement(t, release, range) {
   const assets = releaseAssets(release);
-  const ir = JSON.parse(assets.get('workflow.ir.json').toString('utf8'));
-  ir.requires = { ...(ir.requires ?? {}), engine: range };
-  const irBytes = Buffer.from(serializeIr(ir), 'utf8');
-  const irDigest = sha256Hex(irBytes);
-  assets.set('workflow.ir.json', irBytes);
+  const compiledWorkflow = JSON.parse(assets.get('workflow.compiled.json').toString('utf8'));
+  compiledWorkflow.requires = { ...(compiledWorkflow.requires ?? {}), engine: range };
+  const compiledWorkflowBytes = Buffer.from(serializeCompiledWorkflow(compiledWorkflow), 'utf8');
+  const compiledWorkflowDigest = sha256Hex(compiledWorkflowBytes);
+  assets.set('workflow.compiled.json', compiledWorkflowBytes);
   for (const projectionId of ['runner', 'agent-native']) {
     const name = projectionId === 'runner'
       ? `hm2b-payload-${ID}-v${VERSION}.tgz`
       : `agent-native-${ID}-v${VERSION}.tgz`;
     const payload = payloadManifest(release, name);
-    payload.manifest.ir.digest = irDigest;
-    payload.manifest.result.ir.digest = irDigest;
-    payload.manifest.result.options.ir.digest = irDigest;
+    payload.manifest.compiledWorkflow.digest = compiledWorkflowDigest;
+    payload.manifest.result.compiledWorkflow.digest = compiledWorkflowDigest;
+    payload.manifest.result.options.compiledWorkflow.digest = compiledWorkflowDigest;
     assets.set(name, createReleaseTarGz([...payload.entries.values()].map((entry) => ({
       path: entry.path,
       mode: entry.mode,
@@ -812,11 +812,11 @@ test('requires.engine gates runner and is ignored by agent-native', (t) => {
   assert.equal(existsSync(join(agentTarget, '.hm2b', 'engine')), false);
 });
 
-test('a truncated IR asset refuses before writing', (t) => {
+test('a truncated compiled workflow asset refuses before writing', (t) => {
   const pristine = buildRelease(t);
   const assets = releaseAssets(pristine);
-  const irBytes = assets.get('workflow.ir.json');
-  assets.set('workflow.ir.json', irBytes.subarray(0, Math.floor(irBytes.length / 2)));
+  const compiledWorkflowBytes = assets.get('workflow.compiled.json');
+  assets.set('workflow.compiled.json', compiledWorkflowBytes.subarray(0, Math.floor(compiledWorkflowBytes.length / 2)));
   assets.set('SHA256SUMS.txt', sumsFor(assets));
   const release = writeAssets(t, assets);
   const target = project(t);
@@ -827,16 +827,16 @@ test('a truncated IR asset refuses before writing', (t) => {
     { env },
   );
   assert.equal(result.status, 2, `${result.stdout}\n${result.stderr}`);
-  assert.match(result.stderr, /RELEASE_IR_MISMATCH/);
+  assert.match(result.stderr, /RELEASE_COMPILED_WORKFLOW_MISMATCH/);
   assert.equal(walk(target).length, 0);
 });
 
-test('an IR that regresses to hm2b.ir/v1 refuses before writing', (t) => {
+test('a compiled workflow that regresses to hm2b.compiled-workflow/v1 refuses before writing', (t) => {
   const pristine = buildRelease(t);
   const assets = releaseAssets(pristine);
-  const ir = JSON.parse(assets.get('workflow.ir.json').toString('utf8'));
-  ir.schema = 'hm2b.ir/v1';
-  assets.set('workflow.ir.json', Buffer.from(canonicalJson(ir), 'utf8'));
+  const compiledWorkflow = JSON.parse(assets.get('workflow.compiled.json').toString('utf8'));
+  compiledWorkflow.schema = 'hm2b.compiled-workflow/v1';
+  assets.set('workflow.compiled.json', Buffer.from(canonicalJson(compiledWorkflow), 'utf8'));
   assets.set('SHA256SUMS.txt', sumsFor(assets));
   const release = writeAssets(t, assets);
   const target = project(t);
@@ -847,8 +847,8 @@ test('an IR that regresses to hm2b.ir/v1 refuses before writing', (t) => {
     { env },
   );
   assert.equal(result.status, 2, `${result.stdout}\n${result.stderr}`);
-  assert.match(result.stderr, /RELEASE_IR_MISMATCH/);
-  assert.match(result.stderr, /hm2b\.ir\/v2/);
+  assert.match(result.stderr, /RELEASE_COMPILED_WORKFLOW_MISMATCH/);
+  assert.match(result.stderr, /hm2b\.compiled-workflow\/v2/);
   assert.equal(walk(target).length, 0);
 });
 
@@ -952,10 +952,10 @@ test('a bundle failure after the runtime rolls the runtime back (one transaction
   const release = buildRelease(t);
   const target = project(t);
   const { env } = isolatedEnv(t);
-  // The preflight cannot see this: the IR slot is a directory, so the bundle
+  // The preflight cannot see this: the compiled workflow slot is a directory, so the bundle
   // half fails only after the runtime has been written.
-  const irDir = join(target, ...irRelPath(ID, VERSION).split('/'));
-  mkdirSync(irDir, { recursive: true });
+  const compiledWorkflowDir = join(target, ...compiledWorkflowRelPath(ID, VERSION).split('/'));
+  mkdirSync(compiledWorkflowDir, { recursive: true });
   const before = walk(target);
 
   const result = install(

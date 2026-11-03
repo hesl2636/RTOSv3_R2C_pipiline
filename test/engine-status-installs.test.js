@@ -44,7 +44,7 @@ const RECEIPT = {
   schema: 'hm2b.install/v2',
   projection: { id: 'runner', version: '1.0.0', targets: ['runner'] },
   bundle: { id: 'demo-bundle', version: '2.3.4' },
-  ir: { path: '.hm2b/bundles/demo-bundle/2.3.4/workflow.ir.json', digest: '0'.repeat(64), contentSha256: '0'.repeat(64) },
+  compiledWorkflow: { path: '.hm2b/bundles/demo-bundle/2.3.4/workflow.compiled.json', digest: '0'.repeat(64), contentSha256: '0'.repeat(64) },
   root: 'project',
   scope: 'project',
   mode: 'fresh',

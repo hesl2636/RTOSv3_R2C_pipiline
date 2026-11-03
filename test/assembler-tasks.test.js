@@ -13,7 +13,7 @@ import { sha256Hex } from '../core/node/sha256.js';
 import { compileBundle } from '../assembler/compile.js';
 import { parseFrontmatter } from '../assembler/frontmatter.js';
 import { validateBundle } from '../assembler/validate-bundle.js';
-import { validateIr } from '../assembler/validate-ir.js';
+import { validateCompiledWorkflow } from '../assembler/validate-compiled.js';
 import { MINIMAL_TASK, minimalZip } from './helpers/minimal-bundle.js';
 
 const PRIMITIVES = { inflateRaw, sha256: sha256Hex };
@@ -46,8 +46,8 @@ function compileTask(task) {
   return result;
 }
 
-function irOf(result) {
-  return JSON.parse(new TextDecoder().decode(result.irBytes));
+function compiledWorkflowOf(result) {
+  return JSON.parse(new TextDecoder().decode(result.compiledWorkflowBytes));
 }
 
 test('the frontmatter subset accepts flat scalars and block lists', () => {
@@ -288,13 +288,13 @@ for (const [label, sentence, token] of [
   });
 }
 
-test('a leak warning does not block compilation or IR validation', () => {
+test('a leak warning does not block compilation or compiled workflow validation', () => {
   const task = MINIMAL_TASK.replace('完成唯一一步。', '先跑 hm2b-status 看状态。');
   const compiled = compileTask(task);
-  const ir = irOf(compiled);
-  assert.ok(ir.tasks['do-it'].body.includes('hm2b-status'));
-  const irReport = validateIr(compiled.irBytes, { sha256: sha256Hex });
-  assert.equal(irReport.ok, true, JSON.stringify(irReport.errors));
+  const compiledWorkflow = compiledWorkflowOf(compiled);
+  assert.ok(compiledWorkflow.tasks['do-it'].body.includes('hm2b-status'));
+  const compiledWorkflowReport = validateCompiledWorkflow(compiled.compiledWorkflowBytes, { sha256: sha256Hex });
+  assert.equal(compiledWorkflowReport.ok, true, JSON.stringify(compiledWorkflowReport.errors));
 });
 
 test('the 128 KiB task limit is inclusive and reports limit and actual', () => {
@@ -349,9 +349,9 @@ test('an empty or frontmatter-only task body reports only the body error', () =>
   }
 });
 
-test('{{submit}} is retained verbatim in the IR', () => {
+test('{{submit}} is retained verbatim in the compiled workflow', () => {
   const result = compileTask(MINIMAL_TASK);
-  const body = irOf(result).tasks['do-it'].body;
+  const body = compiledWorkflowOf(result).tasks['do-it'].body;
   assert.equal(body, MINIMAL_TASK);
   assert.equal((body.match(/\{\{submit\}\}/g) ?? []).length, 1);
 });
@@ -359,20 +359,20 @@ test('{{submit}} is retained verbatim in the IR', () => {
 test('body slicing is byte-reversible and keeps leading blank lines', () => {
   const frontmatter = '---\nid: do-it\ntitle: 写交付摘要\n---\n';
   const task = `${frontmatter}\n\n${MINIMAL_TASK}`;
-  const record = irOf(compileTask(task)).tasks['do-it'];
+  const record = compiledWorkflowOf(compileTask(task)).tasks['do-it'];
   assert.equal(record.body, `\n\n${MINIMAL_TASK}`);
   assert.equal(record.body, task.slice(frontmatter.length));
   assert.equal(record.title, '写交付摘要');
   assert.equal(record.source.sha256, sha256Hex(new TextEncoder().encode(task)));
 });
 
-test('IR validation owns the {{submit}} count', () => {
+test('compiled workflow validation owns the {{submit}} count', () => {
   const result = compileTask(MINIMAL_TASK);
-  const ir = irOf(result);
-  ir.tasks['do-it'].body = ir.tasks['do-it'].body
+  const compiledWorkflow = compiledWorkflowOf(result);
+  compiledWorkflow.tasks['do-it'].body = compiledWorkflow.tasks['do-it'].body
     .replace('完成唯一一步。', '完成唯一一步，然后 {{submit}}。');
-  const report = validateIr(new TextEncoder().encode(canonicalJson(ir)), { sha256: sha256Hex });
-  const diagnostic = report.errors.find((error) => error.code === 'IR_TASK_BODY_INVALID');
+  const report = validateCompiledWorkflow(new TextEncoder().encode(canonicalJson(compiledWorkflow)), { sha256: sha256Hex });
+  const diagnostic = report.errors.find((error) => error.code === 'COMPILED_WORKFLOW_TASK_BODY_INVALID');
   assert.ok(diagnostic, JSON.stringify(report.errors));
   assert.equal(diagnostic.pointer, '/tasks/do-it/body');
   assert.equal(diagnostic.details.rule, 'submit-marker');
