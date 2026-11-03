@@ -1,5 +1,5 @@
 /**
- * #104 r2c runtime install surface: engine layout, fixed launcher, runtime
+ * #104 runner runtime install surface: engine layout, fixed launcher, runtime
  * receipt ownership, upgrade-only swap and install-time host role rendering.
  */
 import assert from 'node:assert/strict';
@@ -20,7 +20,7 @@ import { test } from 'node:test';
 import { isCanonicalJson } from '../core/canonical-json.js';
 import { sha256Hex } from '../core/node/sha256.js';
 import { installProjection } from '../installer/install.js';
-import { installR2cProject, renderR2cRoles, R2C_ROLE_TARGETS } from '../installer/r2c.js';
+import { installRunnerProject, renderRunnerRoles, RUNNER_ROLE_TARGETS } from '../installer/runner.js';
 import {
   LAUNCHER_PATH,
   LAUNCHER_TEXT,
@@ -32,7 +32,7 @@ import { fixedClock, sample } from './helpers/install-fixture.js';
 
 const CLOCK = fixedClock();
 
-function tempDir(t, prefix = 'r2c-runtime-') {
+function tempDir(t, prefix = 'hm2b-runtime-') {
   const dir = mkdtempSync(join(tmpdir(), prefix));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   return dir;
@@ -56,10 +56,10 @@ function hashTree(root) {
 function writeEngineSource(root, version = '1.2.3') {
   const bin = `#!/usr/bin/env node\nif (process.argv.includes('--version')) console.log(${JSON.stringify(version)});\nelse console.log('engine-ok');\n`;
   mkdirSync(join(root, 'bin'), { recursive: true });
-  writeFileSync(join(root, 'bin', 'r2c.js'), bin);
+  writeFileSync(join(root, 'bin', 'hm2b.js'), bin);
   mkdirSync(join(root, 'commands'), { recursive: true });
-  writeFileSync(join(root, 'commands', 'r2c-status.md'), `---\ndescription: status\n---\n\n\`\`\`bash\n<runner> status\n\`\`\`\n`);
-  writeFileSync(join(root, 'commands', 'r2c-run.md'), `---\ndescription: run\n---\n\n\`\`\`bash\n<runner> run\n\`\`\`\n`);
+  writeFileSync(join(root, 'commands', 'hm2b-status.md'), `---\ndescription: status\n---\n\n\`\`\`bash\n<runner> status\n\`\`\`\n`);
+  writeFileSync(join(root, 'commands', 'hm2b-run.md'), `---\ndescription: run\n---\n\n\`\`\`bash\n<runner> run\n\`\`\`\n`);
   mkdirSync(join(root, 'hosts', 'claude-code'), { recursive: true });
   writeFileSync(join(root, 'hosts', 'claude-code', 'settings.hooks.json'), `${JSON.stringify({
     hooks: { Stop: [{ hooks: [{ type: 'command', command: 'node <hook>' }] }] },
@@ -67,14 +67,14 @@ function writeEngineSource(root, version = '1.2.3') {
   writeFileSync(join(root, 'hosts', 'claude-code', 'mcp.json'), `${JSON.stringify({ mcpServers: { demo: { command: 'demo' } } }, null, 2)}\n`);
   mkdirSync(join(root, 'hosts', 'codex'), { recursive: true });
   writeFileSync(join(root, 'hosts', 'codex', 'hooks.json'), `${JSON.stringify({ hooks: { Stop: [] } }, null, 2)}\n`);
-  writeFileSync(join(root, 'hosts', 'codex', 'r2c-hook-stop.cmd'), '@echo off\r\n');
+  writeFileSync(join(root, 'hosts', 'codex', 'hm2b-hook-stop.cmd'), '@echo off\r\n');
   mkdirSync(join(root, 'hosts', 'omp'), { recursive: true });
   writeFileSync(join(root, 'hosts', 'omp', 'mcp.json'), `${JSON.stringify({ mcpServers: { demo: { command: 'demo' } } }, null, 2)}\n`);
   mkdirSync(join(root, 'hosts', 'opencode'), { recursive: true });
   writeFileSync(join(root, 'hosts', 'opencode', 'mcp.json'), `${JSON.stringify({ mcp: { demo: { type: 'local' } } }, null, 2)}\n`);
-  writeFileSync(join(root, 'hosts', 'opencode', 'r2c.ts'), 'export default {};\n');
+  writeFileSync(join(root, 'hosts', 'opencode', 'hm2b.ts'), 'export default {};\n');
   mkdirSync(join(root, 'hosts', 'dsh'), { recursive: true });
-  writeFileSync(join(root, 'hosts', 'dsh', 'runtime.cordis.patch.yml'), '---\n# r2c runtime\n');
+  writeFileSync(join(root, 'hosts', 'dsh', 'runtime.cordis.patch.yml'), '---\n# hm2b runtime\n');
   return root;
 }
 
@@ -82,9 +82,9 @@ function read(projectRoot, path) {
   return readFileSync(join(projectRoot, ...path.split('/')), 'utf8');
 }
 
-test('installs the engine under .r2c/engine/<V> with a fixed resolver launcher', (t) => {
-  const projectRoot = tempDir(t, 'r2c-project-');
-  const engineSource = writeEngineSource(tempDir(t, 'r2c-engine-'), '1.2.3');
+test('installs the engine under .hm2b/engine/<V> with a fixed resolver launcher', (t) => {
+  const projectRoot = tempDir(t, 'hm2b-project-');
+  const engineSource = writeEngineSource(tempDir(t, 'hm2b-engine-'), '1.2.3');
   const outcome = installRuntime({
     projectRoot,
     engineSource,
@@ -94,7 +94,7 @@ test('installs the engine under .r2c/engine/<V> with a fixed resolver launcher',
   assert.equal(outcome.code, 'OK', outcome.message);
   assert.equal(outcome.action, 'installed');
 
-  const entry = join(projectRoot, '.r2c/engine/1.2.3/bin/r2c.js');
+  const entry = join(projectRoot, '.hm2b/engine/1.2.3/bin/hm2b.js');
   assert.equal(existsSync(entry), true);
   assert.equal(read(projectRoot, LAUNCHER_PATH), LAUNCHER_TEXT);
   assert.equal(read(projectRoot, LAUNCHER_PATH).includes('1.2.3'), false);
@@ -103,11 +103,11 @@ test('installs the engine under .r2c/engine/<V> with a fixed resolver launcher',
   const runtimeText = read(projectRoot, RUNTIME_RECEIPT_PATH);
   assert.equal(isCanonicalJson(runtimeText), true);
   const runtime = JSON.parse(runtimeText);
-  assert.equal(runtime.schema, 'r2c.runtime/v1');
+  assert.equal(runtime.schema, 'hm2b.runtime/v1');
   assert.deepEqual(runtime.engine, {
     version: '1.2.3',
-    home: '.r2c/engine',
-    entry: '.r2c/engine/1.2.3/bin/r2c.js',
+    home: '.hm2b/engine',
+    entry: '.hm2b/engine/1.2.3/bin/hm2b.js',
   });
   assert.equal(runtime.launcher, LAUNCHER_PATH);
   assert.deepEqual(runtime.host_targets, ['claude-code', 'codex', 'dsh', 'omp', 'opencode']);
@@ -117,12 +117,12 @@ test('installs the engine under .r2c/engine/<V> with a fixed resolver launcher',
   const files = new Map(runtime.files.map((file) => [file.path, file]));
   assert.equal(files.get(LAUNCHER_PATH).kind, 'launcher');
   assert.equal(files.get(LAUNCHER_PATH).mode, '0755');
-  assert.ok(files.has('.claude/commands/r2c-status.md'));
-  assert.ok(files.has('.agents/skills/r2c-run/SKILL.md'));
-  assert.ok(files.has('.omp/commands/r2c-run.md'));
-  assert.ok(files.has('.opencode/commands/r2c-status.md'));
+  assert.ok(files.has('.claude/commands/hm2b-status.md'));
+  assert.ok(files.has('.agents/skills/hm2b-run/SKILL.md'));
+  assert.ok(files.has('.omp/commands/hm2b-run.md'));
+  assert.ok(files.has('.opencode/commands/hm2b-status.md'));
   assert.ok(files.has('.codex/hooks.json'));
-  assert.ok(files.has('.dsh/r2c/runtime.cordis.patch.yml'));
+  assert.ok(files.has('.dsh/hm2b/runtime.cordis.patch.yml'));
   for (const file of runtime.files) {
     assert.equal(sha256Hex(readFileSync(join(projectRoot, ...file.path.split('/')))), file.sha256);
     assert.equal(file.path.includes('\\'), false);
@@ -146,9 +146,9 @@ test('installs the engine under .r2c/engine/<V> with a fixed resolver launcher',
 });
 
 test('--engine-home records an absolute engine entry only outside the project', (t) => {
-  const projectRoot = tempDir(t, 'r2c-project-');
-  const engineSource = writeEngineSource(tempDir(t, 'r2c-engine-'), '1.2.3');
-  const engineHome = tempDir(t, 'r2c-engine-home-');
+  const projectRoot = tempDir(t, 'hm2b-project-');
+  const engineSource = writeEngineSource(tempDir(t, 'hm2b-engine-'), '1.2.3');
+  const engineHome = tempDir(t, 'hm2b-engine-home-');
   const outcome = installRuntime({
     projectRoot,
     engineSource,
@@ -159,9 +159,9 @@ test('--engine-home records an absolute engine entry only outside the project', 
   assert.equal(outcome.code, 'OK', outcome.message);
   const runtime = JSON.parse(read(projectRoot, RUNTIME_RECEIPT_PATH));
   assert.equal(runtime.engine.home, engineHome.replaceAll('\\', '/'));
-  assert.equal(runtime.engine.entry, join(engineHome, '1.2.3', 'bin', 'r2c.js').replaceAll('\\', '/'));
-  assert.equal(existsSync(join(engineHome, '1.2.3', 'bin', 'r2c.js')), true);
-  assert.equal(existsSync(join(projectRoot, '.r2c/engine')), false);
+  assert.equal(runtime.engine.entry, join(engineHome, '1.2.3', 'bin', 'hm2b.js').replaceAll('\\', '/'));
+  assert.equal(existsSync(join(engineHome, '1.2.3', 'bin', 'hm2b.js')), true);
+  assert.equal(existsSync(join(projectRoot, '.hm2b/engine')), false);
 
   const run = spawnSync(process.execPath, [LAUNCHER_PATH, '--version'], { cwd: projectRoot, encoding: 'utf8' });
   assert.equal(run.status, 0, run.stderr);
@@ -169,12 +169,12 @@ test('--engine-home records an absolute engine entry only outside the project', 
 });
 
 test('engine upgrade swaps only runtime.json and the engine directory', (t) => {
-  const projectRoot = tempDir(t, 'r2c-project-');
-  const { result, irBytes } = sample('r2c');
-  const bundle = installR2cProject({ result, irBytes, projectRoot, clock: CLOCK });
+  const projectRoot = tempDir(t, 'hm2b-project-');
+  const { result, irBytes } = sample('runner');
+  const bundle = installRunnerProject({ result, irBytes, projectRoot, clock: CLOCK });
   assert.equal(bundle.code, 'OK', bundle.message);
 
-  const source1 = writeEngineSource(tempDir(t, 'r2c-engine1-'), '1.0.0');
+  const source1 = writeEngineSource(tempDir(t, 'hm2b-engine1-'), '1.0.0');
   const first = installRuntime({ projectRoot, engineSource: source1, engineVersion: '1.0.0', clock: CLOCK });
   assert.equal(first.code, 'OK', first.message);
 
@@ -182,18 +182,18 @@ test('engine upgrade swaps only runtime.json and the engine directory', (t) => {
   const bundleReceipt = readFileSync(receiptFile);
   const before = hashTree(projectRoot);
   const hostBefore = [...before.entries()]
-    .filter(([path]) => !path.startsWith('.r2c/engine/') && path !== RUNTIME_RECEIPT_PATH && path !== bundle.receiptPath);
+    .filter(([path]) => !path.startsWith('.hm2b/engine/') && path !== RUNTIME_RECEIPT_PATH && path !== bundle.receiptPath);
 
-  const source2 = writeEngineSource(tempDir(t, 'r2c-engine2-'), '2.0.0');
+  const source2 = writeEngineSource(tempDir(t, 'hm2b-engine2-'), '2.0.0');
   const second = installRuntime({ projectRoot, engineSource: source2, engineVersion: '2.0.0', clock: CLOCK });
   assert.equal(second.code, 'OK', second.message);
   assert.equal(second.action, 'installed');
 
-  assert.equal(existsSync(join(projectRoot, '.r2c/engine/1.0.0')), false, 'old engine version is pruned');
-  assert.equal(existsSync(join(projectRoot, '.r2c/engine/2.0.0/bin/r2c.js')), true);
+  assert.equal(existsSync(join(projectRoot, '.hm2b/engine/1.0.0')), false, 'old engine version is pruned');
+  assert.equal(existsSync(join(projectRoot, '.hm2b/engine/2.0.0/bin/hm2b.js')), true);
   const runtime = JSON.parse(read(projectRoot, RUNTIME_RECEIPT_PATH));
   assert.equal(runtime.engine.version, '2.0.0');
-  assert.equal(runtime.engine.entry, '.r2c/engine/2.0.0/bin/r2c.js');
+  assert.equal(runtime.engine.entry, '.hm2b/engine/2.0.0/bin/hm2b.js');
   assert.equal(runtime.files.some((file) => file.path === '.claude/settings.json' || file.path === 'opencode.json'), false);
   assert.deepEqual(runtime.merged.map((item) => item.pointer).sort(), ['hooks', 'mcp', 'mcpServers', 'mcpServers']);
   assert.equal(readFileSync(receiptFile).equals(bundleReceipt), true, 'bundle receipt never records the engine version');
@@ -203,17 +203,17 @@ test('engine upgrade swaps only runtime.json and the engine directory', (t) => {
   assert.equal(read(projectRoot, LAUNCHER_PATH), LAUNCHER_TEXT);
 });
 
-test('render-roles renders four host definitions named r2c-<id> and dsh none', (t) => {
-  const projectRoot = tempDir(t, 'r2c-project-');
-  const { result, irBytes, ir } = sample('r2c');
-  const outcome = installR2cProject({ result, irBytes, projectRoot, clock: CLOCK });
+test('render-roles renders four host definitions named runner-<id> and dsh none', (t) => {
+  const projectRoot = tempDir(t, 'hm2b-project-');
+  const { result, irBytes, ir } = sample('runner');
+  const outcome = installRunnerProject({ result, irBytes, projectRoot, clock: CLOCK });
   assert.equal(outcome.code, 'OK', outcome.message);
 
   const receipt = JSON.parse(read(projectRoot, outcome.receiptPath));
   const roleIds = Object.keys(ir.roles).sort();
   const roleFiles = receipt.files.filter((file) => file.kind === 'agent');
   assert.equal(roleFiles.length, roleIds.length * 4);
-  assert.equal(receipt.host_targets.join(','), R2C_ROLE_TARGETS.join(','));
+  assert.equal(receipt.host_targets.join(','), RUNNER_ROLE_TARGETS.join(','));
   for (const file of roleFiles) {
     assert.equal(file.origin, 'installer');
     assert.equal(typeof file.source, 'string');
@@ -222,29 +222,29 @@ test('render-roles renders four host definitions named r2c-<id> and dsh none', (
 
   const expected = new Set();
   for (const roleId of roleIds) {
-    expected.add(`.claude/agents/r2c-${roleId}.md`);
-    expected.add(`.codex/agents/r2c-${roleId}.toml`);
-    expected.add(`.omp/agents/r2c-${roleId}.md`);
-    expected.add(`.opencode/agents/r2c-${roleId}.md`);
+    expected.add(`.claude/agents/runner-${roleId}.md`);
+    expected.add(`.codex/agents/runner-${roleId}.toml`);
+    expected.add(`.omp/agents/runner-${roleId}.md`);
+    expected.add(`.opencode/agents/runner-${roleId}.md`);
   }
   assert.deepEqual([...new Set(roleFiles.map((file) => file.path))].sort(), [...expected].sort());
   for (const path of expected) assert.equal(existsSync(join(projectRoot, ...path.split('/'))), true, path);
 
-  const claude = read(projectRoot, `.claude/agents/r2c-${roleIds[0]}.md`);
-  assert.match(claude, new RegExp(`r2c-${roleIds[0]}`));
-  assert.equal(claude.includes('rtosv3-drvport'), false, 'host roles use the r2c namespace');
-  assert.equal(read(projectRoot, `.codex/agents/r2c-${roleIds[0]}.toml`).includes(`r2c-${roleIds[0]}`), true);
+  const claude = read(projectRoot, `.claude/agents/runner-${roleIds[0]}.md`);
+  assert.match(claude, new RegExp(`runner-${roleIds[0]}`));
+  assert.equal(claude.includes('rtosv3-drvport'), false, 'host roles use the runner namespace');
+  assert.equal(read(projectRoot, `.codex/agents/runner-${roleIds[0]}.toml`).includes(`runner-${roleIds[0]}`), true);
   assert.equal(existsSync(join(projectRoot, '.dsh/agent-native')), false);
 
-  const rolesText = read(projectRoot, '.r2c/projection/roles.json');
+  const rolesText = read(projectRoot, '.hm2b/projection/roles.json');
   assert.equal(isCanonicalJson(rolesText), true);
   const roles = JSON.parse(rolesText);
-  assert.equal(roles.schema, 'r2c.projection.roles/v1');
-  assert.deepEqual(Object.keys(roles.targets).sort(), [...R2C_ROLE_TARGETS].sort());
+  assert.equal(roles.schema, 'hm2b.projection.roles/v1');
+  assert.deepEqual(Object.keys(roles.targets).sort(), [...RUNNER_ROLE_TARGETS].sort());
   assert.equal(roles.targets.dsh, undefined);
-  assert.deepEqual(roles.targets['claude-code'].roles.map((role) => role.name), roleIds.map((id) => `r2c-${id}`));
+  assert.deepEqual(roles.targets['claude-code'].roles.map((role) => role.name), roleIds.map((id) => `runner-${id}`));
   assert.equal(rolesText.includes(projectRoot.replaceAll('\\', '/')), false);
-  const metadataFile = receipt.files.find((file) => file.path === '.r2c/projection/roles.json');
+  const metadataFile = receipt.files.find((file) => file.path === '.hm2b/projection/roles.json');
   assert.equal(metadataFile.kind, 'metadata');
   assert.equal(metadataFile.origin, 'installer');
 
@@ -253,26 +253,26 @@ test('render-roles renders four host definitions named r2c-<id> and dsh none', (
 });
 
 test('dsh alone renders no host role definitions', () => {
-  const { ir, irDigest } = sample('r2c');
-  const rendered = renderR2cRoles({ ir, irDigest, hostTargets: ['dsh'] });
+  const { ir, irDigest } = sample('runner');
+  const rendered = renderRunnerRoles({ ir, irDigest, hostTargets: ['dsh'] });
   assert.deepEqual(rendered.targets, []);
-  assert.deepEqual(rendered.files.map((file) => file.path), ['.r2c/projection/roles.json']);
+  assert.deepEqual(rendered.files.map((file) => file.path), ['.hm2b/projection/roles.json']);
   const roles = JSON.parse(rendered.files[0].content);
   assert.deepEqual(roles.targets, {});
   assert.equal(rendered.files[0].targets.length, 0);
 });
 
 test('runtime install refuses a broken engine source before writing', (t) => {
-  const projectRoot = tempDir(t, 'r2c-project-');
-  const engineSource = tempDir(t, 'r2c-engine-');
+  const projectRoot = tempDir(t, 'hm2b-project-');
+  const engineSource = tempDir(t, 'hm2b-engine-');
   const outcome = installRuntime({ projectRoot, engineSource, engineVersion: '1.0.0', clock: CLOCK });
   assert.equal(outcome.code, 'ENGINE_ENTRY_MISSING');
   assert.deepEqual(walk(projectRoot), []);
 });
 
 test('launcher stays byte-identical and executable on the host platform', (t) => {
-  const projectRoot = tempDir(t, 'r2c-project-');
-  const engineSource = writeEngineSource(tempDir(t, 'r2c-engine-'), '1.2.3');
+  const projectRoot = tempDir(t, 'hm2b-project-');
+  const engineSource = writeEngineSource(tempDir(t, 'hm2b-engine-'), '1.2.3');
   installRuntime({ projectRoot, engineSource, engineVersion: '1.2.3', clock: CLOCK });
   const launcher = read(projectRoot, LAUNCHER_PATH);
   assert.equal(launcher, LAUNCHER_TEXT);
@@ -286,10 +286,10 @@ test('launcher stays byte-identical and executable on the host platform', (t) =>
 });
 
 test('an engine install does not create a bundle receipt or record the engine version in one', (t) => {
-  const projectRoot = tempDir(t, 'r2c-project-');
-  const { result, irBytes } = sample('r2c');
+  const projectRoot = tempDir(t, 'hm2b-project-');
+  const { result, irBytes } = sample('runner');
   const bundle = installProjection({ result, irBytes, projectRoot, clock: CLOCK });
-  const engineSource = writeEngineSource(tempDir(t, 'r2c-engine-'), '3.1.4');
+  const engineSource = writeEngineSource(tempDir(t, 'hm2b-engine-'), '3.1.4');
   const runtime = installRuntime({ projectRoot, engineSource, engineVersion: '3.1.4', clock: CLOCK });
   assert.equal(runtime.code, 'OK');
   const receiptText = read(projectRoot, bundle.receiptPath);
@@ -297,21 +297,21 @@ test('an engine install does not create a bundle receipt or record the engine ve
   assert.equal(readRuntimeReceipt(projectRoot).engine.version, '3.1.4');
 });
 
-test('an r2c install refuses a foreign workflows/*.yaml', (t) => {
-  const projectRoot = tempDir(t, 'r2c-project-');
+test('a runner install refuses a foreign workflows/*.yaml', (t) => {
+  const projectRoot = tempDir(t, 'hm2b-project-');
   mkdirSync(join(projectRoot, 'workflows'), { recursive: true });
-  writeFileSync(join(projectRoot, 'workflows', 'other.yaml'), 'schema: r2c.workflow/v1\nid: other\nversion: 0.1.0\nstages: []\n');
-  const { result, irBytes } = sample('r2c');
-  const outcome = installR2cProject({ result, irBytes, projectRoot, clock: CLOCK, force: true });
-  assert.equal(outcome.code, 'R2C_ROOT_OCCUPIED');
+  writeFileSync(join(projectRoot, 'workflows', 'other.yaml'), 'schema: hm2b.workflow/v1\nid: other\nversion: 0.1.0\nstages: []\n');
+  const { result, irBytes } = sample('runner');
+  const outcome = installRunnerProject({ result, irBytes, projectRoot, clock: CLOCK, force: true });
+  assert.equal(outcome.code, 'RUNNER_ROOT_OCCUPIED');
   assert.deepEqual(outcome.occupied, ['workflows/other.yaml']);
-  assert.equal(existsSync(join(projectRoot, '.r2c/install/receipts')), false);
+  assert.equal(existsSync(join(projectRoot, '.hm2b/install/receipts')), false);
   assert.deepEqual(readdirSync(join(projectRoot, 'workflows')), ['other.yaml']);
 });
 
-test('renderR2cRoles uses the selected skill set and records preload loss at the seam', () => {
+test('renderRunnerRoles uses the selected skill set and records preload loss at the seam', () => {
   const ir = {
-    schema: 'r2c.ir/v1',
+    schema: 'hm2b.ir/v1',
     id: 'demo',
     version: '1.0.0',
     stages: [],
@@ -326,7 +326,7 @@ test('renderR2cRoles uses the selected skill set and records preload loss at the
       },
     },
   };
-  const rendered = renderR2cRoles({
+  const rendered = renderRunnerRoles({
     ir,
     irDigest: 'a'.repeat(64),
     hostTargets: ['claude-code', 'codex', 'omp', 'opencode'],

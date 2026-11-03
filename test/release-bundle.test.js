@@ -55,15 +55,15 @@ const SAMPLE_ASSETS = [
   'SHA256SUMS.txt',
   'agent-native-rtosv3-drvport-v1.0.0.tgz',
   'bundle-rtosv3-drvport-v1.0.0.zip',
+  'hm2b-engine-0.1.0.tgz',
+  'hm2b-framework-0.1.0.tgz',
+  'hm2b-payload-rtosv3-drvport-v1.0.0.tgz',
   'install.mjs',
-  'r2c-engine-0.1.0.tgz',
-  'r2c-framework-0.1.0.tgz',
-  'r2c-payload-rtosv3-drvport-v1.0.0.tgz',
   'workflow.ir.json',
 ];
 
 function tempDir(t, prefix) {
-  const dir = mkdtempSync(join(tmpdir(), `r2c-bundle-release-${prefix}-`));
+  const dir = mkdtempSync(join(tmpdir(), `hm2b-bundle-release-${prefix}-`));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   return dir;
 }
@@ -165,20 +165,20 @@ test('bundle tags parse right-to-left with the known id and reject near misses',
 });
 
 test('the asset matrix follows requires.projections and never emits legacy assets', () => {
-  const r2c = bundleAssetNames({
+  const runner = bundleAssetNames({
     id: 'x',
     version: '1.0.0',
-    allowed: ['r2c'],
+    allowed: ['runner'],
     engineVersion: '0.2.0',
     frameworkVersion: '0.3.0',
   });
-  assert.deepEqual(r2c, [
+  assert.deepEqual(runner, [
     'SHA256SUMS.txt',
     'bundle-x-v1.0.0.zip',
+    'hm2b-engine-0.2.0.tgz',
+    'hm2b-framework-0.3.0.tgz',
+    'hm2b-payload-x-v1.0.0.tgz',
     'install.mjs',
-    'r2c-engine-0.2.0.tgz',
-    'r2c-framework-0.3.0.tgz',
-    'r2c-payload-x-v1.0.0.tgz',
     'workflow.ir.json',
   ]);
 
@@ -193,21 +193,21 @@ test('the asset matrix follows requires.projections and never emits legacy asset
     'SHA256SUMS.txt',
     'agent-native-x-v1.0.0.tgz',
     'bundle-x-v1.0.0.zip',
+    'hm2b-framework-0.3.0.tgz',
     'install.mjs',
-    'r2c-framework-0.3.0.tgz',
     'workflow.ir.json',
   ]);
 
   const both = bundleAssetNames({
     id: 'x',
     version: '1.0.0',
-    allowed: ['r2c', 'agent-native'],
+    allowed: ['runner', 'agent-native'],
     engineVersion: '0.2.0',
     frameworkVersion: '0.3.0',
   });
   assert.equal(both.length, 8);
-  for (const name of [...r2c, ...agent, ...both]) {
-    assert.doesNotMatch(name, /^r2c-payload-\d+\.\d+\.\d+\.tgz$/, 'legacy payload name leaked');
+  for (const name of [...runner, ...agent, ...both]) {
+    assert.doesNotMatch(name, /^r2c-/, 'legacy channel name leaked');
     assert.notEqual(name, 'projection-result.json');
   }
   assert.equal(bundleTag(ID, VERSION), TAG);
@@ -220,7 +220,7 @@ test('the sample bundle builds all eight assets with frozen zip and IR anchors',
   assert.equal(built.ok, true);
   assert.equal(built.id, ID);
   assert.equal(built.version, VERSION);
-  assert.deepEqual(built.allowed, ['r2c', 'agent-native']);
+  assert.deepEqual(built.allowed, ['runner', 'agent-native']);
   assert.deepEqual(built.assets.map((asset) => asset.name), SAMPLE_ASSETS);
   assert.deepEqual(built.plan.assets.map((asset) => asset.name), SAMPLE_ASSETS);
   assert.equal(built.plan.tag, TAG);
@@ -228,13 +228,13 @@ test('the sample bundle builds all eight assets with frozen zip and IR anchors',
   assert.equal(built.plan.prerelease, false);
 
   const zip = built.assets.find((asset) => asset.name === `bundle-${ID}-v${VERSION}.zip`);
-  assert.equal(zip.data.length, 55042);
-  assert.equal(sha256Hex(zip.data), 'c22064539aa189b4d9345b1d39b148967a450584badd2593dcf47c0c5b75a13e');
+  assert.equal(zip.data.length, 55043);
+  assert.equal(sha256Hex(zip.data), '4b4700207e2a1398b930b46123f5e7aef27f803e3afc3596d19e31dc454d8196');
   assert.ok(zip.data.equals(readFileSync(SAMPLE_ZIP)));
 
   const ir = built.assets.find((asset) => asset.name === IR_ASSET);
-  assert.equal(ir.data.length, 58827);
-  assert.equal(sha256Hex(ir.data), '8a2a57593939f91117d57f9ca34c56b2fc631f6837168ef74032daa95202d395');
+  assert.equal(ir.data.length, 58829);
+  assert.equal(sha256Hex(ir.data), 'd6e8957287117c7b476891e1807e303c9a965fbe366087a13947baf34b0da09f');
   assert.equal(built.irDigest, sha256Hex(ir.data));
 
   for (const asset of built.assets) {
@@ -261,7 +261,7 @@ test('payload manifests self-prove every member, mode, kind and target', () => {
   assert.equal(built.ok, true);
 
   const expected = new Map([
-    ['r2c', { file: 'r2c-payload-rtosv3-drvport-v1.0.0.tgz', count: 45, targets: ['r2c'] }],
+    ['runner', { file: 'hm2b-payload-rtosv3-drvport-v1.0.0.tgz', count: 45, targets: ['runner'] }],
     [
       'agent-native',
       {
@@ -397,11 +397,11 @@ test('--check fails for tampered assets, missing assets and legacy channel leaka
 
 test('a tampered payload archive fails manifest self-proof', () => {
   const built = buildBundleRelease({ root: ROOT, bundlePath: SAMPLE_ZIP });
-  const payload = built.payloads.get('r2c');
+  const payload = built.payloads.get('runner');
   const { entries } = readReleaseTarGz(payload.data);
   const tampered = createReleaseTarGz(
     entries.map((entry) => (entry.path === 'files/workflows/rtosv3-drvport.yaml'
-      ? { path: entry.path, data: Buffer.from('schema: "r2c.workflow/v1"\n'), mode: entry.mode }
+      ? { path: entry.path, data: Buffer.from('schema: "hm2b.workflow/v1"\n'), mode: entry.mode }
       : { path: entry.path, data: entry.data, mode: entry.mode })),
   );
   const problems = verifyPayloadArchive(tampered, {
@@ -409,31 +409,31 @@ test('a tampered payload archive fails manifest self-proof', () => {
     version: VERSION,
     irDigest: built.irDigest,
     contentSha256: built.ir.source.bundle.contentSha256,
-    projectionId: 'r2c',
+    projectionId: 'runner',
     options: payload.manifest.options,
     targets: payload.manifest.targets,
   });
   assert.ok(problems.some((problem) => /hash does not match/.test(problem)), problems.join('\n'));
 });
 
-test('r2c-only and agent-native-only bundles produce the conditional asset sets', (t) => {
-  const r2cBundle = copySampleBundle(t, ['r2c']);
-  const r2cOut = tempDir(t, 'r2c');
-  const r2cRun = runRelease(['--bundle', r2cBundle, '--out', r2cOut]);
-  assert.equal(r2cRun.status, 0, r2cRun.stderr);
-  assert.deepEqual(assetNames(r2cOut), [
+test('runner-only and agent-native-only bundles produce the conditional asset sets', (t) => {
+  const runnerBundle = copySampleBundle(t, ['runner']);
+  const runnerOut = tempDir(t, 'runner');
+  const runnerRun = runRelease(['--bundle', runnerBundle, '--out', runnerOut]);
+  assert.equal(runnerRun.status, 0, runnerRun.stderr);
+  assert.deepEqual(assetNames(runnerOut), [
     'SHA256SUMS.txt',
     'bundle-rtosv3-drvport-v1.0.0.zip',
+    'hm2b-engine-0.1.0.tgz',
+    'hm2b-framework-0.1.0.tgz',
+    'hm2b-payload-rtosv3-drvport-v1.0.0.tgz',
     'install.mjs',
-    'r2c-engine-0.1.0.tgz',
-    'r2c-framework-0.1.0.tgz',
-    'r2c-payload-rtosv3-drvport-v1.0.0.tgz',
     'workflow.ir.json',
   ]);
-  const r2cPayload = payloadArchive(r2cOut, 'r2c-payload-rtosv3-drvport-v1.0.0.tgz');
-  assert.deepEqual(r2cPayload.manifest.options, { stageOrder: null, skills: null, targets: ['r2c'] });
-  const r2cCheck = runRelease(['--bundle', r2cBundle, '--check', '--out', r2cOut]);
-  assert.equal(r2cCheck.status, 0, r2cCheck.stderr);
+  const runnerPayload = payloadArchive(runnerOut, 'hm2b-payload-rtosv3-drvport-v1.0.0.tgz');
+  assert.deepEqual(runnerPayload.manifest.options, { stageOrder: null, skills: null, targets: ['runner'] });
+  const runnerCheck = runRelease(['--bundle', runnerBundle, '--check', '--out', runnerOut]);
+  assert.equal(runnerCheck.status, 0, runnerCheck.stderr);
 
   const agentBundle = copySampleBundle(t, ['agent-native']);
   const agentOut = tempDir(t, 'agent');
@@ -443,8 +443,8 @@ test('r2c-only and agent-native-only bundles produce the conditional asset sets'
     'SHA256SUMS.txt',
     'agent-native-rtosv3-drvport-v1.0.0.tgz',
     'bundle-rtosv3-drvport-v1.0.0.zip',
+    'hm2b-framework-0.1.0.tgz',
     'install.mjs',
-    'r2c-framework-0.1.0.tgz',
     'workflow.ir.json',
   ]);
   const agentPayload = payloadArchive(agentOut, 'agent-native-rtosv3-drvport-v1.0.0.tgz');
@@ -465,12 +465,12 @@ test('the framework source set excludes repo-only trees and keeps the toolchain'
   assert.deepEqual(frameworkSourceProblems(rels), []);
   for (const rel of rels) {
     assert.doesNotMatch(rel, /^(test|tests|docs|scripts|\.github|examples|plugins|pack|src|adapters|shims|schema|node_modules|dist)\//);
-    assert.notEqual(rel, 'bin/r2c.js');
+    assert.notEqual(rel, 'bin/hm2b.js');
   }
   for (const required of [
     'package.json',
     'LICENSE',
-    'bin/r2c-assembler.js',
+    'bin/hm2b-assembler.js',
     'bin/assembler/common.js',
     'core/canonical-json.js',
     'ir/schema.js',
@@ -493,11 +493,11 @@ test('the framework source set excludes repo-only trees and keeps the toolchain'
     '.github/workflows/ci.yml',
     'examples/rtosv3/bundle/bundle.json',
     'plugins/x.js',
-    'bin/r2c.js',
+    'bin/hm2b.js',
   ]);
   assert.equal(violations.length, 8);
   assert.ok(violations.some((message) => message.includes('test/x.test.js')));
-  assert.ok(violations.some((message) => message.includes('bin/r2c.js')));
+  assert.ok(violations.some((message) => message.includes('bin/hm2b.js')));
 });
 
 test('the engine archive keeps its own whitelist', () => {
@@ -508,7 +508,7 @@ test('the engine archive keeps its own whitelist', () => {
     assert.doesNotMatch(rel, /^(test|tests|docs|scripts|pack|adapters|plugins|dist)\//);
   }
   assert.ok(built.engineFiles.includes('package.json'));
-  assert.ok(built.engineFiles.includes('bin/r2c.js'));
+  assert.ok(built.engineFiles.includes('bin/hm2b.js'));
 });
 
 test('--bundle requires an explicit --out', () => {

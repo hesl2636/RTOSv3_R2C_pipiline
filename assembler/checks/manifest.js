@@ -1,7 +1,7 @@
 /**
  * Manifest checks (`bundle.json`, decision #67 §7.2).
  *
- * A manifest that cannot be parsed or does not carry `r2c.bundle/v1` stops the
+ * A manifest that cannot be parsed or does not carry `hm2b.bundle/v1` stops the
  * content phases (S0/S1): declarations are unknown, so "declared vs present"
  * cannot be judged and must not cascade into dozens of follow-up errors.
  */
@@ -18,7 +18,7 @@ import {
 import { isPlainObject } from '../util.js';
 import { readJsonDocument, findKeyOrderViolation } from './json.js';
 
-export const BUNDLE_SCHEMA = 'r2c.bundle/v1';
+export const BUNDLE_SCHEMA = 'hm2b.bundle/v1';
 export const CONSTITUTION_PATH = 'constitution/CONSTITUTION.md';
 
 const MANIFEST_KEYS = [
@@ -194,8 +194,8 @@ export function check(context) {
         pointer: '/id',
         details: { value: manifest.id, reason: 'pattern-or-length' },
       });
-    } else if (manifest.id === 'r2c') {
-      context.fail(path, 'BUNDLE_ID_RESERVED', 'bundle id "r2c" is reserved', {
+    } else if (manifest.id === 'hm2b') {
+      context.fail(path, 'BUNDLE_ID_RESERVED', 'bundle id "hm2b" is reserved', {
         pointer: '/id',
         details: { value: manifest.id },
       });

@@ -15,7 +15,7 @@ export const ROLE_ENUMS = Object.freeze({
   effort: Object.freeze(['low', 'medium', 'high', 'xhigh', 'max']),
 });
 
-export const PROJECTION_IDS = Object.freeze(['r2c', 'agent-native']);
+export const PROJECTION_IDS = Object.freeze(['runner', 'agent-native']);
 
 /** True when `id` matches the id grammar and the 1..`max` length window. */
 export function isValidId(id, max = ID_MAX) {

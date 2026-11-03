@@ -1,7 +1,7 @@
 /**
- * Native DeepSeek Harness (dsh) plugin for r2c.
+ * Native DeepSeek Harness (dsh) plugin for hm2b.
  *
- * This is the A-档 carrier: it registers the human `/r2c-*` commands, continues
+ * This is the A-档 carrier: it registers the human `/hm2b-*` commands, continues
  * a finished turn from `agent/turn-stopping`, and guards tool calls from
  * `tools/pre-execute`. Every seam delegates to the generic payload shim
  * (`shims/hook.mjs`), which already owns the 8-stop cap and the dsh deny
@@ -10,7 +10,7 @@
  * throwing listener can end a user's turn.
  *
  * The module has no imports outside Node core so it resolves from the payload
- * (`~/.r2c/payload/<V>/adapters/dsh`) without a profile install step.
+ * (`~/.hm2b/payload/<V>/adapters/dsh`) without a profile install step.
  */
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
@@ -18,14 +18,14 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-export const name = 'r2c-adapter-dsh';
+export const name = 'hm2b-adapter-dsh';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const DEFAULT_PAYLOAD_HOME = resolve(HERE, '..', '..');
 
 function warn(message) {
   try {
-    console.warn(`[r2c] ${message}`);
+    console.warn(`[hm2b] ${message}`);
   } catch {
     // A broken console must not take the session down.
   }
@@ -42,7 +42,7 @@ function settingsOf(config = {}) {
   return {
     runnerCmd: typeof config.runnerCmd === 'string' && config.runnerCmd !== ''
       ? config.runnerCmd
-      : (process.env.R2C_RUNNER_CMD ?? 'r2c'),
+      : (process.env.HM2B_RUNNER_CMD ?? 'hm2b'),
     projectRoot,
     payloadHome,
     shim: typeof config.shim === 'string' && config.shim !== ''
@@ -147,7 +147,7 @@ function shimArgs(settings, event, sessionId) {
     '--format', 'json',
     `--runner-cmd=${settings.runnerCmd}`,
     '--project-root', settings.projectRoot,
-    '--plugin-data', join(settings.projectRoot, '.r2c', 'runs', '.hooks'),
+    '--plugin-data', join(settings.projectRoot, '.hm2b', 'runs', '.hooks'),
     '--cap', String(settings.cap),
   ];
   if (sessionId !== null) args.push('--session-id', sessionId);
@@ -165,7 +165,7 @@ function commandSpecs(payloadHome) {
   const dir = join(payloadHome, 'commands');
   if (!existsSync(dir)) return [];
   return readdirSync(dir)
-    .filter((file) => /^r2c-[a-z0-9_-]+\.md$/i.test(file))
+    .filter((file) => /^hm2b-[a-z0-9_-]+\.md$/i.test(file))
     .sort()
     .map((file) => {
       let description = null;
@@ -176,13 +176,13 @@ function commandSpecs(payloadHome) {
       }
       return {
         name: basename(file).replace(/\.md$/, ''),
-        description: description ?? `r2c ${basename(file).replace(/\.md$/, '')}`,
+        description: description ?? `hm2b ${basename(file).replace(/\.md$/, '')}`,
       };
     });
 }
 
 function runnerArgsFor(command, rawInput) {
-  const subcommand = command.replace(/^r2c-/, '');
+  const subcommand = command.replace(/^hm2b-/, '');
   if (subcommand === 'run') {
     const input = rawInput.trim();
     return input === '' ? ['run'] : ['run', '--input', input];
@@ -208,7 +208,7 @@ function registerCommands(ctx, settings) {
     registry = undefined;
   }
   if (registry === undefined || registry === null || typeof registry.register !== 'function') {
-    warn('commands service is unavailable; /r2c-* commands were not registered');
+    warn('commands service is unavailable; /hm2b-* commands were not registered');
     return;
   }
   for (const spec of commandSpecs(settings.payloadHome)) {
@@ -226,11 +226,11 @@ function registerCommands(ctx, settings) {
             const text = `${result.stdout}${result.stderr}`.trim();
             return {
               kind: result.code === 0 ? 'success' : 'error',
-              text: text === '' ? `r2c ${spec.name} exited ${result.code}` : text,
+              text: text === '' ? `hm2b ${spec.name} exited ${result.code}` : text,
             };
           } catch (error) {
             warn(`/${spec.name} failed: ${error?.message ?? error}`);
-            return { kind: 'error', text: `r2c command failed: ${error?.message ?? error}` };
+            return { kind: 'error', text: `hm2b command failed: ${error?.message ?? error}` };
           }
         },
       });
@@ -269,10 +269,10 @@ function denyFromShim(result) {
   if (hook?.permissionDecision === 'deny') {
     return typeof hook.permissionDecisionReason === 'string' && hook.permissionDecisionReason !== ''
       ? hook.permissionDecisionReason
-      : 'denied by r2c guard';
+      : 'denied by hm2b guard';
   }
   if (payload.permissionDecision === 'deny' && result.code === 2) {
-    return typeof payload.reason === 'string' && payload.reason !== '' ? payload.reason : 'denied by r2c guard';
+    return typeof payload.reason === 'string' && payload.reason !== '' ? payload.reason : 'denied by hm2b guard';
   }
   return null;
 }

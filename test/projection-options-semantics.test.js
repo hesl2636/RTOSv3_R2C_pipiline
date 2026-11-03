@@ -46,13 +46,13 @@ function runProject({ projectionId, ir, irDigest, raw }) {
 function miniIr({ model } = {}) {
   const source = (path, fill) => ({ path, sha256: fill.repeat(64) });
   return {
-    schema: 'r2c.ir/v1',
+    schema: 'hm2b.ir/v1',
     id: 'mini',
     name: 'Mini workflow',
     version: '1.0.0',
     description: 'A miniature workflow used by projection option tests.',
     source: {
-      bundle: { schema: 'r2c.bundle/v1', id: 'mini', version: '1.0.0', contentSha256: 'b'.repeat(64) },
+      bundle: { schema: 'hm2b.bundle/v1', id: 'mini', version: '1.0.0', contentSha256: 'b'.repeat(64) },
       manifest: { path: 'bundle.json', sha256: 'c'.repeat(64) },
     },
     stages: [{
@@ -245,32 +245,32 @@ test('adapted and field-level states never worsen capability aggregation', () =>
   assert.equal(result.capabilityReport.find((row) => row.target === 'codex' && row.capability === 'preload').level, 'unavailable');
 });
 
-// --- r2c ------------------------------------------------------------------
+// --- runner ------------------------------------------------------------------
 
-test('r2c narrowing drops copies and preloads only the selected role skills', () => {
+test('runner narrowing drops copies and preloads only the selected role skills', () => {
   const { ir, irDigest } = sampleIr();
   const skills = Object.keys(ir.skills).sort().slice(0, 12);
   const stages = ir.stages.map((stage) => stage.id).reverse();
-  const result = runProject({ projectionId: 'r2c', ir, irDigest, raw: { stageOrder: stages, skills } });
+  const result = runProject({ projectionId: 'runner', ir, irDigest, raw: { stageOrder: stages, skills } });
 
-  assert.deepEqual(result.options.targets, ['r2c']);
+  assert.deepEqual(result.options.targets, ['runner']);
   assert.equal(result.files.length, 22);
   assert.equal(result.files.filter((item) => item.kind === 'skill').length, 12);
   assert.ok(result.warnings.some((warning) => warning.code === 'STAGE_ORDER_OVERRIDDEN'));
   assert.equal(result.warnings.some((warning) => warning.code === 'PROJECTION_EMPTY_TARGET'), false);
   assert.equal(result.capabilityReport.find((row) => row.capability === 'skills').level, 'unavailable');
   assert.equal(result.capabilityReport.find((row) => row.capability === 'preload').level, 'unavailable');
-  const excluded = result.degradations.filter((record) => record.code === 'R2C_SKILL_EXCLUDED');
+  const excluded = result.degradations.filter((record) => record.code === 'RUNNER_SKILL_EXCLUDED');
   assert.equal(excluded.length, 35 - 12);
 });
 
-test('r2c keeps the declared preload loss only for selected role references', () => {
+test('runner keeps the declared preload loss only for selected role references', () => {
   const ir = miniIr();
   const irDigest = sha256Hex(canonicalJson(ir));
-  const result = runProject({ projectionId: 'r2c', ir, irDigest, raw: { skills: ['helper'] } });
+  const result = runProject({ projectionId: 'runner', ir, irDigest, raw: { skills: ['helper'] } });
   const preload = result.degradations.filter((record) => record.capability === 'preload');
   assert.deepEqual(preload.map((record) => record.pointer), ['/roles/worker/skills/0']);
-  assert.equal(preload[0].code, 'R2C_PRELOAD_UNAVAILABLE');
+  assert.equal(preload[0].code, 'RUNNER_PRELOAD_UNAVAILABLE');
   const row = result.capabilityReport.find((item) => item.capability === 'preload');
   assert.deepEqual(row.uses, ['/roles/worker/skills/0']);
   assert.equal(file(result, 'roles/worker.md').content.includes('- "helper"'), true);
@@ -320,7 +320,7 @@ test('unknown stage ids, skills, targets and extra are rejected with stable code
   const unknownTarget = normalize({ targets: ['claude-code', 'nope'] });
   assert.deepEqual(unknownTarget.errors.map((item) => item.code), [OPTION_CODES.TARGET_UNKNOWN]);
 
-  for (const projectionId of ['agent-native', 'r2c']) {
+  for (const projectionId of ['agent-native', 'runner']) {
     const extra = normalize({ extra: { roleModels: {} } }, projectionId);
     assert.equal(extra.ok, false);
     assert.deepEqual(extra.errors.map((item) => item.code), [OPTION_CODES.INVALID]);

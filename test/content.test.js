@@ -38,7 +38,7 @@ function readJson(rel) {
 const bundle = readJson('bundle.json');
 
 test('bundle.json indexes exactly four stages, roles, tasks and thirty-five skills', () => {
-  assert.equal(bundle.schema, 'r2c.bundle/v1');
+  assert.equal(bundle.schema, 'hm2b.bundle/v1');
   assert.equal(bundle.id, 'rtosv3-drvport');
   assert.equal(bundle.version, '1.0.0');
   assert.deepEqual(bundle.stages, STAGE_IDS);

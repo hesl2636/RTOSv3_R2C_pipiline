@@ -38,7 +38,7 @@ export function placeholderInstructions(role) {
     '',
     '按当前步骤的任务书执行；不要臆测本角色未声明的专有职责。',
     '',
-    `<!-- r2c:placeholder role=${id} -->`,
+    `<!-- hm2b:placeholder role=${id} -->`,
     '',
   ].join('\n');
 }

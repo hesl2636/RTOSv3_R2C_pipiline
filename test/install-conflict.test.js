@@ -24,7 +24,7 @@ import { cloneResult, fixedClock, sample } from './helpers/install-fixture.js';
 const CLOCK = fixedClock();
 
 function tempProject(t) {
-  const dir = mkdtempSync(join(tmpdir(), 'r2c-conflict-'));
+  const dir = mkdtempSync(join(tmpdir(), 'hm2b-conflict-'));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   return dir;
 }
@@ -40,10 +40,10 @@ function walk(root, current = root, out = []) {
 
 function writeReceipt(projectRoot, { projection = 'agent-native', bundle = 'other-bundle', paths = [] }) {
   const receipt = {
-    schema: 'r2c.install/v2',
+    schema: 'hm2b.install/v2',
     projection: { id: projection, version: '1.0.0', targets: [] },
     bundle: { id: bundle, version: '1.0.0' },
-    ir: { path: `.r2c/bundles/${bundle}/1.0.0/workflow.ir.json`, digest: '0'.repeat(64), contentSha256: '0'.repeat(64) },
+    ir: { path: `.hm2b/bundles/${bundle}/1.0.0/workflow.ir.json`, digest: '0'.repeat(64), contentSha256: '0'.repeat(64) },
     root: 'project',
     scope: 'project',
     mode: 'fresh',
@@ -69,7 +69,7 @@ function writeReceipt(projectRoot, { projection = 'agent-native', bundle = 'othe
     created_at: '2026-01-01T00:00:00.000Z',
     updated_at: '2026-01-01T00:00:00.000Z',
   };
-  const rel = `.r2c/install/receipts/${projection}/${bundle}.json`;
+  const rel = `.hm2b/install/receipts/${projection}/${bundle}.json`;
   const absolute = join(projectRoot, ...rel.split('/'));
   mkdirSync(dirname(absolute), { recursive: true });
   writeFileSync(absolute, canonicalJson(receipt));
@@ -85,7 +85,7 @@ function codes(outcome) {
 
 test('a path owned by another identity is refused even with --force', (t) => {
   const projectRoot = tempProject(t);
-  const { result, irBytes } = sample('r2c');
+  const { result, irBytes } = sample('runner');
   const path = targetOf(result, 1);
   writeReceipt(projectRoot, { paths: [path] });
 
@@ -95,12 +95,12 @@ test('a path owned by another identity is refused even with --force', (t) => {
     assert.deepEqual(codes(outcome), ['INSTALL_PATH_CONFLICT']);
     assert.match(outcome.conflicts[0].message, /agent-native\/other-bundle/);
   }
-  assert.deepEqual(walk(projectRoot).filter((path2) => !path2.startsWith('.r2c/install/receipts/')), []);
+  assert.deepEqual(walk(projectRoot).filter((path2) => !path2.startsWith('.hm2b/install/receipts/')), []);
 });
 
 test('fail-if-exists steps refuse an existing path', (t) => {
   const projectRoot = tempProject(t);
-  const { result, irBytes } = sample('r2c');
+  const { result, irBytes } = sample('runner');
   const path = targetOf(result);
   const absolute = join(projectRoot, ...path.split('/'));
   mkdirSync(dirname(absolute), { recursive: true });
@@ -116,7 +116,7 @@ test('fail-if-exists steps refuse an existing path', (t) => {
 
 test('a modified file owned by this identity needs --force and is backed up', (t) => {
   const projectRoot = tempProject(t);
-  const { result, irBytes } = sample('r2c');
+  const { result, irBytes } = sample('runner');
   const path = targetOf(result);
   const absolute = join(projectRoot, ...path.split('/'));
   assert.equal(installProjection({ result, irBytes, projectRoot, clock: CLOCK }).code, 'OK');
@@ -137,7 +137,7 @@ test('a modified file owned by this identity needs --force and is backed up', (t
 
 test('an unmodified file owned by this identity is backed up and replaced on upgrade', (t) => {
   const projectRoot = tempProject(t);
-  const { result, irBytes } = sample('r2c');
+  const { result, irBytes } = sample('runner');
   assert.equal(installProjection({ result, irBytes, projectRoot, clock: CLOCK }).code, 'OK');
 
   const path = targetOf(result);
@@ -156,7 +156,7 @@ test('an unmodified file owned by this identity is backed up and replaced on upg
 
 test('an unowned file with different bytes is refused, and --force backs it up', (t) => {
   const projectRoot = tempProject(t);
-  const { result, irBytes } = sample('r2c');
+  const { result, irBytes } = sample('runner');
   const path = targetOf(result);
   const absolute = join(projectRoot, ...path.split('/'));
   mkdirSync(dirname(absolute), { recursive: true });
@@ -175,7 +175,7 @@ test('an unowned file with different bytes is refused, and --force backs it up',
 test('symlinks at a target are refused and never followed', (t) => {
   const projectRoot = tempProject(t);
   const outside = tempProject(t);
-  const { result, irBytes } = sample('r2c');
+  const { result, irBytes } = sample('runner');
   const path = targetOf(result, 1); // `roles/bys-architect.md`
   const absolute = join(projectRoot, ...path.split('/'));
   const victim = join(outside, ...path.split('/'));
@@ -203,7 +203,7 @@ test('symlinks at a target are refused and never followed', (t) => {
 
 test('case-folded ownership collision is refused', (t) => {
   const projectRoot = tempProject(t);
-  const { result, irBytes } = sample('r2c');
+  const { result, irBytes } = sample('runner');
   const path = targetOf(result, 1);
   writeReceipt(projectRoot, { paths: [path.replace(/^./, (char) => char.toUpperCase())] });
   const outcome = installProjection({ result, irBytes, projectRoot, clock: CLOCK });
@@ -215,7 +215,7 @@ test('case-folded ownership collision is refused', (t) => {
 
 test('a file/directory prefix collision between receipts is refused', (t) => {
   const projectRoot = tempProject(t);
-  const { result, irBytes } = sample('r2c');
+  const { result, irBytes } = sample('runner');
   const path = targetOf(result); // e.g. `constitution/CONSTITUTION.md`
   const prefix = path.split('/')[0];
   writeReceipt(projectRoot, { paths: [prefix] });
@@ -228,12 +228,12 @@ test('a file/directory prefix collision between receipts is refused', (t) => {
 test('an escaping path is refused by V5 before anything is written', (t) => {
   const projectRoot = tempProject(t);
   const parent = dirname(projectRoot);
-  const victim = join(parent, 'r2c-escape-victim.md');
+  const victim = join(parent, 'runner-escape-victim.md');
   t.after(() => rmSync(victim, { force: true }));
-  const { result, irBytes } = sample('r2c');
+  const { result, irBytes } = sample('runner');
   const mutated = cloneResult(result);
-  mutated.files[0].path = '../r2c-escape-victim.md';
-  mutated.installPlan.steps[0].path = '../r2c-escape-victim.md';
+  mutated.files[0].path = '../runner-escape-victim.md';
+  mutated.installPlan.steps[0].path = '../runner-escape-victim.md';
 
   const outcome = installProjection({ result: mutated, irBytes, projectRoot, force: true, clock: CLOCK });
   assert.equal(outcome.code, 'PROJECTION_RESULT_INVALID');
@@ -243,7 +243,7 @@ test('an escaping path is refused by V5 before anything is written', (t) => {
 
 test('all conflicts are aggregated in one pass, not first-error-wins', (t) => {
   const projectRoot = tempProject(t);
-  const { result, irBytes } = sample('r2c');
+  const { result, irBytes } = sample('runner');
   const first = targetOf(result, 0);
   const second = targetOf(result, 1);
   for (const path of [first, second]) {
@@ -266,7 +266,7 @@ const MATRIX = [
   {
     name: 'another receipt owns the path',
     arrange(projectRoot) {
-      const sampleSet = sample('r2c');
+      const sampleSet = sample('runner');
       writeReceipt(projectRoot, { paths: [targetOf(sampleSet.result, 1)] });
       return { ...sampleSet, force: false };
     },
@@ -275,7 +275,7 @@ const MATRIX = [
   {
     name: 'another receipt owns the path and --force still refuses',
     arrange(projectRoot) {
-      const sampleSet = sample('r2c');
+      const sampleSet = sample('runner');
       writeReceipt(projectRoot, { paths: [targetOf(sampleSet.result, 1)] });
       return { ...sampleSet, force: true };
     },
@@ -284,7 +284,7 @@ const MATRIX = [
   {
     name: 'fail-if-exists is not bypassed by --force',
     arrange(projectRoot) {
-      const sampleSet = sample('r2c');
+      const sampleSet = sample('runner');
       const path = targetOf(sampleSet.result);
       const absolute = join(projectRoot, ...path.split('/'));
       mkdirSync(dirname(absolute), { recursive: true });
@@ -298,7 +298,7 @@ const MATRIX = [
   {
     name: 'own untouched file is backed up and replaced',
     arrange(projectRoot) {
-      const sampleSet = sample('r2c');
+      const sampleSet = sample('runner');
       assert.equal(installProjection({ ...sampleSet, projectRoot, clock: CLOCK }).code, 'OK');
       const path = targetOf(sampleSet.result, 1);
       const result = cloneResult(sampleSet.result);
@@ -314,7 +314,7 @@ const MATRIX = [
   {
     name: 'own modified file is refused without --force',
     arrange(projectRoot) {
-      const sampleSet = sample('r2c');
+      const sampleSet = sample('runner');
       assert.equal(installProjection({ ...sampleSet, projectRoot, clock: CLOCK }).code, 'OK');
       const path = targetOf(sampleSet.result, 1);
       writeFileSync(join(projectRoot, ...path.split('/')), 'hand edited\n');
@@ -325,7 +325,7 @@ const MATRIX = [
   {
     name: 'own modified file is replaced with --force and backed up',
     arrange(projectRoot) {
-      const sampleSet = sample('r2c');
+      const sampleSet = sample('runner');
       assert.equal(installProjection({ ...sampleSet, projectRoot, clock: CLOCK }).code, 'OK');
       const path = targetOf(sampleSet.result, 1);
       writeFileSync(join(projectRoot, ...path.split('/')), 'hand edited\n');
@@ -339,7 +339,7 @@ const MATRIX = [
   {
     name: 'unowned identical bytes are adopted without a write',
     arrange(projectRoot) {
-      const sampleSet = sample('r2c');
+      const sampleSet = sample('runner');
       const path = targetOf(sampleSet.result);
       const file = sampleSet.result.files.find((entry) => entry.path === path);
       const absolute = join(projectRoot, ...path.split('/'));
@@ -356,7 +356,7 @@ const MATRIX = [
   {
     name: 'unowned different bytes are refused',
     arrange(projectRoot) {
-      const sampleSet = sample('r2c');
+      const sampleSet = sample('runner');
       const path = targetOf(sampleSet.result);
       const absolute = join(projectRoot, ...path.split('/'));
       mkdirSync(dirname(absolute), { recursive: true });
@@ -368,7 +368,7 @@ const MATRIX = [
   {
     name: 'unowned different bytes are replaced with --force and backed up',
     arrange(projectRoot) {
-      const sampleSet = sample('r2c');
+      const sampleSet = sample('runner');
       const path = targetOf(sampleSet.result);
       const absolute = join(projectRoot, ...path.split('/'));
       mkdirSync(dirname(absolute), { recursive: true });
@@ -383,7 +383,7 @@ const MATRIX = [
   {
     name: 'a symbolic link at the target is refused, never followed',
     arrange(projectRoot, t) {
-      const sampleSet = sample('r2c');
+      const sampleSet = sample('runner');
       const outside = tempProject(t);
       const path = targetOf(sampleSet.result, 1);
       const absolute = join(projectRoot, ...path.split('/'));
@@ -408,7 +408,7 @@ const MATRIX = [
   {
     name: 'a case-folded collision with another receipt is refused',
     arrange(projectRoot) {
-      const sampleSet = sample('r2c');
+      const sampleSet = sample('runner');
       const path = targetOf(sampleSet.result, 1);
       writeReceipt(projectRoot, { paths: [path.replace(/^./, (char) => char.toUpperCase())] });
       return { ...sampleSet, force: true };
@@ -418,7 +418,7 @@ const MATRIX = [
   {
     name: 'a file/directory prefix collision with another receipt is refused',
     arrange(projectRoot) {
-      const sampleSet = sample('r2c');
+      const sampleSet = sample('runner');
       writeReceipt(projectRoot, { paths: [targetOf(sampleSet.result).split('/')[0]] });
       return { ...sampleSet, force: true };
     },
@@ -427,10 +427,10 @@ const MATRIX = [
   {
     name: 'an escaping path is refused before any write',
     arrange() {
-      const sampleSet = sample('r2c');
+      const sampleSet = sample('runner');
       const result = cloneResult(sampleSet.result);
-      result.files[0].path = '../r2c-escape-victim.md';
-      result.installPlan.steps[0].path = '../r2c-escape-victim.md';
+      result.files[0].path = '../runner-escape-victim.md';
+      result.installPlan.steps[0].path = '../runner-escape-victim.md';
       return { ...sampleSet, result, force: true };
     },
     expect: { code: 'PROJECTION_RESULT_INVALID' },
@@ -438,7 +438,7 @@ const MATRIX = [
   {
     name: 'different conflict codes are aggregated in one pass',
     arrange(projectRoot) {
-      const sampleSet = sample('r2c');
+      const sampleSet = sample('runner');
       writeReceipt(projectRoot, { paths: [targetOf(sampleSet.result, 0)] });
       const absolute = join(projectRoot, ...targetOf(sampleSet.result, 1).split('/'));
       mkdirSync(dirname(absolute), { recursive: true });
@@ -473,7 +473,7 @@ for (const row of MATRIX) {
 
 test('a conflict that appears after the pre-lock check is caught by the TOCTOU recheck', (t) => {
   const projectRoot = tempProject(t);
-  const { result, irBytes } = sample('r2c');
+  const { result, irBytes } = sample('runner');
   const path = targetOf(result);
   const absolute = join(projectRoot, ...path.split('/'));
   let calls = 0;
@@ -494,5 +494,5 @@ test('a conflict that appears after the pre-lock check is caught by the TOCTOU r
   assert.deepEqual(outcome.conflicts.map((conflict) => conflict.path), [path]);
   assert.deepEqual(codes(outcome), ['UNOWNED_PATH']);
   assert.equal(readFileSync(absolute, 'utf8'), 'intruder\n');
-  assert.equal(existsSync(join(projectRoot, '.r2c/install/receipts')), false);
+  assert.equal(existsSync(join(projectRoot, '.hm2b/install/receipts')), false);
 });

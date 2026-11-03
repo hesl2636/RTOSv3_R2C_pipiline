@@ -273,9 +273,11 @@ export async function resolveVersion({
 /** Missing-asset code by asset family (#74 §5.3). */
 export function assetMissingCode(name) {
   if (typeof name !== 'string') return 'RELEASE_NOT_FOUND';
-  if (/^r2c-engine-/.test(name)) return 'RELEASE_ENGINE_MISSING';
-  if (/^r2c-framework-/.test(name)) return 'RELEASE_FRAMEWORK_MISSING';
-  if (/^(r2c-payload-|agent-native-)/.test(name)) return 'RELEASE_PAYLOAD_MISSING';
+  // Bundle-channel names are `hm2b-*`; the `r2c-*` spellings stay classified
+  // for the frozen legacy `v<E>` channel.
+  if (/^(?:hm2b|r2c)-engine-/.test(name)) return 'RELEASE_ENGINE_MISSING';
+  if (/^(?:hm2b|r2c)-framework-/.test(name)) return 'RELEASE_FRAMEWORK_MISSING';
+  if (/^(?:(?:hm2b|r2c)-payload-|agent-native-)/.test(name)) return 'RELEASE_PAYLOAD_MISSING';
   return 'RELEASE_NOT_FOUND';
 }
 

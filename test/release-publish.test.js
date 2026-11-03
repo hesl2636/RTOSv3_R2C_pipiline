@@ -51,8 +51,8 @@ const SAMPLE_ZIP = join(ROOT, 'examples/rtosv3/dist/bundle-rtosv3-drvport-v1.0.0
 function buildLocal() {
   const assets = [
     { name: `bundle-${ID}-v${VERSION}.zip`, data: Buffer.from('zip-bytes', 'utf8') },
-    { name: 'workflow.ir.json', data: Buffer.from('{"schema":"r2c.ir/v1"}\n', 'utf8') },
-    { name: 'r2c-engine-0.1.0.tgz', data: Buffer.from('engine-bytes', 'utf8') },
+    { name: 'workflow.ir.json', data: Buffer.from('{"schema":"hm2b.ir/v1"}\n', 'utf8') },
+    { name: 'hm2b-engine-0.1.0.tgz', data: Buffer.from('engine-bytes', 'utf8') },
     { name: 'install.mjs', data: Buffer.from('// install\n', 'utf8') },
   ];
   const sums = assets
@@ -453,7 +453,7 @@ test('the release source API is reachable from the installer composition root', 
 });
 
 function writeBuiltRelease(t, options = null) {
-  const dir = mkdtempSync(join(tmpdir(), 'r2c-built-'));
+  const dir = mkdtempSync(join(tmpdir(), 'hm2b-built-'));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const result = buildBundleRelease({ root: ROOT, bundlePath: SAMPLE_ZIP, options });
   assert.equal(result.ok, true, result.failures.join('; '));
@@ -480,7 +480,7 @@ test('a canonical build is publishable and a custom build is refused before any 
     {
       cwd: ROOT,
       encoding: 'utf8',
-      env: { ...process.env, GH_TOKEN: TOKEN, GH_REPO: REPO, R2C_GITHUB_API: fixture.origin },
+      env: { ...process.env, GH_TOKEN: TOKEN, GH_REPO: REPO, HM2B_GITHUB_API: fixture.origin },
     },
   );
   assert.equal(result.status, 1, `${result.stdout}\n${result.stderr}`);

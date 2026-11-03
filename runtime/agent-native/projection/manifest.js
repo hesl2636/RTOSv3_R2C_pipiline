@@ -53,15 +53,15 @@ for (const id of TARGET_ORDER) {
 writeRoots.sort();
 
 export const AGENT_NATIVE_MANIFEST = Object.freeze({
-  schema: 'r2c.projection/v1',
+  schema: 'hm2b.projection/v1',
   id: 'agent-native',
   name: 'Agent-native 投影',
   version: '0.1.0',
   description: '把中立 IR 投影成原生 agent runtime 的技能与子 agent 定义；不生成 runner，不写用户自有配置文件。',
   api: {
-    ir: 'r2c.ir/v1',
-    options: 'r2c.projection-options/v1',
-    result: 'r2c.projection-result/v1',
+    ir: 'hm2b.ir/v1',
+    options: 'hm2b.projection-options/v1',
+    result: 'hm2b.projection-result/v1',
   },
   writeRoots,
   targets: TARGET_ORDER.map(targetEntry),

@@ -37,7 +37,7 @@ test('IR validation covers schema, canonical bytes and parsing', () => {
   const ir = baseIr();
   assert.deepEqual(codesFor(new TextEncoder().encode(JSON.stringify(ir))), ['IR_JSON_NOT_CANONICAL@']);
   assert.deepEqual(
-    codesFor(new TextEncoder().encode(canonicalJson({ ...ir, schema: 'r2c.ir/v2' }))),
+    codesFor(new TextEncoder().encode(canonicalJson({ ...ir, schema: 'hm2b.ir/v2' }))),
     ['IR_SCHEMA_UNSUPPORTED@/schema'],
   );
   assert.deepEqual(

@@ -1,5 +1,5 @@
 /**
- * `r2c-assembler project` end-to-end (#95, CONTEXT §7).
+ * `hm2b-assembler project` end-to-end (#95, CONTEXT §7).
  *
  * The CLI is the highest seam: compile the sample zip to an IR file, project
  * it into a temp directory, and assert the on-disk tree, the single-line
@@ -27,7 +27,7 @@ import { sha256Hex } from '../core/node/sha256.js';
 import { IR_FILENAME } from '../ir/schema.js';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const BIN = join(ROOT, 'bin', 'r2c-assembler.js');
+const BIN = join(ROOT, 'bin', 'hm2b-assembler.js');
 const ZIP = join(ROOT, 'examples/rtosv3/dist/bundle-rtosv3-drvport-v1.0.0.zip');
 
 function compileTo(dir) {
@@ -64,7 +64,7 @@ function treeHash(dir) {
 }
 
 test('project writes the 45-file Claude tree and prints one envelope line', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'r2c-project-cli-'));
+  const dir = mkdtempSync(join(tmpdir(), 'hm2b-project-cli-'));
   try {
     const irPath = compileTo(dir);
     const out = join(dir, 'out');
@@ -85,7 +85,7 @@ test('project writes the 45-file Claude tree and prints one envelope line', () =
     const files = walk(out);
     assert.equal(files.length, 45);
     assert.equal(files.some((file) => /(?:^|[\\/])CLAUDE\.md$/.test(file)), false);
-    assert.equal(files.some((file) => /\.r2c[\\/]/.test(file)), false);
+    assert.equal(files.some((file) => /\.hm2b[\\/]/.test(file)), false);
     assert.equal(existsSync(join(out, '.agents', 'agent-native', 'rtosv3-drvport', 'roles.json')), true);
     const stage = readFileSync(join(out, '.claude', 'skills', 'rtosv3-drvport-stage-analysis-design', 'SKILL.md'), 'utf8');
     assert.ok(stage.indexOf('<!-- constitution:begin') < stage.indexOf('# 阶段'));
@@ -96,7 +96,7 @@ test('project writes the 45-file Claude tree and prints one envelope line', () =
 });
 
 test('project is byte-deterministic across two output directories', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'r2c-project-det-'));
+  const dir = mkdtempSync(join(tmpdir(), 'hm2b-project-det-'));
   try {
     const irPath = compileTo(dir);
     const a = join(dir, 'a');
@@ -110,7 +110,7 @@ test('project is byte-deterministic across two output directories', () => {
 });
 
 test('CLI options narrow skills and reorder stages', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'r2c-project-opt-'));
+  const dir = mkdtempSync(join(tmpdir(), 'hm2b-project-opt-'));
   try {
     const irPath = compileTo(dir);
     const out = join(dir, 'out');
@@ -134,7 +134,7 @@ test('CLI options narrow skills and reorder stages', () => {
 });
 
 test('invalid options fail with a stable code and write nothing', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'r2c-project-bad-'));
+  const dir = mkdtempSync(join(tmpdir(), 'hm2b-project-bad-'));
   try {
     const irPath = compileTo(dir);
     const out = join(dir, 'out');
@@ -150,7 +150,7 @@ test('invalid options fail with a stable code and write nothing', () => {
 });
 
 test('all five targets with 12 skills and a reversed stage order: 52 files, warnings only', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'r2c-project-five-'));
+  const dir = mkdtempSync(join(tmpdir(), 'hm2b-project-five-'));
   try {
     const irPath = compileTo(dir);
     const out = join(dir, 'out');
@@ -178,17 +178,17 @@ test('all five targets with 12 skills and a reversed stage order: 52 files, warn
   }
 });
 
-test('r2c with 12 skills adjusts the payload to 22 files', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'r2c-project-r2c-'));
+test('the runner projection with 12 skills adjusts the payload to 22 files', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'hm2b-project-runner-'));
   try {
     const irPath = compileTo(dir);
     const out = join(dir, 'out');
     const skills = Object.keys(JSON.parse(readFileSync(irPath, 'utf8')).skills).sort().slice(0, 12);
-    const result = run(['project', irPath, '--projection', 'r2c', '--skills', skills.join(','), '--out', out, '--json']);
+    const result = run(['project', irPath, '--projection', 'runner', '--skills', skills.join(','), '--out', out, '--json']);
     assert.equal(result.status, 0, result.stderr);
     const envelope = JSON.parse(result.stdout.trim());
     assert.equal(envelope.data.counts.files, 22);
-    assert.deepEqual(envelope.data.options.targets, ['r2c']);
+    assert.deepEqual(envelope.data.options.targets, ['runner']);
     assert.equal(envelope.data.options.skills.length, 12);
     assert.equal(envelope.data.capabilityReport.find((row) => row.capability === 'skills').level, 'unavailable');
     assert.equal(walk(out).length, 22);
@@ -198,7 +198,7 @@ test('r2c with 12 skills adjusts the payload to 22 files', () => {
 });
 
 test('unknown skills and stage ids are rejected through the CLI without output', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'r2c-project-reject-'));
+  const dir = mkdtempSync(join(tmpdir(), 'hm2b-project-reject-'));
   try {
     const irPath = compileTo(dir);
     for (const args of [

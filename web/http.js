@@ -99,7 +99,7 @@ export function parsePort(argv) {
 }
 
 export function rateLimitFromEnv(env = process.env) {
-  const raw = env.R2C_WEB_RATE_LIMIT;
+  const raw = env.HM2B_WEB_RATE_LIMIT;
   if (raw === undefined || raw === '') return DEFAULT_RATE_LIMIT;
   const value = Number(raw);
   return Number.isInteger(value) && value > 0 ? value : DEFAULT_RATE_LIMIT;
@@ -379,7 +379,7 @@ export function createHttpGuards(node) {
       if (site !== 'same-origin' && site !== 'none') {
         return webError(403, 'WEB_FETCH_SITE_INVALID', 'cross-site requests are not allowed');
       }
-      if (!timingSafeEqualText(request.headers['x-r2c-csrf'], csrf)) {
+      if (!timingSafeEqualText(request.headers['x-hm2b-csrf'], csrf)) {
         return webError(403, 'WEB_CSRF_INVALID', 'CSRF token is missing or invalid');
       }
     }

@@ -1,5 +1,5 @@
 /**
- * ZIP container reader for `r2c.bundle/v1` (decision #65 §2, #67 §7.1/§10).
+ * ZIP container reader for `hm2b.bundle/v1` (decision #65 §2, #67 §7.1/§10).
  *
  * Two explicit phases keep the contract "container checks before inflation"
  * true:

@@ -70,8 +70,8 @@ function setStatus(text) {
 }
 
 function showFallback(reasons) {
-  window.__R2C_BOOT_REASONS__ = reasons;
-  if (typeof window.__r2cShowFallback === 'function') window.__r2cShowFallback(reasons);
+  window.__HM2B_BOOT_REASONS__ = reasons;
+  if (typeof window.__hm2bShowFallback === 'function') window.__hm2bShowFallback(reasons);
 }
 
 function formatBytes(bytes) {
@@ -907,7 +907,7 @@ async function publishRelease() {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'X-R2C-CSRF': state.csrf ?? '',
+        'X-HM2B-CSRF': state.csrf ?? '',
       },
       body: JSON.stringify({
         confirmTag: state.build.tag,
@@ -984,7 +984,7 @@ async function buildAssets() {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'X-R2C-CSRF': state.csrf ?? '',
+        'X-HM2B-CSRF': state.csrf ?? '',
       },
       body: JSON.stringify({
         uploadId: state.uploadId,
@@ -1094,7 +1094,7 @@ async function upload() {
       method: 'POST',
       headers: {
         'Content-Type': 'application/zip',
-        'X-R2C-CSRF': state.csrf ?? '',
+        'X-HM2B-CSRF': state.csrf ?? '',
       },
       body: bytes,
       cache: 'no-store',
@@ -1154,13 +1154,13 @@ async function upload() {
 async function bootstrap() {
   const floor = probeBrowserFloor();
   state.floor = floor;
-  window.__R2C_FLOOR__ = floor;
+  window.__HM2B_FLOOR__ = floor;
   const missing = missingRequirements(floor);
   if (missing.length > 0) {
     showFallback(missing);
     return;
   }
-  window.__R2C_BOOTED__ = true;
+  window.__HM2B_BOOTED__ = true;
   show(byId('fatal'), false);
 
   state.degraded = !floor.deflateRaw;

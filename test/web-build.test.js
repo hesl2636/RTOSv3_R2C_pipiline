@@ -41,24 +41,24 @@ import {
 
 const SAMPLE = join(ROOT, 'examples', 'rtosv3', 'dist', 'bundle-rtosv3-drvport-v1.0.0.zip');
 const IR_FIXTURE = join(ROOT, 'test', 'fixtures', 'ir', 'workflow.ir.json');
-const SAMPLE_SHA256 = 'c22064539aa189b4d9345b1d39b148967a450584badd2593dcf47c0c5b75a13e';
-const IR_DIGEST = '8a2a57593939f91117d57f9ca34c56b2fc631f6837168ef74032daa95202d395';
+const SAMPLE_SHA256 = '4b4700207e2a1398b930b46123f5e7aef27f803e3afc3596d19e31dc454d8196';
+const IR_DIGEST = 'd6e8957287117c7b476891e1807e303c9a965fbe366087a13947baf34b0da09f';
 const TAG = 'bundle-rtosv3-drvport-v1.0.0';
 const ASSETS = [
   'SHA256SUMS.txt',
   'agent-native-rtosv3-drvport-v1.0.0.tgz',
   'bundle-rtosv3-drvport-v1.0.0.zip',
+  'hm2b-engine-0.1.0.tgz',
+  'hm2b-framework-0.1.0.tgz',
+  'hm2b-payload-rtosv3-drvport-v1.0.0.tgz',
   'install.mjs',
-  'r2c-engine-0.1.0.tgz',
-  'r2c-framework-0.1.0.tgz',
-  'r2c-payload-rtosv3-drvport-v1.0.0.tgz',
   'workflow.ir.json',
 ];
-const R2C_CANONICAL = { files: 45, bytes: 48840, degradations: 4, capabilities: 8, warnings: 0 };
-const AGENT_NATIVE_CANONICAL = { files: 98, bytes: 142620, degradations: 45, capabilities: 40, warnings: 1 };
+const RUNNER_CANONICAL = { files: 45, bytes: 48877, degradations: 4, capabilities: 8, warnings: 0 };
+const AGENT_NATIVE_CANONICAL = { files: 98, bytes: 142657, degradations: 45, capabilities: 40, warnings: 1 };
 
 function tempDir(t, prefix) {
-  const dir = mkdtempSync(join(tmpdir(), `r2c-web-build-${prefix}-`));
+  const dir = mkdtempSync(join(tmpdir(), `hm2b-web-build-${prefix}-`));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   return dir;
 }
@@ -182,17 +182,17 @@ test('canonical build is publishable and matches the CLI projection numbers', as
     { id: data.ir.id, version: data.ir.version, digest: data.ir.digest },
     { id: report.id, version: report.version, digest: IR_DIGEST },
   );
-  assert.deepEqual(data.projections.map((item) => item.id), ['agent-native', 'r2c']);
+  assert.deepEqual(data.projections.map((item) => item.id), ['agent-native', 'runner']);
 
-  const r2c = projectionOf(data, 'r2c');
+  const runner = projectionOf(data, 'runner');
   const agentNative = projectionOf(data, 'agent-native');
-  const r2cOracle = expected({ projectionId: 'r2c', engineVersion });
+  const runnerOracle = expected({ projectionId: 'runner', engineVersion });
   const agentOracle = expected({ projectionId: 'agent-native', engineVersion });
-  assertMatchesExpected(r2c, r2cOracle);
+  assertMatchesExpected(runner, runnerOracle);
   assertMatchesExpected(agentNative, agentOracle);
   assert.deepEqual(
-    { files: r2c.counts.files, bytes: r2c.counts.bytes, degradations: r2c.counts.degradations, capabilities: r2c.counts.capabilities },
-    { files: R2C_CANONICAL.files, bytes: R2C_CANONICAL.bytes, degradations: R2C_CANONICAL.degradations, capabilities: R2C_CANONICAL.capabilities },
+    { files: runner.counts.files, bytes: runner.counts.bytes, degradations: runner.counts.degradations, capabilities: runner.counts.capabilities },
+    { files: RUNNER_CANONICAL.files, bytes: RUNNER_CANONICAL.bytes, degradations: RUNNER_CANONICAL.degradations, capabilities: RUNNER_CANONICAL.capabilities },
   );
   assert.deepEqual(
     {
@@ -210,12 +210,12 @@ test('canonical build is publishable and matches the CLI projection numbers', as
   );
 
   // The CLI prints the same contract numbers for the frozen IR.
-  const cli = cliJson(['bin/r2c-assembler.js', 'project', IR_FIXTURE, '--projection', 'r2c', '--json']).data;
-  assert.deepEqual(r2c.files, cli.files);
-  assert.deepEqual(r2c.capabilityReport, cli.capabilityReport);
-  assert.deepEqual(r2c.degradations, cli.degradations);
-  assert.deepEqual(r2c.warnings, cli.warnings);
-  assert.deepEqual(r2c.coverage, cli.coverage);
+  const cli = cliJson(['bin/hm2b-assembler.js', 'project', IR_FIXTURE, '--projection', 'runner', '--json']).data;
+  assert.deepEqual(runner.files, cli.files);
+  assert.deepEqual(runner.capabilityReport, cli.capabilityReport);
+  assert.deepEqual(runner.degradations, cli.degradations);
+  assert.deepEqual(runner.warnings, cli.warnings);
+  assert.deepEqual(runner.coverage, cli.coverage);
 
   // Assets are exactly the release table, verified byte for byte.
   assert.deepEqual(data.artifacts.map((asset) => asset.name), ASSETS);
@@ -244,7 +244,7 @@ test('canonical build is publishable and matches the CLI projection numbers', as
 
   // Payload archives record canonical inputs and exactly the projected files.
   for (const [id, oracle, name] of [
-    ['r2c', r2cOracle, 'r2c-payload-rtosv3-drvport-v1.0.0.tgz'],
+    ['runner', runnerOracle, 'hm2b-payload-rtosv3-drvport-v1.0.0.tgz'],
     ['agent-native', agentOracle, 'agent-native-rtosv3-drvport-v1.0.0.tgz'],
   ]) {
     const download = await httpRequest({ port: server.port, path: `/api/builds/${data.buildId}/artifacts/${name}` });
@@ -254,7 +254,7 @@ test('canonical build is publishable and matches the CLI projection numbers', as
     assert.deepEqual(manifest.options, {
       stageOrder: null,
       skills: null,
-      targets: id === 'r2c' ? ['r2c'] : agentOracle.result.targets,
+      targets: id === 'runner' ? ['runner'] : agentOracle.result.targets,
     });
     assert.deepEqual(
       manifest.files.map(({ path, mode, sha256, kind, targets }) => ({ path, mode, sha256, kind, targets })),
@@ -265,13 +265,13 @@ test('canonical build is publishable and matches the CLI projection numbers', as
   // Fixed-version install commands, never a project write.
   assert.equal(data.install.mode, 'release');
   const commands = data.install.commands;
-  const r2cCommand = commands.find((item) => item.projection === 'r2c');
+  const runnerCommand = commands.find((item) => item.projection === 'runner');
   assert.deepEqual(
-    { projection: r2cCommand.projection, target: r2cCommand.target, command: r2cCommand.command },
+    { projection: runnerCommand.projection, target: runnerCommand.target, command: runnerCommand.command },
     {
-      projection: 'r2c',
+      projection: 'runner',
       target: null,
-      command: 'node .r2c/bootstrap/install.mjs --bundle rtosv3-drvport --version 1.0.0 --projection r2c --project .',
+      command: 'node .hm2b/bootstrap/install.mjs --bundle rtosv3-drvport --version 1.0.0 --projection runner --project .',
     },
   );
   const agentCommands = commands.filter((item) => item.projection === 'agent-native');
@@ -285,7 +285,7 @@ test('canonical build is publishable and matches the CLI projection numbers', as
   for (const item of commands) {
     assert.match(
       item.command,
-      /^node \.r2c\/bootstrap\/install\.mjs --bundle [a-z0-9-]+ --version \d+\.\d+\.\d+ --projection (r2c|agent-native)( --target [a-z-]+)? --project \.$/,
+      /^node \.hm2b\/bootstrap\/install\.mjs --bundle [a-z0-9-]+ --version \d+\.\d+\.\d+ --projection (runner|agent-native)( --target [a-z-]+)? --project \.$/,
     );
     assert.doesNotMatch(item.command, /--release-base/);
   }
@@ -304,7 +304,7 @@ test('custom options build locally, record the actual options and stay unpublish
   const stageIds = ir.stages.map((stage) => stage.id);
   const twelve = skillIds.slice(0, 12);
   const custom = {
-    r2c: { stageOrder: [...stageIds].reverse(), skills: twelve, targets: ['r2c'] },
+    runner: { stageOrder: [...stageIds].reverse(), skills: twelve, targets: ['runner'] },
     'agent-native': { skills: twelve, targets: ['claude-code', 'codex'] },
   };
 
@@ -315,23 +315,23 @@ test('custom options build locally, record the actual options and stay unpublish
   assert.equal(data.publishable, false);
   assert.equal(data.install.mode, 'local');
 
-  const r2c = projectionOf(data, 'r2c');
+  const runner = projectionOf(data, 'runner');
   const agentNative = projectionOf(data, 'agent-native');
-  const r2cOracle = expected({ projectionId: 'r2c', raw: custom.r2c, engineVersion });
+  const runnerOracle = expected({ projectionId: 'runner', raw: custom.runner, engineVersion });
   const agentOracle = expected({ projectionId: 'agent-native', raw: custom['agent-native'], engineVersion });
-  assertMatchesExpected(r2c, r2cOracle);
+  assertMatchesExpected(runner, runnerOracle);
   assertMatchesExpected(agentNative, agentOracle);
   // The frozen K=12 anchor is agent-native with every target selected.
   const twelveSkills = expected({ projectionId: 'agent-native', raw: { skills: twelve }, engineVersion });
   assert.equal(twelveSkills.counts.files, 52, 'K=12 anchor');
-  assert.deepEqual(r2c.options.stageOrder, [...stageIds].reverse());
-  assert.deepEqual(r2c.options.skills, twelve);
+  assert.deepEqual(runner.options.stageOrder, [...stageIds].reverse());
+  assert.deepEqual(runner.options.skills, twelve);
   assert.deepEqual(agentNative.targets, ['claude-code', 'codex']);
 
   // The asset table is unchanged; only the recorded options differ.
   assert.deepEqual(data.artifacts.map((asset) => asset.name), ASSETS);
   for (const [name, oracle, projectionId] of [
-    ['r2c-payload-rtosv3-drvport-v1.0.0.tgz', r2cOracle, 'r2c'],
+    ['hm2b-payload-rtosv3-drvport-v1.0.0.tgz', runnerOracle, 'runner'],
     ['agent-native-rtosv3-drvport-v1.0.0.tgz', agentOracle, 'agent-native'],
   ]) {
     const download = await httpRequest({ port: server.port, path: `/api/builds/${data.buildId}/artifacts/${name}` });
@@ -363,7 +363,7 @@ test('stale digests are 409 and unknown stage/skill/target are 400 without a bui
   const stale = await build(server, csrf, {
     uploadId: uploaded.uploadId,
     options: {
-      r2c: {
+      runner: {
         ir: { digest: '0'.repeat(64), id: ir.id, version: ir.version },
         stageOrder: null,
         skills: null,
@@ -380,7 +380,7 @@ test('stale digests are 409 and unknown stage/skill/target are 400 without a bui
 
   const badStage = await build(server, csrf, {
     uploadId: uploaded.uploadId,
-    options: { r2c: { stageOrder: ['nope', ...ir.stages.slice(1).map((stage) => stage.id)] } },
+    options: { runner: { stageOrder: ['nope', ...ir.stages.slice(1).map((stage) => stage.id)] } },
   });
   assert.equal(badStage.status, 400);
   assert.equal(badStage.json.error.code, 'PROJECTION_OPTIONS_INVALID');
@@ -388,7 +388,7 @@ test('stale digests are 409 and unknown stage/skill/target are 400 without a bui
 
   const badSkill = await build(server, csrf, {
     uploadId: uploaded.uploadId,
-    options: { r2c: { skills: ['nope'] } },
+    options: { runner: { skills: ['nope'] } },
   });
   assert.equal(badSkill.status, 400);
   assert.equal(badSkill.json.error.code, 'PROJECTION_OPTIONS_INVALID');
@@ -487,8 +487,8 @@ test('a crashed, hung or non-JSON child maps to WEB_CHILD_FAILED/TIMEOUT and the
     [hang, {}, 'WEB_CHILD_TIMEOUT', 504],
   ]) {
     const server = await startWebServer(t, {
-      R2C_WEB_RELEASE_SCRIPT: script,
-      R2C_WEB_BUILD_TIMEOUT_MS: '400',
+      HM2B_WEB_RELEASE_SCRIPT: script,
+      HM2B_WEB_BUILD_TIMEOUT_MS: '400',
       ...extraEnv,
     });
     const { csrf } = await sessionOf(server);
@@ -517,7 +517,7 @@ test('build endpoints keep the Host/Origin/fetch-site/CSRF/CSP envelope and JSON
   const uploaded = await upload(server, csrf);
   const body = { uploadId: uploaded.uploadId, options: {} };
 
-  const noCsrf = await jsonRequest(server, csrf, '/api/builds', body, { 'X-R2C-CSRF': 'wrong' });
+  const noCsrf = await jsonRequest(server, csrf, '/api/builds', body, { 'X-HM2B-CSRF': 'wrong' });
   assert.equal(noCsrf.status, 403);
   assert.equal(noCsrf.json.error.code, 'WEB_CSRF_INVALID');
 
@@ -539,7 +539,7 @@ test('build endpoints keep the Host/Origin/fetch-site/CSRF/CSP envelope and JSON
     `Host: 127.0.0.1:${server.port}`,
     `Origin: ${server.base}`,
     'Sec-Fetch-Site: same-origin',
-    `X-R2C-CSRF: ${csrf}`,
+    `X-HM2B-CSRF: ${csrf}`,
     'Content-Type: application/json',
     'Connection: close',
     '',
@@ -581,7 +581,7 @@ test('a new upload resets the client binding and the server refuses an old diges
   const built = await build(server, csrf, {
     uploadId: second.uploadId,
     options: {
-      r2c: {
+      runner: {
         ir: { digest: first.ir.digest, id: first.ir.id, version: first.ir.version },
         stageOrder: null,
         skills: null,
@@ -595,7 +595,7 @@ test('a new upload resets the client binding and the server refuses an old diges
   const different = { ...before.ir, digest: 'a'.repeat(64) };
   const stale = await build(server, csrf, {
     uploadId: before.uploadId,
-    options: { r2c: { ir: { digest: different.digest, id: different.id, version: different.version } } },
+    options: { runner: { ir: { digest: different.digest, id: different.id, version: different.version } } },
   });
   assert.equal(stale.status, 409);
 
@@ -613,7 +613,7 @@ test('a new upload resets the client binding and the server refuses an old diges
 
 /** Copy the framework tree (including the linked yaml dependency) so versions can differ. */
 function copyFramework(t) {
-  const dir = mkdtempSync(join(tmpdir(), 'r2c-web-engine-'));
+  const dir = mkdtempSync(join(tmpdir(), 'hm2b-web-engine-'));
   t.after(async () => {
     // Windows keeps the directory busy for a moment after the server exits.
     for (let attempt = 0; attempt < 20; attempt += 1) {
@@ -708,7 +708,7 @@ function bundleWithEngineRange(range) {
 
 test('requires.engine is checked against the engine version, never the framework version', async (t) => {
   const root = copyFramework(t);
-  const engineVersion = JSON.parse(readFileSync(join(root, 'runtime', 'r2c', 'engine', 'package.json'), 'utf8')).version;
+  const engineVersion = JSON.parse(readFileSync(join(root, 'runtime', 'runner', 'engine', 'package.json'), 'utf8')).version;
   assert.equal(engineVersion, '0.1.0');
   assert.notEqual(engineVersion, '9.9.9');
 

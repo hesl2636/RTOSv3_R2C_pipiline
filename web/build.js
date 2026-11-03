@@ -114,7 +114,7 @@ function installCommand({ id, version, projection, target, publishable }) {
   if (descriptor === null) return null;
   if (target !== null && !descriptor.targets.some((item) => item.id === target)) return null;
   const parts = [
-    'node .r2c/bootstrap/install.mjs',
+    'node .hm2b/bootstrap/install.mjs',
     '--bundle', id,
     '--version', version,
     '--projection', projection,
@@ -129,10 +129,10 @@ function installCommand({ id, version, projection, target, publishable }) {
 export function installCommands({ id, version, projections, publishable }) {
   const commands = [];
   for (const projection of projections) {
-    if (projection.id === 'r2c') {
-      const command = installCommand({ id, version, projection: 'r2c', target: null, publishable });
+    if (projection.id === 'runner') {
+      const command = installCommand({ id, version, projection: 'runner', target: null, publishable });
       if (command === null) return null;
-      commands.push({ projection: 'r2c', target: null, command });
+      commands.push({ projection: 'runner', target: null, command });
       continue;
     }
     const all = installCommand({ id, version, projection: projection.id, target: null, publishable });
@@ -366,8 +366,8 @@ export function createBuildService({
 
     const allowed = allowedProjections(ir);
     // `requires.engine` constrains the engine package, not the framework, and
-    // only when the r2c runtime is part of this bundle (spec §13).
-    if (allowed.includes('r2c')) {
+    // only when the runner runtime is part of this bundle (spec §13).
+    if (allowed.includes('runner')) {
       const requirement = checkEngineRequirement({ range: ir.requires?.engine, engineVersion });
       if (!requirement.ok) {
         return webError(409, requirement.code, requirement.message);

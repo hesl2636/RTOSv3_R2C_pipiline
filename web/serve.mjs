@@ -101,7 +101,7 @@ async function sweepStaleSessions(ownTempRoot) {
     return;
   }
   for (const entry of entries) {
-    if (!entry.isDirectory() || !entry.name.startsWith('r2c-web-')) continue;
+    if (!entry.isDirectory() || !entry.name.startsWith('hm2b-web-')) continue;
     const candidate = resolve(tmpdir(), entry.name);
     if (candidate === ownTempRoot) continue;
     let marker;
@@ -163,10 +163,10 @@ async function main() {
 
   const version = (await readVersion(resolve(ROOT, 'package.json'))) ?? '0.0.0';
   // The framework and the runtime engine ship independently (spec §13): the
-  // session/projection environment reports `runtime/r2c/engine/package.json`.
-  const engineVersion = await readVersion(resolve(ROOT, 'runtime', 'r2c', 'engine', 'package.json'));
+  // session/projection environment reports `runtime/runner/engine/package.json`.
+  const engineVersion = await readVersion(resolve(ROOT, 'runtime', 'runner', 'engine', 'package.json'));
 
-  const tempRoot = await mkdtemp(resolve(tmpdir(), `r2c-web-${process.pid}-`));
+  const tempRoot = await mkdtemp(resolve(tmpdir(), `hm2b-web-${process.pid}-`));
   await chmod(tempRoot, 0o700);
   await writeFile(
     resolve(tempRoot, 'session.json'),
@@ -180,16 +180,16 @@ async function main() {
   const csrf = randomBytes(32).toString('hex');
   const rate = createRateLimiter({ limit: rateLimitFromEnv(), windowMs: 60 * 1000 });
   const secrets = startupSecrets(process.env);
-  const buildTimeoutMs = envInteger('R2C_WEB_BUILD_TIMEOUT_MS', 120 * 1000);
-  const publishTimeoutMs = envInteger('R2C_WEB_PUBLISH_TIMEOUT_MS', PUBLISH_TIMEOUT_MS);
-  const releaseScript = process.env.R2C_WEB_RELEASE_SCRIPT === undefined
+  const buildTimeoutMs = envInteger('HM2B_WEB_BUILD_TIMEOUT_MS', 120 * 1000);
+  const publishTimeoutMs = envInteger('HM2B_WEB_PUBLISH_TIMEOUT_MS', PUBLISH_TIMEOUT_MS);
+  const releaseScript = process.env.HM2B_WEB_RELEASE_SCRIPT === undefined
     ? RELEASE_SCRIPT
-    : resolve(process.env.R2C_WEB_RELEASE_SCRIPT);
+    : resolve(process.env.HM2B_WEB_RELEASE_SCRIPT);
   // Operator-only override for the publish child (child-isolation tests and
   // wrappers); the browser can never choose a script.
-  const publishScript = process.env.R2C_WEB_PUBLISH_SCRIPT === undefined
+  const publishScript = process.env.HM2B_WEB_PUBLISH_SCRIPT === undefined
     ? releaseScript
-    : resolve(process.env.R2C_WEB_PUBLISH_SCRIPT);
+    : resolve(process.env.HM2B_WEB_PUBLISH_SCRIPT);
 
   const { guardRequest, locateStatic } = createHttpGuards({
     createHash,

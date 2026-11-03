@@ -1,7 +1,7 @@
 /*
  * Classic boot check (no imports, no inline code; CSP `script-src 'self'`).
  *
- * The application module sets `window.__R2C_BOOTED__` once its feature probe
+ * The application module sets `window.__HM2B_BOOTED__` once its feature probe
  * passes. If that never happens (ESM, JSON import attributes or another
  * required primitive is missing), this fallback surfaces the CLI commands
  * instead of failing silently. No user-agent sniffing.
@@ -31,9 +31,9 @@
     fatal.hidden = false;
   }
 
-  window.__r2cShowFallback = showFallback;
+  window.__hm2bShowFallback = showFallback;
   window.setTimeout(function () {
-    if (window.__R2C_BOOTED__ === true) return;
-    showFallback(window.__R2C_BOOT_REASONS__);
+    if (window.__HM2B_BOOTED__ === true) return;
+    showFallback(window.__HM2B_BOOT_REASONS__);
   }, 5000);
 }());

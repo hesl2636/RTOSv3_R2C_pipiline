@@ -6,7 +6,7 @@
  * consumers use; a boolean erases "declared but not written yet".
  */
 
-export const CONSTITUTION_SCHEMA = 'r2c.constitution-block/v1';
+export const CONSTITUTION_SCHEMA = 'hm2b.constitution-block/v1';
 
 const BANNER_PRESENT = '> **项目宪法（constitution）** — 项目级规则，先于本步任务书生效；与任务书冲突时以本段为准。';
 const BANNER_PLACEHOLDER = '> **占位（placeholder）** 本宪法本期未实现：不构成生效规则；如有正文，仅为草稿，不得据此推断约束。';
@@ -37,7 +37,7 @@ export function constitutionState(mounts) {
   }
   if (mounts.length === 0) return 'absent';
   if (mounts.length !== 1) {
-    throw new Error('PROJECTION_IR_UNSUPPORTED: r2c.ir/v1 carries at most one constitution mount');
+    throw new Error('PROJECTION_IR_UNSUPPORTED: hm2b.ir/v1 carries at most one constitution mount');
   }
   const mount = mounts[0];
   assertMount(mount);

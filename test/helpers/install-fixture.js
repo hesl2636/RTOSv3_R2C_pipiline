@@ -1,9 +1,9 @@
 /**
  * Projection-result fixtures for the installer tests.
  *
- * The installer never projects: these helpers produce the `r2c` result and the
- * IR bytes the result is bound to (V1), so a test can install the real sample
- * payload without re-implementing the projection.
+ * The installer never projects: these helpers produce the `runner` result and
+ * the IR bytes the result is bound to (V1), so a test can install the real
+ * sample payload without re-implementing the projection.
  */
 import { canonicalJson } from '../../core/canonical-json.js';
 import { readFileSync } from 'node:fs';
@@ -21,7 +21,7 @@ export const IR_FIXTURE = join(ROOT, 'test/fixtures/ir/workflow.ir.json');
 const cache = new Map();
 
 /** `{ir, irBytes, irDigest, results: Map<projection, result>}`. */
-export function sample(projectionId = 'r2c', raw = {}) {
+export function sample(projectionId = 'runner', raw = {}) {
   const key = `${projectionId}|${JSON.stringify(raw)}`;
   if (cache.has(key)) return cache.get(key);
   const irBytes = readFileSync(IR_FIXTURE);
@@ -45,7 +45,7 @@ export function fixedClock(iso = '2026-01-01T00:00:00.000Z') {
  * (a new `version` or `id` makes a genuinely different install identity) and
  * `raw` feeds projection options, exactly like `sample()`.
  */
-export function customSample({ projectionId = 'r2c', irPatch = {}, raw = {} } = {}) {
+export function customSample({ projectionId = 'runner', irPatch = {}, raw = {} } = {}) {
   const ir = JSON.parse(readFileSync(IR_FIXTURE, 'utf8'));
   Object.assign(ir, irPatch);
   const irBytes = Buffer.from(canonicalJson(ir), 'utf8');

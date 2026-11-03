@@ -1,6 +1,6 @@
 /**
  * Projection pipeline: dispatch one registered projection and assemble the
- * canonical `r2c.projection-result/v1` envelope (#69 §7, CONTEXT §11).
+ * canonical `hm2b.projection-result/v1` envelope (#69 §7, CONTEXT §11).
  *
  * The projection implementation returns the semantic body (targets, coverage,
  * files, capabilities, degradations, warnings, metadata); this module is the
@@ -11,8 +11,8 @@ import { compareCodePoints } from '../core/code-point.js';
 import { validateOptions } from './options.js';
 import { getProjection } from './registry.js';
 
-export const RESULT_SCHEMA = 'r2c.projection-result/v1';
-export const INSTALL_PLAN_SCHEMA = 'r2c.install-plan/v1';
+export const RESULT_SCHEMA = 'hm2b.projection-result/v1';
+export const INSTALL_PLAN_SCHEMA = 'hm2b.install-plan/v1';
 const MAX_FILES = 4096;
 const MAX_TOTAL_BYTES = 64 * 1024 * 1024;
 const MAX_FILE_BYTES = 4 * 1024 * 1024;

@@ -19,9 +19,9 @@ import { constitutionState } from '../runtime/shared/constitution.js';
 import { CAPABILITIES, ID_PATTERN as ID_RE, LEVEL_RANK, SEMANTIC_CAPABILITIES } from './contract.js';
 import { RESULT_FIELDS as TOP_LEVEL_ORDER } from './result-fields.js';
 
-const RESULT_SCHEMA = 'r2c.projection-result/v1';
-const INSTALL_PLAN_SCHEMA = 'r2c.install-plan/v1';
-const OPTIONS_SCHEMA = 'r2c.projection-options/v1';
+const RESULT_SCHEMA = 'hm2b.projection-result/v1';
+const INSTALL_PLAN_SCHEMA = 'hm2b.install-plan/v1';
+const OPTIONS_SCHEMA = 'hm2b.projection-options/v1';
 const SEMANTIC = new Set(SEMANTIC_CAPABILITIES);
 const SEGMENT_RE = /^[A-Za-z0-9._-]+$/;
 const CODE_RE = /^[A-Z][A-Z0-9_]{2,63}$/;

@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to `r2c-runner` are recorded here. The version is locked
+All notable changes to `hm2b-runner` are recorded here. The version is locked
 step-by-step across the engine, the payload, and all five agent adapters; see
 `docs/compat.md`.
 

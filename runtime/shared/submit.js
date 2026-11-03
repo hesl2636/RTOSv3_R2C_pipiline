@@ -38,9 +38,9 @@ export function replaceSubmitToken(body, text) {
 
 function receiptText(stepId) {
   return [
-    `# r2c-submit: step=${stepId}`,
+    `# hm2b-submit: step=${stepId}`,
     '# 无 runner：提交 = 在本步回复末尾输出回执，包含',
-    `#   1) 上一行原样（r2c-submit: step=${stepId}）`,
+    `#   1) 上一行原样（hm2b-submit: step=${stepId}）`,
     '#   2) 上面每条门禁命令的完整输出与退出码',
     '#   3) 「提交前必须存在」逐项核对：存在 / 缺失',
     '# 任一门禁非零退出或有缺失项：不得进入下一阶段，并在回执中写明原因。',
@@ -49,7 +49,7 @@ function receiptText(stepId) {
 
 function commandText(stepIds) {
   const suffix = stepIds.length === 1 ? ` --step ${stepIds[0]}` : '';
-  return `node .r2c/bin/r2c.js submit${suffix}`;
+  return `node .hm2b/bin/hm2b.js submit${suffix}`;
 }
 
 /**
@@ -57,8 +57,8 @@ function commandText(stepIds) {
  * `{text, mode: 'command'|'receipt'}`.
  *
  * - `receipt` (agent-native): six shell-comment lines, first line
- *   `# r2c-submit: step=<id>`; the task must be rendered for one step.
- * - `command` (r2c): `--step` only when exactly one step references the task.
+ *   `# hm2b-submit: step=<id>`; the task must be rendered for one step.
+ * - `command` (runner): `--step` only when exactly one step references the task.
  */
 export function submitReplacement({ taskId, stepIds, mode = 'command' } = {}) {
   if (typeof taskId !== 'string' || taskId === '') {

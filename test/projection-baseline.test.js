@@ -11,6 +11,10 @@
  * `.dsh/agent-native/<ns>.cordis.patch.yml` (3,615 B) is replaced 1:1 by
  * `.dsh/agent-native/<ns>.roles.md` (2,261 B), and `roles.json` gained 636 B of
  * target-field metadata from #98/#99. 143,338 − 3,615 + 2,261 + 636 = 142,620.
+ * The `r2c` → `hm2b` product rename adds 37 B: 20 role placeholder markers
+ * (`<!-- r2c:placeholder` → `<!-- hm2b:placeholder`), 16 submit markers
+ * (`# r2c-submit` → `# hm2b-submit`) and the `roles.json` schema id, one byte
+ * each. 142,620 + 37 = 142,657.
  */
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
@@ -31,7 +35,7 @@ import { canonicalJson } from '../core/canonical-json.js';
 import { sha256Hex } from '../core/node/sha256.js';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const BIN = join(ROOT, 'bin', 'r2c-assembler.js');
+const BIN = join(ROOT, 'bin', 'hm2b-assembler.js');
 const IR = join(ROOT, 'test/fixtures/ir/workflow.ir.json');
 const FIXTURES = join(ROOT, 'test/fixtures/projection');
 const SNAPSHOT = JSON.parse(readFileSync(join(FIXTURES, 'agent-native-baseline.json'), 'utf8'));
@@ -41,11 +45,11 @@ const TARGETS = ['claude-code', 'codex', 'dsh', 'omp', 'opencode'];
 const SHARED = ['codex', 'dsh', 'omp', 'opencode'];
 const AGENT_CARRIERS = ['claude-code', 'codex', 'omp', 'opencode'];
 const NS = 'rtosv3-drvport';
-const IR_DIGEST = '8a2a57593939f91117d57f9ca34c56b2fc631f6837168ef74032daa95202d395';
+const IR_DIGEST = 'd6e8957287117c7b476891e1807e303c9a965fbe366087a13947baf34b0da09f';
 
 // Hard anchors from the ticket; the byte total is the recomputed baseline.
-const BASELINE = { files: 98, bytes: 142620, degradations: 45, capabilities: 40, warnings: 1 };
-const R2C = { files: 45, degradations: 4, capabilities: 8, warnings: 0 };
+const BASELINE = { files: 98, bytes: 142657, degradations: 45, capabilities: 40, warnings: 1 };
+const RUNNER = { files: 45, degradations: 4, capabilities: 8, warnings: 0 };
 
 function sha256(value) {
   return createHash('sha256').update(value).digest('hex');
@@ -119,7 +123,7 @@ function fileCount({ stages, skills, roles, targets }) {
 }
 
 test('agent-native baseline matches the frozen contract snapshot', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'r2c-baseline-an-'));
+  const dir = mkdtempSync(join(tmpdir(), 'hm2b-baseline-an-'));
   try {
     const out = join(dir, 'out');
     const data = project({ out });
@@ -157,7 +161,7 @@ test('agent-native baseline matches the frozen contract snapshot', () => {
 });
 
 test('the counting formula reproduces 98 files for K=35 and 52 for K=12', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'r2c-baseline-formula-'));
+  const dir = mkdtempSync(join(tmpdir(), 'hm2b-baseline-formula-'));
   try {
     const full = project({ out: join(dir, 'full') });
     const roles = Object.keys(full.metadata.idMap['claude-code'].roles).length;
@@ -185,7 +189,7 @@ test('the counting formula reproduces 98 files for K=35 and 52 for K=12', () => 
 });
 
 test('two CLI runs on the same input are byte-identical with a stable digest', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'r2c-baseline-det-'));
+  const dir = mkdtempSync(join(tmpdir(), 'hm2b-baseline-det-'));
   try {
     const a = join(dir, 'a');
     const b = join(dir, 'b');
@@ -202,7 +206,7 @@ test('two CLI runs on the same input are byte-identical with a stable digest', (
 });
 
 test('40 placeholders are visible in the products (1 constitution + 4 roles + 35 skills)', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'r2c-baseline-ph-'));
+  const dir = mkdtempSync(join(tmpdir(), 'hm2b-baseline-ph-'));
   try {
     const out = join(dir, 'out');
     const data = project({ out });
@@ -232,7 +236,7 @@ test('40 placeholders are visible in the products (1 constitution + 4 roles + 35
     // 4 role placeholders: one marker per role in each of the five target carriers.
     const catalogue = product(out, `.dsh/agent-native/${NS}.roles.md`);
     for (const role of placeholders.roles) {
-      const marker = `<!-- r2c:placeholder role=${role} -->`;
+      const marker = `<!-- hm2b:placeholder role=${role} -->`;
       assert.equal(catalogue.split(marker).length - 1, 1, `dsh catalogue ${role}`);
       for (const path of [
         `.claude/agents/${NS}-${role}.md`,
@@ -248,17 +252,17 @@ test('40 placeholders are visible in the products (1 constitution + 4 roles + 35
   }
 });
 
-test('r2c baseline stays at 45 files / 4 degradations / 8 capability rows', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'r2c-baseline-r2c-'));
+test('runner baseline stays at 45 files / 4 degradations / 8 capability rows', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'hm2b-baseline-runner-'));
   try {
-    const data = project({ projection: 'r2c', out: join(dir, 'out') });
-    assert.deepEqual(data.targets, ['r2c']);
-    assert.equal(data.counts.files, R2C.files);
-    assert.equal(data.counts.degradations, R2C.degradations);
-    assert.equal(data.counts.capabilities, R2C.capabilities);
-    assert.equal(data.counts.warnings, R2C.warnings);
-    assert.equal(data.files.length, R2C.files);
-    assert.deepEqual(data.options.targets, ['r2c']);
+    const data = project({ projection: 'runner', out: join(dir, 'out') });
+    assert.deepEqual(data.targets, ['runner']);
+    assert.equal(data.counts.files, RUNNER.files);
+    assert.equal(data.counts.degradations, RUNNER.degradations);
+    assert.equal(data.counts.capabilities, RUNNER.capabilities);
+    assert.equal(data.counts.warnings, RUNNER.warnings);
+    assert.equal(data.files.length, RUNNER.files);
+    assert.deepEqual(data.options.targets, ['runner']);
     assert.equal(data.options.skills.length, 35);
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -266,7 +270,7 @@ test('r2c baseline stays at 45 files / 4 degradations / 8 capability rows', () =
 });
 
 test('one changed IR byte changes the IR digest, the result digest and the dependent hashes', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'r2c-baseline-mut-'));
+  const dir = mkdtempSync(join(tmpdir(), 'hm2b-baseline-mut-'));
   try {
     const bytes = Buffer.from(readFileSync(IR));
     const marker = Buffer.from('"description": "');

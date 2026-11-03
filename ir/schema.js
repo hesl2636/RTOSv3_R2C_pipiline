@@ -1,11 +1,11 @@
 /**
- * Neutral IR contract (`r2c.ir/v1`): names, fixed filename, field order and
+ * Neutral IR contract (`hm2b.ir/v1`): names, fixed filename, field order and
  * the collection path. Field shapes live in `decisions/66.md`; this module is
  * the single source for the byte-level contract.
  */
-export const IR_SCHEMA = 'r2c.ir/v1';
+export const IR_SCHEMA = 'hm2b.ir/v1';
 export const IR_FILENAME = 'workflow.ir.json';
-export const IR_BUNDLE_SCHEMA = 'r2c.bundle/v1';
+export const IR_BUNDLE_SCHEMA = 'hm2b.bundle/v1';
 
 /** Top-level members in canonical writing order (`requires` is optional). */
 export const IR_FIELDS = Object.freeze([

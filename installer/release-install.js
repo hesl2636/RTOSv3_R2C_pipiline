@@ -45,7 +45,7 @@ import {
 } from './release-tags.js';
 import { parseSums, verifySums } from './release-source.js';
 import { installProjection } from './install.js';
-import { installR2cProject } from './r2c.js';
+import { installRunnerProject } from './runner.js';
 import { ENGINE_ROOT, RUNTIME_RECEIPT_PATH, installRuntime } from './runtime.js';
 import { readReleaseTarGz } from './release-tar.js';
 import { projectPath } from './paths.js';
@@ -55,9 +55,9 @@ import { sorted } from '../core/sort.js';
 /** Exit codes of the release-install surface (decision #74 §5.2). */
 export const RELEASE_EXIT = Object.freeze({ OK: 0, INTEGRITY: 2 });
 
-const DEFAULT_PROJECTIONS = Object.freeze(['r2c', 'agent-native']);
-const FRAMEWORK_ASSET = /^r2c-framework-(.+)\.tgz$/;
-const ENGINE_ASSET = /^r2c-engine-(.+)\.tgz$/;
+const DEFAULT_PROJECTIONS = Object.freeze(['runner', 'agent-native']);
+const FRAMEWORK_ASSET = /^hm2b-framework-(.+)\.tgz$/;
+const ENGINE_ASSET = /^hm2b-engine-(.+)\.tgz$/;
 
 function failure(code, message, { exitCode = RELEASE_EXIT.INTEGRITY, details = null } = {}) {
   return { ok: false, code, message: `${code}: ${message}`, exitCode, details };
@@ -106,7 +106,7 @@ export function selectProjection({ allowed, requested } = {}) {
 }
 
 /**
- * `requires.engine` only constrains r2c (spec §13). The evaluation lives in
+ * `requires.engine` only constrains runner (spec §13). The evaluation lives in
  * `projection/engine-requirement.js` so the web build applies exactly the
  * same rule; this wrapper adds the Release exit code.
  */
@@ -274,7 +274,7 @@ export function verifyRelease(input = {}) {
     return failure(
       'RELEASE_FRAMEWORK_MISSING',
       frameworks.length === 0
-        ? `${SUMS_ASSET} lists no r2c-framework-<F>.tgz`
+        ? `${SUMS_ASSET} lists no hm2b-framework-<F>.tgz`
         : `${SUMS_ASSET} lists several framework assets: ${assetNameList(frameworks)}`,
     );
   }
@@ -296,7 +296,7 @@ export function verifyRelease(input = {}) {
   } catch (error) {
     return failure('RELEASE_IR_MISMATCH', `workflow.ir.json is not JSON: ${error.message}`);
   }
-  if (ir?.schema !== 'r2c.ir/v1') {
+  if (ir?.schema !== 'hm2b.ir/v1') {
     return failure('RELEASE_IR_MISMATCH', `IR schema is ${String(ir?.schema)}`);
   }
   if (ir.id !== bundleId || ir.version !== version) {
@@ -318,9 +318,9 @@ export function verifyRelease(input = {}) {
   if (engines.length > 1) {
     return failure('RELEASE_ASSET_SET_MISMATCH', `${SUMS_ASSET} lists several engine assets: ${assetNameList(engines)}`);
   }
-  if (projectionId === 'r2c') {
+  if (projectionId === 'runner') {
     if (engineVersion === null) {
-      return failure('RELEASE_ENGINE_MISSING', `${SUMS_ASSET} lists no r2c-engine-<E>.tgz for the r2c runtime`);
+      return failure('RELEASE_ENGINE_MISSING', `${SUMS_ASSET} lists no hm2b-engine-<E>.tgz for the runner runtime`);
     }
     if (!isValidVersion(engineVersion)) {
       return failure('RELEASE_ASSET_SET_MISMATCH', `engine asset does not carry a semver: ${engines[0]}`);
@@ -337,21 +337,21 @@ export function verifyRelease(input = {}) {
   if (missing.length > 0 || extra.length > 0) {
     const detail = [missing.length > 0 ? `missing: ${assetNameList(missing)}` : null,
       extra.length > 0 ? `unexpected: ${assetNameList(extra)}` : null].filter(Boolean).join('; ');
-    const code = missing.some((name) => name.startsWith('r2c-engine-')) ? 'RELEASE_ENGINE_MISSING'
-      : missing.some((name) => /^(r2c-payload-|agent-native-)/.test(name)) ? 'RELEASE_PAYLOAD_MISSING'
+    const code = missing.some((name) => name.startsWith('hm2b-engine-')) ? 'RELEASE_ENGINE_MISSING'
+      : missing.some((name) => /^(hm2b-payload-|agent-native-)/.test(name)) ? 'RELEASE_PAYLOAD_MISSING'
         : 'RELEASE_ASSET_SET_MISMATCH';
     return failure(code, `the Release asset set of ${tag} does not match its requires (${detail})`, { details: { missing, extra } });
   }
 
   // Every used asset must be present and hash to its sums entry.
   const wanted = ['install.mjs', 'workflow.ir.json', `bundle-${bundleId}-v${version}.zip`,
-    projectionId === 'r2c' ? `r2c-payload-${bundleId}-v${version}.tgz` : `agent-native-${bundleId}-v${version}.tgz`,
+    projectionId === 'runner' ? `hm2b-payload-${bundleId}-v${version}.tgz` : `agent-native-${bundleId}-v${version}.tgz`,
     frameworks[0]];
-  if (projectionId === 'r2c') wanted.push(engines[0]);
+  if (projectionId === 'runner') wanted.push(engines[0]);
   const absent = wanted.filter((name) => !(assets[name] instanceof Uint8Array) && !Buffer.isBuffer(assets[name]));
   if (absent.length > 0) {
-    const code = absent.some((name) => name.startsWith('r2c-engine-')) ? 'RELEASE_ENGINE_MISSING'
-      : absent.some((name) => /^(r2c-payload-|agent-native-)/.test(name)) ? 'RELEASE_PAYLOAD_MISSING'
+    const code = absent.some((name) => name.startsWith('hm2b-engine-')) ? 'RELEASE_ENGINE_MISSING'
+      : absent.some((name) => /^(hm2b-payload-|agent-native-)/.test(name)) ? 'RELEASE_PAYLOAD_MISSING'
         : 'RELEASE_NOT_FOUND';
     return failure(code, `the Release assets were not downloaded: ${assetNameList(absent)}`, { details: { absent } });
   }
@@ -402,8 +402,8 @@ export function verifyRelease(input = {}) {
     targets: normalized.options.targets,
     normalized: normalized.options,
   };
-  const payloadName = projectionId === 'r2c'
-    ? `r2c-payload-${bundleId}-v${version}.tgz`
+  const payloadName = projectionId === 'runner'
+    ? `hm2b-payload-${bundleId}-v${version}.tgz`
     : `agent-native-${bundleId}-v${version}.tgz`;
   const payload = verifyPayload({
     payloadBytes: Buffer.from(assets[payloadName]),
@@ -416,7 +416,7 @@ export function verifyRelease(input = {}) {
   });
   if (payload.ok === false) return payload;
 
-  if (projectionId === 'r2c') {
+  if (projectionId === 'runner') {
     const projectedEngine = payload.result.environment?.engineVersion ?? null;
     if (projectedEngine !== engineVersion) {
       return failure(
@@ -426,12 +426,12 @@ export function verifyRelease(input = {}) {
     }
   }
 
-  // Requested targets must exist in the payload; r2c has exactly one target.
+  // Requested targets must exist in the payload; runner has exactly one target.
   const requested = Array.isArray(input.targets) && input.targets.length > 0 ? [...new Set(input.targets)] : null;
   if (requested !== null) {
-    if (projectionId === 'r2c') {
-      if (requested.length !== 1 || requested[0] !== 'r2c') {
-        return failure('RELEASE_OPTION_CONFLICT', `--target applies to agent-native; r2c has a single target (r2c)`);
+    if (projectionId === 'runner') {
+      if (requested.length !== 1 || requested[0] !== 'runner') {
+        return failure('RELEASE_OPTION_CONFLICT', `--target applies to agent-native; runner has a single target (runner)`);
       }
     } else {
       const unknown = requested.filter((target) => !canonical.targets.includes(target));
@@ -456,7 +456,7 @@ export function verifyRelease(input = {}) {
     targets: requested,
     canonicalTargets: canonical.targets,
     canonicalOptions: canonical.normalized,
-    engineVersion: projectionId === 'r2c' ? engineVersion : null,
+    engineVersion: projectionId === 'runner' ? engineVersion : null,
     frameworkVersion,
     result: payload.result,
     payloadManifest: payload.manifest,
@@ -582,7 +582,7 @@ function restoreReleaseState(projectRoot, snapshot) {
 }
 
 /** Unpack a release tgz into a fresh temp directory; caller removes it. */
-export function extractReleaseArchive(bytes, { prefix = 'r2c-release-' } = {}) {
+export function extractReleaseArchive(bytes, { prefix = 'hm2b-release-' } = {}) {
   const { entries, problems } = readReleaseTarGz(bytes);
   if (problems.length > 0) {
     return failure('RELEASE_ASSET_SET_MISMATCH', `release archive is unreadable: ${problems[0]}`, { details: { problems } });
@@ -616,7 +616,7 @@ function exitCodeFor(outcome) {
 /**
  * Verify, unpack and install one Release.
  *
- * r2c installs the runtime (engine + launcher + host files) and the bundle;
+ * runner installs the runtime (engine + launcher + host files) and the bundle;
  * agent-native installs bundle files only. All verification happens before
  * the runtime transaction so a tampered Release never writes.
  */
@@ -636,9 +636,9 @@ export function installRelease(input = {}) {
     result = narrowResult(result, verified.targets);
   }
 
-  const install = verified.projection === 'r2c' ? installR2cProject : installProjection;
+  const install = verified.projection === 'runner' ? installRunnerProject : installProjection;
 
-  // Read-only preflight: legacy receipts, r2c occupancy, V1–V12, receipts and
+  // Read-only preflight: legacy receipts, runner occupancy, V1–V12, receipts and
   // conflicts all run before the runtime transaction, so a refused Release
   // never writes an engine or launcher file.
   const preflight = install({
@@ -665,9 +665,9 @@ export function installRelease(input = {}) {
   let snapshot = null;
   const cleanup = [];
   try {
-    if (verified.projection === 'r2c') {
-      const extracted = extractReleaseArchive(Buffer.from(input.assets[`r2c-engine-${verified.engineVersion}.tgz`]), {
-        prefix: 'r2c-engine-',
+    if (verified.projection === 'runner') {
+      const extracted = extractReleaseArchive(Buffer.from(input.assets[`hm2b-engine-${verified.engineVersion}.tgz`]), {
+        prefix: 'hm2b-engine-',
       });
       if (extracted.ok === false) return extracted;
       cleanup.push(extracted.root);

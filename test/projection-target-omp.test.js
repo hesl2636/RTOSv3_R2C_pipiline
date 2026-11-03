@@ -86,13 +86,13 @@ function skills(ids) {
 
 function miniIr({ id = 'mini', roleId = 'worker', role = {}, skills: skillMap = {}, gates = [], outputs = [] } = {}) {
   return {
-    schema: 'r2c.ir/v1',
+    schema: 'hm2b.ir/v1',
     id,
     name: 'Mini workflow',
     version: '1.0.0',
     description: 'A miniature workflow used by projection tests.',
     source: {
-      bundle: { schema: 'r2c.bundle/v1', id, version: '1.0.0', contentSha256: 'b'.repeat(64) },
+      bundle: { schema: 'hm2b.bundle/v1', id, version: '1.0.0', contentSha256: 'b'.repeat(64) },
       manifest: { path: 'bundle.json', sha256: 'c'.repeat(64) },
     },
     stages: [{
@@ -176,7 +176,7 @@ test('the omp file set is .omp/agents + shared .agents/skills + roles.json', () 
   for (const path of paths) {
     assert.match(path, /^\.(?:agents|omp)\//);
     assert.doesNotMatch(path, /(?:^|\/)(?:CLAUDE\.md|AGENTS\.md|RULES\.md|opencode\.json|commands)(?:\/|$)/);
-    assert.doesNotMatch(path, /^\.r2c\//);
+    assert.doesNotMatch(path, /^\.hm2b\//);
   }
   const kinds = new Map();
   for (const file of result.files) kinds.set(file.kind, (kinds.get(file.kind) ?? 0) + 1);
@@ -189,10 +189,10 @@ test('sample omp role bytes match the prototype oracle', () => {
   const { result } = ompSample();
   const byPath = new Map(result.files.map((file) => [file.path, file.content]));
   const hashes = {
-    '.omp/agents/rtosv3-drvport-bys-architect.md': '9afc1f8b8952f22ab42e864c7cf2cbeb242e8f3f3b48e6c230d5560e094822da',
-    '.omp/agents/rtosv3-drvport-bys-designer.md': '83c2ce5a89e21663584fd1737ae82c87b54e6118acf0e726147362d92f2ce72a',
-    '.omp/agents/rtosv3-drvport-bys-impl-lead.md': '42d1d149ab93062ca6e8b41c8755e1725787ecdb411fa29e0afa189b38f9784f',
-    '.omp/agents/rtosv3-drvport-bys-release-lead.md': '1348bfcd77c01faa1157d70fca37cf1a3f69b091ea0d5a95d90a3d864d1fb6ea',
+    '.omp/agents/rtosv3-drvport-bys-architect.md': 'adf799b37a3e0b904109d930d259e3e8578e45cc57937c4bc65e8a4ade1b3cee',
+    '.omp/agents/rtosv3-drvport-bys-designer.md': '62dbe92405a8109bde8e58926bff6c54771fdfffff62558a4363dcd4b211c105',
+    '.omp/agents/rtosv3-drvport-bys-impl-lead.md': '8544abe18bbeed178bfbd08cd8c827015ad0c4e1a6dba8ddf5b22930ab48afc1',
+    '.omp/agents/rtosv3-drvport-bys-release-lead.md': 'd7244a17980b06a97a635d5f8556a3b0508f93deac07d55d81d60a5fa04c1c43',
   };
   for (const [path, hash] of Object.entries(hashes)) assert.equal(sha256(byPath.get(path)), hash, path);
 });
@@ -355,7 +355,7 @@ test('roles.json gains an omp section consistent with idMap and one record per f
   assert.deepEqual(file.targets, ['omp']);
   assert.equal(result.installPlan.steps.filter((step) => step.path === file.path).length, 1);
   const roles = JSON.parse(file.content);
-  assert.equal(roles.schema, 'r2c.projection.roles/v1');
+  assert.equal(roles.schema, 'hm2b.projection.roles/v1');
   assert.deepEqual(Object.keys(roles.targets), ['omp']);
   assert.equal(roles.ir.sha256, result.ir.digest);
   const section = roles.targets.omp;
@@ -415,7 +415,7 @@ test('the omp capability matrix is fixed: preload/subagents native, skills adapt
   assert.deepEqual(result.metadata.runtime.skillsRoots, { omp: '.agents/skills' });
   const roleFiles = result.files.filter((file) => file.kind === 'agent');
   assert.equal(roleFiles.length, 4);
-  for (const file of roleFiles) assert.match(file.content, /r2c:placeholder role=/);
+  for (const file of roleFiles) assert.match(file.content, /hm2b:placeholder role=/);
 });
 
 test('the constitution block and {{submit}} receipt are identical to the Claude placement', () => {
@@ -424,9 +424,9 @@ test('the constitution block and {{submit}} receipt are identical to the Claude 
   assert.match(stage.content, /^---\n[\s\S]*?\n---\n\n<!-- constitution:begin scope=global placeholder=true -->\n/);
   assert.ok(stage.content.indexOf('<!-- constitution:begin') < stage.content.indexOf('# 阶段'));
   assert.match(stage.content, /> \*\*占位（placeholder）\*\*/);
-  assert.match(stage.content, /^# r2c-submit: step=analysis-design$/m);
+  assert.match(stage.content, /^# hm2b-submit: step=analysis-design$/m);
   assert.doesNotMatch(stage.content, /\{\{submit\}\}/);
-  assert.doesNotMatch(stage.content, /node \.r2c\/bin\/r2c\.js/);
+  assert.doesNotMatch(stage.content, /node \.hm2b\/bin\/hm2b\.js/);
   const entry = result.files.find((file) => file.kind === 'workflow');
   assert.doesNotMatch(entry.content, /constitution:begin/);
 });

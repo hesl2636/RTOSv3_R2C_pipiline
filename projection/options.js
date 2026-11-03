@@ -9,7 +9,7 @@
 import { jsonEqual } from '../core/json.js';
 import { sorted } from '../core/sort.js';
 
-export const OPTIONS_SCHEMA = 'r2c.projection-options/v1';
+export const OPTIONS_SCHEMA = 'hm2b.projection-options/v1';
 
 /**
  * Closed option failure codes (#69 §5.2). CLI, the future web build and

@@ -22,14 +22,14 @@ import { sample } from './helpers/install-fixture.js';
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const CLI = join(ROOT, 'installer', 'cli.js');
 
-function tempDir(t, prefix = 'r2c-cli-') {
+function tempDir(t, prefix = 'hm2b-cli-') {
   const dir = mkdtempSync(join(tmpdir(), prefix));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   return dir;
 }
 
 function writeResultDir(t, { result, irBytes }) {
-  const dir = tempDir(t, 'r2c-result-');
+  const dir = tempDir(t, 'hm2b-result-');
   writeFileSync(join(dir, 'projection-result.json'), canonicalJson(result));
   writeFileSync(join(dir, 'workflow.ir.json'), irBytes);
   for (const file of result.files) {
@@ -52,9 +52,9 @@ function envelopeOf(run) {
 }
 
 test('installs from a result directory and reports one envelope', (t) => {
-  const { result, irBytes } = sample('r2c');
+  const { result, irBytes } = sample('runner');
   const resultDir = writeResultDir(t, { result, irBytes });
-  const projectRoot = tempDir(t, 'r2c-project-');
+  const projectRoot = tempDir(t, 'hm2b-project-');
 
   const run = cli(['--result', resultDir, '--project', projectRoot, '--json']);
   assert.equal(run.status, 0);
@@ -62,10 +62,10 @@ test('installs from a result directory and reports one envelope', (t) => {
   assert.deepEqual(Object.keys(envelope), ['ok', 'command', 'code', 'run_id', 'session_id', 'step', 'data', 'error']);
   assert.equal(envelope.ok, true);
   assert.equal(envelope.data.action, 'installed');
-  assert.equal(envelope.data.receipt_path, `.r2c/install/receipts/r2c/${result.ir.id}.json`);
+  assert.equal(envelope.data.receipt_path, `.hm2b/install/receipts/runner/${result.ir.id}.json`);
   const receipt = JSON.parse(readFileSync(join(projectRoot, ...envelope.data.receipt_path.split('/')), 'utf8'));
   assert.equal(envelope.data.files, receipt.files.length);
-  assert.ok(envelope.data.files > result.files.length, 'r2c installs add installer-owned host roles');
+  assert.ok(envelope.data.files > result.files.length, 'runner installs add installer-owned host roles');
   assert.ok(receipt.files.some((file) => file.origin === 'installer'));
   assert.equal(existsSync(join(projectRoot, ...envelope.data.receipt_path.split('/'))), true);
 
@@ -75,20 +75,20 @@ test('installs from a result directory and reports one envelope', (t) => {
 });
 
 test('accepts an inline result JSON path', (t) => {
-  const { result, irBytes } = sample('r2c');
+  const { result, irBytes } = sample('runner');
   const resultDir = writeResultDir(t, { result, irBytes });
-  const projectRoot = tempDir(t, 'r2c-project-');
+  const projectRoot = tempDir(t, 'hm2b-project-');
   const run = cli(['--result', join(resultDir, 'projection-result.json'), '--ir', join(resultDir, 'workflow.ir.json'), '--project', projectRoot, '--json']);
   assert.equal(run.status, 0);
   assert.equal(envelopeOf(run).data.action, 'installed');
 });
 
 test('a payload mismatch is refused with no writes', (t) => {
-  const { result, irBytes } = sample('r2c');
+  const { result, irBytes } = sample('runner');
   const resultDir = writeResultDir(t, { result, irBytes });
   const target = join(resultDir, 'files', ...result.files[0].path.split('/'));
   writeFileSync(target, 'tampered\n');
-  const projectRoot = tempDir(t, 'r2c-project-');
+  const projectRoot = tempDir(t, 'hm2b-project-');
 
   const run = cli(['--result', resultDir, '--project', projectRoot, '--json']);
   assert.equal(run.status, 2);
@@ -99,19 +99,19 @@ test('a payload mismatch is refused with no writes', (t) => {
 });
 
 test('a result directory without its IR is a usage error', (t) => {
-  const { result } = sample('r2c');
-  const resultDir = tempDir(t, 'r2c-result-');
+  const { result } = sample('runner');
+  const resultDir = tempDir(t, 'hm2b-result-');
   writeFileSync(join(resultDir, 'projection-result.json'), canonicalJson(result));
-  const projectRoot = tempDir(t, 'r2c-project-');
+  const projectRoot = tempDir(t, 'hm2b-project-');
   const run = cli(['--result', resultDir, '--project', projectRoot, '--json']);
   assert.equal(run.status, 2);
   assert.equal(envelopeOf(run).error.code, 'IR_INPUT_REQUIRED');
 });
 
 test('conflicts exit 2 and list every path', (t) => {
-  const { result, irBytes } = sample('r2c');
+  const { result, irBytes } = sample('runner');
   const resultDir = writeResultDir(t, { result, irBytes });
-  const projectRoot = tempDir(t, 'r2c-project-');
+  const projectRoot = tempDir(t, 'hm2b-project-');
   for (const file of result.files.slice(0, 2)) {
     const absolute = join(projectRoot, ...file.path.split('/'));
     mkdirSync(dirname(absolute), { recursive: true });
@@ -125,37 +125,37 @@ test('conflicts exit 2 and list every path', (t) => {
 });
 
 test('uninstall exits 0, then 4 when the identity is gone', (t) => {
-  const { result, irBytes } = sample('r2c');
+  const { result, irBytes } = sample('runner');
   const resultDir = writeResultDir(t, { result, irBytes });
-  const projectRoot = tempDir(t, 'r2c-project-');
+  const projectRoot = tempDir(t, 'hm2b-project-');
   assert.equal(cli(['--result', resultDir, '--project', projectRoot]).status, 0);
 
-  const removed = cli(['--uninstall', '--projection', 'r2c', '--bundle', result.ir.id, '--project', projectRoot, '--json']);
+  const removed = cli(['--uninstall', '--projection', 'runner', '--bundle', result.ir.id, '--project', projectRoot, '--json']);
   assert.equal(removed.status, 0);
   assert.equal(envelopeOf(removed).data.action, 'uninstalled');
 
-  const missing = cli(['--uninstall', '--projection', 'r2c', '--bundle', result.ir.id, '--project', projectRoot, '--json']);
+  const missing = cli(['--uninstall', '--projection', 'runner', '--bundle', result.ir.id, '--project', projectRoot, '--json']);
   assert.equal(missing.status, 4);
   assert.equal(envelopeOf(missing).error.code, 'NOT_INSTALLED');
 });
 
 test('--migrate-legacy is install-only and needs a result', (t) => {
-  const projectRoot = tempDir(t, 'r2c-project-');
+  const projectRoot = tempDir(t, 'hm2b-project-');
   const missingResult = cli(['--migrate-legacy', '--project', projectRoot, '--json']);
   assert.equal(missingResult.status, 2);
   assert.equal(envelopeOf(missingResult).error.code, 'USAGE');
 
   const withUninstall = cli([
-    '--migrate-legacy', '--uninstall', '--projection', 'r2c', '--bundle', 'x', '--project', projectRoot, '--json',
+    '--migrate-legacy', '--uninstall', '--projection', 'runner', '--bundle', 'x', '--project', projectRoot, '--json',
   ]);
   assert.equal(withUninstall.status, 2);
   assert.equal(envelopeOf(withUninstall).error.code, 'USAGE');
 });
 
 test('dry-run through the CLI writes nothing', (t) => {
-  const { result, irBytes } = sample('r2c');
+  const { result, irBytes } = sample('runner');
   const resultDir = writeResultDir(t, { result, irBytes });
-  const projectRoot = tempDir(t, 'r2c-project-');
+  const projectRoot = tempDir(t, 'hm2b-project-');
   const run = cli(['--result', resultDir, '--project', projectRoot, '--dry-run', '--json']);
   assert.equal(run.status, 0);
   assert.equal(envelopeOf(run).data.dry_run, true);
@@ -166,24 +166,24 @@ function readdirSyncSafe(dir) {
   return existsSync(dir) ? readdirSync(dir) : [];
 }
 test('uninstall without --bundle is a usage error', (t) => {
-  const projectRoot = tempDir(t, 'r2c-project-');
-  const run = cli(['--uninstall', '--projection', 'r2c', '--project', projectRoot, '--json']);
+  const projectRoot = tempDir(t, 'hm2b-project-');
+  const run = cli(['--uninstall', '--projection', 'runner', '--project', projectRoot, '--json']);
   assert.equal(run.status, 2);
   assert.equal(envelopeOf(run).error.code, 'USAGE');
 });
 
 test('--target is repeatable and reaches the runtime install', (t) => {
-  const engineSource = tempDir(t, 'r2c-engine-');
+  const engineSource = tempDir(t, 'hm2b-engine-');
   mkdirSync(join(engineSource, 'bin'), { recursive: true });
-  writeFileSync(join(engineSource, 'bin', 'r2c.js'), '#!/usr/bin/env node\n');
-  writeFileSync(join(engineSource, 'package.json'), canonicalJson({ name: 'r2c-engine', version: '1.2.3' }));
-  const projectRoot = tempDir(t, 'r2c-project-');
+  writeFileSync(join(engineSource, 'bin', 'hm2b.js'), '#!/usr/bin/env node\n');
+  writeFileSync(join(engineSource, 'package.json'), canonicalJson({ name: 'hm2b-engine', version: '1.2.3' }));
+  const projectRoot = tempDir(t, 'hm2b-project-');
 
   const run = cli([
     '--runtime', engineSource, '--engine-version', '1.2.3',
     '--project', projectRoot, '--target', 'omp', '--target', 'codex', '--json',
   ]);
   assert.equal(run.status, 0);
-  const receipt = JSON.parse(readFileSync(join(projectRoot, '.r2c', 'install', 'runtime.json'), 'utf8'));
+  const receipt = JSON.parse(readFileSync(join(projectRoot, '.hm2b', 'install', 'runtime.json'), 'utf8'));
   assert.deepEqual(receipt.host_targets, ['codex', 'omp']);
 });

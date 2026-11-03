@@ -54,7 +54,7 @@ export function diffFileSets(previousFiles = [], incoming = []) {
 /**
  * The `previous` receipt field: everything needed to reconstruct which
  * identity just got replaced, without trusting the overwritten receipt file.
- * `receipt` keeps the frozen `r2c.install/v2` field from #76 §5.2.
+ * `receipt` keeps the frozen `hm2b.install/v2` field from #76 §5.2.
  */
 export function previousRecord(previous, receiptPath) {
   if (previous === null || previous === undefined) return null;

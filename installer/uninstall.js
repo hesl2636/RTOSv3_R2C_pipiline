@@ -270,7 +270,7 @@ export function uninstallProjection(input = {}) {
         writeJournal(projectRoot, { ...journal, state: 'rollback-failed' });
         return failure('ROLLBACK_FAILED', 'uninstall failed and the rollback could not restore every path', {
           failures: outcome.failures,
-          journal: '.r2c/install/pending.json',
+          journal: '.hm2b/install/pending.json',
           cause: error?.message ?? String(error),
         });
       }

@@ -22,12 +22,12 @@ const EXAMPLE = join(REPO, 'examples', 'rtosv3');
 const BUNDLE = join(EXAMPLE, 'bundle');
 const COMMITTED_ZIP = join(EXAMPLE, 'dist', 'bundle-rtosv3-drvport-v1.0.0.zip');
 const FILES_SUMS = join(EXAMPLE, 'FILES.sha256');
-const EXPECTED_SHA256 = 'c22064539aa189b4d9345b1d39b148967a450584badd2593dcf47c0c5b75a13e';
-const EXPECTED_BYTES = 55042;
+const EXPECTED_SHA256 = '4b4700207e2a1398b930b46123f5e7aef27f803e3afc3596d19e31dc454d8196';
+const EXPECTED_BYTES = 55043;
 const EXPECTED_FILES = 49;
 
 function tempDir(t, prefix) {
-  const dir = mkdtempSync(join(tmpdir(), `r2c-build-bundle-${prefix}-`));
+  const dir = mkdtempSync(join(tmpdir(), `hm2b-build-bundle-${prefix}-`));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   return dir;
 }

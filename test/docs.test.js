@@ -32,6 +32,17 @@ const RETIRED = [
   ['adapter command', /\br2c adapter\b/],
   ['acceptance command', /\br2c acceptance\b/],
   ['legacy payload asset', /r2c-payload-<E>|r2c-payload-\d/],
+  // The framework/engine/projection names moved to hm2b; current docs must
+  // not describe the new channel with the retired r2c names.
+  ['legacy framework name', /\br2c-framework\b/],
+  ['legacy engine name', /\br2c-runner\b/],
+  ['legacy engine asset', /\br2c-engine-/],
+  ['legacy bundle schema', /\br2c\.bundle\//],
+  ['legacy IR schema', /\br2c\.ir\//],
+  ['legacy workflow schema', /\br2c\.workflow\//],
+  ['legacy runtime receipt', /\br2c\.runtime\//],
+  ['legacy projection report', /\br2c\.projection/],
+  ['legacy projection id', /(?<![\w./`-])r2c(?![\w./`-])/],
 ];
 
 function read(rel) {
@@ -68,7 +79,7 @@ function helpOf(file, args = ['--help']) {
 }
 
 const FLAGS = new Set(['--help', '-h', '--json', '--version', '-v']);
-for (const file of ['runtime/r2c/engine/bin/r2c.js', 'bin/r2c-assembler.js', 'scripts/install.mjs', 'scripts/release.mjs', 'installer/cli.js']) {
+for (const file of ['runtime/runner/engine/bin/hm2b.js', 'bin/hm2b-assembler.js', 'scripts/install.mjs', 'scripts/release.mjs', 'installer/cli.js']) {
   const text = file.endsWith('release.mjs')
     ? spawnSync(process.execPath, [join(REPO, ...file.split('/')), '--help'], { encoding: 'utf8' }).stderr
     : helpOf(file);
@@ -109,7 +120,8 @@ test('every relative markdown link resolves', () => {
 test('documented commands use real paths and known flags', () => {
   for (const rel of [...DOCS, 'docs/legacy.md']) {
     for (const line of commandLines(read(rel))) {
-      const isCommand = line.startsWith('node ') || line.startsWith('r2c ') || line.startsWith('npm ') || line.startsWith('npx ');
+      const isCommand = line.startsWith('node ') || line.startsWith('r2c ') || line.startsWith('hm2b ')
+        || line.startsWith('npm ') || line.startsWith('npx ');
       if (!isCommand) continue;
       if (line.startsWith('node ')) {
         const path = line.split(/\s+/)[1].replace(/^"|"$/g, '');
@@ -117,7 +129,8 @@ test('documented commands use real paths and known flags', () => {
         if (!path.startsWith('<') && !path.startsWith('.')) {
           assert.ok(existsSync(join(REPO, ...path.split('/'))), `${rel}: node ${path} does not exist`);
         }
-      } else if (line.startsWith('r2c ') || line.startsWith('npx ') || line.startsWith('npm ')) {
+      } else if (line.startsWith('r2c ') || line.startsWith('hm2b ')
+        || line.startsWith('npx ') || line.startsWith('npm ')) {
         assert.fail(`${rel}: unexpected command ${line}`);
       }
       for (const match of line.matchAll(/--[a-z][a-z-]*/g)) {
@@ -142,15 +155,15 @@ test('the layout document lists every top-level module that exists', () => {
   const layout = read('docs/layout.md');
   const dirs = [
     'assembler', 'bin', 'core', 'docs', 'examples', 'installer', 'ir', 'projection',
-    'runtime/agent-native', 'runtime/r2c/contract', 'runtime/r2c/engine', 'runtime/r2c/projection',
-    'runtime/r2c/schema', 'runtime/shared', 'scripts', 'test', 'web',
+    'runtime/agent-native', 'runtime/runner/contract', 'runtime/runner/engine', 'runtime/runner/projection',
+    'runtime/runner/schema', 'runtime/shared', 'scripts', 'test', 'web',
   ];
   for (const dir of dirs) {
     assert.ok(layout.includes(dir), `docs/layout.md does not mention ${dir}`);
     assert.ok(existsSync(join(REPO, ...dir.split('/'))), `${dir} does not exist`);
   }
-  assert.ok(layout.includes('r2c-framework'));
-  assert.ok(layout.includes('r2c-runner'));
+  assert.ok(layout.includes('hm2b-framework'));
+  assert.ok(layout.includes('hm2b-runner'));
 });
 
 test('GLOSSARY carries the new vocabulary and marks the retired one', () => {
@@ -181,9 +194,9 @@ test('CHANGELOG records the P6 cutover', () => {
 
 test('the compatibility document is the generated framework/engine/projection matrix', () => {
   const compat = read('docs/compat.md');
-  assert.match(compat, /\| Framework \| `r2c-framework` \| `0\.1\.0` \|/);
-  assert.match(compat, /\| Engine \| `r2c-runner` \| `0\.1\.0` \|/);
+  assert.match(compat, /\| Framework \| `hm2b-framework` \| `0\.1\.0` \|/);
+  assert.match(compat, /\| Engine \| `hm2b-runner` \| `0\.1\.0` \|/);
   assert.match(compat, /\| Projection \| `agent-native` \|/);
-  assert.match(compat, /\| Projection \| `r2c` \|/);
+  assert.match(compat, /\| Projection \| `runner` \|/);
   assert.doesNotMatch(compat, /adapter/i);
 });

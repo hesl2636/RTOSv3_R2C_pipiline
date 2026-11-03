@@ -17,7 +17,7 @@ import { fileURLToPath } from 'node:url';
 import { TWO_STEP_YAML, writeTwoStepProject } from './helpers/two-step.js';
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const BIN = join(REPO, 'runtime', 'r2c', 'engine', 'bin', 'r2c.js');
+const BIN = join(REPO, 'runtime', 'runner', 'engine', 'bin', 'hm2b.js');
 const CLI_SID = /^cli-R\d{8}T\d{6}Z-[0-9a-f]{6}$/;
 const RUN_ID = /^R\d{8}T\d{6}Z-[0-9a-f]{6}$/;
 const S = '01a181f0-00a9-7606-9db4-7eccaedcc245';
@@ -25,8 +25,8 @@ const S2 = '01a181f0-00a9-7606-9db4-7eccaedcc246';
 
 function cleanEnv(extra = {}) {
   const env = { ...process.env, ...extra };
-  delete env.R2C_SESSION_ID;
-  delete env.R2C_PROJECT_ROOT;
+  delete env.HM2B_SESSION_ID;
+  delete env.HM2B_PROJECT_ROOT;
   return env;
 }
 
@@ -64,7 +64,7 @@ function envelope(result) {
 }
 
 function tempProject(t) {
-  const root = mkdtempSync(join(tmpdir(), 'r2c-claim-project-'));
+  const root = mkdtempSync(join(tmpdir(), 'hm2b-claim-project-'));
   const home = join(root, 'home');
   mkdirSync(join(home, '.dsh'), { recursive: true });
   t.after(() => rmSync(root, { recursive: true, force: true }));
@@ -112,11 +112,11 @@ function runJson(project, args = []) {
 }
 
 function stateFile(root, runId) {
-  return join(root, '.r2c', 'runs', runId, 'state.json');
+  return join(root, '.hm2b', 'runs', runId, 'state.json');
 }
 
 function eventsFile(root, runId) {
-  return join(root, '.r2c', 'runs', runId, 'events.jsonl');
+  return join(root, '.hm2b', 'runs', runId, 'events.jsonl');
 }
 
 function readState(root, runId) {
@@ -135,7 +135,7 @@ function readEvents(root, runId) {
 }
 
 function readLatest(root) {
-  return JSON.parse(readFileSync(join(root, '.r2c', 'latest.json'), 'utf8'));
+  return JSON.parse(readFileSync(join(root, '.hm2b', 'latest.json'), 'utf8'));
 }
 
 function claimed(root, runId) {
@@ -144,10 +144,10 @@ function claimed(root, runId) {
   );
 }
 
-/** Every file under `.r2c`, keyed by relative path, as raw bytes. */
+/** Every file under `.hm2b`, keyed by relative path, as raw bytes. */
 function snapshot(root) {
   const files = {};
-  const base = join(root, '.r2c');
+  const base = join(root, '.hm2b');
   const walk = (dir) => {
     if (!existsSync(dir)) return;
     for (const name of readdirSync(dir).sort()) {
@@ -404,7 +404,7 @@ test('SB8 submit with a claimed cli id exits 2 RUN_CLAIMED and writes nothing', 
 
   const beforeState = readState(project.root, started.run_id);
   const beforeEvents = readFileSync(eventsFile(project.root, started.run_id), 'utf8');
-  const beforeLatest = readFileSync(join(project.root, '.r2c', 'latest.json'), 'utf8');
+  const beforeLatest = readFileSync(join(project.root, '.hm2b', 'latest.json'), 'utf8');
 
   const stale = submit(project, cliSid, 'step-a');
   assert.equal(stale.status, 2, stale.stderr);
@@ -422,7 +422,7 @@ test('SB8 submit with a claimed cli id exits 2 RUN_CLAIMED and writes nothing', 
 
   assert.deepEqual(readState(project.root, started.run_id), beforeState);
   assert.equal(readFileSync(eventsFile(project.root, started.run_id), 'utf8'), beforeEvents);
-  assert.equal(readFileSync(join(project.root, '.r2c', 'latest.json'), 'utf8'), beforeLatest);
+  assert.equal(readFileSync(join(project.root, '.hm2b', 'latest.json'), 'utf8'), beforeLatest);
 });
 
 test('SB9 a paused cli run is not a candidate until resumed', (t) => {
@@ -469,7 +469,7 @@ test('SB10 replay rebuilds the claim binding without appending an event', (t) =>
 
   const latest = readLatest(project.root);
   latest.runs[cliSid] = { ...latest.runs[S] };
-  writeFileSync(join(project.root, '.r2c', 'latest.json'), `${JSON.stringify(latest, null, 2)}\n`);
+  writeFileSync(join(project.root, '.hm2b', 'latest.json'), `${JSON.stringify(latest, null, 2)}\n`);
 
   const submitted = submit(project, S, 'step-a');
   assert.equal(submitted.status, 0, submitted.stderr);

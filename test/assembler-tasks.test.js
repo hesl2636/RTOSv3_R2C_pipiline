@@ -231,7 +231,7 @@ test('the submit section must hold exactly one empty-info block', () => {
     },
     {
       name: 'one non-token line',
-      task: MINIMAL_TASK.replace('{{submit}}', 'r2c submit --step do-it'),
+      task: MINIMAL_TASK.replace('{{submit}}', 'hm2b submit --step do-it'),
       reason: 'block-content',
     },
     {
@@ -262,16 +262,16 @@ test('{{submit}} must appear exactly once in the whole body', () => {
 });
 
 test('runtime commands in the submit block are a submit marker error, not a leak', () => {
-  const task = MINIMAL_TASK.replace('{{submit}}', 'r2c submit --step do-it');
+  const task = MINIMAL_TASK.replace('{{submit}}', 'hm2b submit --step do-it');
   const report = taskReport(task);
   assert.deepEqual(codes(report), ['BUNDLE_TASK_SUBMIT_MARKER']);
   assert.equal(report.warnings.length, 0);
 });
 
 for (const [label, sentence, token] of [
-  ['hyphen command', '先跑 r2c-status 看状态。', 'r2c-status'],
-  ['spaced command', '先跑 r2c submit --step do-it 提交。', 'r2c submit'],
-  ['engine path', '看 .r2c/engine/bin/r2c.js。', '.r2c/engine'],
+  ['hyphen command', '先跑 hm2b-status 看状态。', 'hm2b-status'],
+  ['spaced command', '先跑 hm2b submit --step do-it 提交。', 'hm2b submit'],
+  ['engine path', '看 .hm2b/engine/bin/hm2b.js。', '.hm2b/engine'],
 ]) {
   test(`a runtime leak is only a warning: ${label}`, () => {
     const task = MINIMAL_TASK.replace('完成唯一一步。', sentence);
@@ -289,10 +289,10 @@ for (const [label, sentence, token] of [
 }
 
 test('a leak warning does not block compilation or IR validation', () => {
-  const task = MINIMAL_TASK.replace('完成唯一一步。', '先跑 r2c-status 看状态。');
+  const task = MINIMAL_TASK.replace('完成唯一一步。', '先跑 hm2b-status 看状态。');
   const compiled = compileTask(task);
   const ir = irOf(compiled);
-  assert.ok(ir.tasks['do-it'].body.includes('r2c-status'));
+  assert.ok(ir.tasks['do-it'].body.includes('hm2b-status'));
   const irReport = validateIr(compiled.irBytes, { sha256: sha256Hex });
   assert.equal(irReport.ok, true, JSON.stringify(irReport.errors));
 });
@@ -334,10 +334,10 @@ test('task text must be UTF-8, BOM-free, LF-only and newline-terminated', () => 
 });
 
 test('an empty frontmatter block keeps body line numbers aligned', () => {
-  const task = `---\n---\n\n${MINIMAL_TASK.replace('完成唯一一步。', '先跑 r2c-status 看状态。')}`;
+  const task = `---\n---\n\n${MINIMAL_TASK.replace('完成唯一一步。', '先跑 hm2b-status 看状态。')}`;
   const report = taskReport(task);
   assert.equal(report.counts.warnings, 1);
-  assert.equal(report.warnings[0].line, lineOf(task, '先跑 r2c-status'));
+  assert.equal(report.warnings[0].line, lineOf(task, '先跑 hm2b-status'));
 });
 
 test('an empty or frontmatter-only task body reports only the body error', () => {
@@ -380,7 +380,7 @@ test('IR validation owns the {{submit}} count', () => {
 
 test('task diagnostics are deterministic and sorted', () => {
   const task = MINIMAL_TASK
-    .replace('完成唯一一步。', '先跑 r2c-status 看状态。')
+    .replace('完成唯一一步。', '先跑 hm2b-status 看状态。')
     .replace('\n## 约束条件\n\n- 不要跳过任何一步。\n', '\n');
   const first = taskReport(task);
   const second = taskReport(task);

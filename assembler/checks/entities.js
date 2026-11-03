@@ -13,7 +13,7 @@ import { nonEmptyLines, preamble } from '../util.js';
 const ROLE_KEYS = ['id', 'description', 'title', 'mode', 'model', 'effort', 'tools', 'tools_deny', 'skills', 'placeholder'];
 const SKILL_KEYS = ['name', 'description', 'placeholder'];
 const PLACEHOLDER_BANNER = /^> \*\*占位（placeholder）\*\*/m;
-const ROLE_LEAK = /\{\{submit\}\}|\.r2c\//;
+const ROLE_LEAK = /\{\{submit\}\}|\.(?:hm2b|r2c)\/engine\b/;
 
 function frontmatterInvalid(context, path, line, reason, message, pointer = null) {
   context.fail(path, 'BUNDLE_FRONTMATTER_INVALID', message, {

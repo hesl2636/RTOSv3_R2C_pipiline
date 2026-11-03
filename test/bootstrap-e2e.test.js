@@ -4,7 +4,7 @@
  * bootstrap. No network, no npm, no `gh`, no model, no host binary.
  *
  * The legacy payload channel is frozen, so this test drives both bundle
- * projections instead: r2c installs the runtime + payload, agent-native
+ * projections instead: runner installs the runtime + payload, agent-native
  * installs the host files and a receipt, and a tampered asset writes nothing.
  */
 import assert from 'node:assert/strict';
@@ -29,13 +29,13 @@ import { doctor } from '../installer/doctor.js';
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const BOOTSTRAP = join(REPO, 'scripts', 'install.mjs');
 const RELEASE = join(REPO, 'scripts', 'release.mjs');
-const ENGINE_VERSION = JSON.parse(readFileSync(join(REPO, 'runtime/r2c/engine/package.json'), 'utf8')).version;
+const ENGINE_VERSION = JSON.parse(readFileSync(join(REPO, 'runtime/runner/engine/package.json'), 'utf8')).version;
 const BUNDLE_ID = 'rtosv3-drvport';
 const VERSION = '1.0.0';
 const TAG = `bundle-${BUNDLE_ID}-v${VERSION}`;
 
 function tempDir(t, prefix) {
-  const dir = mkdtempSync(join(tmpdir(), `r2c-e2e-${prefix}-`));
+  const dir = mkdtempSync(join(tmpdir(), `hm2b-e2e-${prefix}-`));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   return dir;
 }
@@ -43,11 +43,17 @@ function tempDir(t, prefix) {
 function cleanEnv(home) {
   const env = { ...process.env };
   for (const key of [
+    'HM2B_SESSION_ID',
+    'HM2B_PROJECT_ROOT',
+    'HM2B_RELEASE_BASE',
+    'HM2B_HOME',
+    'HM2B_GITHUB_API',
     'R2C_SESSION_ID',
     'R2C_PROJECT_ROOT',
     'R2C_PLUGIN_SOURCE',
     'R2C_RELEASE_BASE',
     'R2C_ENGINE_HOME',
+    'R2C_HOME',
     'DSH_SESSION_ID',
     'DSH_HOME',
     'GH_TOKEN',
@@ -57,7 +63,7 @@ function cleanEnv(home) {
   }
   env.HOME = home;
   env.USERPROFILE = home;
-  env.R2C_HOME = home;
+  env.HM2B_HOME = home;
   return env;
 }
 
@@ -95,51 +101,51 @@ function bootstrap(args, { env, cwd }) {
   });
 }
 
-test('r2c projection: engine, runtime, payload and receipts from a local mirror', (t) => {
+test('runner projection: engine, runtime, payload and receipts from a local mirror', (t) => {
   const { base } = buildMirror(t);
-  const project = tempDir(t, 'project-r2c');
-  const env = cleanEnv(tempDir(t, 'home-r2c'));
+  const project = tempDir(t, 'project-runner');
+  const env = cleanEnv(tempDir(t, 'home-runner'));
 
   const result = bootstrap([
     '--bundle', BUNDLE_ID,
     '--version', VERSION,
-    '--projection', 'r2c',
+    '--projection', 'runner',
     '--project', project,
     '--release-base', base,
   ], { env, cwd: project });
   assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
-  assert.match(result.stdout, new RegExp(`install r2c/${BUNDLE_ID}@${VERSION}`));
-  assert.match(result.stdout, /next: node \.r2c\/bin\/r2c\.js/);
+  assert.match(result.stdout, new RegExp(`install runner/${BUNDLE_ID}@${VERSION}`));
+  assert.match(result.stdout, /next: node \.hm2b\/bin\/hm2b\.js/);
 
   const files = walk(project);
   for (const required of [
-    '.r2c/bin/r2c.js',
-    '.r2c/install/runtime.json',
-    `.r2c/engine/${ENGINE_VERSION}/bin/r2c.js`,
+    '.hm2b/bin/hm2b.js',
+    '.hm2b/install/runtime.json',
+    `.hm2b/engine/${ENGINE_VERSION}/bin/hm2b.js`,
     'workflows/rtosv3-drvport.yaml',
     'tasks/analysis-design-orchestration.md',
     'skills/red-blue/SKILL.md',
     'roles/bys-architect.md',
-    `.r2c/install/receipts/r2c/${BUNDLE_ID}.json`,
-    '.r2c/projection/roles.json',
-    '.claude/agents/r2c-bys-architect.md',
-    '.claude/commands/r2c-run.md',
+    `.hm2b/install/receipts/runner/${BUNDLE_ID}.json`,
+    '.hm2b/projection/roles.json',
+    '.claude/agents/runner-bys-architect.md',
+    '.claude/commands/hm2b-run.md',
     '.codex/hooks.json',
-    '.dsh/r2c/runtime.cordis.patch.yml',
-    '.r2c/shims/hook.mjs',
+    '.dsh/hm2b/runtime.cordis.patch.yml',
+    '.hm2b/shims/hook.mjs',
   ]) {
     assert.ok(files.includes(required), `missing ${required}`);
   }
 
-  const runtime = JSON.parse(readFileSync(join(project, '.r2c/install/runtime.json'), 'utf8'));
-  assert.equal(runtime.schema, 'r2c.runtime/v1');
-  assert.equal(runtime.engine.entry, `.r2c/engine/${ENGINE_VERSION}/bin/r2c.js`);
-  const receipt = JSON.parse(readFileSync(join(project, `.r2c/install/receipts/r2c/${BUNDLE_ID}.json`), 'utf8'));
-  assert.equal(isCanonicalJson(readFileSync(join(project, `.r2c/install/receipts/r2c/${BUNDLE_ID}.json`), 'utf8')), true);
-  assert.equal(receipt.projection.id, 'r2c');
+  const runtime = JSON.parse(readFileSync(join(project, '.hm2b/install/runtime.json'), 'utf8'));
+  assert.equal(runtime.schema, 'hm2b.runtime/v1');
+  assert.equal(runtime.engine.entry, `.hm2b/engine/${ENGINE_VERSION}/bin/hm2b.js`);
+  const receipt = JSON.parse(readFileSync(join(project, `.hm2b/install/receipts/runner/${BUNDLE_ID}.json`), 'utf8'));
+  assert.equal(isCanonicalJson(readFileSync(join(project, `.hm2b/install/receipts/runner/${BUNDLE_ID}.json`), 'utf8')), true);
+  assert.equal(receipt.projection.id, 'runner');
   assert.equal(receipt.bundle.id, BUNDLE_ID);
 
-  const version = spawnSync(process.execPath, [join(project, '.r2c', 'bin', 'r2c.js'), '--version'], {
+  const version = spawnSync(process.execPath, [join(project, '.hm2b', 'bin', 'hm2b.js'), '--version'], {
     cwd: project,
     encoding: 'utf8',
   });
@@ -171,17 +177,17 @@ test('agent-native projection: host files and one receipt, no runtime', (t) => {
   assert.ok(files.includes('.claude/skills/rtosv3-drvport-workflow/SKILL.md'));
   assert.ok(files.includes('.codex/agents/rtosv3-drvport-bys-architect.toml'));
   assert.ok(files.includes('.agents/agent-native/rtosv3-drvport/roles.json'));
-  assert.equal(existsSync(join(project, '.r2c/engine')), false, 'agent-native never installs a runtime');
-  assert.equal(existsSync(join(project, '.r2c/bin/r2c.js')), false, 'agent-native never writes a launcher');
+  assert.equal(existsSync(join(project, '.hm2b/engine')), false, 'agent-native never installs a runtime');
+  assert.equal(existsSync(join(project, '.hm2b/bin/hm2b.js')), false, 'agent-native never writes a launcher');
 
-  const receipt = JSON.parse(readFileSync(join(project, `.r2c/install/receipts/agent-native/${BUNDLE_ID}.json`), 'utf8'));
+  const receipt = JSON.parse(readFileSync(join(project, `.hm2b/install/receipts/agent-native/${BUNDLE_ID}.json`), 'utf8'));
   assert.deepEqual(receipt.host_targets, ['claude-code', 'codex']);
   assert.equal(reportOk(project), true);
 });
 
 test('a tampered asset fails with zero writes and no engine left behind', (t) => {
   const { base, tagDir } = buildMirror(t);
-  const engine = readdirSync(tagDir).find((name) => /^r2c-engine-.*\.tgz$/.test(name));
+  const engine = readdirSync(tagDir).find((name) => /^hm2b-engine-.*\.tgz$/.test(name));
   assert.ok(engine);
   const file = join(tagDir, engine);
   const bytes = readFileSync(file);
@@ -193,7 +199,7 @@ test('a tampered asset fails with zero writes and no engine left behind', (t) =>
   const result = bootstrap([
     '--bundle', BUNDLE_ID,
     '--version', VERSION,
-    '--projection', 'r2c',
+    '--projection', 'runner',
     '--project', project,
     '--release-base', base,
   ], { env, cwd: project });

@@ -19,10 +19,10 @@ import {
 } from './helpers/minimal-bundle.js';
 
 const PRIMITIVES = { inflateRaw, sha256: sha256Hex };
-const BIN = fileURLToPath(new URL('../bin/r2c-assembler.js', import.meta.url));
+const BIN = fileURLToPath(new URL('../bin/hm2b-assembler.js', import.meta.url));
 
 function withTempDir(fn) {
-  const dir = mkdtempSync(join(tmpdir(), 'r2c-assembler-'));
+  const dir = mkdtempSync(join(tmpdir(), 'hm2b-assembler-'));
   try {
     return fn(dir);
   } finally {
@@ -47,7 +47,7 @@ test('minimal compliant bundle validates with a complete report', () => {
   assert.deepEqual(report.errors, []);
   assert.deepEqual(report.warnings, []);
   assert.equal(report.target, 'bundle');
-  assert.equal(report.schema, 'r2c.bundle/v1');
+  assert.equal(report.schema, 'hm2b.bundle/v1');
   assert.equal(report.artifact.path, 'minimal.zip');
   assert.equal(report.artifact.bytes, zip.length);
   assert.match(report.artifact.sha256, /^[0-9a-f]{64}$/);
@@ -76,7 +76,7 @@ test('compile produces canonical, self-proving IR that ir validate accepts', () 
   assert.equal(sha256Hex(first.irBytes), first.digest);
 
   const ir = JSON.parse(text);
-  assert.equal(ir.schema, 'r2c.ir/v1');
+  assert.equal(ir.schema, 'hm2b.ir/v1');
   assert.equal(ir.id, 'minimal-demo');
   assert.equal(ir.version, '1.0.0');
   assert.equal(ir.source.bundle.contentSha256.length, 64);
@@ -92,7 +92,7 @@ test('compile produces canonical, self-proving IR that ir validate accepts', () 
   const irReport = validateIr(first.irBytes, { sha256: sha256Hex });
   assert.equal(irReport.ok, true, JSON.stringify(irReport.errors));
   assert.equal(irReport.target, 'ir');
-  assert.equal(irReport.schema, 'r2c.ir/v1');
+  assert.equal(irReport.schema, 'hm2b.ir/v1');
   assert.equal(irReport.artifact.path, IR_FILENAME);
   assert.equal(irReport.artifact.sha256, first.digest);
 });
@@ -119,7 +119,7 @@ test('reports are byte-identical on repeat', () => {
 test('a warning does not change ok, IR bytes or the exit code', () => {
   const leaky = minimalZip({
     overrides: {
-      'tasks/do-it.md': MINIMAL_TASK.replace('完成唯一一步。', '先跑 r2c-status 看状态。'),
+      'tasks/do-it.md': MINIMAL_TASK.replace('完成唯一一步。', '先跑 hm2b-status 看状态。'),
     },
   });
   const report = validateBundle(leaky, PRIMITIVES);

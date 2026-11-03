@@ -168,7 +168,7 @@ test('explicit version with a token uses /releases/tags/<tag> and the asset id',
   const data = Buffer.from('engine-bytes', 'utf8');
   const fixture = await startGithubFixture(t, {
     repo: REPO,
-    releases: [{ tag: bundleTag(ID, '1.2.3'), assets: [{ name: 'r2c-engine-0.1.0.tgz', data }] }],
+    releases: [{ tag: bundleTag(ID, '1.2.3'), assets: [{ name: 'hm2b-engine-0.1.0.tgz', data }] }],
   });
   const client = clientFor(fixture.origin, { token: TOKEN });
 
@@ -177,7 +177,7 @@ test('explicit version with a token uses /releases/tags/<tag> and the asset id',
   assert.equal(release.anonymous, false);
   assert.equal(release.assets.length, 1);
 
-  const bytes = await downloadAsset({ client, repo: REPO, release, name: 'r2c-engine-0.1.0.tgz' });
+  const bytes = await downloadAsset({ client, repo: REPO, release, name: 'hm2b-engine-0.1.0.tgz' });
   assert.deepEqual(bytes, data);
   assert.deepEqual(
     fixture.callsOf('GET').map((call) => call.path),
@@ -196,7 +196,7 @@ test('explicit version without a token never touches the API and downloads <base
   const data = Buffer.from('payload-bytes', 'utf8');
   const fixture = await startGithubFixture(t, {
     repo: REPO,
-    releases: [{ tag: bundleTag(ID, '1.2.3'), assets: [{ name: 'r2c-payload-rtosv3-drvport-v1.2.3.tgz', data }] }],
+    releases: [{ tag: bundleTag(ID, '1.2.3'), assets: [{ name: 'hm2b-payload-rtosv3-drvport-v1.2.3.tgz', data }] }],
   });
   const client = clientFor(fixture.origin);
 
@@ -209,12 +209,12 @@ test('explicit version without a token never touches the API and downloads <base
     client,
     repo: REPO,
     release,
-    name: 'r2c-payload-rtosv3-drvport-v1.2.3.tgz',
+    name: 'hm2b-payload-rtosv3-drvport-v1.2.3.tgz',
     downloadBase: fixture.downloadBase,
   });
   assert.deepEqual(bytes, data);
   assert.equal(fixture.calls.length, 1);
-  assert.equal(fixture.calls[0].path, `/download/${bundleTag(ID, '1.2.3')}/r2c-payload-rtosv3-drvport-v1.2.3.tgz`);
+  assert.equal(fixture.calls[0].path, `/download/${bundleTag(ID, '1.2.3')}/hm2b-payload-rtosv3-drvport-v1.2.3.tgz`);
   assert.equal(fixture.calls[0].headers.authorization, undefined);
 });
 
@@ -244,12 +244,12 @@ test('missing assets carry the projection-specific code, including for anonymous
   const client = clientFor(fixture.origin, { token: TOKEN });
   const release = await resolveVersion({ client, repo: REPO, bundleId: ID, version: '1.0.0' });
 
-  await rejectsWith(downloadAsset({ client, repo: REPO, release, name: 'r2c-engine-0.1.0.tgz' }), 'RELEASE_ENGINE_MISSING');
+  await rejectsWith(downloadAsset({ client, repo: REPO, release, name: 'hm2b-engine-0.1.0.tgz' }), 'RELEASE_ENGINE_MISSING');
   await rejectsWith(
-    downloadAsset({ client, repo: REPO, release, name: 'r2c-payload-rtosv3-drvport-v1.0.0.tgz' }),
+    downloadAsset({ client, repo: REPO, release, name: 'hm2b-payload-rtosv3-drvport-v1.0.0.tgz' }),
     'RELEASE_PAYLOAD_MISSING',
   );
-  await rejectsWith(downloadAsset({ client, repo: REPO, release, name: 'r2c-framework-0.1.0.tgz' }), 'RELEASE_FRAMEWORK_MISSING');
+  await rejectsWith(downloadAsset({ client, repo: REPO, release, name: 'hm2b-framework-0.1.0.tgz' }), 'RELEASE_FRAMEWORK_MISSING');
   await rejectsWith(downloadAsset({ client, repo: REPO, release, name: 'workflow.ir.json' }), 'RELEASE_NOT_FOUND');
 
   const anonymous = await resolveVersion({ client: clientFor(fixture.origin), repo: REPO, bundleId: ID, version: '1.0.0' });
@@ -284,30 +284,30 @@ test('anonymous asset 403 points at --version or GH_TOKEN', async (t) => {
 test('verifySums checks every listed asset and refuses missing, extra or tampered bytes', () => {
   const engine = Buffer.from('engine', 'utf8');
   const ir = Buffer.from('ir', 'utf8');
-  const sums = `${sha256Hex(engine)}  r2c-engine-0.1.0.tgz\n${sha256Hex(ir)}  workflow.ir.json\n`;
+  const sums = `${sha256Hex(engine)}  hm2b-engine-0.1.0.tgz\n${sha256Hex(ir)}  workflow.ir.json\n`;
   const parsed = parseSums(sums);
   assert.equal(parsed.failures.length, 0);
   assert.equal(parsed.entries.size, 2);
 
   const good = verifySums(sums, [
-    { name: 'r2c-engine-0.1.0.tgz', data: engine },
+    { name: 'hm2b-engine-0.1.0.tgz', data: engine },
     { name: 'workflow.ir.json', data: ir },
   ]);
   assert.deepEqual(good, { ok: true, failures: [] });
 
   const tampered = verifySums(sums, [
-    { name: 'r2c-engine-0.1.0.tgz', data: engine },
+    { name: 'hm2b-engine-0.1.0.tgz', data: engine },
     { name: 'workflow.ir.json', data: Buffer.from('IR', 'utf8') },
   ]);
   assert.equal(tampered.ok, false);
   assert.match(tampered.failures[0], /^RELEASE_CHECKSUM_MISMATCH: workflow\.ir\.json/);
 
-  const missing = verifySums(sums, [{ name: 'r2c-engine-0.1.0.tgz', data: engine }]);
+  const missing = verifySums(sums, [{ name: 'hm2b-engine-0.1.0.tgz', data: engine }]);
   assert.equal(missing.ok, false);
   assert.match(missing.failures[0], /workflow\.ir\.json is listed .* but not provided/);
 
   const extra = verifySums(sums, [
-    { name: 'r2c-engine-0.1.0.tgz', data: engine },
+    { name: 'hm2b-engine-0.1.0.tgz', data: engine },
     { name: 'workflow.ir.json', data: ir },
     { name: 'stowaway.txt', data: Buffer.from('x') },
   ]);
@@ -328,22 +328,26 @@ test('the two tag channels never overlap or reuse each other', () => {
   const bundleNames = bundleAssetNames({
     id: ID,
     version: '1.0.0',
-    allowed: ['r2c', 'agent-native'],
+    allowed: ['runner', 'agent-native'],
     engineVersion: '0.1.0',
     frameworkVersion: '0.1.0',
   });
   const legacyNames = legacyAssetNames('0.1.0');
-  // The engine and the bootstrap are the only shared asset names; they are
-  // byte-identical in both channels by contract (decision #74 §2.3).
+  // The bootstrap and its sums file are the only shared asset names: the
+  // bundle channel prefixes the engine and the payload with `hm2b-`, the
+  // frozen legacy channel with `r2c-` (decision #74 §2.3).
   assert.deepEqual(bundleNames.filter((name) => legacyNames.includes(name)), [
     'SHA256SUMS.txt',
     'install.mjs',
-    'r2c-engine-0.1.0.tgz',
   ]);
-  assert.ok(!legacyNames.includes('r2c-payload-rtosv3-drvport-v1.0.0.tgz'));
-  assert.ok(bundleNames.includes('r2c-payload-rtosv3-drvport-v1.0.0.tgz'));
+  assert.ok(!legacyNames.includes('hm2b-payload-rtosv3-drvport-v1.0.0.tgz'));
+  assert.ok(bundleNames.includes('hm2b-payload-rtosv3-drvport-v1.0.0.tgz'));
   assert.ok(legacyNames.includes('r2c-payload-0.1.0.tgz'));
   assert.ok(!bundleNames.includes('r2c-payload-0.1.0.tgz'));
+  // Same engine bytes, different channel names.
+  assert.ok(bundleNames.includes('hm2b-engine-0.1.0.tgz'));
+  assert.ok(legacyNames.includes('r2c-engine-0.1.0.tgz'));
+  assert.ok(!bundleNames.includes('r2c-engine-0.1.0.tgz'));
 
   assert.deepEqual(parseBundleTag(bundleTag(ID, '1.0.0'), ID), { id: ID, version: '1.0.0' });
   assert.equal(parseBundleTag('v0.1.0', ID), null);

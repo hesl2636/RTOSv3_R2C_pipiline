@@ -45,13 +45,13 @@ function lockToken() {
 }
 
 /**
- * Create `.r2c/install/.lock` exclusively. A lock older than `staleMs` is
+ * Create `.hm2b/install/.lock` exclusively. A lock older than `staleMs` is
  * considered abandoned and taken over once.
  */
 export function acquireProjectLock(projectRoot, { now = Date.now, staleMs = STALE_LOCK_MS } = {}) {
   const rel = LOCK_FILE;
   const file = projectPath(projectRoot, rel);
-  ensureProjectDirs(projectRoot, '.r2c/install');
+  ensureProjectDirs(projectRoot, '.hm2b/install');
   const owner = lockToken();
   for (let attempt = 0; attempt < 2; attempt += 1) {
     if (createExclusive(file, owner)) return { file, owner };
@@ -116,7 +116,7 @@ export function removeJournal(projectRoot) {
   unlinkIfExists(journalPath(projectRoot));
 }
 
-/** `.r2c/install/backup/<projection>/<bundle>/<stamp>/<relpath>`. */
+/** `.hm2b/install/backup/<projection>/<bundle>/<stamp>/<relpath>`. */
 export function backupRelPath(projectionId, bundleId, stamp, relPath) {
   return `${BACKUP_DIR}/${projectionId}/${bundleId}/${stamp}/${relPath}`;
 }

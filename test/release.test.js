@@ -1,12 +1,17 @@
 /**
- * Legacy engine channel after P6 (decision #77 §3.6, ticket #111).
+ * Frozen legacy engine channel after P6 (decision #77 §3.6, ticket #111).
  *
- * Main stopped publishing the legacy payload at the cutover, so one release
- * is the engine archive, the frozen bootstrap and their sums. The engine
- * archive keeps the pre-move extracted layout: a generated `bin/r2c.js`
- * launcher, the engine under `runtime/r2c/engine/`, the pure contract,
+ * This file covers **only** the frozen legacy `v<E>` channel: one Release with
+ * the legacy asset name `r2c-engine-<E>.tgz`, the frozen bootstrap and their
+ * sums. No `r2c-payload-<E>.tgz` is produced anymore. The archive keeps the P6
+ * extracted layout shared with the new channel — a generated `bin/hm2b.js`
+ * launcher, the engine under `runtime/runner/engine/`, the pure contract,
  * `core/`, the vendored `yaml`, two identical `package.json` copies and
- * LICENSE. The bundle channel is covered by `release-bundle.test.js`.
+ * LICENSE. Old installs keep consuming that archive from their frozen
+ * `.r2c/engine` layout.
+ *
+ * The `bundle-<id>-v<version>` channel (asset name `hm2b-engine-<E>.tgz`) is
+ * covered by `release-bundle.test.js`.
  */
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
@@ -30,14 +35,14 @@ import { sha256Hex } from '../core/node/sha256.js';
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const RELEASE = join(REPO, 'scripts', 'release.mjs');
 const BOOTSTRAP = join(REPO, 'scripts', 'install.mjs');
-const ENGINE_VERSION = JSON.parse(readFileSync(join(REPO, 'runtime/r2c/engine/package.json'), 'utf8')).version;
+const ENGINE_VERSION = JSON.parse(readFileSync(join(REPO, 'runtime/runner/engine/package.json'), 'utf8')).version;
 const FRAMEWORK_VERSION = JSON.parse(readFileSync(join(REPO, 'package.json'), 'utf8')).version;
 const ENGINE_ASSET = `r2c-engine-${ENGINE_VERSION}.tgz`;
 const INSTALL_ASSET = 'install.mjs';
 const SUMS_ASSET = 'SHA256SUMS.txt';
 
 function tempDir(t, prefix) {
-  const dir = mkdtempSync(join(tmpdir(), `r2c-release-${prefix}-`));
+  const dir = mkdtempSync(join(tmpdir(), `hm2b-release-${prefix}-`));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   return dir;
 }
@@ -58,7 +63,7 @@ function build(t, prefix = 'build') {
 function copyRepo(t, prefix = 'repo') {
   const copy = tempDir(t, prefix);
   for (const name of readdirSync(REPO)) {
-    if (['.git', 'node_modules', 'dist', '.tmpbuild', '.r2c'].includes(name)) continue;
+    if (['.git', 'node_modules', 'dist', '.tmpbuild', '.r2c', '.hm2b'].includes(name)) continue;
     const from = join(REPO, name);
     spawnSync('node', ['-e', `
       const { cpSync } = require('node:fs');
@@ -127,7 +132,7 @@ test('one build writes exactly the three legacy assets', (t) => {
   }
 });
 
-test('the engine archive keeps the frozen P6 extracted layout', (t) => {
+test('the legacy engine archive keeps the P6 extracted layout', (t) => {
   const out = build(t);
   const entries = listArchive(join(out, ENGINE_ASSET));
   assert.ok(entries.every((entry) => entry.type === '0'), 'only regular files');
@@ -138,13 +143,13 @@ test('the engine archive keeps the frozen P6 extracted layout', (t) => {
     assert.ok(!/(^|\/)\.\.(\/|$)/.test(path), path);
   }
   for (const required of [
-    'bin/r2c.js',
+    'bin/hm2b.js',
     'package.json',
-    'runtime/r2c/engine/package.json',
-    'runtime/r2c/engine/bin/r2c.js',
-    'runtime/r2c/engine/src/cli.js',
-    'runtime/r2c/contract/manifest.js',
-    'runtime/r2c/schema/workflow.schema.json',
+    'runtime/runner/engine/package.json',
+    'runtime/runner/engine/bin/hm2b.js',
+    'runtime/runner/engine/src/cli.js',
+    'runtime/runner/contract/manifest.js',
+    'runtime/runner/schema/workflow.schema.json',
     'core/canonical-json.js',
     'LICENSE',
   ]) {
@@ -155,11 +160,11 @@ test('the engine archive keeps the frozen P6 extracted layout', (t) => {
     assert.ok(!paths.some((path) => forbidden.test(path)), `unexpected engine path ${forbidden}`);
   }
   const rootPackage = entries.find((entry) => entry.path === 'package.json');
-  const nestedPackage = entries.find((entry) => entry.path === 'runtime/r2c/engine/package.json');
+  const nestedPackage = entries.find((entry) => entry.path === 'runtime/runner/engine/package.json');
   assert.equal(rootPackage.data.equals(nestedPackage.data), true, 'both package.json copies are identical');
   assert.equal(JSON.parse(rootPackage.data.toString('utf8')).version, ENGINE_VERSION);
-  const launcher = entries.find((entry) => entry.path === 'bin/r2c.js').data.toString('utf8');
-  assert.match(launcher, /runtime\/r2c\/engine\/bin\/r2c\.js/);
+  const launcher = entries.find((entry) => entry.path === 'bin/hm2b.js').data.toString('utf8');
+  assert.match(launcher, /runtime\/runner\/engine\/bin\/hm2b\.js/);
 });
 
 test('the extracted engine runs offline with the vendored yaml', (t) => {
@@ -170,7 +175,7 @@ test('the extracted engine runs offline with the vendored yaml', (t) => {
     mkdirSync(dirname(target), { recursive: true });
     writeFileSync(target, entry.data);
   }
-  const run = spawnSync(process.execPath, [join(home, 'bin', 'r2c.js'), '--version'], {
+  const run = spawnSync(process.execPath, [join(home, 'bin', 'hm2b.js'), '--version'], {
     cwd: home,
     encoding: 'utf8',
   });
@@ -206,7 +211,7 @@ test('--check passes on the repository and fails when the engine package drifts'
   assert.equal(pass.status, 0, pass.stderr);
 
   const copy = copyRepo(t, 'engine-version');
-  const file = join(copy, 'runtime/r2c/engine/package.json');
+  const file = join(copy, 'runtime/runner/engine/package.json');
   const pkg = JSON.parse(readFileSync(file, 'utf8'));
   pkg.engines.node = '>=24.0.0';
   writeFileSync(file, `${JSON.stringify(pkg, null, 2)}\n`);

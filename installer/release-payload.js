@@ -1,5 +1,5 @@
 /**
- * Pre-projected payload contract (`r2c.release-payload/v1`, #74 §3.4, #105).
+ * Pre-projected payload contract (`hm2b.release-payload/v1`, #74 §3.4, #105).
  *
  * A Release payload is the validated projection result minus file contents:
  * `manifest.json` declares bundle/IR/projection/options/targets/file hashes,
@@ -19,7 +19,7 @@ import { isValidVersion } from '../core/semver.js';
 import { RESULT_BLOCK_FIELDS, RESULT_FIELDS } from '../projection/result-fields.js';
 import { readReleaseTarGz } from './release-tar.js';
 
-export const RELEASE_PAYLOAD_SCHEMA = 'r2c.release-payload/v1';
+export const RELEASE_PAYLOAD_SCHEMA = 'hm2b.release-payload/v1';
 export const PAYLOAD_MANIFEST_NAME = 'manifest.json';
 
 // The top-level member order is the projection-result contract; the manifest

@@ -88,13 +88,13 @@ function role(id, extra = {}) {
 
 function miniIr({ roles, skills = {} } = {}) {
   return {
-    schema: 'r2c.ir/v1',
+    schema: 'hm2b.ir/v1',
     id: 'mini',
     name: 'Mini workflow',
     version: '1.0.0',
     description: 'A miniature workflow used by projection tests.',
     source: {
-      bundle: { schema: 'r2c.bundle/v1', id: 'mini', version: '1.0.0', contentSha256: 'b'.repeat(64) },
+      bundle: { schema: 'hm2b.bundle/v1', id: 'mini', version: '1.0.0', contentSha256: 'b'.repeat(64) },
       manifest: { path: 'bundle.json', sha256: 'c'.repeat(64) },
     },
     stages: [{
@@ -196,10 +196,10 @@ test('role TOMLs match the prototype oracle byte for byte', () => {
   const { result } = codexSample();
   const byPath = new Map(result.files.map((file) => [file.path, file.content]));
   const hashes = {
-    '.codex/agents/rtosv3-drvport-bys-architect.toml': 'd84039e24030a27f3fb71a96d55fe062a0f3565442717824a6ab61a88673f4ce',
-    '.codex/agents/rtosv3-drvport-bys-designer.toml': 'a55da710880f58fcf3ede83c35a4dab7dfab7979bac7a90eda207abdc76b6a71',
-    '.codex/agents/rtosv3-drvport-bys-impl-lead.toml': '245b219a0569dac592ed51aabbe5a830bc5c5cdb94302d5cb403ace922005219',
-    '.codex/agents/rtosv3-drvport-bys-release-lead.toml': 'f6facebb21c0dbca17337de94c0dfea0fa9dca0a5b2ce3edf79fc6d2b2105c52',
+    '.codex/agents/rtosv3-drvport-bys-architect.toml': '8c9da9ed40dda49dacf2072f5eebaa78bf16999de1dcaad60d5283a204f0f3bd',
+    '.codex/agents/rtosv3-drvport-bys-designer.toml': '2747f7cedf0eaf3d1cf11e6b1f9e4468f6c7fffd411c529e6b8f2fcf863bf1ba',
+    '.codex/agents/rtosv3-drvport-bys-impl-lead.toml': '8e9249c147be284b841201c5416dd8d6209d980afe7ad3b8600d1188e31535fe',
+    '.codex/agents/rtosv3-drvport-bys-release-lead.toml': 'b0365bca01634865717de621348b79e6f4b4a50fc25571ef0e1c3fdaff2ae445',
   };
   for (const [path, hash] of Object.entries(hashes)) {
     assert.equal(sha256(byPath.get(path)), hash, path);
@@ -212,7 +212,7 @@ test('role TOMLs match the prototype oracle byte for byte', () => {
     '',
     '按当前步骤的任务书执行；不要臆测本角色未声明的专有职责。',
     '',
-    '<!-- r2c:placeholder role=bys-architect -->',
+    '<!-- hm2b:placeholder role=bys-architect -->',
     '"""',
     '',
   ].join('\n'));
@@ -308,9 +308,9 @@ test('submit receipts and constitution placement are identical to Claude', () =>
   assert.equal(codexStage, claudeStage);
   assert.match(codexStage, /^---\n[\s\S]*?\n---\n\n<!-- constitution:begin scope=global placeholder=true -->\n/);
   assert.ok(codexStage.indexOf('<!-- constitution:begin') < codexStage.indexOf('# 阶段'));
-  assert.match(codexStage, /^# r2c-submit: step=analysis-design$/m);
+  assert.match(codexStage, /^# hm2b-submit: step=analysis-design$/m);
   assert.doesNotMatch(codexStage, /\{\{submit\}\}/);
-  assert.doesNotMatch(codexStage, /node \.r2c\/bin\/r2c\.js/);
+  assert.doesNotMatch(codexStage, /node \.hm2b\/bin\/hm2b\.js/);
   const entry = pick(codex, '.agents/skills/rtosv3-drvport-workflow/SKILL.md');
   assert.equal(entry, pick(claude, '.claude/skills/rtosv3-drvport-workflow/SKILL.md'));
   assert.doesNotMatch(entry, /constitution:begin/);
@@ -424,7 +424,7 @@ test('roles.json gains a codex section consistent with idMap and file hashes', (
   assert.equal(file.kind, 'metadata');
   assert.deepEqual(file.targets, ['codex']);
   const roles = JSON.parse(file.content);
-  assert.equal(roles.schema, 'r2c.projection.roles/v1');
+  assert.equal(roles.schema, 'hm2b.projection.roles/v1');
   assert.deepEqual(Object.keys(roles.targets), ['codex']);
   assert.equal(roles.ir.sha256, result.ir.digest);
   const section = roles.targets.codex;

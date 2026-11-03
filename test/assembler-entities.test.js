@@ -191,7 +191,7 @@ test('role instructions mentioning the runner warn without blocking', () => {
   assert.equal(submit.warnings[0].path, ROLE_PATH);
   assert.equal(submit.warnings[0].line, 6);
 
-  const engine = report({ overrides: { [ROLE_PATH]: roleFile({ body: '\nRead .r2c/engine/state.json first.\n' }) } });
+  const engine = report({ overrides: { [ROLE_PATH]: roleFile({ body: '\nRead .hm2b/engine/state.json first.\n' }) } });
   assert.equal(only(engine, 'warnings').code, 'BUNDLE_ROLE_RUNTIME_LEAK');
 });
 

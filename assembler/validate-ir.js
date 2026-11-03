@@ -1,5 +1,5 @@
 /**
- * `r2c.ir/v1` validation (decision #67 §8).
+ * `hm2b.ir/v1` validation (decision #67 §8).
  *
  * Bytes in, report out. IR diagnostics are errors only: the IR is a machine
  * artifact, so any deviation is an integrity failure. Embedded hashing is
@@ -365,7 +365,7 @@ export function validateIr(input, primitives = {}) {
         fail('/version', 'IR_SOURCE_MISMATCH', 'IR version differs from source.bundle.version', { field: 'version' });
       }
       if (source.bundle.schema !== IR_BUNDLE_SCHEMA) {
-        fail('/source/bundle/schema', 'IR_SOURCE_MISMATCH', 'source bundle schema must be r2c.bundle/v1', {
+        fail('/source/bundle/schema', 'IR_SOURCE_MISMATCH', 'source bundle schema must be hm2b.bundle/v1', {
           field: 'source.bundle.schema',
         });
       }
@@ -409,7 +409,7 @@ export function validateIr(input, primitives = {}) {
           const seen = new Set();
           requires.projections.forEach((item, index) => {
             const pointer = `/requires/projections/${index}`;
-            if (typeof item !== 'string' || !['r2c', 'agent-native'].includes(item) || seen.has(item)) {
+            if (typeof item !== 'string' || !['runner', 'agent-native'].includes(item) || seen.has(item)) {
               fail(pointer, 'IR_SCHEMA_INVALID', 'projection entry is invalid', { pointer, rule: 'enum' });
             }
             if (typeof item === 'string') seen.add(item);

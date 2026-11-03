@@ -1,4 +1,4 @@
-# Rendered by the r2c runtime installer.
+# Rendered by the hm2b runtime installer.
 # A Cordis patch cannot see its own path, so every path below is substituted
 # with a project-relative one at install time.
 - id: skill-filesystem
@@ -6,7 +6,7 @@
     bundledSkillDir: '${PROJECT_ROOT}/skills'
 
 - insert:
-    - id: r2c-dsh
+    - id: hm2b-dsh
       name: '${PAYLOAD_HOME}/host/dsh/index.mjs'
       config:
         runnerCmd: '${RUNNER_CMD}'

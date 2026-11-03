@@ -1,51 +1,59 @@
 /**
- * Legacy engine archive (P6 move, decision #77 §3.6).
+ * Engine archive (P6 move, decision #77 §3.6).
  *
- * The engine is still published as `r2c-engine-<E>.tgz` with a frozen
- * extracted layout so installers and release bytes from before the move keep
- * working:
+ * Both channels ship the same bytes; only the asset name differs:
  *
- *   bin/r2c.js                         generated launcher
- *   runtime/r2c/engine/**              the engine package (bin/src/package.json)
- *   runtime/r2c/contract/**            the pure `r2c.workflow/v1` contract
- *   runtime/r2c/schema/**              state/workflow/latest/usage documents
+ *   hm2b-engine-<E>.tgz   bundle channel
+ *   r2c-engine-<E>.tgz    frozen legacy `v<E>` channel
+ *
+ * The extracted layout is:
+ *
+ *   bin/hm2b.js                        generated launcher
+ *   runtime/runner/engine/**           the engine package (bin/src/package.json)
+ *   runtime/runner/contract/**         the pure `hm2b.workflow/v1` contract
+ *   runtime/runner/schema/**           state/workflow/latest/usage documents
  *   core/**                            the engine's only framework dependency
  *   package.json                       the same bytes as the engine package
  *   node_modules/yaml                  vendored so the extracted engine starts
  *   LICENSE
  *
  * The launcher is two lines because the archive keeps the engine at a
- * generic path: `bin/r2c.js` imports `../runtime/r2c/engine/bin/r2c.js`, and
- * both `package.json` copies point at their own real `bin/r2c.js`.
+ * generic path: `bin/hm2b.js` imports `../runtime/runner/engine/bin/hm2b.js`,
+ * and both `package.json` copies point at their own real `bin/hm2b.js`.
  */
 import { existsSync, lstatSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { compareCodePoints } from '../../core/code-point.js';
 
 /** Entry point inside an extracted engine home. */
-export const ENGINE_ENTRY = 'bin/r2c.js';
+export const ENGINE_ENTRY = 'bin/hm2b.js';
 /** The same byte recipe as the legacy writer: paths at most 100 bytes. */
 export const MAX_PATH_BYTES = 100;
 
 export const ENGINE_LAUNCHER = `#!/usr/bin/env node
-import '../runtime/r2c/engine/bin/r2c.js';
+import '../runtime/runner/engine/bin/hm2b.js';
 `;
 
 /** Directories copied from the repository root into the archive. */
 export const ENGINE_DIRS = Object.freeze([
-  Object.freeze({ from: 'runtime/r2c/engine', rel: 'runtime/r2c/engine' }),
-  Object.freeze({ from: 'runtime/r2c/contract', rel: 'runtime/r2c/contract' }),
-  Object.freeze({ from: 'runtime/r2c/schema', rel: 'runtime/r2c/schema' }),
+  Object.freeze({ from: 'runtime/runner/engine', rel: 'runtime/runner/engine' }),
+  Object.freeze({ from: 'runtime/runner/contract', rel: 'runtime/runner/contract' }),
+  Object.freeze({ from: 'runtime/runner/schema', rel: 'runtime/runner/schema' }),
   Object.freeze({ from: 'core', rel: 'core' }),
   Object.freeze({ from: 'node_modules/yaml', rel: 'node_modules/yaml' }),
 ]);
 /** Individual files copied from the repository root. */
 export const ENGINE_ROOT_FILES = Object.freeze(['LICENSE']);
 /** The engine package whose bytes also become the archive's root package.json. */
-export const ENGINE_PACKAGE = 'runtime/r2c/engine/package.json';
+export const ENGINE_PACKAGE = 'runtime/runner/engine/package.json';
 
-/** The release asset name the packager writes and the bootstrap downloads. */
+/** The bundle-channel asset name the packager writes and the bootstrap downloads. */
 export function engineAssetName(version) {
+  return `hm2b-engine-${version}.tgz`;
+}
+
+/** The frozen legacy `v<E>` channel name; same archive bytes. */
+export function legacyEngineAssetName(version) {
   return `r2c-engine-${version}.tgz`;
 }
 

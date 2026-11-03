@@ -19,14 +19,14 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { replayDerived } from '../runtime/r2c/engine/src/state.js';
+import { replayDerived } from '../runtime/runner/engine/src/state.js';
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const BIN = join(REPO, 'runtime', 'r2c', 'engine', 'bin', 'r2c.js');
+const BIN = join(REPO, 'runtime', 'runner', 'engine', 'bin', 'hm2b.js');
 const BUNDLE = join(REPO, 'examples', 'rtosv3', 'bundle');
 const REPAIR_WARNING = /repaired from events/;
 
-const MANIFEST_HEAD = `schema: r2c.workflow/v1
+const MANIFEST_HEAD = `schema: hm2b.workflow/v1
 id: workflow-repair
 name: repair
 version: 0.1.0
@@ -36,8 +36,8 @@ stages:
 
 function cleanEnv() {
   const env = { ...process.env };
-  delete env.R2C_SESSION_ID;
-  delete env.R2C_PROJECT_ROOT;
+  delete env.HM2B_SESSION_ID;
+  delete env.HM2B_PROJECT_ROOT;
   return env;
 }
 
@@ -58,8 +58,8 @@ function cliJson(args, options) {
 }
 
 function tempRoot(t) {
-  const root = mkdtempSync(join(tmpdir(), 'r2c-repair-project-'));
-  const outside = mkdtempSync(join(tmpdir(), 'r2c-repair-outside-'));
+  const root = mkdtempSync(join(tmpdir(), 'hm2b-repair-project-'));
+  const outside = mkdtempSync(join(tmpdir(), 'hm2b-repair-outside-'));
   t.after(() => {
     rmSync(root, { recursive: true, force: true });
     rmSync(outside, { recursive: true, force: true });
@@ -73,7 +73,7 @@ function defaultProject(t) {
   const project = tempRoot(t);
   const bundle = JSON.parse(readFileSync(join(BUNDLE, 'bundle.json'), 'utf8'));
   const manifest = {
-    schema: 'r2c.workflow/v1',
+    schema: 'hm2b.workflow/v1',
     id: 'hm2B_drvport_pipiline',
     name: bundle.name,
     version: bundle.version,
@@ -141,11 +141,11 @@ function readJson(file) {
 }
 
 function readState(root, runId) {
-  return readJson(join(root, '.r2c', 'runs', runId, 'state.json'));
+  return readJson(join(root, '\.hm2b', 'runs', runId, 'state.json'));
 }
 
 function readEvents(root, runId) {
-  return readFileSync(join(root, '.r2c', 'runs', runId, 'events.jsonl'), 'utf8')
+  return readFileSync(join(root, '\.hm2b', 'runs', runId, 'events.jsonl'), 'utf8')
     .split(/\r?\n/)
     .filter(Boolean)
     .map((line) => JSON.parse(line));
@@ -194,7 +194,7 @@ function submit(project, sessionId, stepId, label) {
 test('default manifest: run and every submit are events-consistent without repair', (t) => {
   const project = defaultProject(t);
   const { runId, sessionId } = startRun(t, project);
-  const statePath = join(project.root, '.r2c', 'runs', runId, 'state.json');
+  const statePath = join(project.root, '\.hm2b', 'runs', runId, 'state.json');
 
   let state = assertNoDrift(project.root, runId, 'after run');
   assert.equal(state.current_step_id, 'analysis-design');

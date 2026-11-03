@@ -11,10 +11,10 @@ import { dirname, join, resolve } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
-import { STATE_SCHEMA, loadRun } from '../runtime/r2c/engine/src/state.js';
+import { STATE_SCHEMA, loadRun } from '../runtime/runner/engine/src/state.js';
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const BIN = join(REPO, 'runtime', 'r2c', 'engine', 'bin', 'r2c.js');
+const BIN = join(REPO, 'runtime', 'runner', 'engine', 'bin', 'hm2b.js');
 
 function promptStep(id, name = `步骤 ${id}`) {
   return { id, name, type: 'prompt', prompt: `执行 ${id}。` };
@@ -22,7 +22,7 @@ function promptStep(id, name = `步骤 ${id}`) {
 
 function manifest(steps, { stageName = '阶段一' } = {}) {
   return {
-    schema: 'r2c.workflow/v1',
+    schema: 'hm2b.workflow/v1',
     id: 'workflow-guard',
     name: 'guard',
     version: '0.1.0',
@@ -37,8 +37,8 @@ function writeManifest(root, steps, options) {
 }
 
 function tempProject(t) {
-  const root = mkdtempSync(join(tmpdir(), 'r2c-guard-project-'));
-  const outside = mkdtempSync(join(tmpdir(), 'r2c-guard-outside-'));
+  const root = mkdtempSync(join(tmpdir(), 'hm2b-guard-project-'));
+  const outside = mkdtempSync(join(tmpdir(), 'hm2b-guard-outside-'));
   t.after(() => {
     rmSync(root, { recursive: true, force: true });
     rmSync(outside, { recursive: true, force: true });
@@ -49,8 +49,8 @@ function tempProject(t) {
 
 function cleanEnv() {
   const env = { ...process.env };
-  delete env.R2C_SESSION_ID;
-  delete env.R2C_PROJECT_ROOT;
+  delete env.HM2B_SESSION_ID;
+  delete env.HM2B_PROJECT_ROOT;
   delete env.DSH_SESSION_ID;
   return env;
 }
@@ -80,7 +80,7 @@ function startRun(t, project) {
 }
 
 function runFiles(root, runId) {
-  const dir = join(root, '.r2c', 'runs', runId);
+  const dir = join(root, '.hm2b', 'runs', runId);
   return {
     state: join(dir, 'state.json'),
     events: join(dir, 'events.jsonl'),

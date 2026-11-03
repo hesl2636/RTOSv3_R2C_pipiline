@@ -36,8 +36,8 @@ function assertSupportedTarget(target) {
 
 export function projectAgentNative(input) {
   const { ir, irDigest, options } = input;
-  if (ir === null || typeof ir !== 'object' || ir.schema !== 'r2c.ir/v1') {
-    return failure([nameError('PROJECTION_IR_UNSUPPORTED', 'input is not an r2c.ir/v1 document')]);
+  if (ir === null || typeof ir !== 'object' || ir.schema !== 'hm2b.ir/v1') {
+    return failure([nameError('PROJECTION_IR_UNSUPPORTED', 'input is not an hm2b.ir/v1 document')]);
   }
   if (options === null || typeof options !== 'object') {
     return failure([nameError('PROJECTION_OPTIONS_INVALID', 'normalized options are required')]);
@@ -321,7 +321,7 @@ export function projectAgentNative(input) {
     rolesTargets[target] = { namespace: ir.id, roles, summary };
   }
   addFile(rolesJsonPath, targets, 'metadata', canonicalJson({
-    schema: 'r2c.projection.roles/v1',
+    schema: 'hm2b.projection.roles/v1',
     ir: { id: ir.id, version: ir.version, sha256: irDigest },
     targets: rolesTargets,
   }));
@@ -454,10 +454,10 @@ export function projectAgentNative(input) {
   if (options.stageOrder.some((id, index) => id !== ir.stages[index]?.id)) {
     addWarning({ code: 'STAGE_ORDER_OVERRIDDEN', message: 'options.stageOrder differs from IR order; rendering order follows the option' });
   }
-  if (ir.id === 'r2c') {
+  if (ir.id === 'runner') {
     addWarning({
-      code: 'NAMESPACE_SHARED_WITH_R2C',
-      message: 'bundle.id is "r2c"; role paths and names overlap with the r2c projection',
+      code: 'NAMESPACE_SHARED_WITH_RUNNER',
+      message: 'bundle.id is "runner"; role paths and names overlap with the runner projection',
     });
   }
   if (skillGroups.size > 1) {

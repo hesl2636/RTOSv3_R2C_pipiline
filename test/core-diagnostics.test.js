@@ -21,7 +21,7 @@ test('makeDiagnostic keeps the documented field order', () => {
     path: 'tasks/a.md',
     line: 9,
     message: 'task body mentions a runner command',
-    details: { token: 'r2c-status' },
+    details: { token: 'hm2b-status' },
   });
   assert.deepEqual(Object.keys(diagnostic), [
     'severity',
@@ -90,7 +90,7 @@ test('dedupe keeps the first diagnostic per (code,path,pointer,line)', () => {
 test('buildReport derives ok from errors and never from counts', () => {
   const report = buildReport({
     target: 'bundle',
-    schema: 'r2c.bundle/v1',
+    schema: 'hm2b.bundle/v1',
     artifact: { path: 'bundle.zip', bytes: 10, sha256: 'a'.repeat(64) },
     id: 'demo',
     version: '1.0.0',
@@ -114,7 +114,7 @@ test('buildReport derives ok from errors and never from counts', () => {
 
   const valid = buildReport({
     target: 'bundle',
-    schema: 'r2c.bundle/v1',
+    schema: 'hm2b.bundle/v1',
     artifact: { path: 'bundle.zip', bytes: 10, sha256: 'a'.repeat(64) },
     id: 'demo',
     version: '1.0.0',
@@ -125,7 +125,7 @@ test('buildReport derives ok from errors and never from counts', () => {
   assert.equal(valid.counts.errors, 0);
 });
 
-test('toEnvelope mirrors the r2c envelope contract', () => {
+test('toEnvelope mirrors the hm2b envelope contract', () => {
   assert.deepEqual(
     toEnvelope({ command: 'bundle.validate', code: 0, data: { ok: true } }),
     {

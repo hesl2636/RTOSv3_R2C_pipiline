@@ -62,11 +62,11 @@ export const codexTarget = Object.freeze({
   capabilities: CAPABILITIES,
   capabilityNotes: CAPABILITY_NOTES,
   ...hostProfile({
-    detect: {"commands":[["codex","--version"]],"envBins":["R2C_CODEX_BIN"],"globBins":["%LOCALAPPDATA%/OpenAI/Codex/bin/*/codex.exe"],"versionArgs":["--version"],"paths":["~/.codex"]},
+    detect: {"commands":[["codex","--version"]],"envBins":["HM2B_CODEX_BIN"],"globBins":["%LOCALAPPDATA%/OpenAI/Codex/bin/*/codex.exe"],"versionArgs":["--version"],"paths":["~/.codex"]},
     assets: [
-    Object.freeze({ path: 'runtime/agent-native/targets/codex/assets/hooks.json', sha256: '6777c80adaf779f1020b0260b5710e955c7fd5494e15a829529b2901cd954c1f' }),
-    Object.freeze({ path: 'runtime/agent-native/targets/codex/assets/r2c-hook-pre-tool-use.cmd', sha256: '5edea3f6a09166456fa4108bc04363e81ef467a0d2a795e4f24e1e765d21e527' }),
-    Object.freeze({ path: 'runtime/agent-native/targets/codex/assets/r2c-hook-stop.cmd', sha256: 'a68c7adde225b60d8220b5d699468f5c50b5233e1726a1013a46fece25f2a756' }),
+    Object.freeze({ path: 'runtime/agent-native/targets/codex/assets/hooks.json', sha256: 'cdf111fbb5931bb9310eac326df4eee62e04a45564841b6ec17920353da7105d' }),
+    Object.freeze({ path: 'runtime/agent-native/targets/codex/assets/hm2b-hook-pre-tool-use.cmd', sha256: '5edea3f6a09166456fa4108bc04363e81ef467a0d2a795e4f24e1e765d21e527' }),
+    Object.freeze({ path: 'runtime/agent-native/targets/codex/assets/hm2b-hook-stop.cmd', sha256: 'a68c7adde225b60d8220b5d699468f5c50b5233e1726a1013a46fece25f2a756' }),
     ],
     smoke: (namespace) => layoutSmoke(namespace, { skillsRoot: '.agents/skills', agentsRoot: '.codex/agents', agentFormat: 'toml' }),
   }),

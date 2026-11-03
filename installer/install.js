@@ -13,7 +13,7 @@ import { comparePaths } from '../core/paths.js';
 import { getProjection } from '../projection/registry.js';
 import { validateResult } from '../projection/validate-result.js';
 import { checkConflicts } from './conflict.js';
-import { checkR2cRoot, duplicateBackendWarnings } from './coexist.js';
+import { checkRunnerRoot, duplicateBackendWarnings } from './coexist.js';
 import {
   applyLegacyDeletions,
   detectLegacyInstall,
@@ -263,7 +263,7 @@ export function installProjection(input = {}) {
   let migration = null;
   if (!migrateLegacy) {
     if (legacyState.project.length > 0) {
-      return failure('LEGACY_INSTALL_PRESENT', 'a r2c.install/v1 receipt exists; the new channel refuses to mix with it', {
+      return failure('LEGACY_INSTALL_PRESENT', 'a legacy r2c.install/v1 receipt exists; the new channel refuses to mix with it', {
         legacy: legacyState.project,
         hint: 'rerun with --migrate-legacy to verify, back up, retire the old receipts and take over',
       });
@@ -378,7 +378,7 @@ export function installProjection(input = {}) {
     };
   }
 
-  const occupied = checkR2cRoot({
+  const occupied = checkRunnerRoot({
     projectRoot,
     projectionId,
     bundleId,
@@ -483,10 +483,10 @@ export function installProjection(input = {}) {
     const stamp = timestampSlug(clock);
     // TOCTOU: receipts and disk may have changed between check and lock.
     const fresh = loadReceipts(projectRoot, ownRel);
-    // TOCTOU: the r2c singleton decision is only valid under the lock. Two
+    // TOCTOU: the runner singleton decision is only valid under the lock. Two
     // bundles that passed the pre-lock check with disjoint paths would both
-    // claim one r2c root; the loser must be refused here, before any write.
-    const occupiedNow = checkR2cRoot({
+    // claim one runner root; the loser must be refused here, before any write.
+    const occupiedNow = checkRunnerRoot({
       projectRoot,
       projectionId,
       bundleId,
@@ -672,7 +672,7 @@ export function installProjection(input = {}) {
         migration: migrated ? migrationSummary(migration) : null,
         pruned,
         diff: appliedDiff,
-        ignoreSuggestions: ['.r2c/bin/', '.r2c/bundles/', '.r2c/projection/'],
+        ignoreSuggestions: ['.hm2b/bin/', '.hm2b/bundles/', '.hm2b/projection/'],
       };
     } catch (error) {
       const outcome = rollbackJournal(projectRoot, journal);
@@ -680,7 +680,7 @@ export function installProjection(input = {}) {
         writeJournal(projectRoot, { ...journal, state: 'rollback-failed' });
         return failure('ROLLBACK_FAILED', 'install failed and the rollback could not restore every path', {
           failures: outcome.failures,
-          journal: '.r2c/install/pending.json',
+          journal: '.hm2b/install/pending.json',
           cause: error?.message ?? String(error),
         });
       }

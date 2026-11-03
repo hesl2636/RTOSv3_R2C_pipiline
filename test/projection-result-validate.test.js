@@ -171,7 +171,7 @@ test('V12 rejects non-canonical top-level order', () => {
 });
 
 test('diagnostics use the stable PROJECTION_RESULT_INVALID code', () => {
-  const outcome = mutate((result) => { result.schema = 'r2c.projection-result/v2'; });
+  const outcome = mutate((result) => { result.schema = 'hm2b.projection-result/v2'; });
   assert.equal(outcome.ok, false);
   for (const diagnostic of outcome.diagnostics) {
     assert.equal(diagnostic.code, 'PROJECTION_RESULT_INVALID');
@@ -223,9 +223,9 @@ test('V8 accepts a worse level only when option exclusion explains the worst use
 test('the capability vocabulary and level ranks have one source', async () => {
   const { CAPABILITIES, LEVEL_RANK, SEMANTIC_CAPABILITIES } = await import('../projection/contract.js');
   const { CAPABILITIES: producerCapabilities, LEVEL_RANK: producerRanks } = await import('../runtime/agent-native/projection/project.js');
-  const { R2C_CAPABILITIES } = await import('../runtime/r2c/projection/manifest.js');
+  const { RUNNER_CAPABILITIES } = await import('../runtime/runner/projection/manifest.js');
   assert.deepEqual(producerCapabilities, CAPABILITIES);
-  assert.deepEqual(R2C_CAPABILITIES, CAPABILITIES);
+  assert.deepEqual(RUNNER_CAPABILITIES, CAPABILITIES);
   assert.equal(producerRanks, LEVEL_RANK);
   assert.deepEqual(SEMANTIC_CAPABILITIES, ['state', 'gates', 'outputs', 'subagents', 'skills', 'preload']);
   // The validator consumes the same list, so report order cannot drift.

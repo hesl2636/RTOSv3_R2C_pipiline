@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>r2c — local bundle inspector and build</title>
+  <title>hm2b — local bundle inspector and build</title>
   <link rel="stylesheet" href="/web/style.css">
   <script src="/web/boot-check.js"></script>
   <script type="module" src="/web/app.js"></script>
@@ -11,7 +11,7 @@
 <body>
   <header class="bar">
     <div>
-      <h1>r2c bundle inspector</h1>
+      <h1>hm2b bundle inspector</h1>
       <p class="subtitle">Local surface: read-only bundle and IR, editable projection options, local build, server-side publish. Nothing is installed or written to a project, and the browser never sees the GitHub token.</p>
     </div>
     <div class="badges">
@@ -25,8 +25,8 @@
     <strong>Unsupported browser</strong>
     <p id="fatal-reasons"></p>
     <p>Open this page in Chrome/Edge 123+, Firefox 127+ or Safari 17.5+, or use the CLI:</p>
-    <pre><code>node bin/r2c-assembler.js bundle validate ./bundle.zip --json
-node bin/r2c-assembler.js compile ./bundle.zip --out ./dist</code></pre>
+    <pre><code>node bin/hm2b-assembler.js bundle validate ./bundle.zip --json
+node bin/hm2b-assembler.js compile ./bundle.zip --out ./dist</code></pre>
     <p>Then serve the repository again with <code>npm run web</code>. No user-agent sniffing is used; this page is shown only when a required primitive is missing.</p>
   </div>
 
@@ -132,8 +132,8 @@ node bin/r2c-assembler.js compile ./bundle.zip --out ./dist</code></pre>
     <div class="banner banner-error">
       <strong>JavaScript is disabled.</strong>
       <p>This surface needs ESM and Web APIs. Use the CLI instead:</p>
-      <pre><code>node bin/r2c-assembler.js bundle validate ./bundle.zip --json
-node bin/r2c-assembler.js compile ./bundle.zip --out ./dist</code></pre>
+      <pre><code>node bin/hm2b-assembler.js bundle validate ./bundle.zip --json
+node bin/hm2b-assembler.js compile ./bundle.zip --out ./dist</code></pre>
     </div>
   </noscript>
 </body>

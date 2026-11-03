@@ -1,11 +1,14 @@
 /**
- * Bootstrap (`scripts/install.mjs`) unit contract after P6.
+ * Frozen legacy `v<E>` channel: bootstrap (`scripts/install.mjs`) unit contract
+ * after P6.
  *
  * The legacy payload channel is frozen: main no longer builds or publishes
  * `r2c-payload-<V>.tgz`, and a current engine has no `adapter` command. The
  * bootstrap keeps its transport/credential/argument contract so old Releases
- * (whose own engines are frozen) remain installable, and the bundle channel is
- * covered end-to-end by `bootstrap-e2e.test.js` and `release-install.test.js`.
+ * (whose own engines are frozen) remain installable. Those old Releases name
+ * their engine `r2c-engine-<E>.tgz`; the new bundle channel names it
+ * `hm2b-engine-<E>.tgz` and is covered end-to-end by `bootstrap-e2e.test.js`
+ * and `release-install.test.js`.
  */
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
@@ -27,7 +30,7 @@ const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const BOOTSTRAP = join(REPO, 'scripts', 'install.mjs');
 
 function tempDir(t, prefix) {
-  const dir = mkdtempSync(join(tmpdir(), `r2c-bootstrap-${prefix}-`));
+  const dir = mkdtempSync(join(tmpdir(), `hm2b-bootstrap-${prefix}-`));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   return dir;
 }
@@ -152,9 +155,9 @@ test('the Node floor is checked before any download', () => {
   assert.equal(nodeSupported('not-a-version'), false);
 });
 
-test('the engine archive path bound is the frozen 100-byte one', () => {
-  assert.equal(archivePathProblem('bin/r2c.js'), null);
-  assert.equal(archivePathProblem('runtime/r2c/engine/src/cli.js'), null);
+test('the shared engine archive path bound is the frozen 100-byte one', () => {
+  assert.equal(archivePathProblem('bin/hm2b.js'), null);
+  assert.equal(archivePathProblem('runtime/runner/engine/src/cli.js'), null);
   assert.equal(archivePathProblem('x'.repeat(100)), null);
   assert.match(archivePathProblem('x'.repeat(101)), /max 100/);
   assert.match(archivePathProblem('/abs'), /relative|absolute|POSIX/);

@@ -1,20 +1,25 @@
 #!/usr/bin/env node
 /**
- * r2c bootstrap: one command from a release page to a working project.
+ * hm2b bootstrap: one command from a release page to a working project.
  *
- * Downloads `r2c-engine-<V>.tgz`, verifies it against the release's
+ * The per-bundle channel (#106, decision #74 §9) runs `--bundle <id>`: it
+ * downloads the bundle Release's assets, verifies the three-way
+ * asset/zip/IR/payload chain, unpacks the Release's framework archive to a
+ * temporary directory and hands the verified bytes to that framework's
+ * installer. It never compiles a bundle and never projects one. The bundle
+ * channel names everything `hm2b-*` (`hm2b-framework-<F>.tgz`,
+ * `hm2b-engine-<F>.tgz`, `hm2b-payload-<id>-v<ver>.tgz`) and the installed
+ * runtime lives under `<project>/.hm2b/` (`.hm2b/bin/hm2b.js`,
+ * `.hm2b/engine/<E>/`).
+ *
+ * The legacy `--agent` channel (frozen `v<E>` Releases) downloads
+ * `r2c-engine-<V>.tgz`, verifies it against the release's
  * `SHA256SUMS.txt`, extracts it to `<project>/.r2c/engine/<V>/` (or
  * `~/.r2c/engine/<V>/` with `--scope user`), then hands over to that engine's
  * own `adapter install` — the payload is resolved by the engine, never here.
  * Both stages are all-or-nothing: a checksum failure writes nothing, and a
  * failed hand-off (a tampered or missing payload asset, a conflict, a broken
  * agent config) removes the engine this run extracted.
- *
- * The per-bundle channel (#106, decision #74 §9) runs `--bundle <id>`
- * instead: it downloads the bundle Release's assets, verifies the three-way
- * asset/zip/IR/payload chain, unpacks the Release's framework archive to a
- * temporary directory and hands the verified bytes to that framework's
- * installer. It never compiles a bundle and never projects one.
  *
  * Self-contained by design: node built-ins only (plus the global `fetch`), no
  * imports from the framework tree, so this file runs both from the repository and as the
@@ -46,13 +51,13 @@ const GITHUB_API = `https://api.github.com`;
 const SUMS_ASSET = 'SHA256SUMS.txt';
 const IR_ASSET = 'workflow.ir.json';
 const INSTALL_ASSET = 'install.mjs';
-const PROJECTIONS = Object.freeze(['r2c', 'agent-native']);
+const PROJECTIONS = Object.freeze(['runner', 'agent-native']);
 const BUNDLE_ID_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const BUNDLE_ID_MAX = 40;
-const FRAMEWORK_ASSET_RE = /^r2c-framework-(.+).tgz$/;
-const ENGINE_ASSET_RE = /^r2c-engine-(.+).tgz$/;
-/** Mirrors `ENGINE_ENTRY` in `scripts/lib/engine-archive.mjs`; the bootstrap may not import framework modules (C5). */
-const ENGINE_ENTRY = 'bin/r2c.js';
+const FRAMEWORK_ASSET_RE = /^hm2b-framework-(.+).tgz$/;
+const ENGINE_ASSET_RE = /^hm2b-engine-(.+).tgz$/;
+/** Legacy `v<E>` channel only: frozen engines keep `bin/r2c.js`; mirrors `engine-archive.mjs`, since the bootstrap may not import framework modules (C5). */
+const LEGACY_ENGINE_ENTRY = 'bin/r2c.js';
 const BLOCK = 512;
 const VERSION_RE = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z][0-9A-Za-z.-]*)?$/;
 const SCOPES = Object.freeze(['project', 'user']);
@@ -110,25 +115,27 @@ const USAGE = `Usage: node install.mjs --agent <id> [--version <V>] [--scope pro
                         [--project <dir>] [--release-base <dir|url>]
                         [--profile <name>] [--force]
        node install.mjs --bundle <id> [--version <V>]
-                        --projection r2c|agent-native [--target <t>]...
+                        --projection runner|agent-native [--target <t>]...
                         [--project <dir>] [--release-base <dir|url>] [--force]
 
 Downloads a bundle Release's assets, verifies them against its
 SHA256SUMS.txt, checks the zip / IR / payload manifest against each other,
 then installs the pre-projected payload — never compiling or projecting.
+The bundle channel writes the runtime under <project>/.hm2b/ (launcher
+.hm2b/bin/hm2b.js, engine .hm2b/engine/<E>/).
 
   --bundle <id>         Bundle id of the Release (tag bundle-<id>-v<V>).
-  --projection <id>     r2c or agent-native; required when the bundle allows
+  --projection <id>     runner or agent-native; required when the bundle allows
                         both, otherwise the single allowed projection.
   --target <t>          agent-native target to write (repeatable). The payload
                         is not re-projected; roles.json is still installed.
   --version <V>         Release version. Default: the latest published
                         bundle-<id> tag (requires the GitHub API).
 
-Downloads r2c-engine-<V>.tgz, verifies it against the release's
-SHA256SUMS.txt, installs it under <project>/.r2c/engine/<V>/ (or
-~/.r2c/engine/<V>/ with --scope user), then runs
-"node <engine>/bin/r2c.js adapter install <id>".
+The legacy --agent channel (frozen v<E> Releases) downloads
+r2c-engine-<V>.tgz, verifies it against the release's SHA256SUMS.txt, installs
+it under <project>/.r2c/engine/<V>/ (or ~/.r2c/engine/<V>/ with --scope user),
+then runs "node <engine>/bin/r2c.js adapter install <id>".
 
   --agent <id>          Agent adapter to install (claude-code, codex, dsh,
                         omp, opencode).
@@ -138,7 +145,7 @@ SHA256SUMS.txt, installs it under <project>/.r2c/engine/<V>/ (or
   --project <dir>       Project root (default: the current directory).
   --release-base <src>  A directory of flat release assets or an http(s)
                         mirror shaped <base>/v<V>/<asset> (also
-                        R2C_RELEASE_BASE).
+                        HM2B_RELEASE_BASE).
   --profile <name>      Agent profile forwarded to "adapter install" (dsh:
                         default "web"; other adapters ignore it).
   --force               Forward "adapter install --force": back up and replace
@@ -195,7 +202,7 @@ function parseArgs(argv) {
       if (PROJECTION_OPTION_FLAGS.has(name)) {
         fail(
           'RELEASE_OPTION_CONFLICT',
-          `custom projection options are not accepted at install (${name}): the Release payload is already projected. Re-project the published IR with the framework CLI (bin/r2c-assembler.js project) or the web front end, then install that result`,
+          `custom projection options are not accepted at install (${name}): the Release payload is already projected. Re-project the published IR with the framework CLI (bin/hm2b-assembler.js project) or the web front end, then install that result`,
           2,
         );
       }
@@ -256,9 +263,9 @@ function parseArgs(argv) {
   return options;
 }
 
-/** `R2C_HOME` first, exactly like the engine's own `userHome()`. */
+/** `HM2B_HOME` first, exactly like the engine's own `userHome()`; `R2C_HOME` is the legacy `--agent` fallback. */
 function userHome() {
-  return process.env.R2C_HOME || process.env.HOME || process.env.USERPROFILE || homedir();
+  return process.env.HM2B_HOME || process.env.R2C_HOME || process.env.HOME || process.env.USERPROFILE || homedir();
 }
 
 /** A directory of flat assets, or an http(s) mirror (`<base>/v<V>/<asset>`). */
@@ -334,7 +341,7 @@ export function authCredential() {
 async function request(url, timeout, headers) {
   try {
     return await fetch(url, {
-      headers: { 'user-agent': 'r2c-install', ...headers },
+      headers: { 'user-agent': 'hm2b-install', ...headers },
       redirect: 'follow',
       signal: AbortSignal.timeout(timeout),
     });
@@ -609,9 +616,9 @@ function compareVersions(left, right) {
 }
 
 function releaseMissingCode(name) {
-  if (name.startsWith('r2c-engine-')) return 'RELEASE_ENGINE_MISSING';
-  if (name.startsWith('r2c-framework-')) return 'RELEASE_FRAMEWORK_MISSING';
-  if (/^(r2c-payload-|agent-native-)/.test(name)) return 'RELEASE_PAYLOAD_MISSING';
+  if (name.startsWith('hm2b-engine-')) return 'RELEASE_ENGINE_MISSING';
+  if (name.startsWith('hm2b-framework-')) return 'RELEASE_FRAMEWORK_MISSING';
+  if (/^(hm2b-payload-|agent-native-)/.test(name)) return 'RELEASE_PAYLOAD_MISSING';
   return 'RELEASE_NOT_FOUND';
 }
 
@@ -624,9 +631,9 @@ function releaseAssetUnavailable(name, tag, where, { status = null, credential =
   );
 }
 
-/** `R2C_GITHUB_API` is a loopback/mirror seam; it never receives a token. */
+/** `HM2B_GITHUB_API` is a loopback/mirror seam; it never receives a token. */
 function apiBaseFor(source) {
-  const override = process.env.R2C_GITHUB_API;
+  const override = process.env.HM2B_GITHUB_API;
   if (source.kind === 'url' && source.github === false
     && typeof override === 'string' && override.trim() !== '') {
     return override.trim().replace(/\/+$/, '');
@@ -649,7 +656,7 @@ function releaseClient(source, credential) {
       const url = /^https?:\/\//i.test(target) ? target : `${base}${target}`;
       const headers = {
         accept: options.accept ?? 'application/vnd.github+json',
-        'user-agent': 'r2c-install',
+        'user-agent': 'hm2b-install',
       };
       if (token !== null) headers.authorization = `Bearer ${token}`;
       let response;
@@ -821,7 +828,7 @@ function readFrameworkArchive(buffer) {
 /** Unpack the framework release into a fresh temporary directory. */
 function extractFramework(buffer) {
   const entries = readFrameworkArchive(buffer);
-  const root = mkdtempSync(join(tmpdir(), 'r2c-framework-'));
+  const root = mkdtempSync(join(tmpdir(), 'hm2b-framework-'));
   try {
     for (const entry of entries) {
       const target = join(root, ...entry.path.split('/'));
@@ -853,7 +860,7 @@ async function loadFramework(root) {
 
 /** Download → three-way verify → install one bundle Release. */
 async function runBundle(options, projectDir) {
-  const explicitBase = options.releaseBase ?? process.env.R2C_RELEASE_BASE ?? null;
+  const explicitBase = options.releaseBase ?? process.env.HM2B_RELEASE_BASE ?? null;
   const source = releaseSource(explicitBase === null ? DEFAULT_RELEASE_BASE : explicitBase);
   const bundleId = options.bundle;
   const credential = source.github ? authCredential() : null;
@@ -877,7 +884,7 @@ async function runBundle(options, projectDir) {
   const sums = readSumsNames(sumsBytes);
   const frameworkName = [...sums.keys()].find((name) => FRAMEWORK_ASSET_RE.test(name));
   if (frameworkName === undefined) {
-    fail('RELEASE_FRAMEWORK_MISSING', `${SUMS_ASSET} of ${tag} lists no r2c-framework-<F>.tgz; nothing was written`, 2);
+    fail('RELEASE_FRAMEWORK_MISSING', `${SUMS_ASSET} of ${tag} lists no hm2b-framework-<F>.tgz; nothing was written`, 2);
   }
   const frameworkBytes = await fetchBundleAsset(source, tag, frameworkName, credential);
   verifyAssetDigest(frameworkName, frameworkBytes, sums);
@@ -937,14 +944,14 @@ async function runBundle(options, projectDir) {
     };
     const needed = [
       `bundle-${bundleId}-v${version}.zip`,
-      projection === 'r2c'
-        ? `r2c-payload-${bundleId}-v${version}.tgz`
+      projection === 'runner'
+        ? `hm2b-payload-${bundleId}-v${version}.tgz`
         : `agent-native-${bundleId}-v${version}.tgz`,
     ];
-    if (projection === 'r2c') {
+    if (projection === 'runner') {
       const engineName = [...sums.keys()].find((name) => ENGINE_ASSET_RE.test(name));
       if (engineName === undefined) {
-        fail('RELEASE_ENGINE_MISSING', `${SUMS_ASSET} of ${tag} lists no r2c-engine-<E>.tgz for the r2c runtime`, 2);
+        fail('RELEASE_ENGINE_MISSING', `${SUMS_ASSET} of ${tag} lists no hm2b-engine-<E>.tgz for the runner runtime`, 2);
       }
       needed.push(engineName);
     }
@@ -983,8 +990,8 @@ async function runBundle(options, projectDir) {
     for (const warning of outcome.warnings ?? []) {
       process.stdout.write(`warn: ${warning.code ?? 'WARNING'} ${warning.message ?? ''}`.trim() + '\n');
     }
-    if (projection === 'r2c') {
-      process.stdout.write('next: node .r2c/bin/r2c.js\n');
+    if (projection === 'runner') {
+      process.stdout.write('next: node .hm2b/bin/hm2b.js\n');
     }
   } finally {
     rmSync(frameworkRoot, { recursive: true, force: true });
@@ -1002,7 +1009,7 @@ async function main(argv) {
   if (!nodeSupported(process.versions.node)) {
     fail(
       'NODE_UNSUPPORTED',
-      `r2c requires node ${NODE_RANGE}; this is node ${process.versions.node}`,
+      `hm2b requires node ${NODE_RANGE}; this is node ${process.versions.node}`,
       2,
     );
   }
@@ -1017,9 +1024,10 @@ async function main(argv) {
   }
   const scope = options.scope ?? 'project';
 
-  const explicitBase = options.releaseBase ?? process.env.R2C_RELEASE_BASE ?? null;
+  const explicitBase = options.releaseBase ?? process.env.HM2B_RELEASE_BASE ?? null;
   const source = releaseSource(explicitBase === null ? DEFAULT_RELEASE_BASE : explicitBase);
   const version = options.version ?? (await latestVersion(source));
+  // Legacy layout: frozen engines still live in `.r2c/engine` and `.r2c/bin`.
   const engineHome = join(scope === 'user' ? userHome() : projectDir, '.r2c', 'engine', version);
   const engineRoot = dirname(engineHome);
   const stateRoot = dirname(engineRoot);
@@ -1030,6 +1038,7 @@ async function main(argv) {
   if (engineReady(engineHome, version)) {
     process.stdout.write(`engine ${version} already at ${engineHome}\n`);
   } else {
+    // Legacy asset name: frozen `v<E>` releases publish `r2c-engine-<E>.tgz`.
     const assetName = `r2c-engine-${version}.tgz`;
     const sums = await fetchAsset(source, version, SUMS_ASSET);
     const expected = digestFor(sums.toString('utf8'), assetName);
@@ -1050,9 +1059,10 @@ async function main(argv) {
     process.stdout.write(`engine ${version}: ${engineHome}\n`);
   }
 
-  const entry = join(engineHome, ENGINE_ENTRY);
+  const entry = join(engineHome, LEGACY_ENGINE_ENTRY);
   const env = { ...process.env };
   if (explicitBase !== null) {
+    // Legacy hand-off: the frozen engine reads `R2C_RELEASE_BASE`.
     env.R2C_RELEASE_BASE = source.kind === 'dir' ? source.dir : source.base;
   }
   const installArgs = [

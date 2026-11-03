@@ -21,7 +21,7 @@ import {
 } from './helpers/minimal-bundle.js';
 
 const REPO = fileURLToPath(new URL('..', import.meta.url));
-const BIN = fileURLToPath(new URL('../bin/r2c-assembler.js', import.meta.url));
+const BIN = fileURLToPath(new URL('../bin/hm2b-assembler.js', import.meta.url));
 const BASELINE = join(
   REPO,
   'examples',
@@ -47,7 +47,7 @@ function expectErrors(zip, expected) {
 }
 
 function withTempDir(fn) {
-  const dir = mkdtempSync(join(tmpdir(), 'r2c-container-'));
+  const dir = mkdtempSync(join(tmpdir(), 'hm2b-container-'));
   try {
     return fn(dir);
   } finally {
@@ -355,7 +355,7 @@ test('a container failure exits 2 and repeated runs produce identical JSON', () 
 
 test('warnings never change the exit code', () => {
   const zip = minimalZip({
-    overrides: { 'tasks/do-it.md': MINIMAL_TASK.replace('完成唯一一步。', '先跑 r2c-status。') },
+    overrides: { 'tasks/do-it.md': MINIMAL_TASK.replace('完成唯一一步。', '先跑 hm2b-status。') },
   });
   withTempDir((dir) => {
     const zipPath = join(dir, 'warning.zip');
@@ -383,8 +383,8 @@ test('the validator is a pure bytes-in/report-out function (no filesystem writes
 
 test('the baseline bundle keeps 0 errors, 2 warnings and the frozen IR', () => {
   const bytes = readFileSync(BASELINE);
-  assert.equal(bytes.length, 55042);
-  assert.equal(sha256Hex(bytes), 'c22064539aa189b4d9345b1d39b148967a450584badd2593dcf47c0c5b75a13e');
+  assert.equal(bytes.length, 55043);
+  assert.equal(sha256Hex(bytes), '4b4700207e2a1398b930b46123f5e7aef27f803e3afc3596d19e31dc454d8196');
   const report = validate(bytes);
   assert.equal(report.ok, true, JSON.stringify(report.errors));
   assert.deepEqual(report.errors, []);
@@ -394,6 +394,6 @@ test('the baseline bundle keeps 0 errors, 2 warnings and the frozen IR', () => {
   ]);
   const compiled = compileBundle(bytes, PRIMITIVES);
   assert.equal(compiled.ok, true);
-  assert.equal(compiled.irBytes.length, 58827);
-  assert.equal(compiled.digest, '8a2a57593939f91117d57f9ca34c56b2fc631f6837168ef74032daa95202d395');
+  assert.equal(compiled.irBytes.length, 58829);
+  assert.equal(compiled.digest, 'd6e8957287117c7b476891e1807e303c9a965fbe366087a13947baf34b0da09f');
 });

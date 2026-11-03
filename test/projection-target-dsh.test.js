@@ -82,13 +82,13 @@ function miniIr({ roles, stages, skills = {} } = {}) {
     },
   };
   return {
-    schema: 'r2c.ir/v1',
+    schema: 'hm2b.ir/v1',
     id: 'mini',
     name: 'Mini workflow',
     version: '1.0.0',
     description: 'A miniature workflow used by dsh projection tests.',
     source: {
-      bundle: { schema: 'r2c.bundle/v1', id: 'mini', version: '1.0.0', contentSha256: 'b'.repeat(64) },
+      bundle: { schema: 'hm2b.bundle/v1', id: 'mini', version: '1.0.0', contentSha256: 'b'.repeat(64) },
       manifest: { path: 'bundle.json', sha256: 'c'.repeat(64) },
     },
     stages: stages ?? [{
@@ -140,7 +140,7 @@ test('dsh-only baseline: 42 files = 40 shared skills + role catalogue + roles.js
   for (const path of paths) {
     assert.match(path, /^\.(?:agents|dsh)\//);
     assert.doesNotMatch(path, /(?:^|\/)(?:CLAUDE\.md|AGENTS\.md|RULES\.md|opencode\.json|commands)(?:\/|$)/);
-    assert.doesNotMatch(path, /^\.r2c\//);
+    assert.doesNotMatch(path, /^\.hm2b\//);
   }
 
   const kinds = new Map();

@@ -70,17 +70,17 @@ export function bundleAssetNames({ id, version, allowed, engineVersion, framewor
     INSTALL_ASSET,
     IR_ASSET,
     `bundle-${id}-v${version}.zip`,
-    `r2c-framework-${frameworkVersion}.tgz`,
+    `hm2b-framework-${frameworkVersion}.tgz`,
   ];
-  if (allowed.includes('r2c')) {
-    names.push(`r2c-payload-${id}-v${version}.tgz`, `r2c-engine-${engineVersion}.tgz`);
+  if (allowed.includes('runner')) {
+    names.push(`hm2b-payload-${id}-v${version}.tgz`, `hm2b-engine-${engineVersion}.tgz`);
   }
   if (allowed.includes('agent-native')) names.push(`agent-native-${id}-v${version}.tgz`);
   names.push(SUMS_ASSET);
   return [...new Set(names)].sort(compareCodePoints);
 }
 
-/** The four legacy `v<E>` asset names, for cross-channel isolation checks. */
+/** The four frozen legacy `v<E>` asset names, for cross-channel isolation checks. */
 export function legacyAssetNames(engineVersion) {
   return [
     INSTALL_ASSET,

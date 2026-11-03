@@ -23,7 +23,7 @@ const MANIFEST = {
 };
 
 const IR = {
-  schema: 'r2c.ir/v1',
+  schema: 'hm2b.ir/v1',
   id: 'demo',
   version: '1.0.0',
   stages: [
@@ -55,7 +55,7 @@ test('null inputs resolve to the IR order, sorted skills and manifest targets', 
   const outcome = normalize(null);
   assert.equal(outcome.ok, true);
   assert.deepEqual(outcome.options, {
-    schema: 'r2c.projection-options/v1',
+    schema: 'hm2b.projection-options/v1',
     projection: 'agent-native',
     ir: { digest: DIGEST, id: 'demo', version: '1.0.0' },
     stageOrder: ['analysis', 'implementation'],
@@ -94,8 +94,8 @@ test('invalid stage order, skills, targets and extra are rejected', () => {
   assert.equal(unknown.ok, false);
   assert.deepEqual(codes(unknown), ['PROJECTION_TARGET_UNKNOWN']);
   assert.deepEqual(codes(normalize({ extra: { roleModels: {} } })), ['PROJECTION_OPTIONS_INVALID']);
-  assert.deepEqual(codes(normalize({ schema: 'r2c.projection-options/v2' })), ['PROJECTION_OPTIONS_INVALID']);
-  assert.deepEqual(codes(normalize({ projection: 'r2c' })), ['PROJECTION_OPTIONS_INVALID']);
+  assert.deepEqual(codes(normalize({ schema: 'hm2b.projection-options/v2' })), ['PROJECTION_OPTIONS_INVALID']);
+  assert.deepEqual(codes(normalize({ projection: 'runner' })), ['PROJECTION_OPTIONS_INVALID']);
 });
 
 test('extra follows the declared closed schema and is echoed verbatim', () => {
@@ -145,7 +145,7 @@ test('extra follows the declared closed schema and is echoed verbatim', () => {
 });
 
 test('both real manifests declare the closed empty extra schema', () => {
-  for (const id of ['agent-native', 'r2c']) {
+  for (const id of ['agent-native', 'runner']) {
     const manifest = getProjection(id);
     assert.equal(manifest.optionsSchema.type, 'object');
     assert.equal(manifest.optionsSchema.additionalProperties, false);

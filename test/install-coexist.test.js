@@ -1,9 +1,9 @@
 /**
  * #103 multi-bundle coexistence (spec §12, #76 §4).
  *
- * Two agent-native bundles coexist; agent-native and r2c coexist without path
+ * Two agent-native bundles coexist; agent-native and runner coexist without path
  * overlap; the same bundle id on both projections warns `DUPLICATE_BACKEND`;
- * a second r2c bundle is refused with `R2C_ROOT_OCCUPIED` before any write;
+ * a second runner bundle is refused with `RUNNER_ROOT_OCCUPIED` before any write;
  * cross-receipt literal collisions are refused, never last-wins.
  */
 import assert from 'node:assert/strict';
@@ -29,7 +29,7 @@ const CLOCK = fixedClock();
 const LATER = fixedClock('2026-04-01T00:00:00.000Z');
 
 function tempProject(t) {
-  const dir = mkdtempSync(join(tmpdir(), 'r2c-coexist-'));
+  const dir = mkdtempSync(join(tmpdir(), 'hm2b-coexist-'));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   return dir;
 }
@@ -56,7 +56,7 @@ function snapshot(projectRoot) {
 }
 
 function receiptOf(projectRoot, projection, bundle) {
-  const path = join(projectRoot, '.r2c/install/receipts', projection, `${bundle}.json`);
+  const path = join(projectRoot, '.hm2b/install/receipts', projection, `${bundle}.json`);
   assert.equal(existsSync(path), true, `receipt ${projection}/${bundle} exists`);
   return JSON.parse(readFileSync(path, 'utf8'));
 }
@@ -75,10 +75,10 @@ function codes(outcome) {
 
 function writeReceipt(projectRoot, { projection = 'agent-native', bundle = 'other-bundle', paths = [] }) {
   const receipt = {
-    schema: 'r2c.install/v2',
+    schema: 'hm2b.install/v2',
     projection: { id: projection, version: '1.0.0', targets: [] },
     bundle: { id: bundle, version: '1.0.0' },
-    ir: { path: `.r2c/bundles/${bundle}/1.0.0/workflow.ir.json`, digest: '0'.repeat(64), contentSha256: '0'.repeat(64) },
+    ir: { path: `.hm2b/bundles/${bundle}/1.0.0/workflow.ir.json`, digest: '0'.repeat(64), contentSha256: '0'.repeat(64) },
     root: 'project',
     scope: 'project',
     mode: 'fresh',
@@ -104,7 +104,7 @@ function writeReceipt(projectRoot, { projection = 'agent-native', bundle = 'othe
     created_at: '2026-01-01T00:00:00.000Z',
     updated_at: '2026-01-01T00:00:00.000Z',
   };
-  const rel = `.r2c/install/receipts/${projection}/${bundle}.json`;
+  const rel = `.hm2b/install/receipts/${projection}/${bundle}.json`;
   const path = join(projectRoot, ...rel.split('/'));
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, canonicalJson(receipt));
@@ -136,37 +136,37 @@ test('two agent-native bundles with different ids coexist and uninstall independ
     assert.equal(existsSync(absolute(projectRoot, path)), true, `uninstalling alpha-flow keeps ${path}`);
   }
   receiptOf(projectRoot, 'agent-native', 'rtosv3-drvport');
-  assert.equal(existsSync(absolute(projectRoot, '.r2c/install/receipts/agent-native/alpha-flow.json')), false);
+  assert.equal(existsSync(absolute(projectRoot, '.hm2b/install/receipts/agent-native/alpha-flow.json')), false);
 });
 
-test('agent-native and r2c bundles with different ids coexist with zero path overlap', (t) => {
+test('agent-native and runner bundles with different ids coexist with zero path overlap', (t) => {
   const projectRoot = tempProject(t);
   const native = sample('agent-native');
-  const r2c = customSample({ irPatch: { id: 'other-workflow' } });
+  const runnerSet = customSample({ irPatch: { id: 'other-workflow' } });
 
   assert.equal(install(projectRoot, native).code, 'OK');
-  assert.equal(install(projectRoot, r2c, { clock: LATER }).code, 'OK');
+  assert.equal(install(projectRoot, runnerSet, { clock: LATER }).code, 'OK');
 
   const nativeReceipt = receiptOf(projectRoot, 'agent-native', 'rtosv3-drvport');
-  const r2cReceipt = receiptOf(projectRoot, 'r2c', 'other-workflow');
-  const overlap = receiptPaths(nativeReceipt).filter((path) => receiptPaths(r2cReceipt).includes(path));
+  const runnerReceipt = receiptOf(projectRoot, 'runner', 'other-workflow');
+  const overlap = receiptPaths(nativeReceipt).filter((path) => receiptPaths(runnerReceipt).includes(path));
   assert.deepEqual(overlap, []);
-  assert.equal(r2cReceipt.mode, 'fresh', 'the second projection is a fresh identity, not an upgrade');
+  assert.equal(runnerReceipt.mode, 'fresh', 'the second projection is a fresh identity, not an upgrade');
 
-  const removed = uninstallProjection({ projectRoot, projectionId: 'r2c', bundleId: 'other-workflow', clock: LATER });
+  const removed = uninstallProjection({ projectRoot, projectionId: 'runner', bundleId: 'other-workflow', clock: LATER });
   assert.equal(removed.code, 'OK');
   for (const path of receiptPaths(nativeReceipt)) {
-    assert.equal(existsSync(absolute(projectRoot, path)), true, `uninstalling r2c keeps ${path}`);
+    assert.equal(existsSync(absolute(projectRoot, path)), true, `uninstalling runner keeps ${path}`);
   }
   receiptOf(projectRoot, 'agent-native', 'rtosv3-drvport');
 });
 
 test('the same bundle id on both projections is allowed with DUPLICATE_BACKEND and nothing is deleted', (t) => {
   const projectRoot = tempProject(t);
-  const r2c = sample('r2c');
+  const runnerSet = sample('runner');
   const native = sample('agent-native');
 
-  const first = install(projectRoot, r2c);
+  const first = install(projectRoot, runnerSet);
   assert.equal(first.code, 'OK');
   assert.deepEqual(first.warnings.filter((warning) => warning.code === 'DUPLICATE_BACKEND'), []);
 
@@ -174,35 +174,35 @@ test('the same bundle id on both projections is allowed with DUPLICATE_BACKEND a
   assert.equal(second.code, 'OK');
   const duplicate = second.warnings.filter((warning) => warning.code === 'DUPLICATE_BACKEND');
   assert.equal(duplicate.length, 1);
-  assert.equal(duplicate[0].target, 'r2c');
-  assert.equal(duplicate[0].pointer, '.r2c/install/receipts/r2c/rtosv3-drvport.json');
+  assert.equal(duplicate[0].target, 'runner');
+  assert.equal(duplicate[0].pointer, '.hm2b/install/receipts/runner/rtosv3-drvport.json');
   assert.deepEqual(
     second.receipt.warnings.filter((warning) => warning.code === 'DUPLICATE_BACKEND').length,
     1,
     'the receipt records the warning',
   );
 
-  const r2cReceipt = receiptOf(projectRoot, 'r2c', 'rtosv3-drvport');
+  const runnerReceipt = receiptOf(projectRoot, 'runner', 'rtosv3-drvport');
   const nativeReceipt = receiptOf(projectRoot, 'agent-native', 'rtosv3-drvport');
-  for (const path of [...receiptPaths(r2cReceipt), ...receiptPaths(nativeReceipt)]) {
+  for (const path of [...receiptPaths(runnerReceipt), ...receiptPaths(nativeReceipt)]) {
     assert.equal(existsSync(absolute(projectRoot, path)), true, `${path} is kept`);
   }
 
-  const rerun = install(projectRoot, r2c, { clock: LATER });
+  const rerun = install(projectRoot, runnerSet, { clock: LATER });
   assert.equal(rerun.code, 'OK');
   assert.equal(rerun.warnings.filter((warning) => warning.code === 'DUPLICATE_BACKEND').length, 1);
 
   const removed = uninstallProjection({ projectRoot, projectionId: 'agent-native', bundleId: 'rtosv3-drvport', clock: LATER });
   assert.equal(removed.code, 'OK');
-  for (const path of receiptPaths(r2cReceipt)) {
-    assert.equal(existsSync(absolute(projectRoot, path)), true, `uninstalling agent-native keeps r2c ${path}`);
+  for (const path of receiptPaths(runnerReceipt)) {
+    assert.equal(existsSync(absolute(projectRoot, path)), true, `uninstalling agent-native keeps runner ${path}`);
   }
-  receiptOf(projectRoot, 'r2c', 'rtosv3-drvport');
+  receiptOf(projectRoot, 'runner', 'rtosv3-drvport');
 });
 
-test('a second r2c bundle is refused with R2C_ROOT_OCCUPIED before any write', (t) => {
+test('a second runner bundle is refused with RUNNER_ROOT_OCCUPIED before any write', (t) => {
   const projectRoot = tempProject(t);
-  const first = sample('r2c');
+  const first = sample('runner');
   assert.equal(install(projectRoot, first).code, 'OK');
   const before = snapshot(projectRoot);
 
@@ -210,10 +210,10 @@ test('a second r2c bundle is refused with R2C_ROOT_OCCUPIED before any write', (
   for (const force of [false, true]) {
     const outcome = install(projectRoot, second, { clock: LATER, force });
     assert.equal(outcome.ok, false);
-    assert.equal(outcome.code, 'R2C_ROOT_OCCUPIED');
-    assert.match(outcome.message, /r2c/);
+    assert.equal(outcome.code, 'RUNNER_ROOT_OCCUPIED');
+    assert.match(outcome.message, /runner/);
     assert.deepEqual(outcome.occupied, ['workflows/rtosv3-drvport.yaml']);
-    assert.equal(outcome.occupier.projection, 'r2c');
+    assert.equal(outcome.occupier.projection, 'runner');
     assert.equal(outcome.occupier.bundle, 'rtosv3-drvport');
   }
   assert.deepEqual(snapshot(projectRoot), before, 'nothing of the occupied root is rewritten');
@@ -221,7 +221,7 @@ test('a second r2c bundle is refused with R2C_ROOT_OCCUPIED before any write', (
 
 test('an unowned workflows/*.yaml that is byte-identical is adopted, not refused', (t) => {
   const projectRoot = tempProject(t);
-  const { result, irBytes } = sample('r2c');
+  const { result, irBytes } = sample('runner');
   const workflow = result.files.find((file) => file.path.startsWith('workflows/'));
   const target = absolute(projectRoot, workflow.path);
   mkdirSync(dirname(target), { recursive: true });
@@ -231,12 +231,12 @@ test('an unowned workflows/*.yaml that is byte-identical is adopted, not refused
   assert.equal(outcome.code, 'OK');
   assert.ok(outcome.decisions.some((decision) => decision.path === workflow.path && decision.action === 'adopt'));
   assert.equal(readFileSync(target, 'utf8'), workflow.content);
-  assert.ok(receiptPaths(receiptOf(projectRoot, 'r2c', 'rtosv3-drvport')).includes(workflow.path));
+  assert.ok(receiptPaths(receiptOf(projectRoot, 'runner', 'rtosv3-drvport')).includes(workflow.path));
 });
 
 test('an unowned workflows/*.yaml with different bytes is refused even with --force', (t) => {
   const projectRoot = tempProject(t);
-  const { result, irBytes } = sample('r2c');
+  const { result, irBytes } = sample('runner');
   const workflow = result.files.find((file) => file.path.startsWith('workflows/'));
   const target = absolute(projectRoot, workflow.path);
   mkdirSync(dirname(target), { recursive: true });
@@ -244,12 +244,12 @@ test('an unowned workflows/*.yaml with different bytes is refused even with --fo
 
   for (const force of [false, true]) {
     const outcome = installProjection({ result, irBytes, projectRoot, clock: CLOCK, force });
-    assert.equal(outcome.code, 'R2C_ROOT_OCCUPIED');
+    assert.equal(outcome.code, 'RUNNER_ROOT_OCCUPIED');
     assert.deepEqual(outcome.occupied, [workflow.path]);
     assert.equal(outcome.occupier.reason, 'UNOWNED_DIFFERENT');
     assert.equal(readFileSync(target, 'utf8'), 'name: someone-elses-workflow\n');
   }
-  assert.equal(existsSync(absolute(projectRoot, '.r2c/install/receipts/r2c/rtosv3-drvport.json')), false);
+  assert.equal(existsSync(absolute(projectRoot, '.hm2b/install/receipts/runner/rtosv3-drvport.json')), false);
 });
 
 const COLLISION_MATRIX = [
@@ -279,7 +279,7 @@ const COLLISION_MATRIX = [
 for (const row of COLLISION_MATRIX) {
   test(`cross-receipt collision is refused, never last-wins: ${row.name}`, (t) => {
     const projectRoot = tempProject(t);
-    const { result, irBytes } = sample('r2c');
+    const { result, irBytes } = sample('runner');
     const otherPath = row.otherPath(result);
     writeReceipt(projectRoot, { paths: [otherPath] });
     const before = snapshot(projectRoot);
@@ -311,9 +311,9 @@ test('the full agent-native flow stays correct through uninstall, reinstall, upg
   });
   assert.equal(uninstalled.code, 'OK');
   assert.deepEqual(uninstalled.leftover, []);
-  assert.equal(existsSync(absolute(projectRoot, '.r2c/install/receipts/agent-native/rtosv3-drvport.json')), false);
+  assert.equal(existsSync(absolute(projectRoot, '.hm2b/install/receipts/agent-native/rtosv3-drvport.json')), false);
   assert.deepEqual(
-    walk(projectRoot).filter((path) => !path.startsWith('.r2c/')),
+    walk(projectRoot).filter((path) => !path.startsWith('.hm2b/')),
     [],
     'only the shared roots and empty installer dirs remain',
   );
@@ -343,7 +343,7 @@ test('the full agent-native flow stays correct through uninstall, reinstall, upg
     assert.equal(sha256File(absolute(projectRoot, file.path)), file.sha256, `${file.path} matches its receipt hash`);
   }
   const declared = new Set(receipt.files.map((file) => file.path));
-  const onDisk = walk(projectRoot).filter((path) => !path.startsWith('.r2c/'));
+  const onDisk = walk(projectRoot).filter((path) => !path.startsWith('.hm2b/'));
   for (const path of onDisk) {
     assert.ok(declared.has(path), `${path} is owned by the receipt`);
   }

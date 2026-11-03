@@ -1,9 +1,9 @@
 {
-  "name": "r2c-adapter-dsh",
+  "name": "hm2b-adapter-dsh",
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "r2c native Cordis plugin for DeepSeek Harness: commands, stop continuation and tool guard",
+  "description": "hm2b native Cordis plugin for DeepSeek Harness: commands, stop continuation and tool guard",
   "main": "./index.mjs",
   "exports": {
     ".": "./index.mjs",

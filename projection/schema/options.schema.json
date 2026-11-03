@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://r2c.runner/schema/projection-options/v1",
-  "title": "r2c.projection-options/v1",
+  "$id": "https://hm2b.runner/schema/projection-options/v1",
+  "title": "hm2b.projection-options/v1",
   "description": "Resolved projection options, echoed into a projection result. Documentation only: projection/options.js is authoritative (normalizeOptions / validateOptions). Raw input may omit fields or pass null for stageOrder, skills and targets; the resolved echo always carries concrete arrays.",
   "$comment": "Rules the caller enforces and this document does not express: options.ir.digest/id/version must equal the input IR and its digest; stageOrder is a permutation of the IR stage ids; skills is a unique subset of the IR skill ids, sorted by code point; targets is a non-empty unique subset of the manifest targets in manifest order; extra keys are sorted recursively and validated against the manifest optionsSchema (empty extra when none is declared); options bind the IR and are never written back to the bundle or IR.",
   "type": "object",
@@ -17,11 +17,11 @@
   ],
   "properties": {
     "schema": {
-      "const": "r2c.projection-options/v1"
+      "const": "hm2b.projection-options/v1"
     },
     "projection": {
       "enum": [
-        "r2c",
+        "runner",
         "agent-native"
       ],
       "description": "Must equal the projection being called."
@@ -88,7 +88,7 @@
       "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
       "maxLength": 40,
       "not": {
-        "const": "r2c"
+        "const": "hm2b"
       }
     },
     "skillId": {

@@ -61,13 +61,13 @@ function miniIr({ id = 'mini', role = {}, skills = {} } = {}) {
     ...role,
   };
   return {
-    schema: 'r2c.ir/v1',
+    schema: 'hm2b.ir/v1',
     id,
     name: 'Mini workflow',
     version: '1.0.0',
     description: 'A miniature workflow used by projection tests.',
     source: {
-      bundle: { schema: 'r2c.bundle/v1', id, version: '1.0.0', contentSha256: 'b'.repeat(64) },
+      bundle: { schema: 'hm2b.bundle/v1', id, version: '1.0.0', contentSha256: 'b'.repeat(64) },
       manifest: { path: 'bundle.json', sha256: 'c'.repeat(64) },
     },
     stages: [{
@@ -175,11 +175,11 @@ test('the rendered placeholder agent matches the prototype byte for byte', () =>
     '',
     '按当前步骤的任务书执行；不要臆测本角色未声明的专有职责。',
     '',
-    '<!-- r2c:placeholder role=bys-architect -->',
+    '<!-- hm2b:placeholder role=bys-architect -->',
     '',
   ].join('\n');
   assert.equal(file.content, expected);
-  assert.equal(sha256Hex(file.content), 'c1d042c68f52f409795e4789f10463f8f38a68dd1d289d85b5c138e0ae483ac2');
+  assert.equal(sha256Hex(file.content), 'caa5393db87cb14e97a12b5f26f34cad52cfb30d1b702de608eb660d15563bae');
 });
 
 test('mode maps to opencode semantics: subagent/all/primary with matching exposure', () => {
@@ -325,7 +325,7 @@ test('preload is unavailable and degraded per role use point', () => {
 test('roles.json has one opencode section consistent with idMap and artifacts', () => {
   const { ir, irDigest, result } = opencodeSample();
   const roles = rolesJson(result);
-  assert.equal(roles.schema, 'r2c.projection.roles/v1');
+  assert.equal(roles.schema, 'hm2b.projection.roles/v1');
   assert.deepEqual(Object.keys(roles.targets), ['opencode']);
   assert.equal(roles.ir.sha256, irDigest);
   const section = roles.targets.opencode;

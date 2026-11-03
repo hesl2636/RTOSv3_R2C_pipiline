@@ -106,7 +106,7 @@ export function readBuiltRelease(dir) {
   // payload manifest records the options it was projected with; a custom
   // selection records the concrete arrays instead of the canonical nulls.
   for (const asset of assets) {
-    const projectionId = asset.name.startsWith('r2c-payload-') ? 'r2c'
+    const projectionId = asset.name.startsWith('hm2b-payload-') ? 'runner'
       : asset.name.startsWith('agent-native-') ? 'agent-native' : null;
     if (projectionId === null) continue;
     const payload = readPayloadArchive(asset.data);

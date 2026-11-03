@@ -1,4 +1,4 @@
-/** `r2c-assembler compile <bundle.zip> --out <dir> [--json]`. */
+/** `hm2b-assembler compile <bundle.zip> --out <dir> [--json]`. */
 import { join } from 'node:path';
 import { inflateRaw } from '../../core/node/inflate.js';
 import { sha256Hex } from '../../core/node/sha256.js';
@@ -32,7 +32,7 @@ export function run(argv) {
   }
   const { options } = parsed;
   if (options.help) {
-    process.stdout.write('Usage: r2c-assembler compile <bundle.zip> --out <dir> [--json]\n');
+    process.stdout.write('Usage: hm2b-assembler compile <bundle.zip> --out <dir> [--json]\n');
     return EXIT_CODES.OK;
   }
   if (options.positionals.length !== 1 || options.out === null) {

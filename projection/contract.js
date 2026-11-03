@@ -2,7 +2,7 @@
  * The projection capability vocabulary, shared by every producer and the
  * validator (#69 §6.1/§12.2, #82 §2).
  *
- * One definition feeds the agent-native and r2c projections (which emit
+ * One definition feeds the agent-native and runner projections (which emit
  * `capabilityReport` rows in this order) and `validate-result.js` (which
  * checks them). A new capability is added here and nowhere else.
  */

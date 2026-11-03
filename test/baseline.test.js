@@ -3,7 +3,7 @@
  *
  * The committed rtosv3 sample is the regression oracle:
  *   - validating it yields exactly the frozen 2 warnings and exit 0;
- *   - compiling it yields the frozen 58,827-byte IR (sha256 8a2a5759…);
+ *   - compiling it yields the frozen 58,829-byte IR (sha256 d6e89572…);
  *   - the zip, the source directory, and repacked variants compile to the
  *     same bytes;
  *   - only contract content can change the IR; README.md cannot;
@@ -38,16 +38,16 @@ const BUNDLE = join(EXAMPLE, 'bundle');
 const COMMITTED_ZIP = join(EXAMPLE, 'dist', 'bundle-rtosv3-drvport-v1.0.0.zip');
 const FILES_SUMS = join(EXAMPLE, 'FILES.sha256');
 const GOLDEN_IR = join(REPO, 'test', 'fixtures', 'ir', 'workflow.ir.json');
-const CLI = join(REPO, 'bin', 'r2c-assembler.js');
+const CLI = join(REPO, 'bin', 'hm2b-assembler.js');
 
 const PRIMITIVES = { inflateRaw, sha256: sha256Hex };
 
 const ANCHORS = Object.freeze({
-  zipBytes: 55042,
-  zipSha256: 'c22064539aa189b4d9345b1d39b148967a450584badd2593dcf47c0c5b75a13e',
-  irBytes: 58827,
-  irSha256: '8a2a57593939f91117d57f9ca34c56b2fc631f6837168ef74032daa95202d395',
-  contentSha256: 'df61a4136d191a2eee1a31e6cbef83a3ccd2002e74c822c93e7b8edda4a16be3',
+  zipBytes: 55043,
+  zipSha256: '4b4700207e2a1398b930b46123f5e7aef27f803e3afc3596d19e31dc454d8196',
+  irBytes: 58829,
+  irSha256: 'd6e8957287117c7b476891e1807e303c9a965fbe366087a13947baf34b0da09f',
+  contentSha256: '006ec1b7831ac6c3c980d8c606880c87cc7fbc48f662bc2e1dbd152c9ccf6237',
 });
 
 const EXPECTED_WARNINGS = [
@@ -89,7 +89,7 @@ function compile(bytes) {
 }
 
 function tempDir(t, prefix) {
-  const dir = mkdtempSync(join(tmpdir(), `r2c-baseline-${prefix}-`));
+  const dir = mkdtempSync(join(tmpdir(), `hm2b-baseline-${prefix}-`));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   return dir;
 }
@@ -306,7 +306,7 @@ test('ir validate rejects non-canonical, unsupported and hash-inconsistent IR', 
   );
 
   const unknownSchema = structuredClone(base);
-  unknownSchema.schema = 'r2c.ir/v2';
+  unknownSchema.schema = 'hm2b.ir/v2';
   expectRejected(
     'unknown schema',
     canonicalBytes(unknownSchema),

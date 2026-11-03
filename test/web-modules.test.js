@@ -66,7 +66,7 @@ test('index.html has no inline scripts, styles or style attributes', () => {
   assert.match(html, /<script\s+src="\/web\/boot-check\.js"><\/script>/);
   assert.match(html, /<script\s+type="module"\s+src="\/web\/app\.js"><\/script>/);
   assert.match(html, /<noscript>/);
-  assert.match(html, /r2c-assembler\.js bundle validate/);
+  assert.match(html, /hm2b-assembler\.js bundle validate/);
 });
 
 test('primitives-browser.js implements SHA-256, raw inflate and the floor probe with Web APIs', async () => {

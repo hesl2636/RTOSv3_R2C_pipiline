@@ -14,19 +14,19 @@ import { fileURLToPath } from 'node:url';
 import { writeTwoStepProject } from './helpers/two-step.js';
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const BIN = join(REPO, 'runtime', 'r2c', 'engine', 'bin', 'r2c.js');
-const SHIM = join(REPO, 'runtime', 'r2c', 'assets', 'shims', 'hook.mjs');
+const BIN = join(REPO, 'runtime', 'runner', 'engine', 'bin', 'hm2b.js');
+const SHIM = join(REPO, 'runtime', 'runner', 'assets', 'shims', 'hook.mjs');
 const RUNNER_CMD = `"${process.execPath}" "${BIN}"`;
 
 function tempDir(t, prefix) {
-  const dir = mkdtempSync(join(tmpdir(), `r2c-shim-${prefix}-`));
+  const dir = mkdtempSync(join(tmpdir(), `hm2b-shim-${prefix}-`));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   return dir;
 }
 
 function cleanEnv() {
   const env = { ...process.env };
-  for (const key of ['R2C_SESSION_ID', 'R2C_PROJECT_ROOT', 'R2C_HOME']) delete env[key];
+  for (const key of ['HM2B_SESSION_ID', 'HM2B_PROJECT_ROOT', 'HM2B_HOME']) delete env[key];
   return env;
 }
 
@@ -84,7 +84,7 @@ function runShim(project, { event = 'stop', sessionId = null, input = {}, dialec
 }
 
 function trace(root, agent = 'claude-code') {
-  const file = join(root, '.r2c', 'runs', '.hooks', 'trace', `${agent}.jsonl`);
+  const file = join(root, '.hm2b', 'runs', '.hooks', 'trace', `${agent}.jsonl`);
   if (!existsSync(file)) return [];
   return readFileSync(file, 'utf8')
     .split(/\r?\n/)
@@ -112,7 +112,7 @@ test('nine stops on one step block eight times, then cap with a manual hint', (t
   const ninth = runShim(root, { sessionId: sid, input: payload });
   assert.equal(ninth.status, 0, ninth.stderr);
   assert.equal(ninth.stdout.trim(), '');
-  assert.match(ninth.stderr, /r2c next/);
+  assert.match(ninth.stderr, /hm2b next/);
 
   const entries = trace(root).filter((entry) => entry.hook === 'stop');
   assert.equal(entries.length, 9);
@@ -121,7 +121,7 @@ test('nine stops on one step block eight times, then cap with a manual hint', (t
   assert.equal(entries.at(-1).reason, undefined);
   assert.equal(entries.at(-1).delivered, false);
 
-  const guard = JSON.parse(readFileSync(join(root, '.r2c', 'runs', '.hooks', 'stop-guard.json'), 'utf8'));
+  const guard = JSON.parse(readFileSync(join(root, '.hm2b', 'runs', '.hooks', 'stop-guard.json'), 'utf8'));
   assert.deepEqual(Object.values(guard), [8]);
 });
 
@@ -135,7 +135,7 @@ test('stop_hook_active passes without blocking or counting', (t) => {
 
   assert.equal(result.status, 0, result.stderr);
   assert.equal(result.stdout, '');
-  assert.ok(!existsSync(join(root, '.r2c', 'runs', '.hooks', 'stop-guard.json')));
+  assert.ok(!existsSync(join(root, '.hm2b', 'runs', '.hooks', 'stop-guard.json')));
 
   const entries = trace(root).filter((entry) => entry.hook === 'stop');
   assert.equal(entries.length, 1);
@@ -154,7 +154,7 @@ test('dsh dialect translates a deny into hookSpecificOutput and exit 0', (t) => 
       session_id: sid,
       cwd: root,
       tool_name: 'Write',
-      tool_input: { file_path: '.r2c/latest.json' },
+      tool_input: { file_path: '.hm2b/latest.json' },
     },
   });
 
@@ -195,7 +195,7 @@ test('a delivered stop appends a cumulative transcript usage snapshot', (t) => {
   assert.equal(result.status, 0, result.stderr);
   assert.equal(JSON.parse(result.stdout.trim()).decision, 'block');
 
-  const usageFile = join(root, '.r2c', 'usage', `${runId}.jsonl`);
+  const usageFile = join(root, '.hm2b', 'usage', `${runId}.jsonl`);
   assert.ok(existsSync(usageFile), usageFile);
   const snapshots = readFileSync(usageFile, 'utf8')
     .split(/\r?\n/)
@@ -203,7 +203,7 @@ test('a delivered stop appends a cumulative transcript usage snapshot', (t) => {
     .map((line) => JSON.parse(line));
   assert.equal(snapshots.length, 1);
   const snapshot = snapshots[0];
-  assert.equal(snapshot.schema, 'r2c.usage/v1');
+  assert.equal(snapshot.schema, 'hm2b.usage/v1');
   assert.equal(snapshot.run_id, runId);
   assert.equal(snapshot.session_id, sid);
   assert.equal(snapshot.adapter, 'claude-code');
@@ -224,7 +224,7 @@ test('a stop without a session exits 0 silently and records no delivery', (t) =>
 
   assert.equal(result.status, 0, result.stderr);
   assert.equal(result.stdout, '');
-  assert.ok(!existsSync(join(root, '.r2c', 'runs', '.hooks', 'stop-guard.json')));
+  assert.ok(!existsSync(join(root, '.hm2b', 'runs', '.hooks', 'stop-guard.json')));
   const entries = trace(root).filter((entry) => entry.hook === 'stop');
   assert.equal(entries.length, 1);
   assert.equal(entries[0].session_id, null);

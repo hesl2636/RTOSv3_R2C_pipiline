@@ -3,13 +3,13 @@
  *
  * Discovery is a frozen array in the same build: no filesystem scan, no
  * dynamic import, no code from a bundle or a project. Only contract versions
- * are checked here; `requires.engine` remains an r2c-only runtime concern.
+ * are checked here; `requires.engine` remains a runner-only runtime concern.
  */
 import { compareCodePoints } from '../core/code-point.js';
 import { AGENT_NATIVE_MANIFEST } from '../runtime/agent-native/projection/manifest.js';
 import { projectAgentNative } from '../runtime/agent-native/projection/project.js';
-import { R2C_MANIFEST } from '../runtime/r2c/projection/manifest.js';
-import { projectR2c } from '../runtime/r2c/projection/project.js';
+import { RUNNER_MANIFEST } from '../runtime/runner/projection/manifest.js';
+import { projectRunner } from '../runtime/runner/projection/project.js';
 
 export const PROJECTIONS = Object.freeze([
   Object.freeze({
@@ -17,8 +17,8 @@ export const PROJECTIONS = Object.freeze([
     project: projectAgentNative,
   }),
   Object.freeze({
-    ...R2C_MANIFEST,
-    project: projectR2c,
+    ...RUNNER_MANIFEST,
+    project: projectRunner,
   }),
 ]);
 
@@ -33,7 +33,7 @@ export function getProjection(id) {
 /** The projections a bundle allows (#69 §5): IR order by default, else sorted. */
 export function allowedProjections(ir) {
   const declared = ir?.requires?.projections;
-  if (!Array.isArray(declared)) return ['r2c', 'agent-native'];
+  if (!Array.isArray(declared)) return ['runner', 'agent-native'];
   return [...new Set(declared)].sort(compareCodePoints);
 }
 

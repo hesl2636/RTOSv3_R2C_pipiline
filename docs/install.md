@@ -8,8 +8,8 @@ builds or publishes a payload for them.
 ## Install
 
 ```bash
-node install.mjs --bundle rtosv3-drvport --version 1.0.0 --projection r2c --project .
-node .r2c/bin/r2c.js status
+node install.mjs --bundle rtosv3-drvport --version 1.0.0 --projection runner --project .
+node .hm2b/bin/hm2b.js status
 ```
 
 `--projection agent-native` installs only host files and one receipt; it never
@@ -36,13 +36,13 @@ Install the same bundle id at a newer version. The installer diffs the new
 payload against the old receipt, backs up and replaces files it owns, removes
 paths the new version no longer ships, and keeps hand-edited files with a
 `STALE_MODIFIED_KEPT` warning. Unchanged identity/options/files is a no-op with
-exit 0. `requires.engine` is evaluated only for the r2c projection.
+exit 0. `requires.engine` is evaluated only for the runner projection.
 
 ## Rollback
 
 Rollback = install the previous `(id, version)` again. Old Releases are never
 rewritten, so the previous bytes are always available. If a run is in progress,
-its step sequence may no longer match the old manifest: r2c refuses to continue
+its step sequence may no longer match the old manifest: the runner refuses to continue
 with `MANIFEST_STEPS_CHANGED` (exit 2) and does not touch state; finish or
 abandon the run before rolling back. Different bundle ids are different
 namespaces — uninstall explicitly, never in place.
@@ -50,11 +50,11 @@ namespaces — uninstall explicitly, never in place.
 ## Uninstall
 
 ```bash
-node installer/cli.js --uninstall --bundle rtosv3-drvport --projection r2c --project .
+node installer/cli.js --uninstall --bundle rtosv3-drvport --projection runner --project .
 ```
 
 Uninstall deletes only files recorded in that identity's receipt, prunes empty
-directories it created, and keeps `.r2c/` runtime state. `--purge-state` also
+directories it created, and keeps `.hm2b/` runtime state. `--purge-state` also
 removes runs, `latest.json` and usage. Runtime files (`runtime.json`, engine,
 launcher) are removed only with an explicit runtime uninstall; a legacy
 `r2c.install/v1` install is retired through takeover, not by uninstalling the

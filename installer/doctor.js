@@ -14,7 +14,7 @@ import { manifestSelection } from './status.js';
 import { TARGETS } from '../runtime/agent-native/projection/targets/index.js';
 import { sha256File } from './util.js';
 
-export const DOCTOR_SCHEMA = 'r2c.doctor/v1';
+export const DOCTOR_SCHEMA = 'hm2b.doctor/v1';
 
 const HOST_ROOTS = Object.freeze({
   'claude-code': '.claude',
@@ -90,13 +90,13 @@ function receiptCheck(projectRoot, item) {
 }
 
 function rolesJsonCheck(projectRoot, receipts) {
-  const r2c = receipts.filter((item) => item.receipt.projection?.id === 'r2c');
-  if (r2c.length === 0) return pass('roles.json', 'no r2c receipt; nothing to check');
-  const path = '.r2c/projection/roles.json';
+  const runner = receipts.filter((item) => item.receipt.projection?.id === 'runner');
+  if (runner.length === 0) return pass('roles.json', 'no runner receipt; nothing to check');
+  const path = '.hm2b/projection/roles.json';
   const absolute = absoluteOf(projectRoot, path);
   if (!existsSync(absolute)) return fail('roles.json', `${path} is missing`, { path });
-  const recorded = r2c.flatMap((item) => item.receipt.files ?? []).find((file) => file.path === path);
-  if (recorded === undefined) return fail('roles.json', `${path} is not recorded by the r2c receipt`, { path });
+  const recorded = runner.flatMap((item) => item.receipt.files ?? []).find((file) => file.path === path);
+  if (recorded === undefined) return fail('roles.json', `${path} is not recorded by the runner receipt`, { path });
   const actual = sha256File(absolute);
   if (actual !== recorded.sha256) return fail('roles.json', `${path} hash does not match the receipt`, { path, expected: recorded.sha256, actual });
   try {
@@ -148,7 +148,7 @@ function engineChecks(projectRoot, runtime) {
     cwd: projectRoot,
     encoding: 'utf8',
     timeout: 10_000,
-    env: { ...process.env, R2C_SESSION_ID: undefined, R2C_PROJECT_ROOT: undefined },
+    env: { ...process.env, HM2B_SESSION_ID: undefined, HM2B_PROJECT_ROOT: undefined },
   });
   const stdout = String(run.stdout ?? '').trim();
   if (run.status === 0 && stdout === String(runtime.engine.version)) {
@@ -171,8 +171,8 @@ function manifestCheck(projectRoot, receipts) {
   if (manifest.selection === 'ambiguous') {
     return fail('manifest.selection', `${manifest.candidates.length} workflow manifests; exactly one is required`, manifest);
   }
-  const r2c = receipts.some((item) => item.receipt.projection?.id === 'r2c');
-  if (r2c) return fail('manifest.selection', 'an r2c install must leave exactly one workflows/*.yaml', manifest);
+  const runner = receipts.some((item) => item.receipt.projection?.id === 'runner');
+  if (runner) return fail('manifest.selection', 'a runner install must leave exactly one workflows/*.yaml', manifest);
   return pass('manifest.selection', 'no workflow manifest yet', manifest);
 }
 
@@ -184,8 +184,8 @@ function extraFilesCheck(projectRoot, receipts, runtime) {
     owned.add(item.path);
   }
   if (runtime !== null) {
-    owned.add('.r2c/install/runtime.json');
-    owned.add('.r2c/install/pending.json');
+    owned.add('.hm2b/install/runtime.json');
+    owned.add('.hm2b/install/pending.json');
     for (const file of runtime.files ?? []) owned.add(file.path);
     for (const merge of runtime.merged ?? []) owned.add(merge.path);
   }
@@ -193,8 +193,8 @@ function extraFilesCheck(projectRoot, receipts, runtime) {
   for (const item of receipts) {
     for (const file of item.receipt.files ?? []) {
       const segments = file.path.split('/');
-      if (segments[0] === '.r2c') {
-        if (segments[1] === 'projection') roots.add('.r2c/projection');
+      if (segments[0] === '.hm2b') {
+        if (segments[1] === 'projection') roots.add('.hm2b/projection');
         continue;
       }
       roots.add(segments[0]);
@@ -217,7 +217,7 @@ function extraFilesCheck(projectRoot, receipts, runtime) {
  * Target smoke: every selected host's installed file groups still satisfy the
  * descriptor's structural expectation (skills have frontmatter, agents carry a
  * name/description, the roles.json metadata parses). This is the replacement
- * for the retired `r2c acceptance` agent face: model-free, project-local.
+ * for the retired `acceptance` agent face: model-free, project-local.
  */
 function targetSmokeCheck(projectRoot, receipts) {
   const results = [];
@@ -310,8 +310,8 @@ function hostDetectionCheck(projectRoot, receipts, runtime) {
 function transactionCheck(projectRoot) {
   const journal = readJournal(projectRoot);
   if (journal === null) {
-    return existsSync(join(projectRoot, '.r2c/install/.lock'))
-      ? warn('transaction.residue', 'a lock file is present', { lock: '.r2c/install/.lock' })
+    return existsSync(join(projectRoot, '.hm2b/install/.lock'))
+      ? warn('transaction.residue', 'a lock file is present', { lock: '.hm2b/install/.lock' })
       : pass('transaction.residue', 'no pending journal or lock residue');
   }
   if (journal.state === 'rollback-failed') {
@@ -335,7 +335,7 @@ function summaryCheck(receipts) {
   for (const item of receipts) {
     degradations += (item.receipt.degradations ?? []).length;
     for (const record of item.receipt.degradations ?? []) {
-      byTarget[record.target ?? 'r2c'] = (byTarget[record.target ?? 'r2c'] ?? 0) + 1;
+      byTarget[record.target ?? 'runner'] = (byTarget[record.target ?? 'runner'] ?? 0) + 1;
     }
     placeholderRoles += (item.receipt.metadata?.placeholders?.roles ?? []).length;
     placeholderSkills += (item.receipt.metadata?.placeholders?.skills ?? []).length;

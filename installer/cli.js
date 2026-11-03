@@ -23,7 +23,7 @@ import { toEnvelope } from '../core/diagnostics.js';
 import { compareCodePoints } from '../core/code-point.js';
 import { EXIT_CODES } from '../core/exit-codes.js';
 import { doctor, formatDoctor } from './doctor.js';
-import { installR2cProject } from './r2c.js';
+import { installRunnerProject } from './runner.js';
 import { installRuntime } from './runtime.js';
 import { formatStatus, installStatus } from './status.js';
 import { uninstallProjection } from './uninstall.js';
@@ -391,7 +391,7 @@ export function run(argv, io = {}) {
   if (!loaded.ok) {
     return emit({ json, code: EXIT_CODES.USAGE, data: null, error: loaded.error });
   }
-  const outcome = installR2cProject({
+  const outcome = installRunnerProject({
     result: loaded.result,
     irBytes: loaded.irBytes,
     projectRoot,

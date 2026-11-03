@@ -6,7 +6,7 @@ import { canonicalJson } from '../../core/canonical-json.js';
 import { buildZip } from './zip.js';
 
 export const MINIMAL_MANIFEST = {
-  schema: 'r2c.bundle/v1',
+  schema: 'hm2b.bundle/v1',
   id: 'minimal-demo',
   name: 'Minimal Demo',
   version: '1.0.0',

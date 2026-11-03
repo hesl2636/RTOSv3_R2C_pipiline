@@ -146,7 +146,7 @@ export const opencodeTarget = Object.freeze({
     detect: {"commands":[["opencode","--version"]],"paths":["~/.config/opencode"]},
     assets: [
     Object.freeze({ path: 'runtime/agent-native/targets/opencode/assets/mcp.json', sha256: '70cadc8acdced125361a637eac5816a7f3d77912020c00d5a63f34b106292858' }),
-    Object.freeze({ path: 'runtime/agent-native/targets/opencode/assets/plugins/r2c.ts', sha256: '3d028aedd877bb51593e4cb2faf0f184037d6822cb72c1a598ab3fa3e4b73941' }),
+    Object.freeze({ path: 'runtime/agent-native/targets/opencode/assets/plugins/hm2b.ts', sha256: '2f44986204d473e16fc5e6965791d865c9b167047fbef2f9a4a2654770a1a20d' }),
     ],
     smoke: (namespace) => layoutSmoke(namespace, { skillsRoot: '.agents/skills', agentsRoot: '.opencode/agents', agentFormat: 'md' }),
   }),

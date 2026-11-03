@@ -1,4 +1,4 @@
-/** `r2c-assembler bundle validate <zip> [--json]`. */
+/** `hm2b-assembler bundle validate <zip> [--json]`. */
 import { inflateRaw } from '../../core/node/inflate.js';
 import { sha256Hex } from '../../core/node/sha256.js';
 import { BUNDLE_SUMMARY_CODE, validateBundle } from '../../assembler/validate-bundle.js';
@@ -26,7 +26,7 @@ export function run(argv) {
   }
   const { options } = parsed;
   if (options.help) {
-    process.stdout.write('Usage: r2c-assembler bundle validate <bundle.zip> [--json]\n');
+    process.stdout.write('Usage: hm2b-assembler bundle validate <bundle.zip> [--json]\n');
     return EXIT_CODES.OK;
   }
   if (options.positionals.length !== 1) {

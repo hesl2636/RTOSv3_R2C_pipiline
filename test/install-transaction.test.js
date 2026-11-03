@@ -33,7 +33,7 @@ const CLOCK = fixedClock();
 const LATER = fixedClock('2026-03-01T00:00:00.000Z');
 
 function tempProject(t) {
-  const dir = mkdtempSync(join(tmpdir(), 'r2c-txn-'));
+  const dir = mkdtempSync(join(tmpdir(), 'hm2b-txn-'));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   return dir;
 }
@@ -53,7 +53,7 @@ function simulateInterruptedInstall(projectRoot, { bundleId }) {
       { op: 'create', path: created },
     ],
     createdDirs: [],
-    projectionId: 'r2c',
+    projectionId: 'runner',
     bundleId,
     stamp: '2026-01-02T00-00-00-000Z',
     clock: CLOCK,
@@ -66,7 +66,7 @@ function simulateInterruptedInstall(projectRoot, { bundleId }) {
 
 test('an interrupted install is rolled back to pre-install bytes on the next command', (t) => {
   const projectRoot = tempProject(t);
-  const { result, irBytes, ir } = sample('r2c');
+  const { result, irBytes, ir } = sample('runner');
   assert.equal(installProjection({ result, irBytes, projectRoot, clock: CLOCK }).code, 'OK');
   const targetPath = 'roles/bys-architect.md';
   const targetBytes = readFileSync(absolute(projectRoot, targetPath), 'utf8');
@@ -87,7 +87,7 @@ test('an interrupted install is rolled back to pre-install bytes on the next com
 
 test('recoverPending is idempotent and reports what it restored', (t) => {
   const projectRoot = tempProject(t);
-  const { result, irBytes, ir } = sample('r2c');
+  const { result, irBytes, ir } = sample('runner');
   assert.equal(installProjection({ result, irBytes, projectRoot, clock: CLOCK }).code, 'OK');
   const original = readFileSync(absolute(projectRoot, 'roles/bys-architect.md'), 'utf8');
   simulateInterruptedInstall(projectRoot, { bundleId: ir.id });
@@ -106,20 +106,20 @@ test('recoverPending is idempotent and reports what it restored', (t) => {
 
 test('a rollback that cannot restore a backup keeps the journal and reports ROLLBACK_FAILED', (t) => {
   const projectRoot = tempProject(t);
-  const { result, irBytes } = sample('r2c');
+  const { result, irBytes } = sample('runner');
   const target = 'roles/bys-architect.md';
   mkdirSync(absolute(projectRoot, 'roles'), { recursive: true });
   writeFileSync(absolute(projectRoot, target), 'current\n');
 
   writeJournal(projectRoot, {
-    schema: 'r2c.install-journal/v1',
+    schema: 'hm2b.install-journal/v1',
     command: 'install',
     started_at: '2026-01-02T00:00:00.000Z',
     state: 'pending',
     operations: [{
       op: 'replace',
       path: target,
-      backup: '.r2c/install/backup/r2c/x/2026-01-02/roles/bys-architect.md',
+      backup: '.hm2b/install/backup/runner/x/2026-01-02/roles/bys-architect.md',
     }],
     created_dirs: [],
     receipts_written: [],
@@ -135,19 +135,19 @@ test('a rollback that cannot restore a backup keeps the journal and reports ROLL
 
   const outcome = installProjection({ result, irBytes, projectRoot, clock: LATER });
   assert.equal(outcome.code, 'ROLLBACK_FAILED');
-  assert.equal(existsSync(absolute(projectRoot, '.r2c/install/receipts')), false);
+  assert.equal(existsSync(absolute(projectRoot, '.hm2b/install/receipts')), false);
 });
 
 test('a fresh lock blocks an install and a stale lock is taken over', (t) => {
   const projectRoot = tempProject(t);
-  const { result, irBytes } = sample('r2c');
-  const lock = absolute(projectRoot, '.r2c/install/.lock');
-  mkdirSync(join(projectRoot, '.r2c/install'), { recursive: true });
+  const { result, irBytes } = sample('runner');
+  const lock = absolute(projectRoot, '.hm2b/install/.lock');
+  mkdirSync(join(projectRoot, '.hm2b/install'), { recursive: true });
   writeFileSync(lock, 'other-writer');
 
   const blocked = installProjection({ result, irBytes, projectRoot, clock: CLOCK });
   assert.equal(blocked.code, 'LOCK_CONFLICT');
-  assert.equal(existsSync(absolute(projectRoot, '.r2c/install/receipts')), false);
+  assert.equal(existsSync(absolute(projectRoot, '.hm2b/install/receipts')), false);
 
   const old = new Date(Date.now() - 5 * 60_000);
   utimesSync(lock, old, old);
@@ -158,10 +158,10 @@ test('a fresh lock blocks an install and a stale lock is taken over', (t) => {
 
 test('a successful install removes the journal and unlocks the project', (t) => {
   const projectRoot = tempProject(t);
-  const { result, irBytes } = sample('r2c');
+  const { result, irBytes } = sample('runner');
   assert.equal(installProjection({ result, irBytes, projectRoot, clock: CLOCK }).code, 'OK');
   assert.equal(journalExists(projectRoot), false);
-  assert.equal(existsSync(absolute(projectRoot, '.r2c/install/.lock')), false);
+  assert.equal(existsSync(absolute(projectRoot, '.hm2b/install/.lock')), false);
   assert.equal(statSync(absolute(projectRoot, 'roles/bys-architect.md')).isFile(), true);
 });
 
@@ -201,7 +201,7 @@ test('two concurrent installs in one project: exactly one writes', async (t) => 
   assert.equal(refused.status, 0, refused.stderr);
   assert.equal(JSON.parse(refused.stdout).ok, false, 'a second writer must be refused');
   assert.equal(JSON.parse(refused.stdout).code, 'LOCK_CONFLICT');
-  assert.equal(existsSync(absolute(projectRoot, '.r2c/install/receipts')), false, 'the loser wrote nothing');
+  assert.equal(existsSync(absolute(projectRoot, '.hm2b/install/receipts')), false, 'the loser wrote nothing');
 
   writeFileSync(release, 'go');
   const held = await holder;
@@ -214,16 +214,16 @@ test('two concurrent installs in one project: exactly one writes', async (t) => 
   assert.equal(outcome.ok, true);
   assert.equal(outcome.action, 'installed');
 
-  const receipts = readdirSync(absolute(projectRoot, '.r2c/install/receipts/r2c'));
+  const receipts = readdirSync(absolute(projectRoot, '.hm2b/install/receipts/runner'));
   assert.deepEqual(receipts, ['bundle-a.json']);
   assert.equal(existsSync(absolute(projectRoot, 'workflows/bundle-a.yaml')), true);
-  assert.equal(existsSync(absolute(projectRoot, '.r2c/install/pending.json')), false);
-  assert.equal(existsSync(absolute(projectRoot, '.r2c/install/.lock')), false);
+  assert.equal(existsSync(absolute(projectRoot, '.hm2b/install/pending.json')), false);
+  assert.equal(existsSync(absolute(projectRoot, '.hm2b/install/.lock')), false);
 });
 
 test('a killed install is rolled back by the next command', async (t) => {
   const projectRoot = tempProject(t);
-  const { result, irBytes, ir } = sample('r2c');
+  const { result, irBytes, ir } = sample('runner');
   assert.equal(installProjection({ result, irBytes, projectRoot, clock: CLOCK }).code, 'OK');
   const target = 'roles/bys-architect.md';
   const original = readFileSync(absolute(projectRoot, target), 'utf8');

@@ -1,4 +1,4 @@
-/** `r2c-assembler project <ir> --projection <id> [options] [--json]`. */
+/** `hm2b-assembler project <ir> --projection <id> [options] [--json]`. */
 import { chmodSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { toEnvelope } from '../../core/diagnostics.js';

@@ -7,16 +7,16 @@
  *
  *   bundle-<id>-v<version>.zip          always
  *   workflow.ir.json                    always
- *   r2c-payload-<id>-v<version>.tgz     r2c in requires.projections
+ *   hm2b-payload-<id>-v<version>.tgz    runner in requires.projections
  *   agent-native-<id>-v<version>.tgz    agent-native in requires.projections
- *   r2c-engine-<E>.tgz                  r2c in requires.projections
- *   r2c-framework-<F>.tgz               always (framework sources + installer/)
+ *   hm2b-engine-<E>.tgz                 runner in requires.projections
+ *   hm2b-framework-<F>.tgz              always (framework sources + installer/)
  *   install.mjs                         always, byte-identical to scripts/install.mjs
  *   SHA256SUMS.txt                      always, covers every other asset
  *
  * The payloads are pre-projected with canonical options, validated V1–V12,
  * packed deterministically and accompanied by `manifest.json`
- * (`r2c.release-payload/v1`). Installation never compiles or projects again.
+ * (`hm2b.release-payload/v1`). Installation never compiles or projects again.
  *
  * No legacy asset is produced here: `r2c-payload-<E>.tgz` belongs to the
  * `v<E>` channel, and the two tag namespaces never overlap.
@@ -52,13 +52,13 @@ import { canonicalInputOptions, isCanonicalOptions, normalizeOptions, payloadInp
 import { project } from '../../projection/project.js';
 import { getProjection } from '../../projection/registry.js';
 import { validateResult } from '../../projection/validate-result.js';
-import { collectEngine, engineEntryBytes } from './engine-archive.mjs';
+import { collectEngine, engineAssetName, engineEntryBytes } from './engine-archive.mjs';
 import { collectBundleFiles } from './file-set.mjs';
 import { createReleaseTarGz, readReleaseTarGz, releasePathProblem } from '../../installer/release-tar.js';
 import { writeZip } from './zip-writer.mjs';
 
 export const BUNDLE_MAKE_LATEST = false;
-export const CANONICAL_PROJECTIONS = Object.freeze(['r2c', 'agent-native']);
+export const CANONICAL_PROJECTIONS = Object.freeze(['runner', 'agent-native']);
 
 // The tag/asset-name contract is shared with the installer and the web
 // publisher (#107); this module re-exports it so #105 callers keep working.
@@ -86,7 +86,7 @@ const FRAMEWORK_DIRS = Object.freeze([
   'bin/assembler',
 ]);
 const FRAMEWORK_RUNTIME_DIRS = Object.freeze(['projection', 'assets', 'targets']);
-const FRAMEWORK_ROOT_FILES = Object.freeze(['package.json', 'LICENSE', 'bin/r2c-assembler.js']);
+const FRAMEWORK_ROOT_FILES = Object.freeze(['package.json', 'LICENSE', 'bin/hm2b-assembler.js']);
 const FRAMEWORK_FORBIDDEN = Object.freeze([
   'test/',
   'tests/',
@@ -235,7 +235,7 @@ export function frameworkSourceProblems(rels) {
     if (FRAMEWORK_FORBIDDEN.some((prefix) => rel.startsWith(prefix))) {
       problems.push(`framework source set must not ship ${rel}`);
     }
-    if (rel.startsWith('bin/') && rel !== 'bin/r2c-assembler.js' && !rel.startsWith('bin/assembler/')) {
+    if (rel.startsWith('bin/') && rel !== 'bin/hm2b-assembler.js' && !rel.startsWith('bin/assembler/')) {
       problems.push(`framework source set must not ship ${rel}`);
     }
   }
@@ -252,7 +252,7 @@ function engineSourceProblems(rels) {
  * Engine version and file set.
  *
  * Both channels ship the same bytes: `scripts/lib/engine-archive.mjs` owns
- * the P6 layout (root launcher + `runtime/r2c/engine/**` + `core/**` +
+ * the P6 layout (root launcher + `runtime/runner/engine/**` + `core/**` +
  * vendored `yaml`), and the version is the engine package version E, not the
  * framework version.
  */
@@ -298,8 +298,8 @@ function validateProjectionOptions({ projectionId, ir, irDigest, raw = null }) {
 }
 
 function payloadFileName(projectionId, id, version) {
-  return projectionId === 'r2c'
-    ? `r2c-payload-${id}-v${version}.tgz`
+  return projectionId === 'runner'
+    ? `hm2b-payload-${id}-v${version}.tgz`
     : `agent-native-${id}-v${version}.tgz`;
 }
 
@@ -557,7 +557,7 @@ export function buildBundleRelease({ root, bundlePath, tag = null, options = nul
   }
   failures.push(...sourceProblemMessages(engine.problems, 'RELEASE_SOURCE_SET_MISMATCH'));
   const requiredEngine = ir?.requires?.engine;
-  if (allowed.includes('r2c')) {
+  if (allowed.includes('runner')) {
     if (requiredEngine !== undefined) {
       if (!isValidRange(requiredEngine)) {
         failures.push(`RELEASE_ENGINE_UNSATISFIED: requires.engine ${String(requiredEngine)} is not a valid range`);
@@ -618,10 +618,10 @@ export function buildBundleRelease({ root, bundlePath, tag = null, options = nul
   assets.push({ name: `bundle-${id}-v${version}.zip`, data: Buffer.from(source.bytes) });
   assets.push({ name: IR_ASSET, data: irBytes });
   for (const payload of payloads.values()) assets.push({ name: payload.file, data: payload.data });
-  if (allowed.includes('r2c')) {
-    assets.push({ name: `r2c-engine-${engineVersion}.tgz`, data: engineArchive(engine.files) });
+  if (allowed.includes('runner')) {
+    assets.push({ name: engineAssetName(engineVersion), data: engineArchive(engine.files) });
   }
-  assets.push({ name: `r2c-framework-${frameworkVersion}.tgz`, data: frameworkArchive(framework) });
+  assets.push({ name: `hm2b-framework-${frameworkVersion}.tgz`, data: frameworkArchive(framework) });
   assets.push({ name: INSTALL_ASSET, data: installBytes });
   assets.sort((left, right) => compareCodePoints(left.name, right.name));
   assets.push({ name: SUMS_ASSET, data: sumsBuffer(assets) });
@@ -771,7 +771,7 @@ export function checkBundleRelease({ root, bundlePath, tag = null, outDir = null
   }
   if (first.plan.makeLatest !== false) failures.push('RELEASE_ASSET_SET_MISMATCH: bundle releases must set make_latest=false');
 
-  const framework = first.assets.find((asset) => asset.name === `r2c-framework-${first.frameworkVersion}.tgz`);
+  const framework = first.assets.find((asset) => asset.name === `hm2b-framework-${first.frameworkVersion}.tgz`);
   if (framework !== undefined) {
     const frameworkVersion = archiveVersion(framework.data, 'package.json', framework.name, failures);
     if (frameworkVersion !== first.frameworkVersion) {
@@ -783,8 +783,8 @@ export function checkBundleRelease({ root, bundlePath, tag = null, outDir = null
       failures.push(`${framework.name} members do not match the framework source set`);
     }
   }
-  if (first.allowed.includes('r2c')) {
-    const engineAsset = first.assets.find((asset) => asset.name === `r2c-engine-${first.engineVersion}.tgz`);
+  if (first.allowed.includes('runner')) {
+    const engineAsset = first.assets.find((asset) => asset.name === engineAssetName(first.engineVersion));
     if (engineAsset !== undefined) {
       const members = readReleaseTarGz(engineAsset.data).entries.map((entry) => entry.path);
       if (!sameValue([...members].sort(compareCodePoints), [...first.engineFiles].sort(compareCodePoints))) {

@@ -26,7 +26,7 @@ const CLOCK = fixedClock();
 const LATER = fixedClock('2026-04-01T00:00:00.000Z');
 
 function tempProject(t) {
-  const dir = mkdtempSync(join(tmpdir(), 'r2c-upgrade-'));
+  const dir = mkdtempSync(join(tmpdir(), 'hm2b-upgrade-'));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   return dir;
 }
@@ -58,7 +58,7 @@ function byPath(left, right) {
 
 /** Add a projected file + its install step (a payload that grew). */
 function addFile(result, { path, content, kind = 'skill' }) {
-  result.files.push({ path, targets: ['r2c'], kind, content, mode: 0o644, origin: 'generated' });
+  result.files.push({ path, targets: ['runner'], kind, content, mode: 0o644, origin: 'generated' });
   result.files.sort(byPath);
   result.installPlan.steps.push({ op: 'write', path, overwrite: 'replace' });
   result.installPlan.steps.sort(byPath);
@@ -91,7 +91,7 @@ function changedPayload() {
 
 test('an upgrade reports add/remove/change/keep and deletes untouched removals', (t) => {
   const projectRoot = tempProject(t);
-  const v1 = sample('r2c');
+  const v1 = sample('runner');
   const first = installProjection({ result: v1.result, irBytes: v1.irBytes, projectRoot, clock: CLOCK });
   assert.equal(first.code, 'OK');
   const v2 = changedPayload();
@@ -134,7 +134,7 @@ test('an upgrade reports add/remove/change/keep and deletes untouched removals',
 
 test('a removal whose disk bytes were edited is kept with a warning', (t) => {
   const projectRoot = tempProject(t);
-  const v1 = sample('r2c');
+  const v1 = sample('runner');
   assert.equal(installProjection({ result: v1.result, irBytes: v1.irBytes, projectRoot, clock: CLOCK }).code, 'OK');
   const removedPath = 'roles/bys-designer.md';
   writeFileSync(absolute(projectRoot, removedPath), 'edited by the user\n');
@@ -154,12 +154,12 @@ test('a removal whose disk bytes were edited is kept with a warning', (t) => {
 
 test('the same version with different options is an upgrade, not unchanged', (t) => {
   const projectRoot = tempProject(t);
-  const base = sample('r2c');
+  const base = sample('runner');
   const first = installProjection({ result: base.result, irBytes: base.irBytes, projectRoot, clock: CLOCK });
   assert.equal(first.code, 'OK');
 
   const subset = ['r2c-design', 'req-analysis'];
-  const narrowed = sample('r2c', { skills: subset });
+  const narrowed = sample('runner', { skills: subset });
   const outcome = installProjection({ result: narrowed.result, irBytes: narrowed.irBytes, projectRoot, clock: LATER });
 
   assert.equal(outcome.code, 'OK');
@@ -179,7 +179,7 @@ test('the same version with different options is an upgrade, not unchanged', (t)
 
 test('rollback installs the older payload through the same identity and keeps previous', (t) => {
   const projectRoot = tempProject(t);
-  const v1 = sample('r2c');
+  const v1 = sample('runner');
   assert.equal(installProjection({ result: v1.result, irBytes: v1.irBytes, projectRoot, clock: CLOCK }).code, 'OK');
 
   const v2 = changedPayload();
@@ -215,15 +215,15 @@ test('rollback installs the older payload through the same identity and keeps pr
 
 test('a changed bundle id is a new identity, never an in-place migration', (t) => {
   const projectRoot = tempProject(t);
-  const v1 = sample('r2c');
+  const v1 = sample('runner');
   assert.equal(installProjection({ result: v1.result, irBytes: v1.irBytes, projectRoot, clock: CLOCK }).code, 'OK');
   const before = snapshot(projectRoot);
 
   const other = customSample({ irPatch: { id: 'other-workflow' } });
   const refused = installProjection({ result: other.result, irBytes: other.irBytes, projectRoot, clock: LATER });
-  // #103 / #76 §4.2: the r2c roots hold one bundle, so a second r2c identity is
+  // #103 / #76 §4.2: the runner roots hold one bundle, so a second runner identity is
   // refused at the root before the path-level conflict matrix runs.
-  assert.equal(refused.code, 'R2C_ROOT_OCCUPIED');
+  assert.equal(refused.code, 'RUNNER_ROOT_OCCUPIED');
   assert.equal(refused.occupier.bundle, 'rtosv3-drvport');
   assert.deepEqual(snapshot(projectRoot), before, 'nothing of the old identity is rewritten');
 });
@@ -238,11 +238,11 @@ test('a different bundle id on another projection is a separate identity that ca
   const second = installProjection({ result: other.result, irBytes: other.irBytes, projectRoot, clock: LATER });
   assert.equal(second.code, 'OK');
   assert.equal(second.mode, 'fresh');
-  assert.equal(second.receiptPath, '.r2c/install/receipts/agent-native/other-workflow.json');
+  assert.equal(second.receiptPath, '.hm2b/install/receipts/agent-native/other-workflow.json');
   for (const path of firstPaths) {
     assert.equal(existsSync(absolute(projectRoot, path)), true, `first identity keeps ${path}`);
   }
-  assert.equal(existsSync(absolute(projectRoot, '.r2c/install/receipts/agent-native/rtosv3-drvport.json')), true);
+  assert.equal(existsSync(absolute(projectRoot, '.hm2b/install/receipts/agent-native/rtosv3-drvport.json')), true);
 
   const removed = uninstallProjection({ projectRoot, projectionId: 'agent-native', bundleId: 'other-workflow', clock: LATER });
   assert.equal(removed.code, 'OK');
@@ -253,30 +253,30 @@ test('a different bundle id on another projection is a separate identity that ca
 
 test('switching projection needs an explicit uninstall; installing never removes the other projection', (t) => {
   const projectRoot = tempProject(t);
-  const r2c = sample('r2c');
+  const runnerSet = sample('runner');
   const native = sample('agent-native');
-  assert.equal(installProjection({ result: r2c.result, irBytes: r2c.irBytes, projectRoot, clock: CLOCK }).code, 'OK');
+  assert.equal(installProjection({ result: runnerSet.result, irBytes: runnerSet.irBytes, projectRoot, clock: CLOCK }).code, 'OK');
 
   const second = installProjection({ result: native.result, irBytes: native.irBytes, projectRoot, clock: LATER });
   assert.equal(second.code, 'OK');
-  assert.equal(existsSync(absolute(projectRoot, '.r2c/install/receipts/r2c/rtosv3-drvport.json')), true);
-  for (const file of r2c.result.files) {
-    assert.equal(existsSync(absolute(projectRoot, file.path)), true, `r2c keeps ${file.path}`);
+  assert.equal(existsSync(absolute(projectRoot, '.hm2b/install/receipts/runner/rtosv3-drvport.json')), true);
+  for (const file of runnerSet.result.files) {
+    assert.equal(existsSync(absolute(projectRoot, file.path)), true, `runner keeps ${file.path}`);
   }
 
-  const removed = uninstallProjection({ projectRoot, projectionId: 'r2c', bundleId: r2c.ir.id, clock: LATER });
+  const removed = uninstallProjection({ projectRoot, projectionId: 'runner', bundleId: runnerSet.ir.id, clock: LATER });
   assert.equal(removed.code, 'OK');
   for (const file of native.result.files) {
     assert.equal(existsSync(absolute(projectRoot, file.path)), true, `agent-native keeps ${file.path}`);
   }
-  for (const file of r2c.result.files) {
-    assert.equal(existsSync(absolute(projectRoot, file.path)), false, `r2c released ${file.path}`);
+  for (const file of runnerSet.result.files) {
+    assert.equal(existsSync(absolute(projectRoot, file.path)), false, `runner released ${file.path}`);
   }
 });
 
 test('uninstall after an upgrade removes the new set and preserves shared roots', (t) => {
   const projectRoot = tempProject(t);
-  const v1 = sample('r2c');
+  const v1 = sample('runner');
   assert.equal(installProjection({ result: v1.result, irBytes: v1.irBytes, projectRoot, clock: CLOCK }).code, 'OK');
   const v2 = changedPayload();
   const upgraded = installProjection({ result: v2.result, irBytes: v2.irBytes, projectRoot, clock: LATER });
@@ -284,13 +284,13 @@ test('uninstall after an upgrade removes the new set and preserves shared roots'
 
   const plan = planUninstall({ projectRoot, receipt: upgraded.receipt, force: false });
   assert.deepEqual(plan.leftovers, []);
-  const outcome = uninstallProjection({ projectRoot, projectionId: 'r2c', bundleId: v1.ir.id, clock: LATER });
+  const outcome = uninstallProjection({ projectRoot, projectionId: 'runner', bundleId: v1.ir.id, clock: LATER });
   assert.equal(outcome.code, 'OK');
   assert.deepEqual(outcome.leftover, []);
   for (const file of upgraded.receipt.files) {
     assert.equal(existsSync(absolute(projectRoot, file.path)), false, `${file.path} removed`);
   }
-  for (const root of ['workflows', 'tasks', 'skills', 'roles', 'constitution', '.r2c']) {
+  for (const root of ['workflows', 'tasks', 'skills', 'roles', 'constitution', '.hm2b']) {
     assert.equal(existsSync(absolute(projectRoot, root)), true, `${root} is a shared root`);
   }
   assert.equal(existsSync(absolute(projectRoot, 'skills/upgrade-only')), false);

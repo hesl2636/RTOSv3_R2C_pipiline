@@ -26,7 +26,7 @@ import { cloneResult, customSample, fixedClock, IR_FIXTURE, sample } from './hel
 const CLOCK = fixedClock();
 
 function tempProject(t) {
-  const dir = mkdtempSync(join(tmpdir(), 'r2c-install-'));
+  const dir = mkdtempSync(join(tmpdir(), 'hm2b-install-'));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   return dir;
 }
@@ -44,15 +44,15 @@ function walk(root, current = root, out = []) {
   return out.sort();
 }
 
-test('installs exactly the declared r2c file set and records it in r2c.install/v2', (t) => {
+test('installs exactly the declared runner file set and records it in hm2b.install/v2', (t) => {
   const projectRoot = tempProject(t);
-  const { result, irBytes, ir, irDigest } = sample('r2c');
+  const { result, irBytes, ir, irDigest } = sample('runner');
   const outcome = installProjection({ result, irBytes, projectRoot, clock: CLOCK });
   assert.equal(outcome.code, 'OK');
   assert.equal(outcome.action, 'installed');
   assert.equal(outcome.files, result.files.length);
 
-  const receiptRel = `.r2c/install/receipts/r2c/${ir.id}.json`;
+  const receiptRel = `.hm2b/install/receipts/runner/${ir.id}.json`;
   assert.equal(outcome.receiptPath, receiptRel);
   const receiptFile = join(projectRoot, ...receiptRel.split('/'));
   const text = readFileSync(receiptFile, 'utf8');
@@ -67,8 +67,8 @@ test('installs exactly the declared r2c file set and records it in r2c.install/v
   assert.deepEqual([...actual].sort(), [...expected].sort());
 
   const receipt = JSON.parse(text);
-  assert.equal(receipt.schema, 'r2c.install/v2');
-  assert.deepEqual(receipt.projection, { id: 'r2c', version: result.projection.version, targets: ['r2c'] });
+  assert.equal(receipt.schema, 'hm2b.install/v2');
+  assert.deepEqual(receipt.projection, { id: 'runner', version: result.projection.version, targets: ['runner'] });
   assert.deepEqual(receipt.bundle, { id: ir.id, version: ir.version });
   assert.equal(receipt.ir_path, irRelPath(ir.id, ir.version));
   assert.deepEqual(receipt.ir, {
@@ -101,8 +101,8 @@ test('installs exactly the declared r2c file set and records it in r2c.install/v
   // No absolute path anywhere in the receipt, and nothing outside the project.
   assert.equal(text.includes(projectRoot.replaceAll('\\', '\\\\')), false);
   assert.doesNotMatch(text, /[A-Za-z]:\\\\/);
-  assert.equal(existsSync(join(projectRoot, '.r2c/install/pending.json')), false);
-  assert.equal(existsSync(join(projectRoot, '.r2c/install/.lock')), false);
+  assert.equal(existsSync(join(projectRoot, '.hm2b/install/pending.json')), false);
+  assert.equal(existsSync(join(projectRoot, '.hm2b/install/.lock')), false);
 
   // Modes are applied where the platform has them.
   if (process.platform !== 'win32') {
@@ -115,7 +115,7 @@ test('installs exactly the declared r2c file set and records it in r2c.install/v
 
 test('reinstalling the same result is unchanged and byte-identical', (t) => {
   const projectRoot = tempProject(t);
-  const { result, irBytes } = sample('r2c');
+  const { result, irBytes } = sample('runner');
   const first = installProjection({ result, irBytes, projectRoot, clock: CLOCK });
   assert.equal(first.action, 'installed');
   const receiptFile = join(projectRoot, ...first.receiptPath.split('/'));
@@ -138,7 +138,7 @@ test('reinstalling the same result is unchanged and byte-identical', (t) => {
 
 test('adopts unowned files with identical bytes without rewriting them', (t) => {
   const projectRoot = tempProject(t);
-  const { result, irBytes } = sample('r2c');
+  const { result, irBytes } = sample('runner');
   for (const file of result.files) {
     const absolute = join(projectRoot, ...file.path.split('/'));
     mkdirSync(dirname(absolute), { recursive: true });
@@ -153,7 +153,7 @@ test('adopts unowned files with identical bytes without rewriting them', (t) => 
 
 test('dry-run reports the plan and writes nothing', (t) => {
   const projectRoot = tempProject(t);
-  const { result, irBytes } = sample('r2c');
+  const { result, irBytes } = sample('runner');
   const outcome = installProjection({ result, irBytes, projectRoot, dryRun: true, clock: CLOCK });
   assert.equal(outcome.code, 'OK');
   assert.equal(outcome.action, 'would-install');
@@ -163,7 +163,7 @@ test('dry-run reports the plan and writes nothing', (t) => {
 
 test('an IR whose bytes do not match the result digest is refused without writes', (t) => {
   const projectRoot = tempProject(t);
-  const { result, irBytes } = sample('r2c');
+  const { result, irBytes } = sample('runner');
   const tampered = Buffer.from(irBytes.toString('utf8').replace('rtosv3-drvport', 'rtosv3-drvport'), 'utf8');
   const outcome = installProjection({
     result,
@@ -177,7 +177,7 @@ test('an IR whose bytes do not match the result digest is refused without writes
 
 test('executable modes survive to the receipt and the disk', (t) => {
   const projectRoot = tempProject(t);
-  const { result, irBytes } = sample('r2c');
+  const { result, irBytes } = sample('runner');
   const mutated = cloneResult(result);
   mutated.files[0].mode = 0o755;
   const outcome = installProjection({ result: mutated, irBytes, projectRoot, clock: CLOCK });
@@ -233,7 +233,7 @@ function runInstallerChild(env) {
   });
 }
 
-test('two concurrent r2c bundles with disjoint paths yield exactly one success', async (t) => {
+test('two concurrent runner bundles with disjoint paths yield exactly one success', async (t) => {
   const projectRoot = tempProject(t);
   const barrier = tempProject(t);
   const variants = ['alpha', 'beta'].map((prefix) => ({ prefix, value: customSample({ irPatch: prefixedIr(prefix) }) }));
@@ -265,7 +265,7 @@ test('two concurrent r2c bundles with disjoint paths yield exactly one success',
 
   const refused = runs.filter((run) => run.status !== 0);
   assert.equal(refused.length, 1);
-  assert.ok(['R2C_ROOT_OCCUPIED', 'LOCK_CONFLICT'].includes(refused[0].outcome?.code), `${JSON.stringify(refused[0])}\n${refused[0].stderr}`);
-  const receipts = readdirSync(join(projectRoot, '.r2c', 'install', 'receipts', 'r2c'));
+  assert.ok(['RUNNER_ROOT_OCCUPIED', 'LOCK_CONFLICT'].includes(refused[0].outcome?.code), `${JSON.stringify(refused[0])}\n${refused[0].stderr}`);
+  const receipts = readdirSync(join(projectRoot, '.hm2b', 'install', 'receipts', 'runner'));
   assert.deepEqual(receipts, [`${success[0].outcome.receipt.bundle.id}.json`]);
 });

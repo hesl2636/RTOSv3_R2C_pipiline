@@ -3,7 +3,7 @@
  *
  * `install <projectRoot> <bundleId> <gateFile>` waits for the gate, then
  * installs a projection of the fixture IR under that bundle id. Two workers
- * with different ids share r2c paths, so exactly one can win.
+ * with different ids share hm2b paths, so exactly one can win.
  *
  * `crash <projectRoot> <bundleId>` simulates a killed install: journal first,
  * then half-written files, then an abrupt exit without any cleanup.
@@ -72,7 +72,7 @@ if (scenario === 'crash') {
       { op: 'create', path: created },
     ],
     createdDirs: [],
-    projectionId: 'r2c',
+    projectionId: 'runner',
     bundleId: argument,
     stamp: '2026-05-01T00-00-00-000Z',
     clock: CLOCK,

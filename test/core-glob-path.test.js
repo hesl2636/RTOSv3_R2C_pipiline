@@ -107,12 +107,12 @@ test('path helpers are deterministic and platform independent', () => {
 });
 
 test('schemaFamily extracts the family and rejects malformed ids', () => {
-  assert.equal(schemaFamily('r2c.ir/v1'), 'ir');
-  assert.equal(schemaFamily('r2c.bundle/v1'), 'bundle');
-  assert.equal(schemaFamily('r2c.projection-result/v1'), 'projection-result');
-  assert.equal(schemaFamily('r2c.ir'), null);
-  assert.equal(schemaFamily('r2c.ir/vX'), null);
+  assert.equal(schemaFamily('hm2b.ir/v1'), 'ir');
+  assert.equal(schemaFamily('hm2b.bundle/v1'), 'bundle');
+  assert.equal(schemaFamily('hm2b.projection-result/v1'), 'projection-result');
+  assert.equal(schemaFamily('hm2b.ir'), null);
+  assert.equal(schemaFamily('hm2b.ir/vX'), null);
   assert.equal(schemaFamily(42), null);
-  assert.deepEqual(parseSchemaId('r2c.ir/v2'), { family: 'ir', revision: 2 });
+  assert.deepEqual(parseSchemaId('hm2b.ir/v2'), { family: 'ir', revision: 2 });
   assert.equal(parseSchemaId('nope'), null);
 });

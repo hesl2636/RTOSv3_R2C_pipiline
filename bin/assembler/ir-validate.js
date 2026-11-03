@@ -1,4 +1,4 @@
-/** `r2c-assembler ir validate <workflow.ir.json> [--json]`. */
+/** `hm2b-assembler ir validate <workflow.ir.json> [--json]`. */
 import { sha256Hex } from '../../core/node/sha256.js';
 import { IR_SUMMARY_CODE, validateIr } from '../../assembler/validate-ir.js';
 import {
@@ -25,7 +25,7 @@ export function run(argv) {
   }
   const { options } = parsed;
   if (options.help) {
-    process.stdout.write('Usage: r2c-assembler ir validate <workflow.ir.json> [--json]\n');
+    process.stdout.write('Usage: hm2b-assembler ir validate <workflow.ir.json> [--json]\n');
     return EXIT_CODES.OK;
   }
   if (options.positionals.length !== 1) {

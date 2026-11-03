@@ -93,8 +93,8 @@ export const ompTarget = Object.freeze({
     detect: {"commands":[["omp","--version"]],"paths":["~/.omp/agent"]},
     assets: [
     Object.freeze({ path: 'runtime/agent-native/targets/omp/assets/mcp.json', sha256: 'd8e397af03b5b032f21d0aa967086f0c78b33c87b76f2e9898ae0a144df7de02' }),
-    Object.freeze({ path: 'runtime/agent-native/targets/omp/assets/hooks/pre/r2c-guard.ts', sha256: '608bcc531c35f30e2388ceecd2acdbf0d61afea01fa0cdb192508320ae7f15bb' }),
-    Object.freeze({ path: 'runtime/agent-native/targets/omp/assets/hooks/post/r2c-stop.ts', sha256: '50b2dd7659a334865b97d204d303f731a45ea4aa5fc4189cee3d251bcbfec181' }),
+    Object.freeze({ path: 'runtime/agent-native/targets/omp/assets/hooks/pre/hm2b-guard.ts', sha256: '2035bba12db8cdf1d8832753ed3cfeaaa4f2616bfaab4f3c43f342d621bcf075' }),
+    Object.freeze({ path: 'runtime/agent-native/targets/omp/assets/hooks/post/hm2b-stop.ts', sha256: '87efd26f032f9287e4703325f3d8be81a2d745a73221f1a2e4b9cba4867e6918' }),
     ],
     smoke: (namespace) => layoutSmoke(namespace, { skillsRoot: '.agents/skills', agentsRoot: '.omp/agents', agentFormat: 'md' }),
   }),

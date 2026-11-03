@@ -49,9 +49,9 @@ function resolvePublishRepo(root, env, spawnSync) {
   return repo !== null && GH_REPO_RE.test(repo) ? repo : null;
 }
 
-/** `R2C_GITHUB_API` is operator-only (local fixture or mirror), never browser-settable. */
+/** `HM2B_GITHUB_API` is operator-only (local fixture or mirror), never browser-settable. */
 function resolveGithubApi(env) {
-  const raw = env.R2C_GITHUB_API;
+  const raw = env.HM2B_GITHUB_API;
   if (raw === undefined || raw.trim() === '') return DEFAULT_GITHUB_API;
   try {
     const url = new URL(raw.trim());
@@ -224,8 +224,8 @@ export function createPublishService({
         TMP: tmpDir,
         GH_REPO: config.repo,
       });
-      if (apiBase === DEFAULT_GITHUB_API) delete childEnv.R2C_GITHUB_API;
-      else childEnv.R2C_GITHUB_API = apiBase;
+      if (apiBase === DEFAULT_GITHUB_API) delete childEnv.HM2B_GITHUB_API;
+      else childEnv.HM2B_GITHUB_API = apiBase;
 
       child = await runReleaseChild({
         spawn,
@@ -311,7 +311,7 @@ export function createPublishService({
     const headers = {
       Accept: 'application/vnd.github+json',
       'X-GitHub-Api-Version': '2022-11-28',
-      'User-Agent': 'r2c-web',
+      'User-Agent': 'hm2b-web',
     };
     headers.Authorization = `Bearer ${token}`;
     const request = async (path) => {

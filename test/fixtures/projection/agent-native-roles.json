@@ -1,9 +1,9 @@
 {
-  "schema": "r2c.projection.roles/v1",
+  "schema": "hm2b.projection.roles/v1",
   "ir": {
     "id": "rtosv3-drvport",
     "version": "1.0.0",
-    "sha256": "8a2a57593939f91117d57f9ca34c56b2fc631f6837168ef74032daa95202d395"
+    "sha256": "d6e8957287117c7b476891e1807e303c9a965fbe366087a13947baf34b0da09f"
   },
   "targets": {
     "claude-code": {
@@ -17,7 +17,7 @@
           "artifact": {
             "path": ".claude/agents/rtosv3-drvport-bys-architect.md",
             "format": "md",
-            "sha256": "2d2b1cf862d576c9cd8f431686343e06c64084ae9f137eb2a7f271f062d1d3cc"
+            "sha256": "1c689ab30c3e4b4aec4f3ee8e04e244b91739b8c36922ae47f6603a43c805dc4"
           },
           "fields": {
             "id": {
@@ -57,7 +57,7 @@
           "artifact": {
             "path": ".claude/agents/rtosv3-drvport-bys-designer.md",
             "format": "md",
-            "sha256": "237f4d0fd9a705cca611657186e498ad1be8b945d6d0c8ba955dca50999ebce1"
+            "sha256": "061d1ac313479984538ccb955319a81b66cae44d43890dbb1ed24049fce6ebac"
           },
           "fields": {
             "id": {
@@ -97,7 +97,7 @@
           "artifact": {
             "path": ".claude/agents/rtosv3-drvport-bys-impl-lead.md",
             "format": "md",
-            "sha256": "27184270309a27392bdf67277bfb40d2e1649fe1e70b235663656a739753fc3d"
+            "sha256": "c5c60bc295103fb137e99a06b371b87524bac6572b4529be529ff9b4d4f93caf"
           },
           "fields": {
             "id": {
@@ -137,7 +137,7 @@
           "artifact": {
             "path": ".claude/agents/rtosv3-drvport-bys-release-lead.md",
             "format": "md",
-            "sha256": "d25858b126ae0e7695163e23f11d4c97af61e1983ce282da8b19949d928b2417"
+            "sha256": "b2f621c5babee8492da63b7c5b6e39517efa1a03c78ef65fd1d7481aaaa9d279"
           },
           "fields": {
             "id": {
@@ -189,7 +189,7 @@
           "artifact": {
             "path": ".codex/agents/rtosv3-drvport-bys-architect.toml",
             "format": "toml",
-            "sha256": "d84039e24030a27f3fb71a96d55fe062a0f3565442717824a6ab61a88673f4ce"
+            "sha256": "8c9da9ed40dda49dacf2072f5eebaa78bf16999de1dcaad60d5283a204f0f3bd"
           },
           "fields": {
             "id": {
@@ -230,7 +230,7 @@
           "artifact": {
             "path": ".codex/agents/rtosv3-drvport-bys-designer.toml",
             "format": "toml",
-            "sha256": "a55da710880f58fcf3ede83c35a4dab7dfab7979bac7a90eda207abdc76b6a71"
+            "sha256": "2747f7cedf0eaf3d1cf11e6b1f9e4468f6c7fffd411c529e6b8f2fcf863bf1ba"
           },
           "fields": {
             "id": {
@@ -271,7 +271,7 @@
           "artifact": {
             "path": ".codex/agents/rtosv3-drvport-bys-impl-lead.toml",
             "format": "toml",
-            "sha256": "245b219a0569dac592ed51aabbe5a830bc5c5cdb94302d5cb403ace922005219"
+            "sha256": "8e9249c147be284b841201c5416dd8d6209d980afe7ad3b8600d1188e31535fe"
           },
           "fields": {
             "id": {
@@ -312,7 +312,7 @@
           "artifact": {
             "path": ".codex/agents/rtosv3-drvport-bys-release-lead.toml",
             "format": "toml",
-            "sha256": "f6facebb21c0dbca17337de94c0dfea0fa9dca0a5b2ce3edf79fc6d2b2105c52"
+            "sha256": "b0365bca01634865717de621348b79e6f4b4a50fc25571ef0e1c3fdaff2ae445"
           },
           "fields": {
             "id": {
@@ -365,7 +365,7 @@
           "artifact": {
             "path": ".dsh/agent-native/rtosv3-drvport.roles.md",
             "format": "md",
-            "sha256": "205e0bbf76288d3f1d455e2d4d6c79a4f1ea625e567df198a7147ba6f26b4b15"
+            "sha256": "3ec5e2a357d3587b683890c239e050c372baca8d5b089c9fa18c9cf923255809"
           },
           "fields": {
             "id": {
@@ -406,7 +406,7 @@
           "artifact": {
             "path": ".dsh/agent-native/rtosv3-drvport.roles.md",
             "format": "md",
-            "sha256": "205e0bbf76288d3f1d455e2d4d6c79a4f1ea625e567df198a7147ba6f26b4b15"
+            "sha256": "3ec5e2a357d3587b683890c239e050c372baca8d5b089c9fa18c9cf923255809"
           },
           "fields": {
             "id": {
@@ -447,7 +447,7 @@
           "artifact": {
             "path": ".dsh/agent-native/rtosv3-drvport.roles.md",
             "format": "md",
-            "sha256": "205e0bbf76288d3f1d455e2d4d6c79a4f1ea625e567df198a7147ba6f26b4b15"
+            "sha256": "3ec5e2a357d3587b683890c239e050c372baca8d5b089c9fa18c9cf923255809"
           },
           "fields": {
             "id": {
@@ -488,7 +488,7 @@
           "artifact": {
             "path": ".dsh/agent-native/rtosv3-drvport.roles.md",
             "format": "md",
-            "sha256": "205e0bbf76288d3f1d455e2d4d6c79a4f1ea625e567df198a7147ba6f26b4b15"
+            "sha256": "3ec5e2a357d3587b683890c239e050c372baca8d5b089c9fa18c9cf923255809"
           },
           "fields": {
             "id": {
@@ -541,7 +541,7 @@
           "artifact": {
             "path": ".omp/agents/rtosv3-drvport-bys-architect.md",
             "format": "md",
-            "sha256": "9afc1f8b8952f22ab42e864c7cf2cbeb242e8f3f3b48e6c230d5560e094822da"
+            "sha256": "adf799b37a3e0b904109d930d259e3e8578e45cc57937c4bc65e8a4ade1b3cee"
           },
           "fields": {
             "id": {
@@ -581,7 +581,7 @@
           "artifact": {
             "path": ".omp/agents/rtosv3-drvport-bys-designer.md",
             "format": "md",
-            "sha256": "83c2ce5a89e21663584fd1737ae82c87b54e6118acf0e726147362d92f2ce72a"
+            "sha256": "62dbe92405a8109bde8e58926bff6c54771fdfffff62558a4363dcd4b211c105"
           },
           "fields": {
             "id": {
@@ -621,7 +621,7 @@
           "artifact": {
             "path": ".omp/agents/rtosv3-drvport-bys-impl-lead.md",
             "format": "md",
-            "sha256": "42d1d149ab93062ca6e8b41c8755e1725787ecdb411fa29e0afa189b38f9784f"
+            "sha256": "8544abe18bbeed178bfbd08cd8c827015ad0c4e1a6dba8ddf5b22930ab48afc1"
           },
           "fields": {
             "id": {
@@ -661,7 +661,7 @@
           "artifact": {
             "path": ".omp/agents/rtosv3-drvport-bys-release-lead.md",
             "format": "md",
-            "sha256": "1348bfcd77c01faa1157d70fca37cf1a3f69b091ea0d5a95d90a3d864d1fb6ea"
+            "sha256": "d7244a17980b06a97a635d5f8556a3b0508f93deac07d55d81d60a5fa04c1c43"
           },
           "fields": {
             "id": {
@@ -713,7 +713,7 @@
           "artifact": {
             "path": ".opencode/agents/rtosv3-drvport-bys-architect.md",
             "format": "md",
-            "sha256": "c1d042c68f52f409795e4789f10463f8f38a68dd1d289d85b5c138e0ae483ac2"
+            "sha256": "caa5393db87cb14e97a12b5f26f34cad52cfb30d1b702de608eb660d15563bae"
           },
           "fields": {
             "id": {
@@ -754,7 +754,7 @@
           "artifact": {
             "path": ".opencode/agents/rtosv3-drvport-bys-designer.md",
             "format": "md",
-            "sha256": "855c5359fe191efb46f9ac2dc96f86bdbec5c134f594617bbecc1c2bccb95bc2"
+            "sha256": "e9545bb6aaaa4923a1c7cd6624cfeee1e4fe35c9c86f8763ba8e86882ba14dda"
           },
           "fields": {
             "id": {
@@ -795,7 +795,7 @@
           "artifact": {
             "path": ".opencode/agents/rtosv3-drvport-bys-impl-lead.md",
             "format": "md",
-            "sha256": "229bf69dde042af95f54711086b834267a1a5f942314cf203a17b03deee55d11"
+            "sha256": "bb157589b52e23d94e11a8dfca29d86f4a1abdc05a79729d774e5a807307931d"
           },
           "fields": {
             "id": {
@@ -836,7 +836,7 @@
           "artifact": {
             "path": ".opencode/agents/rtosv3-drvport-bys-release-lead.md",
             "format": "md",
-            "sha256": "bda1558185bbfbb30e826387c250375f2223046210f1e922bca76bb0cb3503d0"
+            "sha256": "06178969e1a1496d4c36e6ca08c9dc3c6bb645f7afefbfd7505257dc6e6435ea"
           },
           "fields": {
             "id": {
