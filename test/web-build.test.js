@@ -56,7 +56,7 @@ const ASSETS = [
   'workflow.compiled.json',
 ];
 const RUNNER_CANONICAL = { files: 45, bytes: 48877, degradations: 4, capabilities: 8, warnings: 0 };
-const AGENT_NATIVE_CANONICAL = { files: 98, bytes: 142731, degradations: 45, capabilities: 40, warnings: 1 };
+const AGENT_NATIVE_CANONICAL = { files: 98, bytes: 139143, degradations: 45, capabilities: 40, warnings: 1 };
 
 function tempDir(t, prefix) {
   const dir = mkdtempSync(join(tmpdir(), `hm2b-web-build-${prefix}-`));

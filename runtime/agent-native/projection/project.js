@@ -103,9 +103,13 @@ export function projectAgentNative(input) {
   const coverageSteps = renderedStageOrder.flatMap((stage) => stage.steps.map((step) => step.id));
 
   const roleIds = sorted(Object.keys(compiledWorkflow.roles ?? {}));
-  const workflowName = `${compiledWorkflow.id}-workflow`;
-  const stageNames = compiledWorkflow.stages.map((stage) => `${compiledWorkflow.id}-stage-${stage.id}`);
-  const skillNames = new Map([...selectedSkills].map((id) => [id, `${compiledWorkflow.id}-skill-${id}`]));
+  // Display names stay clean: the bundle prefix only guards on-disk collisions.
+  // Skill commands (omp `/skill:<name>`, Claude `skills:`) read these names.
+  const workflowName = 'workflow';
+  const workflowDir = `${compiledWorkflow.id}-workflow`;
+  const stageName = (stage) => `stage-${stage.id}`;
+  const stageNames = compiledWorkflow.stages.map(stageName);
+  const skillNames = new Map([...selectedSkills].map((id) => [id, id]));
   const roleNames = roleIds.map((id) => `${compiledWorkflow.id}-${id}`);
 
   // --- names: kebab, <=64, cross-kind unique within a target --------------
@@ -121,7 +125,7 @@ export function projectAgentNative(input) {
   };
   checkName(workflowName, '/id');
   for (const [index, stage] of compiledWorkflow.stages.entries()) {
-    checkName(`${compiledWorkflow.id}-stage-${stage.id}`, `/stages/${index}`);
+    checkName(stageName(stage), `/stages/${index}`);
   }
   for (const skillId of selectedSkills) checkName(skillNames.get(skillId), `/skills/${skillId}`);
   for (const roleId of roleIds) checkName(`${compiledWorkflow.id}-${roleId}`, `/roles/${roleId}`);
@@ -215,7 +219,7 @@ export function projectAgentNative(input) {
       blocks.push(`<!-- task:${step.task} -->\n${bodyText.startsWith('\n') ? bodyText : `\n${bodyText}`}`);
     }
     const description = `阶段 ${index + 1}/${renderedStageOrder.length}「${stage.name}」的完整运行手册（${stage.steps.length} 个步骤，含任务书、门禁与产物自检）。`;
-    const frontmatter = `---\nname: ${yamlScalar(`${compiledWorkflow.id}-stage-${stage.id}`)}\ndescription: ${yamlScalar(description)}\n---\n\n`;
+    const frontmatter = `---\nname: ${yamlScalar(stageName(stage))}\ndescription: ${yamlScalar(description)}\n---\n\n`;
     stageContents.set(stage.id, frontmatter + blocks.join('\n'));
   }
 
@@ -234,7 +238,7 @@ export function projectAgentNative(input) {
     '本工作流没有 runner：进度由执行者维护，没有状态文件。按顺序执行下列阶段技能，',
     '**上一阶段给出提交回执后才进入下一个**；每个阶段技能开头就是项目宪法块。',
     '',
-    ...renderedStageOrder.map((stage, index) => `${index + 1}. \`${compiledWorkflow.id}-stage-${stage.id}\` — ${stage.name}`),
+    ...renderedStageOrder.map((stage, index) => `${index + 1}. \`${stageName(stage)}\` — ${stage.name}`),
     '',
     '单跑某一步或某个技能是允许的（各技能可独立加载），但那不会改变流程顺序。',
     '',
@@ -256,9 +260,9 @@ export function projectAgentNative(input) {
   }
 
   for (const [root, group] of skillGroups) {
-    addFile(`${root}/${workflowName}/SKILL.md`, group, 'workflow', workflowLines);
+    addFile(`${root}/${workflowDir}/SKILL.md`, group, 'workflow', workflowLines);
     for (const stage of renderedStageOrder) {
-      addFile(`${root}/${compiledWorkflow.id}-stage-${stage.id}/SKILL.md`, group, 'stage', stageContents.get(stage.id));
+      addFile(`${root}/${compiledWorkflow.id}-${stageName(stage)}/SKILL.md`, group, 'stage', stageContents.get(stage.id));
     }
     for (const skillId of sorted(selectedSkills)) {
       addFile(`${root}/${compiledWorkflow.id}-skill-${skillId}/SKILL.md`, group, 'skill', skillContents.get(skillId));
@@ -537,11 +541,11 @@ export function projectAgentNative(input) {
     if (group.length > (skillGroups.get(pickSkillRoot)?.length ?? 0)) pickSkillRoot = root;
   }
   const artifacts = {
-    workflow: `${pickSkillRoot}/${workflowName}/SKILL.md`,
+    workflow: `${pickSkillRoot}/${workflowDir}/SKILL.md`,
     'roles-json': rolesJsonPath,
   };
   for (const stage of renderedStageOrder) {
-    artifacts[`stage-${stage.id}`] = `${pickSkillRoot}/${compiledWorkflow.id}-stage-${stage.id}/SKILL.md`;
+    artifacts[`stage-${stage.id}`] = `${pickSkillRoot}/${compiledWorkflow.id}-${stageName(stage)}/SKILL.md`;
   }
   for (const skillId of sorted(selectedSkills)) {
     artifacts[`skill-${skillId}`] = `${pickSkillRoot}/${compiledWorkflow.id}-skill-${skillId}/SKILL.md`;

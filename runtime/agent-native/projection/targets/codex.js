@@ -38,7 +38,7 @@ const CAPABILITY_NOTES = Object.freeze({
   gates: '命令原文 + 超时写入阶段技能；执行者运行并自证，机器不强制',
   outputs: 'glob 原样列出自检清单；回执逐项写存在/缺失，机器不检查',
   subagents: '角色 TOML 落在 .codex/agents，Codex 自动发现；无法表达的字段逐字段记降级',
-  skills: '技能安装到 .agents/skills；名字加 bundle 前缀，语义不变',
+  skills: '技能安装到 .agents/skills；显示名不加 bundle 前缀；目录名仅用于避免多 bundle 冲突',
   preload: 'Codex 自定义 agent 继承父会话技能，没有按 agent 预载接缝',
   'stage-invocation': '阶段技能可由 Codex 技能选择器加载；无稳定命令行 token',
   'skill-invocation': '技能副本可由技能选择器加载；无稳定命令行 token',

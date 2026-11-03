@@ -208,16 +208,16 @@ test('an excluded role skill degrades preload only on targets with a seam', () =
     'name: mini-worker',
     'description: Runs the miniature step.',
     'skills:',
-    '  - mini-skill-helper',
+    '  - helper',
     '---',
     '',
     'Do the work.',
     '',
   ].join('\n'));
-  assert.equal(claude.includes('mini-skill-other'), false);
+  assert.equal(claude.includes('other'), false);
   const ompAgent = file(result, '.omp/agents/mini-worker.md').content;
-  assert.ok(ompAgent.includes('autoloadSkills:\n  - mini-skill-helper\n'));
-  assert.equal(ompAgent.includes('mini-skill-other'), false);
+  assert.ok(ompAgent.includes('autoloadSkills:\n  - helper\n'));
+  assert.equal(ompAgent.includes('other'), false);
 });
 
 test('adapted and field-level states never worsen capability aggregation', () => {

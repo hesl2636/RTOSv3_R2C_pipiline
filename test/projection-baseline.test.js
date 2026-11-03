@@ -7,7 +7,7 @@
  * artefacts (path→sha256, result digest, resolved options, metadata, capability
  * rows, degradations, roles.json bytes), never renderer intermediates.
  *
- * Byte-total reconciliation with the prototype's 143,338 B: the retired
+ * Byte-total reconciliation with the clean skill names: 139,143 B after removing the bundle prefix from skill, stage and workflow display names.
  * `.dsh/agent-native/<ns>.cordis.patch.yml` (3,615 B) is replaced 1:1 by
  * `.dsh/agent-native/<ns>.roles.md` (2,261 B), and `roles.json` gained 636 B of
  * target-field metadata from #98/#99. 143,338 − 3,615 + 2,261 + 636 = 142,620.
@@ -48,7 +48,7 @@ const NS = 'rtosv3-drvport';
 const COMPILED_WORKFLOW_DIGEST = '518643ab9c92d270a66bd4545cba660d0511243070c3479234edec3225b6d23c';
 
 // Hard anchors from the ticket; the byte total is the recomputed baseline.
-const BASELINE = { files: 98, bytes: 142731, degradations: 45, capabilities: 40, warnings: 1 };
+const BASELINE = { files: 98, bytes: 139143, degradations: 45, capabilities: 40, warnings: 1 };
 const RUNNER = { files: 45, degradations: 4, capabilities: 8, warnings: 0 };
 
 function sha256(value) {

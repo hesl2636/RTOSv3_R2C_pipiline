@@ -19,6 +19,10 @@ step-by-step across the engine, the payload, and all five agent adapters; see
   Huawei uses IR for *initial requirement*; `hm2b.ir/v2` documents are now
   rejected. The R2C bundle's own IR/SR/AR references remain domain content and
   are unchanged.
+- Agent-native skills keep the bundle's own skill id as the visible name
+  (`r2c-design`, `stage-analysis-design`, `workflow`). The bundle prefix now
+  remains only in the on-disk directory, so `/skill:` and role
+  `skills`/`autoloadSkills` no longer carry `rtosv3-drvport-`.
 - P6 cutover (#111): the engine moved to `runtime/runner/engine/`, the pure
   manifest contract to `runtime/runner/contract/`, and the runtime assets to the
   two runtimes. The legacy directory trees, the declaration-driven install

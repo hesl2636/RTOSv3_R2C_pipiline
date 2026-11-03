@@ -175,13 +175,13 @@ test('renderRole renders the baseline Claude role byte-for-byte', () => {
 });
 
 test('renderRole maps tools, denies and preload names for Claude', () => {
-  const skillNames = new Map([['codebase-search', 'rtosv3-drvport-skill-codebase-search']]);
+  const skillNames = new Map([['codebase-search', 'codebase-search']]);
   const rendered = renderRole(FULL_ROLE, 'claude-code', ctx(skillNames));
   assert.match(rendered.content, /^---\nname: rtosv3-drvport-bys-architect\n/);
   assert.match(rendered.content, /\nmodel: opus\n/);
   assert.match(rendered.content, /\neffort: high\n/);
   assert.match(rendered.content, /\ntools:\n {2}- Read\n {2}- Write\n {2}- Edit\n {2}- Glob\n {2}- Grep\n/);
-  assert.match(rendered.content, /\nskills:\n {2}- rtosv3-drvport-skill-codebase-search\n/);
+  assert.match(rendered.content, /\nskills:\n {2}- codebase-search\n/);
   assert.equal(rendered.fields.tools.state, 'adapted');
   assert.equal(rendered.fields.tools_deny.state, 'adapted');
   assert.equal(rendered.fields.skills.state, 'native');

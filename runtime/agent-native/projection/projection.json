@@ -43,7 +43,7 @@
         },
         "skills": {
           "level": "adapted",
-          "note": "技能安装到 runtime 技能根；名字加 bundle 前缀，语义不变"
+          "note": "技能安装到 runtime 技能根；显示名不加 bundle 前缀；目录名仅用于避免多 bundle 冲突"
         },
         "preload": {
           "level": "native",
@@ -82,7 +82,7 @@
         },
         "skills": {
           "level": "adapted",
-          "note": "技能安装到 .agents/skills；名字加 bundle 前缀，语义不变"
+          "note": "技能安装到 .agents/skills；显示名不加 bundle 前缀；目录名仅用于避免多 bundle 冲突"
         },
         "preload": {
           "level": "unavailable",
@@ -121,7 +121,7 @@
         },
         "skills": {
           "level": "adapted",
-          "note": "技能安装到 .agents/skills（dsh 项目级技能根）；名字加 bundle 前缀，语义不变"
+          "note": "技能安装到 .agents/skills（dsh 项目级技能根）；显示名不加 bundle 前缀；目录名仅用于避免多 bundle 冲突"
         },
         "preload": {
           "level": "unavailable",
@@ -160,7 +160,7 @@
         },
         "skills": {
           "level": "adapted",
-          "note": "技能安装到 .agents/skills；名字加 bundle 前缀，语义不变"
+          "note": "技能安装到 .agents/skills；显示名不加 bundle 前缀；目录名仅用于避免多 bundle 冲突"
         },
         "preload": {
           "level": "native",
@@ -199,7 +199,7 @@
         },
         "skills": {
           "level": "adapted",
-          "note": "技能安装到 .agents/skills；名字加 bundle 前缀，语义不变"
+          "note": "技能安装到 .agents/skills；显示名不加 bundle 前缀；目录名仅用于避免多 bundle 冲突"
         },
         "preload": {
           "level": "unavailable",

@@ -225,8 +225,8 @@ test('full-field omp frontmatter: tools, thinking-level and autoloadSkills order
     '  - web_search',
     'thinking-level: high',
     'autoloadSkills:',
-    '  - mini-skill-beta-skill',
-    '  - mini-skill-alpha-skill',
+    '  - beta-skill',
+    '  - alpha-skill',
     '---',
     '',
     '你是满字段角色。',
@@ -252,11 +252,11 @@ test('autoloadSkills is role.skills ∩ skillNames; option-excluded skills are a
   const compiledWorkflowDigest = 'a'.repeat(64);
   const all = runProject({ compiledWorkflow, compiledWorkflowDigest, raw: { targets: ['omp'] } });
   assert.equal(all.ok, true);
-  assert.match(roleFile(all).content, /autoloadSkills:\n {2}- mini-skill-alpha-skill\n {2}- mini-skill-beta-skill\n/);
+  assert.match(roleFile(all).content, /autoloadSkills:\n {2}- alpha-skill\n {2}- beta-skill\n/);
 
   const subset = runProject({ compiledWorkflow, compiledWorkflowDigest, raw: { targets: ['omp'], skills: ['beta-skill'] } });
   assert.equal(subset.ok, true);
-  assert.match(roleFile(subset).content, /autoloadSkills:\n {2}- mini-skill-beta-skill\n/);
+  assert.match(roleFile(subset).content, /autoloadSkills:\n {2}- beta-skill\n/);
   assert.equal(roleFile(subset).content.includes('alpha-skill'), false);
   const excluded = subset.degradations.filter((record) => record.code === 'CAP_PRELOAD_EXCLUDED');
   assert.deepEqual(excluded, [{
