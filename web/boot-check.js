@@ -26,7 +26,7 @@
     if (fatal === null) return;
     if (list !== null) {
       const items = Array.isArray(reasons) && reasons.length > 0 ? reasons : inferReasons();
-      list.textContent = `Missing or unsupported: ${items.join(', ')}.`;
+      list.textContent = `缺少或不支持：${items.join(', ')}。`;
     }
     fatal.hidden = false;
   }

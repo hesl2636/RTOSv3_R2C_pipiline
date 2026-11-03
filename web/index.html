@@ -1,145 +1,232 @@
 <!doctype html>
-<html lang="en">
+<html lang="zh-CN">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>hm2b — local bundle inspector and build</title>
+  <title>hm2b — bundle 检查器与构建</title>
   <link rel="stylesheet" href="/web/style.css">
   <script src="/web/boot-check.js"></script>
   <script type="module" src="/web/app.js"></script>
 </head>
 <body>
   <header class="bar">
-    <div>
-      <h1>hm2b bundle inspector</h1>
-      <p class="subtitle">Local surface: read-only bundle and IR, editable projection options, local build, server-side publish. Nothing is installed or written to a project, and the browser never sees the GitHub token.</p>
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true">h</span>
+      <div>
+        <h1>hm2b bundle 检查器</h1>
+        <p class="subtitle">上传 → 校验 → IR 预览 → 投影 → 构建。只读操作，不写入项目；浏览器不接触 GitHub token。</p>
+      </div>
     </div>
     <div class="badges">
-      <span class="badge" id="mode-badge">starting</span>
-      <span class="badge badge-muted" id="degrade-badge" hidden>degraded</span>
-      <span class="badge badge-warn" id="publish-badge">publish disabled</span>
+      <span class="badge" id="mode-badge">启动中</span>
+      <span class="badge badge-muted" id="degrade-badge" hidden>降级模式</span>
+      <span class="badge badge-warn" id="publish-badge">发布未启用</span>
     </div>
   </header>
 
   <div id="fatal" class="banner banner-error" role="alert" hidden>
-    <strong>Unsupported browser</strong>
+    <strong>浏览器不支持</strong>
     <p id="fatal-reasons"></p>
-    <p>Open this page in Chrome/Edge 123+, Firefox 127+ or Safari 17.5+, or use the CLI:</p>
+    <p>请使用 Chrome/Edge 123+、Firefox 127+ 或 Safari 17.5+，或改用 CLI：</p>
     <pre><code>node bin/hm2b-assembler.js bundle validate ./bundle.zip --json
 node bin/hm2b-assembler.js compile ./bundle.zip --out ./dist</code></pre>
-    <p>Then serve the repository again with <code>npm run web</code>. No user-agent sniffing is used; this page is shown only when a required primitive is missing.</p>
+    <p>然后重新运行 <code>npm run web</code>。这里不做 user-agent 嗅探；只有缺少必需能力时才会显示。</p>
   </div>
 
   <main>
     <section class="panel" aria-labelledby="upload-title">
-      <h2 id="upload-title">1. Upload one bundle zip</h2>
-      <p class="hint">Single <code>.zip</code> only. Size limit: <span id="limit-text">8 MiB</span>. Archives are validated in memory; nothing is saved.</p>
-      <div class="row">
+      <div class="panel-head">
+        <div class="title-group">
+          <span class="step" aria-hidden="true">01</span>
+          <h2 id="upload-title">上传 bundle</h2>
+        </div>
+        <span class="chip">zip ≤ <span id="limit-text">8 MiB</span></span>
+      </div>
+      <p class="hint">只接受单个 <code>.zip</code>。文件在内存中校验，不会保存到磁盘。</p>
+      <div class="row upload-row">
         <input id="file-input" type="file" accept=".zip,application/zip,application/x-zip-compressed">
-        <button id="upload-button" type="button" disabled>Validate &amp; compile</button>
+        <button id="upload-button" class="btn-primary" type="button" disabled>校验并编译</button>
       </div>
       <p id="upload-status" class="status" role="status"></p>
     </section>
 
     <section id="mismatch" class="banner banner-error" role="alert" hidden>
       <strong>WEB_CLIENT_SERVER_MISMATCH</strong>
-      <p id="mismatch-text">Browser and server disagree about this bundle. The server result is authoritative; publishing is disabled.</p>
+      <p id="mismatch-text">浏览器与服务端对同一个 bundle 的判断不一致。以服务端结果为准，发布已禁用。</p>
+    </section>
+
+    <section id="overview" class="panel overview" aria-labelledby="overview-title" hidden>
+      <div class="panel-head">
+        <div class="title-group">
+          <span class="step" aria-hidden="true">02</span>
+          <h2 id="overview-title">概览</h2>
+        </div>
+        <span class="chip" id="overview-bundle">—</span>
+      </div>
+      <div id="overview-grid" class="stat-grid"></div>
+      <details id="overview-meta-fold" class="fold">
+        <summary>技术标识</summary>
+        <div id="overview-meta" class="meta-grid"></div>
+      </details>
     </section>
 
     <section class="panel" aria-labelledby="report-title">
-      <h2 id="report-title">2. Validation report</h2>
-      <div id="report-summary" class="summary" hidden></div>
-      <div id="report-body" class="report" hidden>
-        <div class="row">
-          <label>Severity
-            <select id="severity-filter">
-              <option value="all">all</option>
-              <option value="error">errors</option>
-              <option value="warning">warnings</option>
-            </select>
-          </label>
-          <label>Path prefix
-            <input id="path-filter" type="text" placeholder="tasks/" spellcheck="false">
-          </label>
+      <div class="panel-head">
+        <div class="title-group">
+          <span class="step" aria-hidden="true">03</span>
+          <h2 id="report-title">校验结果</h2>
         </div>
-        <ul id="diagnostics" class="diagnostics"></ul>
-        <p id="diagnostics-empty" class="hint" hidden>No diagnostics match the filter.</p>
+        <span id="report-verdict" class="pill" hidden></span>
+      </div>
+      <div id="report-summary" class="summary" hidden></div>
+      <ul id="report-highlights" class="highlights" hidden></ul>
+      <div id="report-body" class="report" hidden>
+        <details id="report-details" class="fold">
+          <summary>全部诊断 <span id="diagnostic-count" class="count"></span></summary>
+          <div class="toolbar">
+            <label>级别
+              <select id="severity-filter">
+                <option value="all">全部</option>
+                <option value="error">错误</option>
+                <option value="warning">警告</option>
+              </select>
+            </label>
+            <label>路径前缀
+              <input id="path-filter" type="text" placeholder="tasks/" spellcheck="false">
+            </label>
+          </div>
+          <ul id="diagnostics" class="diagnostics"></ul>
+          <p id="diagnostics-empty" class="hint" hidden>没有匹配的诊断。</p>
+        </details>
       </div>
     </section>
 
     <section class="panel" aria-labelledby="ir-title">
-      <h2 id="ir-title">3. Read-only IR preview</h2>
-      <div id="ir-empty" class="hint">The IR appears after a successful compile.</div>
-      <div id="ir-body" hidden>
-        <div class="summary" id="ir-identity"></div>
-        <div class="row">
-          <strong>workflow.ir.json</strong>
-          <span id="ir-digest" class="mono"></span>
-          <button id="download-ir" type="button">Download IR</button>
+      <div class="panel-head">
+        <div class="title-group">
+          <span class="step" aria-hidden="true">04</span>
+          <h2 id="ir-title">IR 预览</h2>
         </div>
-        <h3>Stages and steps</h3>
-        <ol id="ir-stages" class="stages"></ol>
-        <h3>Roles</h3>
-        <ul id="ir-roles" class="entities"></ul>
-        <h3>Tasks</h3>
-        <ul id="ir-tasks" class="entities"></ul>
-        <h3>Skills</h3>
-        <ul id="ir-skills" class="entities"></ul>
-        <h3>Knowledge base</h3>
-        <ul id="ir-knowledge-base" class="entities"></ul>
-        <h3>Checklists</h3>
-        <ul id="ir-checklists" class="entities"></ul>
-        <h3>Hooks</h3>
-        <ul id="ir-hooks" class="entities"></ul>
-        <h3>MCP</h3>
-        <ul id="ir-mcp" class="entities"></ul>
-        <h3>Constitution</h3>
-        <div id="ir-constitution"></div>
-        <h3>Raw IR (read-only)</h3>
-        <pre id="ir-raw" class="raw"></pre>
+        <div class="panel-actions">
+          <span class="chip">只读</span>
+          <button id="download-ir" class="btn-secondary" type="button" disabled>下载 IR</button>
+        </div>
       </div>
+      <div id="ir-empty" class="hint">编译成功后在这里显示 IR。</div>
+      <details id="ir-body" class="fold ir-body" hidden>
+        <summary>IR 内容 <span id="ir-summary" class="count"></span></summary>
+        <div class="ir-top">
+          <div class="ir-identity" id="ir-identity"></div>
+          <div class="ir-actions">
+            <span id="ir-digest" class="mono hint"></span>
+          </div>
+        </div>
+        <details class="fold">
+          <summary>阶段与步骤 <span id="ir-stage-count" class="count"></span></summary>
+          <ol id="ir-stages" class="stages"></ol>
+        </details>
+        <div class="grid-2">
+          <details class="fold">
+            <summary>角色 <span id="ir-role-count" class="count"></span></summary>
+            <ul id="ir-roles" class="entities"></ul>
+          </details>
+          <details class="fold">
+            <summary>任务 <span id="ir-task-count" class="count"></span></summary>
+            <ul id="ir-tasks" class="entities"></ul>
+          </details>
+          <details class="fold">
+            <summary>技能 <span id="ir-skill-count" class="count"></span></summary>
+            <ul id="ir-skills" class="entities"></ul>
+          </details>
+        </div>
+        <details class="fold">
+          <summary>声明的资产 <span id="ir-asset-count" class="count"></span></summary>
+          <div class="asset-grid">
+            <div>
+              <h4>知识库</h4>
+              <ul id="ir-knowledge-base" class="entities"></ul>
+            </div>
+            <div>
+              <h4>检查单</h4>
+              <ul id="ir-checklists" class="entities"></ul>
+            </div>
+            <div>
+              <h4>Hooks</h4>
+              <ul id="ir-hooks" class="entities"></ul>
+            </div>
+            <div>
+              <h4>MCP</h4>
+              <ul id="ir-mcp" class="entities"></ul>
+            </div>
+          </div>
+        </details>
+        <details class="fold">
+          <summary>宪法 <span id="ir-constitution-state" class="count"></span></summary>
+          <div id="ir-constitution"></div>
+        </details>
+        <details class="fold">
+          <summary>原始 IR</summary>
+          <pre id="ir-raw" class="raw"></pre>
+        </details>
+      </details>
     </section>
+
     <section class="panel" aria-labelledby="options-title">
-      <h2 id="options-title">4. Projection options</h2>
-      <p class="hint">Options are bound to the compiled IR digest and reset on every new upload. The IR itself is never edited; the server re-validates every choice.</p>
+      <div class="panel-head">
+        <div class="title-group">
+          <span class="step" aria-hidden="true">05</span>
+          <h2 id="options-title">投影选项</h2>
+        </div>
+        <span class="chip" id="options-count">—</span>
+      </div>
+      <p class="hint">选项绑定到当前 IR 摘要，每次重新上传都会重置。IR 本身不会被修改；服务端会重新校验每个选择。</p>
       <p id="options-status" class="status" role="status"></p>
       <div id="options-body" hidden>
-        <div class="row">
-          <span class="mono">IR digest <span id="options-ir-digest"></span></span>
-          <button id="reset-options" type="button">Restore published defaults</button>
+        <div class="row options-top">
+          <span class="mono hint">IR 摘要 <span id="options-ir-digest"></span></span>
+          <button id="reset-options" class="btn-secondary" type="button">恢复默认</button>
         </div>
         <div id="projection-controls"></div>
-        <h3>Preview (browser, shared modules)</h3>
-        <p id="preview-status" class="status" role="status"></p>
-        <div id="preview-body" hidden></div>
+        <details class="fold">
+          <summary>浏览器预览 <span id="preview-count" class="count"></span></summary>
+          <p class="hint">与构建使用同一套共享模块，只做预览，不写盘。</p>
+          <p id="preview-status" class="status" role="status"></p>
+          <div id="preview-body" hidden></div>
+        </details>
       </div>
     </section>
 
     <section class="panel" aria-labelledby="build-title">
-      <h2 id="build-title">5. Build</h2>
-      <p class="hint">Canonical options build the publishable asset set; custom options build locally only. Assets come from the release tool; nothing is written to a project.</p>
-      <div class="row">
-        <button id="build-button" type="button" disabled>Build assets</button>
-        <span id="build-status" class="status" role="status"></span>
+      <div class="panel-head">
+        <div class="title-group">
+          <span class="step" aria-hidden="true">06</span>
+          <h2 id="build-title">构建产物</h2>
+        </div>
+        <button id="build-button" class="btn-primary" type="button" disabled>构建</button>
       </div>
+      <p class="hint">默认选项生成可发布的资产集；自定义选项只在本地构建。产物来自 release 工具，不会写入项目目录。</p>
+      <p id="build-status" class="status" role="status"></p>
       <div id="build-body" hidden></div>
     </section>
 
-    <section class="panel" aria-labelledby="publish-title">
-      <h2 id="publish-title">6. Publish release</h2>
-      <p class="hint">Publishing runs on the server only: it calls the release tool as a child process, keeps the GitHub token in server memory, and never sends the token (or talks to GitHub) from this page. A published release is never rewritten — a bad version gets a new patch.</p>
-      <div class="row">
-        <button id="publish-button" type="button" disabled>Publish release</button>
-        <span id="publish-status" class="status" role="status"></span>
+    <section id="publish-panel" class="panel quiet" aria-labelledby="publish-title">
+      <div class="panel-head">
+        <div class="title-group">
+          <span class="step" aria-hidden="true">07</span>
+          <h2 id="publish-title">发布 Release</h2>
+        </div>
+        <button id="publish-button" class="btn-secondary" type="button" disabled>发布</button>
       </div>
+      <p class="hint">发布在服务端执行：token 只留在服务端内存，页面不会接触。已发布的 Release 不会被改写，有误时发布新的 patch。</p>
+      <p id="publish-status" class="status" role="status"></p>
       <div id="publish-body" hidden></div>
     </section>
   </main>
 
   <noscript>
     <div class="banner banner-error">
-      <strong>JavaScript is disabled.</strong>
-      <p>This surface needs ESM and Web APIs. Use the CLI instead:</p>
+      <strong>JavaScript 已禁用。</strong>
+      <p>此页面需要 ESM 与 Web API。请改用 CLI：</p>
       <pre><code>node bin/hm2b-assembler.js bundle validate ./bundle.zip --json
 node bin/hm2b-assembler.js compile ./bundle.zip --out ./dist</code></pre>
     </div>
