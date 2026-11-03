@@ -9,7 +9,6 @@
 import { existsSync, rmSync, statSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { canonicalJson } from '../core/canonical-json.js';
-import { comparePaths } from '../core/paths.js';
 import { getProjection } from '../projection/registry.js';
 import { validateResult } from '../projection/validate-result.js';
 import { checkConflicts } from './conflict.js';
@@ -27,6 +26,7 @@ import {
   irPath as irRelPath,
   isInstallPath,
   projectPath,
+  pruneCandidates,
   receiptPath as receiptRelPath,
 } from './paths.js';
 import {
@@ -47,19 +47,18 @@ import {
 } from './transaction.js';
 import { diffFileSets, previousRecord } from './upgrade.js';
 import {
+  computeCreatedDirs,
   ensureProjectDirs,
   lstatOrNull,
   pruneEmptyDir,
   sha256File,
   sha256Hex,
   symlinkComponent,
+  timestampSlug,
   unlinkIfExists,
   writeAbsoluteAtomic,
   writeFileAtomic,
 } from './util.js';
-
-
-const TIMESTAMP_SAFE = /[:.]/g;
 
 function failure(code, message, details = {}) {
   return { ok: false, code, message, ...details };
@@ -67,10 +66,6 @@ function failure(code, message, details = {}) {
 
 function iso(clock) {
   return clock().toISOString();
-}
-
-function timestampSlug(clock) {
-  return iso(clock).replace(TIMESTAMP_SAFE, '-');
 }
 
 function optionsDigest(options) {
@@ -182,6 +177,37 @@ function loadReceipts(projectRoot, ownRel) {
   return { own, others: receipts.filter((item) => item.path !== ownRel) };
 }
 
+/**
+ * The IR copy the replaced receipt still owns. It is removable only when it is
+ * the exact installer path for the replaced version, is a project-relative
+ * plain file, differs from the IR this run writes, and no other receipt still
+ * points at it.
+ */
+function supersededIr(projectRoot, { previous, others, irRel, bundleId }) {
+  const previousIr = previous?.receipt?.ir?.path;
+  const previousVersion = previous?.receipt?.bundle?.version;
+  if (typeof previousIr !== 'string' || typeof previousVersion !== 'string') return null;
+  if (previousIr !== irRelPath(bundleId, previousVersion)) return null;
+  if (previousIr === irRel) return null;
+  if (!isInstallPath(previousIr) || projectPath(projectRoot, previousIr) === null) return null;
+  if (others.some((item) => item.receipt?.ir?.path === previousIr)) return null;
+  if (symlinkComponent(projectRoot, previousIr) !== null) return null;
+  return previousIr;
+}
+
+/** Prune the bundle/version directories a removed IR copy left empty. */
+function pruneIrDirs(projectRoot, irRel) {
+  const pruned = [];
+  for (const dir of pruneCandidates([irRel])) {
+    try {
+      if (pruneEmptyDir(projectRoot, dir)) pruned.push(dir);
+    } catch {
+      // best effort: an occupied or unreadable directory simply stays
+    }
+  }
+  return pruned;
+}
+
 /** The `migrated_from` block a receipt records (#76 §5.2). */
 function migrationSummary(migration) {
   return {
@@ -189,19 +215,6 @@ function migrationSummary(migration) {
     retired: migration.receipts.map((item) => item.to),
     manual_leftovers: migration.manualLeftovers,
   };
-}
-
-function computeCreatedDirs(projectRoot, paths) {
-  const created = new Set();
-  for (const path of paths) {
-    for (const dir of ancestorDirs(path)) {
-      const absolute = projectPath(projectRoot, dir);
-      if (absolute === null) continue;
-      const info = lstatOrNull(absolute);
-      if (info === null) created.add(dir);
-    }
-  }
-  return [...created].sort(comparePaths);
 }
 
 /** Post-commit legacy cleanup: empty dirs the old install created, then payload home. */
@@ -462,6 +475,7 @@ export function installProjection(input = {}) {
       dryRun,
       decisions: check.decisions,
       stale: check.stale,
+      supersededIr: supersededIr(projectRoot, { previous: own, others, irRel, bundleId }),
       warnings: [...(owned?.warnings ?? []), ...check.warnings, ...coexistWarnings],
       files: incoming.length,
       mode: own === null ? (migration?.receipts.length ? 'migrated' : 'fresh') : 'upgrade',
@@ -483,6 +497,10 @@ export function installProjection(input = {}) {
     const stamp = timestampSlug(clock);
     // TOCTOU: receipts and disk may have changed between check and lock.
     const fresh = loadReceipts(projectRoot, ownRel);
+    // The replaced receipt may own an IR copy at another version (A → B). It
+    // is only removable when no other receipt points at it; the new IR is
+    // never a candidate because `supersededIr` refuses `irRel`.
+    const staleIr = supersededIr(projectRoot, { previous: fresh.own, others: fresh.others, irRel, bundleId });
     // TOCTOU: the runner singleton decision is only valid under the lock. Two
     // bundles that passed the pre-lock check with disjoint paths would both
     // claim one runner root; the loser must be refused here, before any write.
@@ -548,6 +566,7 @@ export function installProjection(input = {}) {
     }
     const receiptExisted = lstatOrNull(ownAbsolute) !== null;
     operations.push({ op: receiptExisted ? 'replace' : 'create', path: ownRel, backup: receiptExisted });
+    if (staleIr !== null) operations.push({ op: 'delete', path: staleIr, backup: true });
 
     const journal = prepareJournal({
       projectRoot,
@@ -605,6 +624,24 @@ export function installProjection(input = {}) {
         error.code = 'HASH_MISMATCH';
         throw error;
       }
+      // Superseded IR copy (A → B): once this receipt lands, no receipt points
+      // at the old version any more, so the copy and its now-empty bundle
+      // directories leave the project. Journaled above, so a rollback restores
+      // it together with the replaced receipt.
+      const staleWarnings = [];
+      const irPruned = [];
+      if (staleIr !== null) {
+        try {
+          unlinkIfExists(projectPath(projectRoot, staleIr));
+          irPruned.push(...pruneIrDirs(projectRoot, staleIr));
+        } catch {
+          staleWarnings.push({
+            code: 'IR_STALE_KEPT',
+            path: staleIr,
+            message: `${staleIr} is no longer referenced by any receipt but could not be deleted; remove it by hand`,
+          });
+        }
+      }
 
       const receiptFiles = receiptEntries(projectRoot, incoming);
       const installWarnings = [
@@ -612,6 +649,7 @@ export function installProjection(input = {}) {
         ...(owned?.warnings ?? []),
         ...recheck.warnings,
         ...coexistWarnings,
+        ...staleWarnings,
       ];
       const installDegradations = [
         ...(result.degradations ?? []),
@@ -652,7 +690,7 @@ export function installProjection(input = {}) {
       journal.receipts_written = [ownRel];
       writeJournal(projectRoot, journal);
       removeJournal(projectRoot);
-      const pruned = pruneLegacyDirs(projectRoot, migration);
+      const pruned = [...irPruned, ...pruneLegacyDirs(projectRoot, migration)];
       return {
         ok: true,
         code: 'OK',
@@ -667,6 +705,7 @@ export function installProjection(input = {}) {
         decisions: recheck.decisions,
         createdDirs,
         backups,
+        supersededIr: staleIr,
         warnings: installWarnings,
         manualSteps,
         migration: migrated ? migrationSummary(migration) : null,

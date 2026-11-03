@@ -18,12 +18,15 @@ import { run as project } from './assembler/project.js';
 const HELP = `Usage: hm2b-assembler <command> [options]
 
 Commands:
-  bundle validate <zip>        Validate a hm2b.bundle/v1 archive.
-  ir validate <file>           Validate a hm2b.ir/v1 document.
+  bundle validate <zip>        Validate a hm2b.bundle/v2 archive.
+  ir validate <file>           Validate a hm2b.ir/v2 document.
   compile <zip> --out <dir>    Compile a bundle into workflow.ir.json.
   project <ir> --projection <id> [--target <id> ...]
                                [--stage-order a,b] [--skills a,b]
                                [--out <dir>]   Project an IR into a runtime file set.
+
+A bundle archive may carry knowledge-base/, checklists/, hooks/hooks.json and
+mcp.json; compile embeds them in the IR and the projections install them.
 
 Global options:
   -h, --help                   Show this help and exit.

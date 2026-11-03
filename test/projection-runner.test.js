@@ -32,6 +32,13 @@ import { project } from '../projection/project.js';
 import { getProjection } from '../projection/registry.js';
 import { validateResult } from '../projection/validate-result.js';
 import { RUNNER_MANIFEST } from '../runtime/runner/projection/manifest.js';
+import {
+  ASSET_CHECKLISTS,
+  ASSET_HOOKS,
+  ASSET_KNOWLEDGE_BASE,
+  ASSET_MCP,
+  assetZip,
+} from './helpers/minimal-bundle.js';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const ZIP = join(ROOT, 'examples/rtosv3/dist/bundle-rtosv3-drvport-v1.0.0.zip');
@@ -98,7 +105,7 @@ function miniIr({
     source: SOURCE('roles/worker.md', 'd'),
   };
   return {
-    schema: 'hm2b.ir/v1',
+    schema: 'hm2b.ir/v2',
     id,
     name: 'Mini workflow',
     version: '1.0.0',
@@ -157,7 +164,62 @@ test('baseline: 45 files, 4 degradations, 8 capability rows, V1–V12 pass', () 
   assert.equal(validation.ok, true, JSON.stringify(validation.diagnostics, null, 2));
 });
 
-test('the file set is exactly the five project-root roots', () => {
+test('declared bundle assets project verbatim at the project root', () => {
+  const compiled = compileBundle(new Uint8Array(assetZip()), { inflateRaw, sha256: sha256Hex });
+  assert.equal(compiled.ok, true);
+  const ir = JSON.parse(new TextDecoder().decode(compiled.irBytes));
+  const irDigest = compiled.digest;
+  const result = runProject({ ir, irDigest, raw: null });
+  assert.equal(result.ok, true, JSON.stringify(result.errors));
+
+  const assets = result.files.filter((file) => ['knowledge', 'checklist', 'hooks', 'mcp'].includes(file.kind));
+  assert.deepEqual(assets.map((file) => [file.kind, file.path]), [
+    ['checklist', 'checklists/design.md'],
+    ['checklist', 'checklists/impl.md'],
+    ['hooks', 'hooks/hooks.json'],
+    ['knowledge', 'knowledge-base/coding-standards/cleancode/rules.md'],
+    ['knowledge', 'knowledge-base/os-api-mapping/freertos.md'],
+    ['mcp', 'mcp.json'],
+  ]);
+  for (const file of assets) {
+    assert.deepEqual(file.targets, ['runner']);
+    assert.equal(file.origin, 'generated');
+    assert.equal(file.mode, 0o644);
+  }
+  assert.equal(
+    fileByPath(result, 'knowledge-base/os-api-mapping/freertos.md').content,
+    ASSET_KNOWLEDGE_BASE.get('knowledge-base/os-api-mapping/freertos.md'),
+  );
+  assert.equal(
+    fileByPath(result, 'knowledge-base/coding-standards/cleancode/rules.md').content,
+    ASSET_KNOWLEDGE_BASE.get('knowledge-base/coding-standards/cleancode/rules.md'),
+  );
+  for (const [id, body] of ASSET_CHECKLISTS) {
+    assert.equal(fileByPath(result, `checklists/${id}.md`).content, body);
+  }
+  assert.equal(fileByPath(result, 'hooks/hooks.json').content, canonicalJson(ASSET_HOOKS));
+  assert.equal(fileByPath(result, 'mcp.json').content, canonicalJson(ASSET_MCP));
+
+  assert.equal(result.metadata.artifacts['knowledge-os-api-mapping-freertos'], 'knowledge-base/os-api-mapping/freertos.md');
+  assert.equal(result.metadata.artifacts['knowledge-coding-standards-cleancode-rules'], 'knowledge-base/coding-standards/cleancode/rules.md');
+  assert.equal(result.metadata.artifacts['checklist-design'], 'checklists/design.md');
+  assert.equal(result.metadata.artifacts['checklist-impl'], 'checklists/impl.md');
+  assert.equal(result.metadata.artifacts.hooks, 'hooks/hooks.json');
+  assert.equal(result.metadata.artifacts.mcp, 'mcp.json');
+
+  const validation = validateResult(result, { ir, irDigest, options: result.options, manifest: MANIFEST, environment: {} });
+  assert.equal(validation.ok, true, JSON.stringify(validation.diagnostics, null, 2));
+
+  const again = runProject({ ir, irDigest, raw: null });
+  assert.equal(JSON.stringify(again), JSON.stringify(result));
+
+  // No user-owned configuration file or engine path is ever projected.
+  for (const file of result.files) {
+    assert.doesNotMatch(file.path, /(?:^|\/)(?:CLAUDE\.md|AGENTS\.md|\.mcp\.json)(?:\/|$)/);
+  }
+});
+
+test('the sample file set stays on the five payload roots', () => {
   const { result } = sampleResult();
   const paths = result.files.map((file) => file.path);
   assert.equal(new Set(paths).size, paths.length);
@@ -285,8 +347,13 @@ test('a task without exactly one {{submit}} token fails without files', () => {
   });
   const { result } = { result: runProject({ ir, irDigest: sha256Hex(canonicalJson(ir)) }) };
   assert.equal(result.ok, false);
-  assert.equal(result.errors[0].code, 'PROJECTION_SUBMIT_TOKEN_COUNT');
-  assert.equal(result.errors[0].pointer, '/tasks/one-task/body');
+  assert.deepEqual(result.errors, [{
+    severity: 'error',
+    code: 'PROJECTION_SUBMIT_TOKEN_COUNT',
+    path: '',
+    pointer: '/tasks/one-task/body',
+    message: 'task one-task body must contain exactly one {{submit}} token',
+  }]);
   assert.equal(result.files, undefined);
 });
 
@@ -507,17 +574,37 @@ test('stage order options reorder coverage and still pass V1–V12', () => {
   assert.equal(validation.ok, true, JSON.stringify(validation.diagnostics));
 });
 
+test('an hm2b.ir/v1 document is rejected before any file is produced', () => {
+  const ir = { ...miniIr(), schema: 'hm2b.ir/v1' };
+  const result = runProject({ ir, irDigest: sha256Hex(canonicalJson(ir)), raw: null });
+  assert.equal(result.ok, false);
+  assert.equal(result.files, undefined);
+  assert.deepEqual(result.errors, [{
+    severity: 'error',
+    code: 'PROJECTION_IR_UNSUPPORTED',
+    path: '',
+    pointer: null,
+    message: 'unsupported IR schema hm2b.ir/v1',
+  }]);
+});
+
 test('requires.engine is evaluated against environment.engineVersion and never enters files', () => {
   const base = miniIr({ requires: { engine: '>=0.1.0 <1.0.0' } });
   const digest = sha256Hex(canonicalJson(base));
   const unknown = runProject({ ir: base, irDigest: digest, environment: {} });
   assert.equal(unknown.ok, false);
+  assert.equal(unknown.errors[0].severity, 'error');
   assert.equal(unknown.errors[0].code, 'PROJECTION_ENGINE_UNKNOWN');
+  assert.equal(unknown.errors[0].path, '');
+  assert.equal(unknown.errors[0].pointer, null);
   assert.equal(unknown.files, undefined);
 
   const unsatisfied = runProject({ ir: base, irDigest: digest, environment: { engineVersion: '2.0.0' } });
   assert.equal(unsatisfied.ok, false);
+  assert.equal(unsatisfied.errors[0].severity, 'error');
   assert.equal(unsatisfied.errors[0].code, 'PROJECTION_ENGINE_UNSATISFIED');
+  assert.equal(unsatisfied.errors[0].path, '');
+  assert.equal(unsatisfied.errors[0].pointer, null);
   assert.ok(unsatisfied.errors[0].message.includes('2.0.0'));
 
   const satisfied = runProject({ ir: base, irDigest: digest, environment: { engineVersion: '0.1.0' } });
@@ -544,7 +631,9 @@ test('the same input twice yields byte-identical results', () => {
 test('projection.json is exactly canonicalJson(RUNNER_MANIFEST)', () => {
   const file = readFileSync(join(ROOT, 'runtime/runner/projection/projection.json'), 'utf8');
   assert.equal(file, canonicalJson(RUNNER_MANIFEST));
-  assert.deepEqual(RUNNER_MANIFEST.writeRoots, ['constitution', 'roles', 'skills', 'tasks', 'workflows']);
+  assert.deepEqual(RUNNER_MANIFEST.writeRoots, [
+    'checklists', 'constitution', 'hooks', 'knowledge-base', 'mcp.json', 'roles', 'skills', 'tasks', 'workflows',
+  ]);
   assert.equal(RUNNER_MANIFEST.targets.length, 1);
   assert.equal(RUNNER_MANIFEST.targets[0].id, 'runner');
   assert.deepEqual(Object.keys(RUNNER_MANIFEST.targets[0].capabilities), CAPABILITIES);

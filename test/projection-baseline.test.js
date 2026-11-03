@@ -45,7 +45,7 @@ const TARGETS = ['claude-code', 'codex', 'dsh', 'omp', 'opencode'];
 const SHARED = ['codex', 'dsh', 'omp', 'opencode'];
 const AGENT_CARRIERS = ['claude-code', 'codex', 'omp', 'opencode'];
 const NS = 'rtosv3-drvport';
-const IR_DIGEST = 'd6e8957287117c7b476891e1807e303c9a965fbe366087a13947baf34b0da09f';
+const IR_DIGEST = '34d55ee62bf284594218d4923b0eafa267799edb1edbbeb7bb313a6f2ab0bc04';
 
 // Hard anchors from the ticket; the byte total is the recomputed baseline.
 const BASELINE = { files: 98, bytes: 142657, degradations: 45, capabilities: 40, warnings: 1 };

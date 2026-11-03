@@ -190,7 +190,7 @@ test('missing required keys and wrong schemas are structural errors', () => {
   });
 
   const cases = [
-    { schema: 'hm2b.bundle/v2', reason: 'newer' },
+    { schema: 'hm2b.bundle/v3', reason: 'newer' },
     { schema: 'not-a-schema', reason: 'malformed' },
     { schema: 'hm2b.ir/v1', reason: 'unknown' },
     { schema: null, reason: 'malformed' },

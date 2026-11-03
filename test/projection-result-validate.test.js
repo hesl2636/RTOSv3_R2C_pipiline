@@ -105,6 +105,36 @@ test('V5 rejects escaped, duplicated and out-of-root paths', () => {
   })).includes('V5'));
 });
 
+test('V5 allows bundle asset roots only in the projection that declares them', () => {
+  const base = baseline();
+  const result = structuredClone(base.result);
+  const original = result.files[0].path;
+  result.files[0].path = 'knowledge-base/demo.md';
+  for (const step of result.installPlan.steps) {
+    if (step.path === original) step.path = result.files[0].path;
+  }
+  // agent-native writes assets under .agents/agent-native/<ns>/, never the root.
+  const outside = (outcome) => outcome.diagnostics.some((item) => item.details.check === 'V5'
+    && item.message.includes(`${result.files[0].path}: outside writeRoots`));
+  assert.equal(outside(validate(result, base)), true);
+
+  // runner declares knowledge-base/ at the project root, so that path is legal.
+  const runner = getProjection('runner');
+  const runnerOutcome = validateResult(result, {
+    ir: base.ir,
+    irDigest: base.irDigest,
+    options: base.options,
+    manifest: runner,
+  });
+  assert.equal(outside(runnerOutcome), false);
+});
+
+test('the result schema documents the bundle asset file kinds', () => {
+  const document = JSON.parse(readFileSync(join(ROOT, 'projection/schema/result.schema.json'), 'utf8'));
+  const kinds = document.$defs.file.properties.kind.enum;
+  for (const kind of ['knowledge', 'checklist', 'hooks', 'mcp']) assert.ok(kinds.includes(kind), kind);
+});
+
 test('V6 rejects CR, missing trailing LF and bad modes', () => {
   assert.ok(checksOf(mutate((result) => { result.files[0].content = result.files[0].content.replace('\n', '\r\n'); })).includes('V6'));
   assert.ok(checksOf(mutate((result) => { result.files[0].content = 'no trailing newline'; })).includes('V6'));

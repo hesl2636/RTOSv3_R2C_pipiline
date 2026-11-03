@@ -3,7 +3,7 @@
   "ir": {
     "id": "rtosv3-drvport",
     "version": "1.0.0",
-    "sha256": "d6e8957287117c7b476891e1807e303c9a965fbe366087a13947baf34b0da09f"
+    "sha256": "34d55ee62bf284594218d4923b0eafa267799edb1edbbeb7bb313a6f2ab0bc04"
   },
   "targets": {
     "claude-code": {

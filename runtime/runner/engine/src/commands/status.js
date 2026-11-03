@@ -2,7 +2,7 @@
  * `hm2b status`: read-only run view.
  *
  * Plain output starts every line with one of four fixed markers (`run/`,
- * `stage/`, `step/`, `next/`) so shells and adapters can grep it without
+ * `stage/`, `step/`, `next/`) so shells and targets can grep it without
  * parsing prose; when installs exist, install/engine/manifest lines are
  * appended after them. JSON exposes the same data as `run`, `stages`, `steps`
  * and `next`, plus each step's latest `submitted` note and the additive

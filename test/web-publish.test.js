@@ -50,8 +50,8 @@ const BUNDLE = 'rtosv3-drvport';
 const VERSION = '1.0.0';
 const TAG = 'bundle-rtosv3-drvport-v1.0.0';
 const TOKEN = 'ghp_web_publish_secret_110a';
-const SAMPLE_SHA256 = '4b4700207e2a1398b930b46123f5e7aef27f803e3afc3596d19e31dc454d8196';
-const IR_DIGEST = 'd6e8957287117c7b476891e1807e303c9a965fbe366087a13947baf34b0da09f';
+const SAMPLE_SHA256 = 'ff1f3004c618be9d5ee6b090e0d635f6a6c7cb49a8c22e188cc11206bbe37cd4';
+const IR_DIGEST = '34d55ee62bf284594218d4923b0eafa267799edb1edbbeb7bb313a6f2ab0bc04';
 const RUNNER_FILES = 45;
 
 function tempDir(t, prefix) {
@@ -64,8 +64,10 @@ function compiled() {
   const bytes = readFileSync(SAMPLE);
   const result = compileBundle(new Uint8Array(bytes), { inflateRaw, sha256: sha256Hex }, { path: 'bundle.zip' });
   assert.equal(result.ok, true, JSON.stringify(result.report?.errors));
+  const ir = JSON.parse(Buffer.from(result.irBytes).toString('utf8'));
+  assert.equal(ir.schema, 'hm2b.ir/v2');
   return {
-    ir: JSON.parse(Buffer.from(result.irBytes).toString('utf8')),
+    ir,
     irBytes: Buffer.from(result.irBytes),
     digest: result.digest,
   };

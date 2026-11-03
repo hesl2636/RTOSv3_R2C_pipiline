@@ -124,7 +124,7 @@ export const dshTarget = Object.freeze({
     assets: [
     Object.freeze({ path: 'runtime/agent-native/targets/dsh/assets/dsh.patch.yml', sha256: '13de8ce3d23d38fc86426fb6ff21279af7eec0b11fd47950513900472b2fa029' }),
     Object.freeze({ path: 'runtime/agent-native/targets/dsh/assets/hooks.json', sha256: 'bf2247ed875939700b1f8014a19cbcd51b67bc40e88c6c452a6c295e995ceaed' }),
-    Object.freeze({ path: 'runtime/agent-native/targets/dsh/assets/index.mjs', sha256: '6357068f46b5af30ffbffd39766d443599d1e181dd6fc0d6a9fd3bb7522862ec' }),
+    Object.freeze({ path: 'runtime/agent-native/targets/dsh/assets/index.mjs', sha256: '485d979b63f439c69fc26bccea9ee2b9ec2673660ff3e1b81e425ea8c267faf7' }),
     Object.freeze({ path: 'runtime/agent-native/targets/dsh/assets/package.json', sha256: '2a3fd663c4034d73957def32f48ce2f44bf566d915d19c4543dc376c6472bf30' }),
     ],
     smoke: (namespace) => layoutSmoke(namespace, { skillsRoot: '.agents/skills', extra: [{ kind: 'agents', root: '.dsh/agent-native', prefix: `${namespace}.`, format: 'md' }] }),

@@ -1,19 +1,19 @@
 {
-  "schema": "hm2b.ir/v1",
+  "schema": "hm2b.ir/v2",
   "id": "rtosv3-drvport",
   "name": "RTOSv3 R2C 移植流水线",
   "version": "1.0.0",
   "description": "分析设计 → 详细设计 → 编码实现 → 验证检视 四阶段移植流水线；技能为占位，任务书为可执行正文。",
   "source": {
     "bundle": {
-      "schema": "hm2b.bundle/v1",
+      "schema": "hm2b.bundle/v2",
       "id": "rtosv3-drvport",
       "version": "1.0.0",
-      "contentSha256": "006ec1b7831ac6c3c980d8c606880c87cc7fbc48f662bc2e1dbd152c9ccf6237"
+      "contentSha256": "2093b03b97c90c6e77dfeb26c69d585ef78a11170032151171c31272ac7dbbf2"
     },
     "manifest": {
       "path": "bundle.json",
-      "sha256": "56a051b7fe39187eaa799d6a29fda4bbc5d5bfc135ade3c74cdd22fcf24f13d6"
+      "sha256": "6f92d763fb82cd00d36f99e8dc42ba26f0a510c4b64bd9d741e2625bec68df84"
     }
   },
   "stages": [
@@ -539,6 +539,10 @@
       }
     }
   },
+  "knowledgeBase": [],
+  "checklists": [],
+  "hooks": null,
+  "mcp": null,
   "constitution": [
     {
       "scope": "global",

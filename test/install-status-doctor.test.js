@@ -16,7 +16,7 @@ import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
 import { test } from 'node:test';
 import { canonicalJson } from '../core/canonical-json.js';
-import { doctor } from '../installer/doctor.js';
+import { doctor, formatDoctor } from '../installer/doctor.js';
 import { installRunnerProject } from '../installer/runner.js';
 import { installRuntime } from '../installer/runtime.js';
 import { formatStatus, installStatus } from '../installer/status.js';
@@ -143,6 +143,31 @@ test('doctor passes a clean runner install with exactly one workflow manifest', 
   assert.equal(summary.status, 'info');
   assert.match(summary.message, /degradation/);
   assert.match(summary.message, /placeholder/);
+  assert.equal(check(report, 'ir.orphan').status, 'pass', 'a clean install leaves no orphan IR');
+});
+
+test('doctor warns about an orphan IR copy and stays green otherwise', (t) => {
+  const { projectRoot, result } = installedProject(t);
+  const referenced = `.hm2b/bundles/${result.ir.id}/${result.ir.version}/workflow.ir.json`;
+  const orphan = '.hm2b/bundles/ghost/0.9.0/workflow.ir.json';
+  mkdirSync(join(projectRoot, '.hm2b/bundles/ghost/0.9.0'), { recursive: true });
+  writeFileSync(join(projectRoot, ...orphan.split('/')), '{}\n');
+
+  const report = doctor(projectRoot, { clock: CLOCK });
+  assert.equal(report.ok, true, 'an orphan IR copy never fails the doctor');
+  const orphans = report.checks.filter((item) => item.id === 'ir.orphan');
+  assert.equal(orphans.length, 1, 'the receipt-referenced IR copy is not reported');
+  assert.equal(orphans[0].status, 'warn');
+  assert.equal(orphans[0].message, orphan);
+  assert.equal(orphans[0].details.path, orphan);
+  assert.match(orphans[0].details.fix, /ghost\/0\.9\.0\/workflow\.ir\.json/);
+  assert.equal(report.checks.some((item) => item.status === 'fail'), false);
+  assert.match(
+    formatDoctor(report),
+    /^warn\/ir\.orphan: \.hm2b\/bundles\/ghost\/0\.9\.0\/workflow\.ir\.json$/m,
+  );
+  assert.equal(existsSync(join(projectRoot, ...referenced.split('/'))), true, 'the owned IR copy is untouched');
+  assert.equal(existsSync(join(projectRoot, ...orphan.split('/'))), true, 'doctor never deletes');
 });
 
 test('doctor fails on a modified receipt-owned file and on a missing file', (t) => {

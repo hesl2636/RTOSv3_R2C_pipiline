@@ -1,9 +1,9 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://hm2b.runner/schema/ir/v1",
-  "title": "hm2b.ir/v1",
+  "$id": "https://hm2b.runner/schema/ir/v2",
+  "title": "hm2b.ir/v2",
   "description": "Neutral intermediate representation (workflow.ir.json). Documentation only: assembler/validate-ir.js is authoritative and reports IR_SCHEMA_INVALID plus the cross-field IR_* codes.",
-  "$comment": "Rules the validator enforces and this document does not express: top-level and member order is fixed by ir/schema.js; dynamic map keys are sorted by code point; step skills and role tools/skills/projections are sorted; stages order and steps order are execution order; every embedded source hash must recompute and source.bundle.contentSha256 must match the asset manifest; step role/task/skills must exist in the maps; v1 allows at most one global constitution mount; the file must be canonical JSON (two-space indent, trailing LF).",
+  "$comment": "Rules the validator enforces and this document does not express: top-level and member order is fixed by ir/schema.js; dynamic map keys are sorted by code point; knowledgeBase is sorted by path and checklists by id; step skills and role tools/skills/projections are sorted; stages order and steps order are execution order; every embedded source hash must recompute and source.bundle.contentSha256 must match the asset manifest; hooks and mcp bodies are canonical JSON and mcp carries an object under mcpServers; step role/task/skills must exist in the maps; v2 allows at most one global constitution mount; knowledgeBase/checklists are empty arrays and hooks/mcp are null when the bundle declares no such asset; the file must be canonical JSON (two-space indent, trailing LF).",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -17,11 +17,15 @@
     "roles",
     "tasks",
     "skills",
+    "knowledgeBase",
+    "checklists",
+    "hooks",
+    "mcp",
     "constitution"
   ],
   "properties": {
     "schema": {
-      "const": "hm2b.ir/v1"
+      "const": "hm2b.ir/v2"
     },
     "id": {
       "$ref": "#/$defs/bundleId"
@@ -80,6 +84,42 @@
       "additionalProperties": {
         "$ref": "#/$defs/skill"
       }
+    },
+    "knowledgeBase": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/knowledgeBaseEntry"
+      },
+      "description": "Declared knowledge-base markdown files sorted by path; empty when the bundle declares none."
+    },
+    "checklists": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/checklistEntry"
+      },
+      "description": "Declared checklists sorted by id; empty when the bundle declares none."
+    },
+    "hooks": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/hooksEntry"
+        }
+      ],
+      "description": "hooks/hooks.json, or null when the bundle does not declare it."
+    },
+    "mcp": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/mcpEntry"
+        }
+      ],
+      "description": "mcp.json, or null when the bundle does not declare it."
     },
     "constitution": {
       "type": "array",
@@ -158,7 +198,7 @@
       "type": "string",
       "minLength": 1,
       "maxLength": 100,
-      "pattern": "^(?:stages/[a-z0-9]+(?:-[a-z0-9]+)*\\.json|roles/[a-z0-9]+(?:-[a-z0-9]+)*\\.md|tasks/[a-z0-9]+(?:-[a-z0-9]+)*\\.md|skills/[a-z0-9]+(?:-[a-z0-9]+)*/SKILL\\.md|constitution/CONSTITUTION\\.md)$"
+      "pattern": "^(?:stages/[a-z0-9]+(?:-[a-z0-9]+)*\\.json|roles/[a-z0-9]+(?:-[a-z0-9]+)*\\.md|tasks/[a-z0-9]+(?:-[a-z0-9]+)*\\.md|skills/[a-z0-9]+(?:-[a-z0-9]+)*/SKILL\\.md|knowledge-base/(?:[A-Za-z0-9._-]+/)*[A-Za-z0-9._-]+\\.md|checklists/[a-z0-9]+(?:-[a-z0-9]+)*\\.md|hooks/hooks\\.json|mcp\\.json|constitution/CONSTITUTION\\.md)$"
     },
     "sourceRef": {
       "type": "object",
@@ -195,7 +235,7 @@
           ],
           "properties": {
             "schema": {
-              "const": "hm2b.bundle/v1"
+              "const": "hm2b.bundle/v2"
             },
             "id": {
               "$ref": "#/$defs/bundleId"
@@ -496,6 +536,91 @@
         "body": {
           "type": "string",
           "minLength": 1
+        },
+        "source": {
+          "$ref": "#/$defs/sourceRef"
+        }
+      }
+    },
+    "knowledgeBaseEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "body",
+        "source"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100,
+          "pattern": "^knowledge-base/(?:[A-Za-z0-9._-]+/){0,2}[A-Za-z0-9._-]+\\.md$"
+        },
+        "body": {
+          "type": "string"
+        },
+        "source": {
+          "$ref": "#/$defs/sourceRef"
+        }
+      }
+    },
+    "checklistEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "body",
+        "source"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "body": {
+          "type": "string"
+        },
+        "source": {
+          "$ref": "#/$defs/sourceRef"
+        }
+      }
+    },
+    "hooksEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "body",
+        "source"
+      ],
+      "properties": {
+        "path": {
+          "const": "hooks/hooks.json"
+        },
+        "body": {
+          "type": "string",
+          "description": "Canonical JSON text."
+        },
+        "source": {
+          "$ref": "#/$defs/sourceRef"
+        }
+      }
+    },
+    "mcpEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "body",
+        "source"
+      ],
+      "properties": {
+        "path": {
+          "const": "mcp.json"
+        },
+        "body": {
+          "type": "string",
+          "description": "Canonical JSON text with an object under mcpServers."
         },
         "source": {
           "$ref": "#/$defs/sourceRef"

@@ -69,6 +69,16 @@ test('index.html has no inline scripts, styles or style attributes', () => {
   assert.match(html, /hm2b-assembler\.js bundle validate/);
 });
 
+test('the IR preview surfaces every hm2b.ir/v2 asset group and web/ carries no v1 IR literal', () => {
+  const html = readFileSync(join(WEB, 'index.html'), 'utf8');
+  for (const id of ['ir-knowledge-base', 'ir-checklists', 'ir-hooks', 'ir-mcp']) {
+    assert.match(html, new RegExp(`id="${id}"`), id);
+  }
+  for (const file of webFiles()) {
+    assert.doesNotMatch(readFileSync(file, 'utf8'), /hm2b\.ir\/v1/, relative(file));
+  }
+});
+
 test('primitives-browser.js implements SHA-256, raw inflate and the floor probe with Web APIs', async () => {
   const primitives = await import(pathToFileURL(join(WEB, 'primitives-browser.js')).href);
   assert.equal(

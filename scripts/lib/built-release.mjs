@@ -19,6 +19,7 @@ import { getProjection } from '../../projection/registry.js';
 import { readPayloadArchive } from '../../installer/release-payload.js';
 import { IR_ASSET, bundleTag, isValidBundleId } from '../../installer/release-tags.js';
 import { verifySums } from '../../installer/release-source.js';
+import { IR_SCHEMA } from '../../ir/schema.js';
 
 const SUMS_ASSET = 'SHA256SUMS.txt';
 
@@ -51,6 +52,9 @@ export function readBuiltRelease(dir) {
   }
   const id = ir?.id;
   const version = ir?.version;
+  if (ir?.schema !== IR_SCHEMA) {
+    return fail(`RELEASE_IR_MISMATCH: ${IR_ASSET} schema is ${String(ir?.schema)} (expected ${IR_SCHEMA})`);
+  }
   if (!isValidBundleId(id)) return fail(`RELEASE_TAG_MISMATCH: ${IR_ASSET} id ${String(id)} is not a bundle id`);
   if (!isValidVersion(version) || String(version).includes('+')) {
     return fail(`RELEASE_VERSION_MISMATCH: ${IR_ASSET} version ${String(version)} is not a semver without build metadata`);

@@ -23,7 +23,7 @@ const MANIFEST = {
 };
 
 const IR = {
-  schema: 'hm2b.ir/v1',
+  schema: 'hm2b.ir/v2',
   id: 'demo',
   version: '1.0.0',
   stages: [

@@ -193,12 +193,6 @@ function checkSkills(context) {
   const records = new Map();
   for (const id of declared) {
     const path = `skills/${id}/SKILL.md`;
-    const files = directories.get(id) ?? [];
-    for (const file of files) {
-      if (file.file !== 'SKILL.md') {
-        context.fail(file.path, 'BUNDLE_SKILL_EXTRA_FILE', 'a skill directory may only contain SKILL.md');
-      }
-    }
     if (!context.entries.has(path)) {
       if (!context.rejectedPaths.has(path)) {
         context.fail(path, 'BUNDLE_SKILL_FILE_MISSING', `declared skill '${id}' has no SKILL.md`, {

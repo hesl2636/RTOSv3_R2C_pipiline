@@ -18,6 +18,7 @@ import {
 import { tmpdir } from 'node:os';
 import { dirname, join, relative } from 'node:path';
 import { test } from 'node:test';
+import { canonicalJson } from '../core/canonical-json.js';
 import { installProjection, receiptOptions } from '../installer/install.js';
 import { planUninstall, uninstallProjection } from '../installer/uninstall.js';
 import { cloneResult, customSample, fixedClock, sample } from './helpers/install-fixture.js';
@@ -50,6 +51,11 @@ function sha256File(file) {
 
 function snapshot(projectRoot) {
   return walk(projectRoot).map((path) => [path, sha256File(absolute(projectRoot, path))]);
+}
+
+/** Every installer IR copy under `.hm2b/bundles`, project-relative. */
+function irCopies(projectRoot) {
+  return walk(projectRoot).filter((path) => path.startsWith('.hm2b/bundles/') && path.endsWith('/workflow.ir.json'));
 }
 
 function byPath(left, right) {
@@ -130,6 +136,87 @@ test('an upgrade reports add/remove/change/keep and deletes untouched removals',
     ir_digest: v1.irDigest,
     options: previousOptions,
   });
+});
+
+test('an upgrade from 1.0.0 to 1.1.0 leaves only the new IR copy', (t) => {
+  const projectRoot = tempProject(t);
+  const v1 = sample('runner');
+  const first = installProjection({ result: v1.result, irBytes: v1.irBytes, projectRoot, clock: CLOCK });
+  assert.equal(first.code, 'OK');
+  const oldIr = `.hm2b/bundles/${v1.ir.id}/1.0.0/workflow.ir.json`;
+  assert.equal(first.receipt.ir.path, oldIr);
+  assert.deepEqual(irCopies(projectRoot), [oldIr]);
+
+  const v2 = changedPayload();
+  const newIr = `.hm2b/bundles/${v2.ir.id}/1.1.0/workflow.ir.json`;
+  const outcome = installProjection({ result: v2.result, irBytes: v2.irBytes, projectRoot, clock: LATER });
+  assert.equal(outcome.code, 'OK');
+  assert.equal(outcome.mode, 'upgrade');
+  assert.equal(outcome.supersededIr, oldIr, 'the replaced IR copy is named');
+  assert.equal(outcome.receipt.ir.path, newIr);
+  assert.equal(existsSync(absolute(projectRoot, oldIr)), false, 'the unreferenced 1.0.0 IR is deleted');
+  assert.equal(
+    existsSync(absolute(projectRoot, `.hm2b/bundles/${v1.ir.id}/1.0.0`)),
+    false,
+    'the now-empty version directory is pruned',
+  );
+  assert.ok(outcome.pruned.includes(`.hm2b/bundles/${v1.ir.id}/1.0.0`));
+  assert.deepEqual(irCopies(projectRoot), [newIr], 'only the new IR survives the upgrade');
+  assert.equal(sha256File(absolute(projectRoot, newIr)), v2.irDigest, 'the new IR copy is byte-identical to the installed IR');
+  assert.equal(outcome.receipt.ir.digest, v2.irDigest);
+  assert.equal(
+    existsSync(absolute(projectRoot, `.hm2b/bundles/${v1.ir.id}`)),
+    true,
+    'the bundle directory still holds 1.1.0',
+  );
+  assert.equal(
+    outcome.warnings.some((warning) => warning.code === 'IR_STALE_KEPT'),
+    false,
+    'a writable project never needs the cleanup warning',
+  );
+});
+
+test('an IR copy another receipt still references survives the upgrade', (t) => {
+  const projectRoot = tempProject(t);
+  const v1 = sample('runner');
+  assert.equal(installProjection({ result: v1.result, irBytes: v1.irBytes, projectRoot, clock: CLOCK }).code, 'OK');
+  const oldIr = `.hm2b/bundles/${v1.ir.id}/1.0.0/workflow.ir.json`;
+
+  // A second identity pinning the same 1.0.0 IR copy: the upgrade must keep it.
+  const otherReceipt = '.hm2b/install/receipts/agent-native/ir-pin.json';
+  mkdirSync(absolute(projectRoot, '.hm2b/install/receipts/agent-native'), { recursive: true });
+  writeFileSync(absolute(projectRoot, otherReceipt), canonicalJson({
+    schema: 'hm2b.install/v2',
+    projection: { id: 'agent-native', version: '1.0.0', targets: [] },
+    bundle: { id: 'ir-pin', version: '1.0.0' },
+    ir: { path: oldIr, digest: v1.irDigest, contentSha256: null },
+    root: 'project',
+    scope: 'project',
+    mode: 'fresh',
+    host_targets: [],
+    options: {},
+    requires_engine: null,
+    files: [],
+    metadata: {},
+    capability_report: [],
+    degradations: [],
+    warnings: [],
+    created_dirs: [],
+    backups: [],
+    previous: null,
+    migrated_from: null,
+    created_at: '2026-01-01T00:00:00.000Z',
+    updated_at: '2026-01-01T00:00:00.000Z',
+  }));
+
+  const v2 = changedPayload();
+  const newIr = `.hm2b/bundles/${v2.ir.id}/1.1.0/workflow.ir.json`;
+  const outcome = installProjection({ result: v2.result, irBytes: v2.irBytes, projectRoot, clock: LATER });
+  assert.equal(outcome.code, 'OK');
+  assert.equal(outcome.supersededIr, null, 'a referenced IR copy is never a deletion candidate');
+  assert.equal(existsSync(absolute(projectRoot, oldIr)), true, 'the other receipt keeps its IR copy');
+  assert.equal(existsSync(absolute(projectRoot, otherReceipt)), true);
+  assert.deepEqual(irCopies(projectRoot), [oldIr, newIr].sort());
 });
 
 test('a removal whose disk bytes were edited is kept with a warning', (t) => {

@@ -8,7 +8,15 @@
  */
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
@@ -22,6 +30,7 @@ import { getProjection } from '../projection/registry.js';
 import { validateResult } from '../projection/validate-result.js';
 import { AGENT_NATIVE_MANIFEST } from '../runtime/agent-native/projection/manifest.js';
 import { TARGETS } from '../runtime/agent-native/projection/targets/index.js';
+import { apply as applyDshPlugin } from '../runtime/agent-native/targets/dsh/assets/index.mjs';
 import { placeholderInstructions } from '../runtime/shared/placeholder.js';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -82,7 +91,7 @@ function miniIr({ roles, stages, skills = {} } = {}) {
     },
   };
   return {
-    schema: 'hm2b.ir/v1',
+    schema: 'hm2b.ir/v2',
     id: 'mini',
     name: 'Mini workflow',
     version: '1.0.0',
@@ -378,4 +387,71 @@ test('V1–V12 pass and the manifest declares the dsh target', () => {
 
   assert.equal(TARGETS.dsh.capabilities.subagents, 'unavailable');
   assert.equal(TARGETS.dsh.layout.skillsRoot, '.agents/skills');
+});
+
+// --- the native plugin ----------------------------------------------------
+
+test('dsh /hm2b-run passes rawInput as one literal argv element, never shell syntax', async (t) => {
+  const base = mkdtempSync(join(tmpdir(), 'hm2b-dsh-plugin-'));
+  t.after(() => rmSync(base, { recursive: true, force: true }));
+  const projectRoot = join(base, 'project with spaces');
+  const payloadHome = join(base, 'payload with spaces');
+  const runnerDir = join(base, 'runner dir');
+  mkdirSync(join(payloadHome, 'commands'), { recursive: true });
+  mkdirSync(projectRoot, { recursive: true });
+  mkdirSync(runnerDir, { recursive: true });
+  writeFileSync(
+    join(payloadHome, 'commands', 'hm2b-run.md'),
+    '---\ndescription: Start a run\n---\n',
+  );
+  const recorder = join(runnerDir, 'record runner.mjs');
+  const argvFile = join(base, 'argv.jsonl');
+  writeFileSync(
+    recorder,
+    [
+      "import { appendFileSync } from 'node:fs';",
+      "process.stdin.on('data', () => {});",
+      "process.stdin.on('end', () => {",
+      "  appendFileSync(process.env.HM2B_ARGV_OUT, `${JSON.stringify({ argv: process.argv.slice(2), cwd: process.cwd() })}\\n`);",
+      '});',
+      '',
+    ].join('\n'),
+  );
+  process.env.HM2B_ARGV_OUT = argvFile;
+  t.after(() => { delete process.env.HM2B_ARGV_OUT; });
+
+  const registered = [];
+  applyDshPlugin(
+    {
+      get: (service) => (service === 'commands'
+        ? { register: (spec) => registered.push(spec) }
+        : undefined),
+      on: () => {},
+    },
+    { runnerCmd: `node "${recorder}"`, projectRoot, payloadHome },
+  );
+
+  const command = registered.find((spec) => spec.name === 'hm2b-run');
+  assert.ok(command, 'hm2b-run must register');
+  const rawInput = '$(touch PWNED) `touch PWNED2` & echo "x y"';
+  const sessionId = 'sid with spaces $(echo nope)';
+  const result = await command.handler({
+    rawInput,
+    agent: { session: { id: sessionId } },
+  });
+
+  assert.equal(result.kind, 'success', result.text);
+  const records = readFileSync(argvFile, 'utf8')
+    .split(/\r?\n/)
+    .filter((line) => line.trim() !== '')
+    .map((line) => JSON.parse(line));
+  assert.equal(records.length, 1);
+  assert.deepEqual(records[0].argv, [
+    'run', '--input', rawInput, '--project-root', projectRoot, '--session-id', sessionId,
+  ]);
+  assert.equal(records[0].cwd, projectRoot);
+  for (const name of ['PWNED', 'PWNED2']) {
+    assert.equal(existsSync(join(projectRoot, name)), false, `${name} must never be created`);
+    assert.equal(existsSync(join(base, name)), false, `${name} must never be created`);
+  }
 });

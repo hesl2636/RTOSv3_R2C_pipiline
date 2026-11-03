@@ -22,6 +22,33 @@ import { readReleaseTarGz } from './release-tar.js';
 export const RELEASE_PAYLOAD_SCHEMA = 'hm2b.release-payload/v1';
 export const PAYLOAD_MANIFEST_NAME = 'manifest.json';
 
+/**
+ * File kinds a payload member may declare. Mirrors
+ * `projection/schema/result.schema.json` `files[].kind`, including the v2 IR
+ * assets (`knowledge`, `checklist`, `hooks`, `mcp`): an IR that carries asset
+ * bodies projects them as payload members, so the installer must never refuse
+ * a Release for shipping them.
+ */
+export const PAYLOAD_FILE_KINDS = Object.freeze([
+  'workflow',
+  'stage',
+  'task',
+  'role',
+  'skill',
+  'constitution',
+  'knowledge',
+  'checklist',
+  'hooks',
+  'mcp',
+  'agent',
+  'command',
+  'rules',
+  'metadata',
+  'readme',
+  'other',
+]);
+const PAYLOAD_FILE_KIND_SET = new Set(PAYLOAD_FILE_KINDS);
+
 // The top-level member order is the projection-result contract; the manifest
 // and the validator must agree, so both import `projection/result-fields.js`.
 export { RESULT_BLOCK_FIELDS, RESULT_FIELDS };
@@ -152,6 +179,9 @@ export function verifyPayloadArchive(bytes, expected) {
       }
     }
     if (typeof file.kind !== 'string' || file.kind === '') problems.push(`${file.path}: kind is missing`);
+    else if (!PAYLOAD_FILE_KIND_SET.has(file.kind)) {
+      problems.push(`${file.path}: kind ${file.kind} is not a known file kind`);
+    }
     if (file.origin !== 'generated' && file.origin !== 'asset') {
       problems.push(`${file.path}: origin must be generated or asset`);
     }

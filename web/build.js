@@ -64,14 +64,17 @@ export async function runValidation(bytes) {
   const compiled = compileBundle(bytes, primitives, { path: 'bundle.zip' });
   let ir = null;
   if (compiled.ok && compiled.irBytes !== null) {
+    let schema = compiled.irReport?.schema ?? null;
     let contentSha256 = null;
     try {
       const parsed = JSON.parse(new TextDecoder().decode(compiled.irBytes));
+      schema = parsed?.schema ?? schema;
       contentSha256 = parsed?.source?.bundle?.contentSha256 ?? null;
     } catch {
       contentSha256 = null;
     }
     ir = {
+      schema,
       id: compiled.irReport?.id ?? null,
       version: compiled.irReport?.version ?? null,
       digest: compiled.digest,
@@ -108,7 +111,17 @@ function manifestFiles(result) {
   }));
 }
 
-function installCommand({ id, version, projection, target, publishable }) {
+const PROJECT_CLI = 'node bin/hm2b-assembler.js';
+const INSTALLER_CLI = 'node installer/cli.js';
+const BOOTSTRAP_PATH = '.hm2b/bootstrap/install.mjs';
+
+/** Quote one shell token; every value here still has to pass its id check. */
+function shellToken(value) {
+  const text = String(value);
+  return /^[A-Za-z0-9._:/=+,-]+$/.test(text) ? text : `'${text.replaceAll("'", "'\\''")}'`;
+}
+
+function releaseCommand({ id, version, projection, target }) {
   if (!isValidId(id, BUNDLE_ID_MAX) || !isValidVersion(version) || String(version).includes('+')) return null;
   const descriptor = getProjection(projection);
   if (descriptor === null) return null;
@@ -120,31 +133,80 @@ function installCommand({ id, version, projection, target, publishable }) {
     '--projection', projection,
   ];
   if (target !== null) parts.push('--target', target);
-  if (!publishable) parts.push('--release-base', './dist');
   parts.push('--project', '.');
   return parts.join(' ');
 }
 
-/** One fixed-version command per projection (and per selected agent target). */
+/**
+ * A custom payload is not a Release payload (`release-install.js` refuses
+ * non-canonical options), so the local chain re-projects the downloaded IR
+ * with the same options into a result directory and feeds that directory to
+ * `installer/cli.js --result` (#106's reproject path).
+ */
+function localCommand({ projection, target, options }) {
+  const descriptor = getProjection(projection);
+  if (descriptor === null) return null;
+  if (!isPlainObject(options) || !Array.isArray(options.targets)) return null;
+  const targets = options.targets;
+  if (targets.length === 0) return null;
+  if (!targets.every((item) => typeof item === 'string' && descriptor.targets.some((entry) => entry.id === item))) return null;
+  if (target !== null && !targets.includes(target)) return null;
+  const stageOrder = options.stageOrder;
+  const skills = options.skills;
+  if (!Array.isArray(stageOrder) || !stageOrder.every((item) => typeof item === 'string')) return null;
+  if (!Array.isArray(skills) || !skills.every((item) => typeof item === 'string')) return null;
+  const resultDir = target === null ? `.hm2b/build/${projection}` : `.hm2b/build/${projection}-${target}`;
+  const parts = [
+    PROJECT_CLI, 'project', 'workflow.ir.json',
+    '--projection', shellToken(projection),
+  ];
+  if (target !== null) {
+    parts.push('--target', shellToken(target));
+  } else if (descriptor.targets.length > 1) {
+    for (const id of targets) parts.push('--target', shellToken(id));
+  }
+  if (stageOrder.length > 0) parts.push('--stage-order', shellToken(stageOrder.join(',')));
+  if (skills.length > 0) parts.push('--skills', shellToken(skills.join(',')));
+  parts.push('--result', shellToken(resultDir));
+  return `${parts.join(' ')} && ${INSTALLER_CLI} --result ${shellToken(resultDir)} --ir workflow.ir.json --project .`;
+}
+
+/** One install command per projection (and per selected agent target). */
 export function installCommands({ id, version, projections, publishable }) {
   const commands = [];
   for (const projection of projections) {
     if (projection.id === 'runner') {
-      const command = installCommand({ id, version, projection: 'runner', target: null, publishable });
+      const command = publishable
+        ? releaseCommand({ id, version, projection: 'runner', target: null })
+        : localCommand({ projection: 'runner', target: null, options: projection.options });
       if (command === null) return null;
       commands.push({ projection: 'runner', target: null, command });
       continue;
     }
-    const all = installCommand({ id, version, projection: projection.id, target: null, publishable });
+    const all = publishable
+      ? releaseCommand({ id, version, projection: projection.id, target: null })
+      : localCommand({ projection: projection.id, target: null, options: projection.options });
     if (all === null) return null;
     commands.push({ projection: projection.id, target: null, command: all });
     for (const target of projection.targets) {
-      const command = installCommand({ id, version, projection: projection.id, target, publishable });
+      const command = publishable
+        ? releaseCommand({ id, version, projection: projection.id, target })
+        : localCommand({ projection: projection.id, target, options: projection.options });
       if (command === null) return null;
       commands.push({ projection: projection.id, target, command });
     }
   }
-  return { mode: publishable ? 'release' : 'local', commands };
+  return {
+    mode: publishable ? 'release' : 'local',
+    bootstrap: publishable
+      ? {
+        asset: 'install.mjs',
+        path: BOOTSTRAP_PATH,
+        instruction: `Download install.mjs from the Release assets (the install.mjs asset listed below) into ${BOOTSTRAP_PATH} before running the commands below.`,
+      }
+      : null,
+    commands,
+  };
 }
 
 function expectedSums(assets) {
@@ -333,18 +395,7 @@ export function createBuildService({
    * runs as an isolated child, and the child's payload manifests must equal
    * the in-process results byte for byte.
    */
-  const performBuild = async (upload, parsed) => {
-    const now = Date.now();
-    const limited = buildRate.take(now);
-    if (!limited.ok) {
-      return webError(429, 'WEB_RATE_LIMITED', 'too many builds in the current window', null, {
-        'Retry-After': String(limited.retryAfter),
-      });
-    }
-    if (activeBuilds >= BUILD_CONCURRENCY) {
-      return webError(409, 'WEB_BUILD_BUSY', 'another build is already running');
-    }
-
+  const buildOnce = async (upload, parsed) => {
     const irBytes = await readFile(resolve(upload.dir, 'workflow.ir.json')).catch(() => null);
     if (irBytes === null) return webError(404, 'WEB_UPLOAD_UNKNOWN', 'the upload is gone');
     const irDigest = sha256Hex(irBytes);
@@ -463,31 +514,25 @@ export function createBuildService({
     for (const entry of expected) childOptions[entry.id] = requested[entry.id] ?? null;
     await writeFile(optionsPath, canonicalJson(childOptions), { mode: 0o600 });
 
-    activeBuilds += 1;
-    let child;
-    try {
-      child = await runReleaseChild({
-        spawn,
-        script: releaseScript,
-        args: [
-          '--bundle', resolve(upload.dir, 'input.zip'),
-          '--out', outDir,
-          '--options', optionsPath,
-          '--json',
-        ],
-        env: buildChildEnv({
-          ...process.env,
-          TMPDIR: tempDir,
-          TEMP: tempDir,
-          TMP: tempDir,
-        }),
-        cwd: root,
-        timeoutMs: buildTimeoutMs,
-        secrets,
-      });
-    } finally {
-      activeBuilds -= 1;
-    }
+    const child = await runReleaseChild({
+      spawn,
+      script: releaseScript,
+      args: [
+        '--bundle', resolve(upload.dir, 'input.zip'),
+        '--out', outDir,
+        '--options', optionsPath,
+        '--json',
+      ],
+      env: buildChildEnv({
+        ...process.env,
+        TMPDIR: tempDir,
+        TEMP: tempDir,
+        TMP: tempDir,
+      }),
+      cwd: root,
+      timeoutMs: buildTimeoutMs,
+      secrets,
+    });
 
     if (child.status === 'timeout') {
       await rm(workDir, { recursive: true, force: true }).catch(() => {});
@@ -579,6 +624,7 @@ export function createBuildService({
       canonical,
       publishable: canonical,
       ir: {
+        schema: ir.schema,
         id: upload.bundleId,
         version: upload.version,
         digest: irDigest,
@@ -598,6 +644,29 @@ export function createBuildService({
     });
     await evictBuilds();
     return { status: 200, summary };
+  };
+
+  /**
+   * Reserve the concurrency slot synchronously, before the first `await`, so
+   * parallel POSTs cannot all pass the check while an earlier build is still
+   * projecting; every exit path releases it.
+   */
+  const performBuild = async (upload, parsed) => {
+    const limited = buildRate.take(Date.now());
+    if (!limited.ok) {
+      return webError(429, 'WEB_RATE_LIMITED', 'too many builds in the current window', null, {
+        'Retry-After': String(limited.retryAfter),
+      });
+    }
+    if (activeBuilds >= BUILD_CONCURRENCY) {
+      return webError(409, 'WEB_BUILD_BUSY', 'another build is already running');
+    }
+    activeBuilds += 1;
+    try {
+      return await buildOnce(upload, parsed);
+    } finally {
+      activeBuilds -= 1;
+    }
   };
 
   const pruneState = (now = Date.now()) => {

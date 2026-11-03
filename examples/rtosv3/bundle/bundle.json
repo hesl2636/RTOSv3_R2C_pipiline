@@ -1,5 +1,5 @@
 {
-  "schema": "hm2b.bundle/v1",
+  "schema": "hm2b.bundle/v2",
   "id": "rtosv3-drvport",
   "name": "RTOSv3 R2C 移植流水线",
   "version": "1.0.0",

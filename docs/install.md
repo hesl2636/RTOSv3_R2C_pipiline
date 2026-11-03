@@ -12,6 +12,15 @@ node install.mjs --bundle rtosv3-drvport --version 1.0.0 --projection runner --p
 node .hm2b/bin/hm2b.js status
 ```
 
+The web page generates the same command with `node .hm2b/bootstrap/install.mjs`
+as its first token. Download that file from the Release assets into
+`.hm2b/bootstrap/` before running a generated command:
+
+```bash
+mkdir -p .hm2b/bootstrap
+curl -fL -o .hm2b/bootstrap/install.mjs https://github.com/hesl2636/hm2B_drvport_pipiline/releases/download/bundle-rtosv3-drvport-v1.0.0/install.mjs
+```
+
 `--projection agent-native` installs only host files and one receipt; it never
 installs a runtime. `--target <id>` (repeatable) narrows the host set without
 re-projecting; the bundle's `roles.json` is still installed. `--project <dir>`
@@ -19,12 +28,18 @@ selects the project root, `--release-base <dir|url>` points at a mirror, and
 `--force` is the explicit override for the conflict matrix (it never crosses
 another receipt's ownership).
 
+The pre-projected payload already carries the bundle's v2 assets: the runner
+payload writes `knowledge-base/**`, `checklists/**`, `hooks/hooks.json` and
+`mcp.json` at the project root; the agent-native payload writes them once
+under `.agents/agent-native/<bundle-id>/` for every selected target. The
+installer writes those bytes verbatim and records them in the receipt.
+
 The installer verifies the asset chain before any write:
 
 1. every asset against the Release's `SHA256SUMS.txt`;
 2. the bundle zip, `workflow.ir.json` and the pre-projected payload against
    each other (id, version, IR digest, content digest);
-3. every payload member against `payload.manifest.json`;
+3. every payload member against `manifest.json`;
 4. the payload's `V1–V12` result and the install plan.
 
 A mismatch exits 2 with zero writes. Nothing is compiled or projected at
@@ -54,9 +69,10 @@ node installer/cli.js --uninstall --bundle rtosv3-drvport --projection runner --
 ```
 
 Uninstall deletes only files recorded in that identity's receipt, prunes empty
-directories it created, and keeps `.hm2b/` runtime state. `--purge-state` also
-removes runs, `latest.json` and usage. Runtime files (`runtime.json`, engine,
-launcher) are removed only with an explicit runtime uninstall; a legacy
+directories it created, and keeps `.hm2b/` state. There is no state-purge flag:
+runs, `latest.json`, usage, `runtime.json`, the engine and the launcher stay on
+disk, and uninstall never removes runtime files. Delete `.hm2b/` yourself only
+when you also mean to discard every run and the installed engine. A legacy
 `r2c.install/v1` install is retired through takeover, not by uninstalling the
 new identity.
 

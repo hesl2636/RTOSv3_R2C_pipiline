@@ -46,7 +46,7 @@ function runProject({ projectionId, ir, irDigest, raw }) {
 function miniIr({ model } = {}) {
   const source = (path, fill) => ({ path, sha256: fill.repeat(64) });
   return {
-    schema: 'hm2b.ir/v1',
+    schema: 'hm2b.ir/v2',
     id: 'mini',
     name: 'Mini workflow',
     version: '1.0.0',

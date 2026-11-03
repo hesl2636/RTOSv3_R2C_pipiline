@@ -1,7 +1,7 @@
 /**
  * Token usage aggregation.
  *
- * Adapters append cumulative snapshots to `.hm2b/usage/<runId>.jsonl` (one JSON
+ * Targets append cumulative snapshots to `.hm2b/usage/<runId>.jsonl` (one JSON
  * objects per line, schema `hm2b.usage/v1`). Snapshots are *not* increments: the
  * last line for a `(run_id, session_id)` pair is the current total. Summing all
  * lines would count the same tokens again, so the last line always wins.
@@ -58,7 +58,9 @@ export function summarizeUsage(lines, { runId = null } = {}) {
     selected.set(`${lineRunId ?? ''}\u0000${lineSessionId ?? ''}`, {
       run_id: lineRunId,
       session_id: lineSessionId,
-      adapter: line.adapter ?? null,
+      // `adapter` is the retired spelling: old snapshots still read, new ones
+      // write only `target` (schema/usage.schema.json).
+      target: line.target ?? line.adapter ?? null,
       model: line.model ?? null,
       source: line.source ?? null,
       event: line.event ?? null,

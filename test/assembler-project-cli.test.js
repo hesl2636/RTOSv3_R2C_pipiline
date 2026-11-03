@@ -33,6 +33,7 @@ const ZIP = join(ROOT, 'examples/rtosv3/dist/bundle-rtosv3-drvport-v1.0.0.zip');
 function compileTo(dir) {
   const compiled = compileBundle(new Uint8Array(readFileSync(ZIP)), { inflateRaw, sha256: sha256Hex });
   assert.equal(compiled.ok, true);
+  assert.equal(JSON.parse(new TextDecoder().decode(compiled.irBytes)).schema, 'hm2b.ir/v2');
   const path = join(dir, IR_FILENAME);
   writeFileSync(path, compiled.irBytes);
   return path;

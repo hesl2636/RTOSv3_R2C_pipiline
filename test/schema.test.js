@@ -58,6 +58,26 @@ test('installer schemas are hm2b.install/v2 and hm2b.runtime/v1', () => {
   assert.equal(parseSchemaId(LEGACY_RECEIPT_SCHEMA), null);
 });
 
+test('usage snapshots name the host target', () => {
+  const usage = schema('usage');
+  assert.ok(usage.required.includes('target'), 'usage: target must be required');
+  assert.equal('adapter' in usage.properties, false, 'usage: the adapter field is retired');
+  assert.deepEqual(
+    usage.properties.target.enum,
+    ['claude-code', 'codex', 'dsh', 'omp', 'opencode'],
+    'usage: target is one of the five hosts',
+  );
+  const state = schema('state');
+  assert.match(state.properties.workflow_engine.description, /\btarget\b/i);
+});
+
+test('engine schema documents use target vocabulary only', () => {
+  for (const family of Object.keys(SUPPORTED)) {
+    const text = readFileSync(join(SCHEMA_DIR, `${family}.schema.json`), 'utf8');
+    assert.doesNotMatch(text, /\b(?:adapter|plugin)s?\b/i, `${family}: retired host vocabulary`);
+  }
+});
+
 test('retired schema families have no document and no id', () => {
   for (const family of ['adapter', 'adapter-map', 'plugin', 'payload']) {
     assert.equal(family in SUPPORTED, false, `${family} must be retired`);

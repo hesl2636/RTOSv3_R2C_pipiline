@@ -51,6 +51,7 @@ import { readReleaseTarGz } from './release-tar.js';
 import { projectPath } from './paths.js';
 import { lstatOrNull, pruneEmptyDir, unlinkIfExists } from './util.js';
 import { sorted } from '../core/sort.js';
+import { IR_SCHEMA } from '../ir/schema.js';
 
 /** Exit codes of the release-install surface (decision #74 §5.2). */
 export const RELEASE_EXIT = Object.freeze({ OK: 0, INTEGRITY: 2 });
@@ -239,6 +240,10 @@ function verifyIrSources({ ir }) {
   for (const map of [ir.roles, ir.tasks, ir.skills]) {
     for (const value of Object.values(map ?? {})) add(value?.source);
   }
+  for (const item of ir.knowledgeBase ?? []) add(item?.source);
+  for (const item of ir.checklists ?? []) add(item?.source);
+  add(ir.hooks?.source);
+  add(ir.mcp?.source);
   for (const mount of ir.constitution ?? []) add(mount?.source);
   return sources;
 }
@@ -296,8 +301,8 @@ export function verifyRelease(input = {}) {
   } catch (error) {
     return failure('RELEASE_IR_MISMATCH', `workflow.ir.json is not JSON: ${error.message}`);
   }
-  if (ir?.schema !== 'hm2b.ir/v1') {
-    return failure('RELEASE_IR_MISMATCH', `IR schema is ${String(ir?.schema)}`);
+  if (ir?.schema !== IR_SCHEMA) {
+    return failure('RELEASE_IR_MISMATCH', `IR schema is ${String(ir?.schema)} (expected ${IR_SCHEMA})`);
   }
   if (ir.id !== bundleId || ir.version !== version) {
     return failure(

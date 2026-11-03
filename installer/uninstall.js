@@ -31,15 +31,12 @@ import {
   pruneEmptyDir,
   sha256File,
   symlinkComponent,
+  timestampSlug,
   unlinkIfExists,
 } from './util.js';
 
 function failure(code, message, details = {}) {
   return { ok: false, code, message, ...details };
-}
-
-function timestampSlug(clock) {
-  return clock().toISOString().replace(/[:.]/g, '-');
 }
 
 function sharedIrWarnings(receipt, shared) {

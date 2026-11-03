@@ -27,6 +27,7 @@ import {
 import { serializeIr } from '../ir/serialize.js';
 import { analyzeBundle } from './validate-bundle.js';
 import { validateIr } from './validate-ir.js';
+import { HOOKS_PATH, MCP_PATH, checklistPath } from './checks/assets.js';
 import { sorted } from '../core/sort.js';
 
 const encoder = new TextEncoder();
@@ -47,6 +48,10 @@ export function bundleContentSha256(primitives, model) {
   for (const id of manifest.roles ?? []) paths.push(`roles/${id}.md`);
   for (const id of manifest.tasks) paths.push(`tasks/${id}.md`);
   for (const id of manifest.skills ?? []) paths.push(`skills/${id}/SKILL.md`);
+  for (const path of model.declared.knowledgeBase ?? []) paths.push(path);
+  for (const id of model.declared.checklists ?? []) paths.push(checklistPath(id));
+  if (model.assetDeclaration?.hooks.declared === true) paths.push(HOOKS_PATH);
+  if (model.assetDeclaration?.mcp.declared === true) paths.push(MCP_PATH);
   if (model.constitutionDeclaration?.declared) paths.push('constitution/CONSTITUTION.md');
   const unique = [...new Set(paths)].sort(compareCodePoints);
   const rows = unique.map((path) => `${path}\t${fileHash(primitives, model, path)}\n`).join('');
@@ -119,6 +124,32 @@ function buildIr(primitives, model) {
     };
   }
 
+  const knowledgeBase = sorted(model.declared.knowledgeBase ?? []).map((path) => ({
+    path,
+    body: model.texts.get(path) ?? '',
+    source: { path, sha256: fileHash(primitives, model, path) },
+  }));
+
+  const checklists = sorted(model.declared.checklists ?? []).map((id) => {
+    const path = checklistPath(id);
+    return {
+      id,
+      body: model.texts.get(path) ?? '',
+      source: { path, sha256: fileHash(primitives, model, path) },
+    };
+  });
+
+  const assetFile = (declaration, path) => {
+    if (declaration?.declared !== true) return null;
+    return {
+      path,
+      body: model.texts.get(path) ?? '',
+      source: { path, sha256: fileHash(primitives, model, path) },
+    };
+  };
+  const hooks = assetFile(model.assetDeclaration?.hooks, HOOKS_PATH);
+  const mcp = assetFile(model.assetDeclaration?.mcp, MCP_PATH);
+
   const constitution = [];
   if (model.constitution !== null && model.constitution !== undefined) {
     const mount = model.constitution;
@@ -157,6 +188,10 @@ function buildIr(primitives, model) {
   ir.roles = roles;
   ir.tasks = tasks;
   ir.skills = skills;
+  ir.knowledgeBase = knowledgeBase;
+  ir.checklists = checklists;
+  ir.hooks = hooks;
+  ir.mcp = mcp;
   ir.constitution = constitution;
   return ir;
 }
@@ -190,6 +225,21 @@ function cardinalityIssues(ir, model) {
   const declaredConstitution = model.constitutionDeclaration?.declared ? 1 : 0;
   if (declaredConstitution !== ir.constitution.length) {
     add('constitution', declaredConstitution, ir.constitution.length);
+  }
+  const declaredKnowledgeBase = sorted(model.declared.knowledgeBase ?? []);
+  const embeddedKnowledgeBase = ir.knowledgeBase.map((item) => item.path);
+  if (declaredKnowledgeBase.join('\u0000') !== embeddedKnowledgeBase.join('\u0000')) {
+    add('knowledgeBase', declaredKnowledgeBase, embeddedKnowledgeBase);
+  }
+  const declaredChecklists = sorted(model.declared.checklists ?? []);
+  const embeddedChecklists = ir.checklists.map((item) => item.id);
+  if (declaredChecklists.join('\u0000') !== embeddedChecklists.join('\u0000')) {
+    add('checklists', declaredChecklists, embeddedChecklists);
+  }
+  for (const kind of ['hooks', 'mcp']) {
+    const declared = model.assetDeclaration?.[kind]?.declared === true ? 1 : 0;
+    const embedded = ir[kind] === null ? 0 : 1;
+    if (declared !== embedded) add(kind, declared, embedded);
   }
   return issues;
 }

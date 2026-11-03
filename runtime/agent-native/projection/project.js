@@ -7,6 +7,7 @@
  * descriptors and their capability rows.
  */
 import { canonicalJson } from '../../../core/canonical-json.js';
+import { IR_CHECKLIST_ROOT, IR_KNOWLEDGE_BASE_ROOT, IR_SCHEMA } from '../../../ir/schema.js';
 import { CAPABILITIES, ID_PATTERN as ID_RE, LEVEL_RANK, SEMANTIC_CAPABILITIES as SEMANTIC } from '../../../projection/contract.js';
 import { constitutionBlock, constitutionState } from '../../shared/constitution.js';
 import { ensureText, renderRole, ROLE_FIELD_ORDER, yamlScalar } from '../../shared/render-role.js';
@@ -34,10 +35,55 @@ function assertSupportedTarget(target) {
   return descriptor;
 }
 
+/** Asset path -> artifact key (`knowledge-base/<...>.md` -> `knowledge-<slug>`). */
+function knowledgeArtifactKey(path) {
+  const prefix = `${IR_KNOWLEDGE_BASE_ROOT}/`;
+  const relative = path.startsWith(prefix) ? path.slice(prefix.length) : path;
+  const slug = relative.replace(/\.md$/, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  return `knowledge-${slug}`;
+}
+
+/** `base`, or `base-2`, `base-3`, … so two assets never share one artifact key. */
+function uniqueKey(keys, base) {
+  let key = base;
+  for (let index = 2; keys.has(key); index += 1) key = `${base}-${index}`;
+  return key;
+}
+
+/**
+ * Declared bundle assets, one byte-identical copy under the namespace root and
+ * no target-local copy. User-owned host files (`CLAUDE.md`, `.mcp.json`, …) are
+ * never written here; capability rows are not derived from assets.
+ */
+function projectAssets(ir, root, targets, addFile) {
+  const artifacts = new Map();
+  for (const entry of ir.knowledgeBase ?? []) {
+    const path = `${root}/${entry.path}`;
+    addFile(path, targets, 'knowledge', entry.body);
+    artifacts.set(uniqueKey(artifacts, knowledgeArtifactKey(entry.path)), path);
+  }
+  for (const entry of ir.checklists ?? []) {
+    const path = `${root}/${IR_CHECKLIST_ROOT}/${entry.id}.md`;
+    addFile(path, targets, 'checklist', entry.body);
+    artifacts.set(uniqueKey(artifacts, `checklist-${entry.id}`), path);
+  }
+  if (ir.hooks !== null && ir.hooks !== undefined) {
+    const path = `${root}/${ir.hooks.path}`;
+    addFile(path, targets, 'hooks', ir.hooks.body);
+    artifacts.set('hooks', path);
+  }
+  if (ir.mcp !== null && ir.mcp !== undefined) {
+    const path = `${root}/${ir.mcp.path}`;
+    addFile(path, targets, 'mcp', ir.mcp.body);
+    artifacts.set('mcp', path);
+  }
+  return artifacts;
+}
+
 export function projectAgentNative(input) {
   const { ir, irDigest, options } = input;
-  if (ir === null || typeof ir !== 'object' || ir.schema !== 'hm2b.ir/v1') {
-    return failure([nameError('PROJECTION_IR_UNSUPPORTED', 'input is not an hm2b.ir/v1 document')]);
+  if (ir === null || typeof ir !== 'object' || ir.schema !== IR_SCHEMA) {
+    return failure([nameError('PROJECTION_IR_UNSUPPORTED', `input is not an ${IR_SCHEMA} document`)]);
   }
   if (options === null || typeof options !== 'object') {
     return failure([nameError('PROJECTION_OPTIONS_INVALID', 'normalized options are required')]);
@@ -291,8 +337,12 @@ export function projectAgentNative(input) {
     for (const [key, path] of Object.entries( renderedTargetFiles.metadataArtifacts ?? {})) extraArtifacts[key] = path;
   }
 
+  // --- bundle assets: one namespace copy, no user-owned host file ---------
+  const namespaceRoot = `.agents/agent-native/${ir.id}`;
+  const assetArtifacts = projectAssets(ir, namespaceRoot, targets, addFile);
+
   // --- roles.json: one file, sectioned by selected target -----------------
-  const rolesJsonPath = `.agents/agent-native/${ir.id}/roles.json`;
+  const rolesJsonPath = `${namespaceRoot}/roles.json`;
   const rolesTargets = {};
   for (const target of sorted(targets)) {
     const renderedByRole = roleResults.get(target);
@@ -497,6 +547,7 @@ export function projectAgentNative(input) {
     artifacts[`skill-${skillId}`] = `${pickSkillRoot}/${ir.id}-skill-${skillId}/SKILL.md`;
   }
   for (const [key, path] of Object.entries(extraArtifacts)) artifacts[key] = path;
+  for (const [key, path] of assetArtifacts) artifacts[key] = path;
   const sortedArtifacts = Object.fromEntries(sorted(Object.keys(artifacts)).map((key) => [key, artifacts[key]]));
 
   const skillsRoots = {};

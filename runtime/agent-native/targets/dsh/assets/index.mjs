@@ -77,17 +77,45 @@ function parseJson(text) {
   }
 }
 
-function quote(value) {
-  return `"${String(value).split('"').join('\\"')}"`;
+/** Strip one matching pair of surrounding quotes; never any other parsing. */
+function barePath(value) {
+  const text = String(value).trim();
+  if (text.length < 2) return text;
+  const first = text[0];
+  const last = text[text.length - 1];
+  return (first === '"' || first === "'") && last === first ? text.slice(1, -1) : text;
 }
 
-/** Run a command line through the shell, decoding stdout/stderr as UTF-8 buffers. */
-function runShell(commandLine, args, { input, cwd } = {}) {
+/**
+ * Resolve a runner command without a shell. Only `node <script>` and a single
+ * `*.js`/`*.mjs`/`*.cjs` path are interpreted (both under process.execPath);
+ * anything else is one executable path verbatim. Arguments are always passed
+ * as separate argv entries, so invocation input never becomes shell syntax.
+ */
+function runnerInvocation(commandLine) {
+  const text = commandLine.trim();
+  const node = /^node(?:\.exe)?\s+([\s\S]+)$/i.exec(text);
+  if (node !== null) {
+    const script = barePath(node[1]);
+    if (script !== '') return { file: process.execPath, prefix: [script] };
+  }
+  const single = barePath(text);
+  if (/\.(?:c|m)?js$/i.test(single)) return { file: process.execPath, prefix: [single] };
+  return { file: single, prefix: [] };
+}
+
+/** Run the runner directly, decoding stdout/stderr as UTF-8 buffers. */
+function runCommand(commandLine, args, { input, cwd } = {}) {
   return new Promise((resolvePromise) => {
-    const line = [commandLine, ...args.map(quote)].join(' ');
+    const invocation = runnerInvocation(commandLine);
     let child;
     try {
-      child = spawn(line, { shell: true, cwd, env: process.env, windowsHide: true });
+      child = spawn(invocation.file, [...invocation.prefix, ...args], {
+        shell: false,
+        cwd,
+        env: process.env,
+        windowsHide: true,
+      });
     } catch (error) {
       resolvePromise({ code: 1, stdout: '', stderr: error.message });
       return;
@@ -222,7 +250,7 @@ function registerCommands(ctx, settings) {
             args.push('--project-root', settings.projectRoot);
             const sessionId = sessionIdOf(invocation?.agent);
             if (sessionId !== null) args.push('--session-id', sessionId);
-            const result = await runShell(settings.runnerCmd, args, { cwd: settings.projectRoot });
+            const result = await runCommand(settings.runnerCmd, args, { cwd: settings.projectRoot });
             const text = `${result.stdout}${result.stderr}`.trim();
             return {
               kind: result.code === 0 ? 'success' : 'error',

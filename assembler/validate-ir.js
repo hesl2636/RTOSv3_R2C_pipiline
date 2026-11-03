@@ -1,5 +1,5 @@
 /**
- * `hm2b.ir/v1` validation (decision #67 §8).
+ * `hm2b.ir/v2` validation (decision #67 §8).
  *
  * Bytes in, report out. IR diagnostics are errors only: the IR is a machine
  * artifact, so any deviation is an integrity failure. Embedded hashing is
@@ -17,10 +17,16 @@ import { parseSchemaId } from '../core/schema.js';
 import { isValidRange } from '../core/semver.js';
 import {
   IR_BUNDLE_SCHEMA,
+  IR_CHECKLIST_FIELDS,
   IR_CONSTITUTION_FIELDS,
   IR_FIELDS,
   IR_FILENAME,
   IR_GATE_FIELDS,
+  IR_HOOKS_FIELDS,
+  IR_HOOKS_PATH,
+  IR_KNOWLEDGE_BASE_FIELDS,
+  IR_MCP_FIELDS,
+  IR_MCP_PATH,
   IR_REQUIRES_FIELDS,
   IR_ROLE_FIELDS,
   IR_SCHEMA,
@@ -32,8 +38,10 @@ import {
   IR_STAGE_FIELDS,
   IR_STEP_FIELDS,
   IR_TASK_FIELDS,
+  irChecklistPath,
 } from '../ir/schema.js';
 import { scanTaskBody } from './markdown.js';
+import { serializeIr } from '../ir/serialize.js';
 import { hasLoneSurrogate, isPlainObject, nonEmptyLines, preamble } from './util.js';
 
 export const IR_SUMMARY_CODE = 'IR_INVALID';
@@ -41,7 +49,9 @@ export const IR_SUMMARY_CODE = 'IR_INVALID';
 const ID_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const VERSION_RE = /^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z][0-9A-Za-z.-]*)?$/;
 const SHA_RE = /^[0-9a-f]{64}$/;
-const SOURCE_PATH_RE = /^(?:stages\/[a-z0-9]+(?:-[a-z0-9]+)*\.json|roles\/[a-z0-9]+(?:-[a-z0-9]+)*\.md|tasks\/[a-z0-9]+(?:-[a-z0-9]+)*\.md|skills\/[a-z0-9]+(?:-[a-z0-9]+)*\/SKILL\.md|constitution\/CONSTITUTION\.md)$/;
+const SOURCE_PATH_RE = /^(?:stages\/[a-z0-9]+(?:-[a-z0-9]+)*\.json|roles\/[a-z0-9]+(?:-[a-z0-9]+)*\.md|tasks\/[a-z0-9]+(?:-[a-z0-9]+)*\.md|skills\/[a-z0-9]+(?:-[a-z0-9]+)*\/SKILL\.md|knowledge-base\/(?:[A-Za-z0-9._-]+\/)*[A-Za-z0-9._-]+\.md|checklists\/[a-z0-9]+(?:-[a-z0-9]+)*\.md|hooks\/hooks\.json|mcp\.json|constitution\/CONSTITUTION\.md)$/;
+const KNOWLEDGE_BASE_RE = /^knowledge-base\/(?:[A-Za-z0-9._-]+\/)*[A-Za-z0-9._-]+\.md$/;
+const SCHEMA_REVISION = parseSchemaId(IR_SCHEMA).revision;
 const RUNTIME_KEYS = new Set([
   'type',
   'metadata',
@@ -173,7 +183,7 @@ export function validateIr(input, primitives = {}) {
     fail('', 'IR_JSON_PARSE', 'IR file is not valid JSON');
     return finalize();
   }
-  const canonical = canonicalJson(parsed);
+  const canonical = serializeIr(parsed);
   if (canonical !== text) {
     fail('', 'IR_JSON_NOT_CANONICAL', 'IR file is not canonical JSON', {
       offset: firstDifferenceOffset(canonical, text),
@@ -189,7 +199,7 @@ export function validateIr(input, primitives = {}) {
     const parsedId = parseSchemaId(parsed.schema);
     let reason = 'unknown';
     if (typeof parsed.schema !== 'string' || parsedId === null) reason = 'malformed';
-    else if (parsedId.family === 'ir' && parsedId.revision > 1) reason = 'newer';
+    else if (parsedId.family === 'ir' && parsedId.revision > SCHEMA_REVISION) reason = 'newer';
     fail('/schema', 'IR_SCHEMA_UNSUPPORTED', 'IR schema is not supported', { reason });
     return finalize();
   }
@@ -365,7 +375,7 @@ export function validateIr(input, primitives = {}) {
         fail('/version', 'IR_SOURCE_MISMATCH', 'IR version differs from source.bundle.version', { field: 'version' });
       }
       if (source.bundle.schema !== IR_BUNDLE_SCHEMA) {
-        fail('/source/bundle/schema', 'IR_SOURCE_MISMATCH', 'source bundle schema must be hm2b.bundle/v1', {
+        fail('/source/bundle/schema', 'IR_SOURCE_MISMATCH', `source bundle schema must be ${IR_BUNDLE_SCHEMA}`, {
           field: 'source.bundle.schema',
         });
       }
@@ -640,6 +650,139 @@ export function validateIr(input, primitives = {}) {
     }
   }
 
+  // assets: knowledgeBase / checklists / hooks / mcp -----------------------
+  const checkAssetRecord = (value, pointer, fields, label) => {
+    if (!isPlainObject(value)) {
+      fail(pointer, 'IR_SCHEMA_INVALID', `${label} must be an object`, { pointer, rule: 'type' });
+      return null;
+    }
+    checkUnknown(value, fields, pointer);
+    checkMemberOrder(value, fields, pointer);
+    for (const key of fields) {
+      if (value[key] === undefined) {
+        fail(`${pointer}/${key}`, 'IR_SCHEMA_INVALID', `${label} is missing '${key}'`, {
+          pointer: `${pointer}/${key}`,
+          rule: 'required',
+        });
+      }
+    }
+    if (value.body !== undefined) {
+      if (typeof value.body !== 'string') {
+        fail(`${pointer}/body`, 'IR_SCHEMA_INVALID', `${label} body must be a string`, {
+          pointer: `${pointer}/body`,
+          rule: 'type',
+        });
+      } else {
+        checkTextEncoding(value.body, `${pointer}/body`);
+      }
+    }
+    checkSourceRef(value.source, `${pointer}/source`);
+    return value;
+  };
+  const checkAssetSourcePath = (record, pointer, expected, kind) => {
+    if (isPlainObject(record.source) && typeof record.source.path === 'string'
+      && record.source.path !== expected) {
+      fail(`${pointer}/source/path`, 'IR_SOURCE_PATH_MISMATCH', `${kind} source path does not match the asset`, {
+        kind,
+        path: record.source.path,
+      });
+    }
+  };
+  const checkAssetArray = (key, fields, label, identityOf, expectedPathOf) => {
+    const value = parsed[key];
+    if (!Array.isArray(value)) {
+      fail(`/${key}`, 'IR_SCHEMA_INVALID', `'${key}' must be an array`, { pointer: `/${key}`, rule: 'type' });
+      return;
+    }
+    const seen = new Set();
+    const identities = [];
+    value.forEach((item, index) => {
+      const pointer = `/${key}/${index}`;
+      const record = checkAssetRecord(item, pointer, fields, label);
+      if (record === null) return;
+      const identity = identityOf(record);
+      if (typeof identity !== 'string') return;
+      const expectedPath = expectedPathOf(identity);
+      if (expectedPath === null) {
+        fail(`${pointer}/${fields[0]}`, 'IR_SCHEMA_INVALID', `${label} ${fields[0]} is not a contract value`, {
+          pointer: `${pointer}/${fields[0]}`,
+          rule: 'pattern',
+        });
+        return;
+      }
+      if (seen.has(identity)) {
+        fail(`${pointer}/${fields[0]}`, 'IR_SCHEMA_INVALID', `${label} is repeated: ${identity}`, {
+          pointer: `${pointer}/${fields[0]}`,
+          rule: 'uniqueItems',
+        });
+        return;
+      }
+      seen.add(identity);
+      identities.push(identity);
+      checkAssetSourcePath(record, pointer, expectedPath, key);
+    });
+    checkAscending(identities, `/${key}`);
+  };
+
+  checkAssetArray(
+    'knowledgeBase',
+    IR_KNOWLEDGE_BASE_FIELDS,
+    'knowledge-base entry',
+    (record) => record.path,
+    // ASCII-only charset, so code points equal UTF-8 bytes.
+    (path) => (KNOWLEDGE_BASE_RE.test(path) && path.split('/').length <= 4
+      && codePointLength(path) <= 100 ? path : null),
+  );
+  checkAssetArray(
+    'checklists',
+    IR_CHECKLIST_FIELDS,
+    'checklist',
+    (record) => record.id,
+    (id) => (idProblem(id) ? null : irChecklistPath(id)),
+  );
+
+  const checkAssetFile = (key, fields, expectedPath, shape) => {
+    const value = parsed[key];
+    if (value === undefined) return;
+    if (value === null) return;
+    if (!isPlainObject(value)) {
+      fail(`/${key}`, 'IR_SCHEMA_INVALID', `'${key}' must be null or an object`, {
+        pointer: `/${key}`,
+        rule: 'type',
+      });
+      return;
+    }
+    const pointer = `/${key}`;
+    const record = checkAssetRecord(value, pointer, fields, key);
+    if (record === null) return;
+    if (typeof record.path === 'string' && record.path !== expectedPath) {
+      fail(`${pointer}/path`, 'IR_SOURCE_PATH_MISMATCH', `${key} path must be ${expectedPath}`, {
+        kind: key,
+        path: record.path,
+      });
+    }
+    checkAssetSourcePath(record, pointer, expectedPath, key);
+    if (typeof record.body !== 'string') return;
+    let asset;
+    try {
+      asset = JSON.parse(record.body);
+    } catch {
+      fail(`${pointer}/body`, 'IR_ASSET_INVALID', `${key} body is not JSON`, { rule: 'json' });
+      return;
+    }
+    if (canonicalJson(asset) !== record.body) {
+      fail(`${pointer}/body`, 'IR_ASSET_INVALID', `${key} body is not canonical JSON`, { rule: 'not-canonical' });
+      return;
+    }
+    shape?.(asset, `${pointer}/body`);
+  };
+
+  checkAssetFile('hooks', IR_HOOKS_FIELDS, IR_HOOKS_PATH);
+  checkAssetFile('mcp', IR_MCP_FIELDS, IR_MCP_PATH, (asset, pointer) => {
+    if (isPlainObject(asset) && isPlainObject(asset.mcpServers)) return;
+    fail(pointer, 'IR_ASSET_INVALID', "mcp body must carry an object under 'mcpServers'", { rule: 'mcp-shape' });
+  });
+
   // references
   const roles = isPlainObject(parsed.roles) ? parsed.roles : {};
   const tasks = isPlainObject(parsed.tasks) ? parsed.tasks : {};
@@ -790,6 +933,26 @@ export function validateIr(input, primitives = {}) {
       for (const mount of parsed.constitution) {
         if (isPlainObject(mount) && isPlainObject(mount.source)) push(mount.source.path, mount.source.sha256);
       }
+    }
+    for (const [key, identity] of [['knowledgeBase', 'path'], ['checklists', 'id']]) {
+      for (const record of Array.isArray(parsed[key]) ? parsed[key] : []) {
+        if (!isPlainObject(record) || !isPlainObject(record.source)
+          || typeof record[identity] !== 'string') {
+          complete = false;
+          continue;
+        }
+        const path = key === 'checklists' ? irChecklistPath(record.id) : record.path;
+        push(path, record.source.sha256);
+      }
+    }
+    for (const key of ['hooks', 'mcp']) {
+      const record = parsed[key];
+      if (record === null) continue;
+      if (!isPlainObject(record) || !isPlainObject(record.source)) {
+        complete = false;
+        continue;
+      }
+      push(record.source.path, record.source.sha256);
     }
     if (complete) {
       rows.sort((left, right) => compareCodePoints(left[0], right[0]));

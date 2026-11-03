@@ -3,7 +3,7 @@
  * receipt ownership, upgrade-only swap and install-time host role rendering.
  */
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import {
   existsSync,
   mkdirSync,
@@ -21,6 +21,7 @@ import { isCanonicalJson } from '../core/canonical-json.js';
 import { sha256Hex } from '../core/node/sha256.js';
 import { installProjection } from '../installer/install.js';
 import { installRunnerProject, renderRunnerRoles, RUNNER_ROLE_TARGETS } from '../installer/runner.js';
+import { prepareJournal, writeJournal } from '../installer/transaction.js';
 import {
   LAUNCHER_PATH,
   LAUNCHER_TEXT,
@@ -80,6 +81,49 @@ function writeEngineSource(root, version = '1.2.3') {
 
 function read(projectRoot, path) {
   return readFileSync(join(projectRoot, ...path.split('/')), 'utf8');
+}
+
+const RUNTIME_MODULE_URL = new URL('../installer/runtime.js', import.meta.url).href;
+
+/**
+ * Child process that runs a real `installRuntime` and parks in the transaction
+ * stamp — the first clock call happens under the project lock — until the test
+ * releases it. That makes "another runtime install is in flight" observable
+ * without a sleep window.
+ */
+function writeRuntimeWorker(dir) {
+  const file = join(dir, 'runtime-worker.mjs');
+  writeFileSync(file, `import { existsSync, writeFileSync } from 'node:fs';
+import { installRuntime } from ${JSON.stringify(RUNTIME_MODULE_URL)};
+
+const [projectRoot, engineSource, version, marker, release] = process.argv.slice(2);
+let calls = 0;
+const clock = () => {
+  calls += 1;
+  if (calls === 1) {
+    writeFileSync(marker, 'locked');
+    const sleeper = new Int32Array(new SharedArrayBuffer(4));
+    const deadline = Date.now() + 20_000;
+    while (!existsSync(release)) {
+      if (Date.now() > deadline) throw new Error('release timeout');
+      Atomics.wait(sleeper, 0, 0, 5);
+    }
+  }
+  return new Date('2026-05-01T00:00:00.000Z');
+};
+const outcome = installRuntime({ projectRoot, engineSource, engineVersion: version, clock });
+process.stdout.write(JSON.stringify({ ok: outcome.ok, code: outcome.code, action: outcome.action }));
+`);
+  return file;
+}
+
+function waitForPath(file, message) {
+  const sleeper = new Int32Array(new SharedArrayBuffer(4));
+  const deadline = Date.now() + 20_000;
+  while (!existsSync(file)) {
+    if (Date.now() > deadline) throw new Error(message);
+    Atomics.wait(sleeper, 0, 0, 5);
+  }
 }
 
 test('installs the engine under .hm2b/engine/<V> with a fixed resolver launcher', (t) => {
@@ -203,6 +247,139 @@ test('engine upgrade swaps only runtime.json and the engine directory', (t) => {
   assert.equal(read(projectRoot, LAUNCHER_PATH), LAUNCHER_TEXT);
 });
 
+test('a crashed runtime transaction is rolled back before the next install', (t) => {
+  const projectRoot = tempDir(t, 'hm2b-project-');
+  const engineSource = writeEngineSource(tempDir(t, 'hm2b-engine-'), '1.2.3');
+  const first = installRuntime({ projectRoot, engineSource, engineVersion: '1.2.3', clock: CLOCK });
+  assert.equal(first.code, 'OK', first.message);
+  const receiptBefore = read(projectRoot, RUNTIME_RECEIPT_PATH);
+  const statusBefore = read(projectRoot, '.claude/commands/hm2b-status.md');
+
+  // A killed upgrade: journal first, then half-written files, then an abrupt
+  // exit without rollback or journal cleanup. runtime.json only survives in
+  // the transaction backup.
+  const journal = prepareJournal({
+    projectRoot,
+    command: 'runtime',
+    operations: [
+      { op: 'replace', path: '.claude/commands/hm2b-status.md', backup: true },
+      { op: 'replace', path: RUNTIME_RECEIPT_PATH, backup: true },
+    ],
+    createdDirs: [],
+    projectionId: 'runtime',
+    bundleId: '1.2.3',
+    stamp: '2026-01-01T00-00-00-000Z',
+    clock: CLOCK,
+  });
+  writeJournal(projectRoot, journal);
+  writeFileSync(join(projectRoot, ...RUNTIME_RECEIPT_PATH.split('/')), '{"schema":"hm2b.runtime/v1","engine":');
+  writeFileSync(join(projectRoot, '.claude', 'commands', 'hm2b-status.md'), 'half-written\n');
+  assert.throws(() => readRuntimeReceipt(projectRoot), SyntaxError, 'the crashed run left no readable receipt');
+
+  const outcome = installRuntime({ projectRoot, engineSource, engineVersion: '1.2.3', clock: CLOCK });
+  assert.equal(outcome.code, 'OK', outcome.message);
+  assert.equal(outcome.action, 'unchanged', 'the rollback restored the receipt and every runtime-owned file');
+  assert.equal(existsSync(join(projectRoot, '.hm2b/install/pending.json')), false);
+  assert.equal(read(projectRoot, RUNTIME_RECEIPT_PATH), receiptBefore);
+  assert.equal(read(projectRoot, '.claude/commands/hm2b-status.md'), statusBefore);
+});
+
+test('a failed runtime upgrade restores the previous runtime.json', (t) => {
+  const projectRoot = tempDir(t, 'hm2b-project-');
+  const source1 = writeEngineSource(tempDir(t, 'hm2b-engine1-'), '1.0.0');
+  const first = installRuntime({ projectRoot, engineSource: source1, engineVersion: '1.0.0', clock: CLOCK });
+  assert.equal(first.code, 'OK', first.message);
+  const receiptBefore = read(projectRoot, RUNTIME_RECEIPT_PATH);
+  const statusBefore = read(projectRoot, '.claude/commands/hm2b-status.md');
+
+  // 2.0.0 changes a runtime-owned file, so the journal has real work to undo.
+  const source2 = writeEngineSource(tempDir(t, 'hm2b-engine2-'), '2.0.0');
+  writeFileSync(join(source2, 'commands', 'hm2b-status.md'), '---\ndescription: status v2\n---\n\n```bash\n<runner> status\n```\n');
+  let calls = 0;
+  const failingClock = () => {
+    calls += 1;
+    // Calls: the stamp, the journal start, then the receipt timestamp after
+    // every file was written and before runtime.json is swapped.
+    if (calls === 3) throw Object.assign(new Error('simulated disk failure'), { code: 'EIO' });
+    return CLOCK();
+  };
+
+  const failed = installRuntime({ projectRoot, engineSource: source2, engineVersion: '2.0.0', clock: failingClock });
+  assert.equal(failed.code, 'RUNTIME_INSTALL_FAILED', JSON.stringify(failed));
+  assert.equal(failed.cause, 'EIO');
+  assert.equal(existsSync(join(projectRoot, ...RUNTIME_RECEIPT_PATH.split('/'))), true, 'runtime.json is restored, not unlinked');
+  assert.equal(read(projectRoot, RUNTIME_RECEIPT_PATH), receiptBefore);
+  assert.equal(read(projectRoot, '.claude/commands/hm2b-status.md'), statusBefore);
+  assert.equal(existsSync(join(projectRoot, '.hm2b/engine/2.0.0')), false);
+  assert.equal(existsSync(join(projectRoot, '.hm2b/engine/1.0.0/bin/hm2b.js')), true);
+  assert.equal(existsSync(join(projectRoot, '.hm2b/install/pending.json')), false);
+  assert.equal(readRuntimeReceipt(projectRoot).engine.version, '1.0.0');
+});
+
+test('a runtime conflict that appears after the pre-lock check is caught under the lock', (t) => {
+  const projectRoot = tempDir(t, 'hm2b-project-');
+  const engineSource = writeEngineSource(tempDir(t, 'hm2b-engine-'), '1.2.3');
+  const intruder = join(projectRoot, '.claude', 'commands', 'hm2b-status.md');
+  let calls = 0;
+  // The stamp is taken immediately after the lock: a file landing in that
+  // window means the pre-lock scan is stale and the ownership set must be
+  // re-read under the lock.
+  const clock = () => {
+    calls += 1;
+    if (calls === 1) {
+      mkdirSync(dirname(intruder), { recursive: true });
+      writeFileSync(intruder, 'intruder\n');
+    }
+    return CLOCK();
+  };
+
+  const outcome = installRuntime({ projectRoot, engineSource, engineVersion: '1.2.3', clock });
+  assert.equal(outcome.code, 'RUNTIME_CONFLICTS', JSON.stringify(outcome));
+  assert.match(outcome.message, /while waiting for the lock/);
+  assert.deepEqual(outcome.conflicts.map((conflict) => conflict.path), ['.claude/commands/hm2b-status.md']);
+  assert.equal(readFileSync(intruder, 'utf8'), 'intruder\n', 'the late file is never overwritten');
+  assert.equal(existsSync(join(projectRoot, ...RUNTIME_RECEIPT_PATH.split('/'))), false);
+  assert.equal(existsSync(join(projectRoot, '.hm2b/engine')), false);
+  assert.equal(existsSync(join(projectRoot, '.hm2b/install/pending.json')), false);
+});
+
+test('two concurrent runtime installs yield exactly one success', async (t) => {
+  const projectRoot = tempDir(t, 'hm2b-project-');
+  const engineSource = writeEngineSource(tempDir(t, 'hm2b-engine-'), '1.2.3');
+  const barrier = tempDir(t, 'hm2b-barrier-');
+  const marker = join(barrier, 'locked');
+  const release = join(barrier, 'release');
+
+  const child = spawn(
+    process.execPath,
+    [writeRuntimeWorker(barrier), projectRoot, engineSource, '1.2.3', marker, release],
+    { stdio: ['ignore', 'pipe', 'pipe'] },
+  );
+  t.after(() => child.kill());
+  let stdout = '';
+  let stderr = '';
+  child.stdout.on('data', (chunk) => { stdout += chunk.toString(); });
+  child.stderr.on('data', (chunk) => { stderr += chunk.toString(); });
+  const closed = new Promise((resolve) => child.on('close', (status) => resolve(status)));
+
+  waitForPath(marker, 'the concurrent runtime install never took the project lock');
+  const contender = installRuntime({ projectRoot, engineSource, engineVersion: '1.2.3', clock: CLOCK });
+  assert.equal(contender.code, 'LOCK_CONFLICT', JSON.stringify(contender));
+
+  writeFileSync(release, 'go');
+  assert.equal(await closed, 0, stderr);
+  const winner = JSON.parse(stdout);
+  assert.equal(winner.ok, true, stdout);
+  assert.equal(winner.action, 'installed');
+
+  const successes = [contender, winner].filter((outcome) => outcome.ok === true);
+  assert.equal(successes.length, 1, JSON.stringify({ contender, winner }));
+  assert.equal(readRuntimeReceipt(projectRoot).engine.version, '1.2.3');
+  assert.equal(existsSync(join(projectRoot, '.hm2b/engine/1.2.3/bin/hm2b.js')), true);
+  assert.equal(existsSync(join(projectRoot, '.hm2b/install/pending.json')), false);
+  assert.equal(existsSync(join(projectRoot, '.hm2b/install/.lock')), false);
+});
+
 test('render-roles renders four host definitions named runner-<id> and dsh none', (t) => {
   const projectRoot = tempDir(t, 'hm2b-project-');
   const { result, irBytes, ir } = sample('runner');
@@ -309,9 +486,9 @@ test('a runner install refuses a foreign workflows/*.yaml', (t) => {
   assert.deepEqual(readdirSync(join(projectRoot, 'workflows')), ['other.yaml']);
 });
 
-test('renderRunnerRoles uses the selected skill set and records preload loss at the seam', () => {
+test('renderRunnerRoles drops unresolvable skill names and records preload loss at the seam', () => {
   const ir = {
-    schema: 'hm2b.ir/v1',
+    schema: 'hm2b.ir/v2',
     id: 'demo',
     version: '1.0.0',
     stages: [],
@@ -335,12 +512,25 @@ test('renderRunnerRoles uses the selected skill set and records preload loss at 
   assert.equal(rendered.ok, true, JSON.stringify(rendered));
 
   const byTarget = (target) => rendered.files.filter((file) => file.kind === 'agent' && file.targets.includes(target));
-  const claude = byTarget('claude-code')[0];
-  assert.match(claude.content, /keep/);
-  assert.doesNotMatch(claude.content, /drop/);
-  const omp = byTarget('omp')[0];
-  assert.match(omp.content, /keep/);
-  assert.doesNotMatch(omp.content, /drop/);
+  // No host skill root is installed, so a rendered role may never name a
+  // skill: the field is dropped instead of being written unresolvable.
+  for (const target of ['claude-code', 'codex', 'omp', 'opencode']) {
+    const [role] = byTarget(target);
+    assert.equal(role !== undefined, true, target);
+    assert.doesNotMatch(role.content, /^\s*skills:/m, `${target} role must not declare skills`);
+    assert.doesNotMatch(role.content, /keep|drop/, `${target} role must not name unresolvable skills`);
+  }
+
+  // The selected `keep` use is unavailable at install on every target; the
+  // excluded `drop` use is only a seam-level loss where the target has one.
+  const unavailable = rendered.degradations.filter((record) => record.code === 'CAP_PRELOAD_UNAVAILABLE');
+  assert.deepEqual(unavailable.map((record) => record.target).sort(), ['claude-code', 'codex', 'omp', 'opencode']);
+  for (const record of unavailable) {
+    assert.equal(record.capability, 'preload');
+    assert.equal(record.level, 'unavailable');
+    assert.equal(record.pointer, '/roles/worker/skills/0');
+    assert.equal(record.field, 'skills');
+  }
 
   const preload = rendered.degradations.filter((record) => record.code === 'CAP_PRELOAD_EXCLUDED');
   assert.deepEqual(preload.map((record) => record.target).sort(), ['claude-code', 'omp']);
@@ -351,6 +541,11 @@ test('renderRunnerRoles uses the selected skill set and records preload loss at 
     assert.equal(record.field, 'skills');
   }
   // codex/opencode have no preload seam; the projection's declared loss owns
-  // that record, so install-time rendering adds none.
+  // that record, so install-time rendering adds no EXCLUDED row there.
   assert.ok(!preload.some((record) => record.target === 'codex' || record.target === 'opencode'));
+
+  const roles = JSON.parse(rendered.rolesJson);
+  for (const target of rendered.targets) {
+    assert.equal(roles.targets[target].roles[0].fields.skills.state, 'unavailable', target);
+  }
 });

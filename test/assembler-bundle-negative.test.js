@@ -66,7 +66,7 @@ test('layout, undeclared files and outer directories are rejected once', () => {
 
 test('an unsupported schema suppresses content phases', () => {
   const files = minimalFiles({
-    'bundle.json': canonicalJson({ ...MINIMAL_MANIFEST, schema: 'hm2b.bundle/v2' }),
+    'bundle.json': canonicalJson({ ...MINIMAL_MANIFEST, schema: 'hm2b.bundle/v3' }),
     'stages/only.json': null,
   });
   const report = validateBundle(buildZip(files), PRIMITIVES);

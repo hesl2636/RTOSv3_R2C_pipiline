@@ -11,7 +11,7 @@ import { sha256Hex } from '../core/node/sha256.js';
 import { compileBundle } from '../assembler/compile.js';
 import { validateBundle } from '../assembler/validate-bundle.js';
 import { validateIr } from '../assembler/validate-ir.js';
-import { IR_FILENAME, irCollectionPath } from '../ir/schema.js';
+import { IR_FILENAME } from '../ir/schema.js';
 import {
   MINIMAL_MANIFEST,
   MINIMAL_TASK,
@@ -47,7 +47,7 @@ test('minimal compliant bundle validates with a complete report', () => {
   assert.deepEqual(report.errors, []);
   assert.deepEqual(report.warnings, []);
   assert.equal(report.target, 'bundle');
-  assert.equal(report.schema, 'hm2b.bundle/v1');
+  assert.equal(report.schema, 'hm2b.bundle/v2');
   assert.equal(report.artifact.path, 'minimal.zip');
   assert.equal(report.artifact.bytes, zip.length);
   assert.match(report.artifact.sha256, /^[0-9a-f]{64}$/);
@@ -76,7 +76,7 @@ test('compile produces canonical, self-proving IR that ir validate accepts', () 
   assert.equal(sha256Hex(first.irBytes), first.digest);
 
   const ir = JSON.parse(text);
-  assert.equal(ir.schema, 'hm2b.ir/v1');
+  assert.equal(ir.schema, 'hm2b.ir/v2');
   assert.equal(ir.id, 'minimal-demo');
   assert.equal(ir.version, '1.0.0');
   assert.equal(ir.source.bundle.contentSha256.length, 64);
@@ -84,6 +84,10 @@ test('compile produces canonical, self-proving IR that ir validate accepts', () 
   assert.deepEqual(Object.keys(ir.roles), ['worker']);
   assert.deepEqual(Object.keys(ir.tasks), ['do-it']);
   assert.deepEqual(Object.keys(ir.skills), ['helper']);
+  assert.deepEqual(ir.knowledgeBase, []);
+  assert.deepEqual(ir.checklists, []);
+  assert.equal(ir.hooks, null);
+  assert.equal(ir.mcp, null);
   assert.deepEqual(ir.constitution, []);
   assert.deepEqual(ir.stages[0].steps[0].skills, ['helper']);
   assert.deepEqual(ir.stages[0].steps[0].outputs, ['out/*.md']);
@@ -92,7 +96,7 @@ test('compile produces canonical, self-proving IR that ir validate accepts', () 
   const irReport = validateIr(first.irBytes, { sha256: sha256Hex });
   assert.equal(irReport.ok, true, JSON.stringify(irReport.errors));
   assert.equal(irReport.target, 'ir');
-  assert.equal(irReport.schema, 'hm2b.ir/v1');
+  assert.equal(irReport.schema, 'hm2b.ir/v2');
   assert.equal(irReport.artifact.path, IR_FILENAME);
   assert.equal(irReport.artifact.sha256, first.digest);
 });
@@ -190,7 +194,7 @@ test('the CLI --json envelope is one line for bundle and ir validate', () => {
     assert.equal(compileResult.envelope.data.ok, true);
     assert.equal(compileResult.envelope.data.target, 'bundle');
     assert.equal(compileResult.envelope.data.report, undefined);
-    assert.equal(compileResult.envelope.data.ir.path, irCollectionPath(compileResult.envelope.data.id, compileResult.envelope.data.version));
+    assert.equal(compileResult.envelope.data.ir.path, 'workflow.ir.json');
     const irPath = join(out, IR_FILENAME);
     const irResult = cli(['ir', 'validate', irPath, '--json']);
     assert.equal(irResult.status, 0);

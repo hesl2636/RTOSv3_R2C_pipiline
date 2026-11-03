@@ -37,16 +37,19 @@ import {
 import {
   acquireProjectLock,
   prepareJournal,
+  recoverPending,
   releaseProjectLock,
   removeJournal,
   rollbackJournal,
   writeJournal,
 } from './transaction.js';
 import {
+  computeCreatedDirs,
   ensureProjectDirs,
   lstatOrNull,
   sha256File,
   sha256Hex,
+  timestampSlug,
   unlinkIfExists,
   writeAbsoluteAtomic,
   writeFileAtomic,
@@ -409,16 +412,40 @@ function engineTreeMatches(sourceRoot, destinationRoot) {
   }
 }
 
-function computeCreatedDirs(projectRoot, paths) {
-  const created = new Set();
-  for (const path of paths) {
-    for (const dir of ancestorDirs(path)) {
-      const absolute = projectPath(projectRoot, dir);
-      if (absolute === null) continue;
-      if (lstatOrNull(absolute) === null) created.add(dir);
+/**
+ * Diff the planned files against disk. `previousFiles` is the ownership set of
+ * the runtime receipt as read at the moment of the call: the pre-lock pass
+ * yields the aggregate diagnostics, the under-lock pass the real write plan.
+ */
+function planWrites({ projectRoot, fileContents, previousFiles, force }) {
+  const conflicts = [];
+  const writes = [];
+  for (const file of fileContents) {
+    const absolute = projectPath(projectRoot, file.path);
+    const info = lstatOrNull(absolute);
+    if (info === null) {
+      writes.push({ op: 'create', file });
+      continue;
     }
+    if (info.isSymbolicLink() || !info.isFile()) {
+      conflicts.push({ code: 'SYMLINK_AT_TARGET', path: file.path, message: `${file.path} is not a regular file` });
+      continue;
+    }
+    if (sha256File(absolute) === file.sha256) continue;
+    // Pointer-level merges are additive: an existing user config is never a
+    // conflict, but it is backed up like any replaced runtime-owned file.
+    if (file.kind === 'merge') {
+      writes.push({ op: 'replace', file });
+      continue;
+    }
+    const owned = previousFiles.has(file.path);
+    if (!owned && !force) {
+      conflicts.push({ code: 'RUNTIME_FILE_CONFLICT', path: file.path, message: `${file.path} exists and is not owned by the runtime receipt` });
+      continue;
+    }
+    writes.push({ op: 'replace', file });
   }
-  return [...created].sort(comparePaths);
+  return { conflicts, writes };
 }
 
 export function isRuntimeReceipt(value) {
@@ -489,6 +516,19 @@ export function installRuntime(input = {}) {
   if (!existsSync(projectRoot) || !statSync(projectRoot).isDirectory()) {
     return failure('PROJECT_NOT_FOUND', `project root is not a directory: ${projectRoot}`);
   }
+
+  // A crashed run leaves pending.json plus half-written files and, for an
+  // upgrade, the previous runtime.json only in its backup. Roll that back
+  // before the pre-lock receipt read, otherwise the next writeJournal
+  // overwrites the only record of what has to be restored.
+  const recovery = recoverPending(projectRoot, { clock });
+  if (!recovery.ok) {
+    return failure(recovery.code, 'the previous transaction could not be rolled back', {
+      failures: recovery.failures,
+      journal: recovery.journalPath,
+    });
+  }
+
   const engineSource = input.engineSource === undefined ? null : resolve(input.engineSource);
   if (engineSource === null || !existsSync(engineSource) || !statSync(engineSource).isDirectory()) {
     return failure('ENGINE_SOURCE_NOT_FOUND', 'the engine source directory is required');
@@ -547,33 +587,9 @@ export function installRuntime(input = {}) {
     sha256: sha256Hex(file.content),
   }));
 
-  const conflicts = [];
-  const writes = [];
-  for (const file of fileContents) {
-    const absolute = projectPath(projectRoot, file.path);
-    const info = lstatOrNull(absolute);
-    if (info === null) {
-      writes.push({ op: 'create', file });
-      continue;
-    }
-    if (info.isSymbolicLink() || !info.isFile()) {
-      conflicts.push({ code: 'SYMLINK_AT_TARGET', path: file.path, message: `${file.path} is not a regular file` });
-      continue;
-    }
-    if (sha256File(absolute) === file.sha256) continue;
-    // Pointer-level merges are additive: an existing user config is never a
-    // conflict, but it is backed up like any replaced runtime-owned file.
-    if (file.kind === 'merge') {
-      writes.push({ op: 'replace', file });
-      continue;
-    }
-    const owned = previousFiles.has(file.path);
-    if (!owned && !force) {
-      conflicts.push({ code: 'RUNTIME_FILE_CONFLICT', path: file.path, message: `${file.path} exists and is not owned by the runtime receipt` });
-      continue;
-    }
-    writes.push({ op: 'replace', file });
-  }
+  const plan = planWrites({ projectRoot, fileContents, previousFiles, force });
+  const conflicts = plan.conflicts;
+  let writes = plan.writes;
   if (conflicts.length > 0) {
     return { ok: false, code: 'RUNTIME_CONFLICTS', message: `${conflicts.length} runtime path conflict(s); nothing was written`, conflicts };
   }
@@ -613,14 +629,35 @@ export function installRuntime(input = {}) {
     throw error;
   }
 
-  const stamp = String(clock().toISOString()).replace(/[:.]/g, '-');
+  const stamp = timestampSlug(clock);
   const engineCreated = !existsSync(versionDir);
   try {
+    // TOCTOU: receipts and disk may have changed between the pre-lock check and
+    // the lock. The pre-lock pass only yields the aggregate diagnostics; the
+    // ownership set, the writes and every conflict decision are taken here.
+    let fresh;
+    try {
+      fresh = readRuntimeReceipt(projectRoot);
+    } catch (error) {
+      return failure(error.code ?? 'RUNTIME_RECEIPT_INVALID', error.message);
+    }
+    const freshFiles = new Map((fresh?.files ?? []).map((file) => [file.path, file]));
+    const recheck = planWrites({ projectRoot, fileContents, previousFiles: freshFiles, force });
+    if (recheck.conflicts.length > 0) {
+      return {
+        ok: false,
+        code: 'RUNTIME_CONFLICTS',
+        message: `${recheck.conflicts.length} runtime path conflict(s) appeared while waiting for the lock`,
+        conflicts: recheck.conflicts,
+      };
+    }
+    writes = recheck.writes;
+
     const writePaths = writes.map((write) => write.file.path);
     const createdDirs = computeCreatedDirs(projectRoot, [...writePaths, RUNTIME_RECEIPT_PATH]);
     const receiptExisted = lstatOrNull(projectPath(projectRoot, RUNTIME_RECEIPT_PATH)) !== null;
     const operations = writes.map((write) => ({ op: write.op, path: write.file.path, backup: write.op === 'replace' }));
-    operations.push({ op: receiptExisted ? 'replace' : 'create', path: RUNTIME_RECEIPT_PATH, backup: false });
+    operations.push({ op: receiptExisted ? 'replace' : 'create', path: RUNTIME_RECEIPT_PATH, backup: receiptExisted });
     const journal = prepareJournal({
       projectRoot,
       command: 'runtime',
@@ -684,7 +721,7 @@ export function installRuntime(input = {}) {
         files: runtimeFiles,
         merged: mergedPlan.records,
         backups,
-        installedAt: previous?.installed_at ?? now,
+        installedAt: fresh?.installed_at ?? previous?.installed_at ?? now,
         updatedAt: now,
       });
       const receiptAbsolute = projectPath(projectRoot, RUNTIME_RECEIPT_PATH);

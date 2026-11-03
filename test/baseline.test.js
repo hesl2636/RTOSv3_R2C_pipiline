@@ -3,7 +3,7 @@
  *
  * The committed rtosv3 sample is the regression oracle:
  *   - validating it yields exactly the frozen 2 warnings and exit 0;
- *   - compiling it yields the frozen 58,829-byte IR (sha256 d6e89572…);
+ *   - compiling it yields the frozen 58,904-byte IR (sha256 34d55ee6…);
  *   - the zip, the source directory, and repacked variants compile to the
  *     same bytes;
  *   - only contract content can change the IR; README.md cannot;
@@ -44,10 +44,11 @@ const PRIMITIVES = { inflateRaw, sha256: sha256Hex };
 
 const ANCHORS = Object.freeze({
   zipBytes: 55043,
-  zipSha256: '4b4700207e2a1398b930b46123f5e7aef27f803e3afc3596d19e31dc454d8196',
-  irBytes: 58829,
-  irSha256: 'd6e8957287117c7b476891e1807e303c9a965fbe366087a13947baf34b0da09f',
-  contentSha256: '006ec1b7831ac6c3c980d8c606880c87cc7fbc48f662bc2e1dbd152c9ccf6237',
+  zipSha256: 'ff1f3004c618be9d5ee6b090e0d635f6a6c7cb49a8c22e188cc11206bbe37cd4',
+  irBytes: 58904,
+  irSha256: '34d55ee62bf284594218d4923b0eafa267799edb1edbbeb7bb313a6f2ab0bc04',
+  contentSha256: '2093b03b97c90c6e77dfeb26c69d585ef78a11170032151171c31272ac7dbbf2',
+  manifestSha256: '6f92d763fb82cd00d36f99e8dc42ba26f0a510c4b64bd9d741e2625bec68df84',
 });
 
 const EXPECTED_WARNINGS = [
@@ -150,7 +151,14 @@ test('compile matches the committed golden IR byte for byte', () => {
   assert.equal(sha256(GOLDEN_BYTES), ANCHORS.irSha256);
 
   const ir = irObject(GOLDEN_BYTES);
+  assert.equal(ir.schema, 'hm2b.ir/v2');
+  assert.equal(ir.source.bundle.schema, 'hm2b.bundle/v2');
   assert.equal(ir.source.bundle.contentSha256, ANCHORS.contentSha256);
+  assert.equal(ir.source.manifest.sha256, ANCHORS.manifestSha256);
+  assert.deepEqual(ir.knowledgeBase, []);
+  assert.deepEqual(ir.checklists, []);
+  assert.equal(ir.hooks, null);
+  assert.equal(ir.mcp, null);
 
   const report = validateIr(GOLDEN_BYTES, { sha256: sha256Hex });
   assert.equal(report.ok, true);
@@ -306,7 +314,7 @@ test('ir validate rejects non-canonical, unsupported and hash-inconsistent IR', 
   );
 
   const unknownSchema = structuredClone(base);
-  unknownSchema.schema = 'hm2b.ir/v2';
+  unknownSchema.schema = 'hm2b.ir/v3';
   expectRejected(
     'unknown schema',
     canonicalBytes(unknownSchema),

@@ -115,8 +115,10 @@ function renderSummary(report) {
   appendKeyValue(summary, 'bytes', formatBytes(report.artifact?.bytes));
   appendKeyValue(summary, 'sha256', report.artifact?.sha256);
   const counts = report.counts ?? {};
-  for (const key of ['stages', 'steps', 'roles', 'tasks', 'skills', 'constitutions']) {
-    appendKeyValue(summary, key, counts[key] ?? 0);
+  // The report owns the count keys; new asset groups surface without a web rule.
+  for (const [key, value] of Object.entries(counts)) {
+    if (key === 'errors' || key === 'warnings') continue;
+    appendKeyValue(summary, key, value ?? 0);
   }
   appendKeyValue(summary, 'errors', counts.errors ?? 0);
   appendKeyValue(summary, 'warnings', counts.warnings ?? 0);
@@ -275,6 +277,41 @@ function renderSkills(ir) {
   }
 }
 
+/**
+ * Declared bundle assets (`knowledgeBase`, `checklists`, `hooks`, `mcp`) are
+ * rendered verbatim from the IR: the validator owns the rules, so an absent
+ * collection is just an empty list and never a client-side failure.
+ */
+function renderDeclaredAssets(listId, entries, labelOf) {
+  const list = byId(listId);
+  clear(list);
+  if (entries.length === 0) {
+    list.append(element('li', 'hint', 'none declared'));
+    return;
+  }
+  for (const entry of entries) {
+    const item = element('li');
+    item.append(element('strong', null, labelOf(entry)));
+    const source = sourceLine(entry.source);
+    if (source !== '') item.append(element('p', 'mono hint', source));
+    const body = element('details');
+    body.append(element('summary', null, 'body (read-only)'), element('pre', 'raw', entry.body ?? ''));
+    item.append(body);
+    list.append(item);
+  }
+}
+
+function declaredAssets(ir) {
+  const knowledgeBase = Array.isArray(ir.knowledgeBase) ? ir.knowledgeBase : [];
+  const checklists = Array.isArray(ir.checklists) ? ir.checklists : [];
+  return {
+    knowledgeBase,
+    checklists,
+    hooks: ir.hooks === null || ir.hooks === undefined ? [] : [ir.hooks],
+    mcp: ir.mcp === null || ir.mcp === undefined ? [] : [ir.mcp],
+  };
+}
+
 function renderIr(data) {
   const irBytes = decodeBase64(data.ir.data);
   state.irBytes = irBytes;
@@ -285,6 +322,7 @@ function renderIr(data) {
 
   const identity = byId('ir-identity');
   clear(identity);
+  appendKeyValue(identity, 'schema', ir.schema);
   appendKeyValue(identity, 'id', ir.id);
   appendKeyValue(identity, 'name', ir.name);
   appendKeyValue(identity, 'version', ir.version);
@@ -293,11 +331,20 @@ function renderIr(data) {
   appendKeyValue(identity, 'contentSha256', ir.source?.bundle?.contentSha256);
   appendKeyValue(identity, 'manifest sha256', ir.source?.manifest?.sha256);
   appendKeyValue(identity, 'requires', JSON.stringify(ir.requires ?? {}));
+  const assets = declaredAssets(ir);
+  appendKeyValue(identity, 'knowledgeBase', assets.knowledgeBase.length);
+  appendKeyValue(identity, 'checklists', assets.checklists.length);
+  appendKeyValue(identity, 'hooks', assets.hooks.length === 0 ? 'none' : assets.hooks[0].path);
+  appendKeyValue(identity, 'mcp', assets.mcp.length === 0 ? 'none' : assets.mcp[0].path);
 
   renderStages(ir);
   renderRoles(ir);
   renderTasks(ir);
   renderSkills(ir);
+  renderDeclaredAssets('ir-knowledge-base', assets.knowledgeBase, (entry) => entry.path);
+  renderDeclaredAssets('ir-checklists', assets.checklists, (entry) => entry.id);
+  renderDeclaredAssets('ir-hooks', assets.hooks, (entry) => entry.path);
+  renderDeclaredAssets('ir-mcp', assets.mcp, (entry) => entry.path);
 
   const constitution = byId('ir-constitution');
   clear(constitution);
@@ -845,6 +892,10 @@ function renderPublishJob(job) {
   if (job.error !== null) body.append(element('p', 'status', publishFailureText(job.error)));
   if (job.result?.install?.commands !== undefined) {
     body.append(element('h3', null, 'Install commands (published release)'));
+    const bootstrap = job.result.install.bootstrap;
+    if (bootstrap !== null && bootstrap !== undefined) {
+      body.append(element('p', 'hint', `Bootstrap: ${bootstrap.instruction}`));
+    }
     body.append(element('p', 'hint', 'Run from the target project root. The server never writes to a project.'));
     for (const item of job.result.install.commands) body.append(copyable(item.command));
     body.append(element('h3', null, 'Published assets'));
@@ -949,8 +1000,21 @@ function renderBuild(build) {
   );
   body.append(head);
 
-  body.append(element('h3', null, build.install.mode === 'release' ? 'Install commands (fixed version)' : 'Install commands (local mirror)'));
-  body.append(element('p', 'hint', 'Run from the target project root. The web surface never writes to a project.'));
+  const releaseMode = build.install.mode === 'release';
+  body.append(element('h3', null, releaseMode ? 'Install commands (fixed version)' : 'Install commands (re-project and install)'));
+  if (releaseMode) {
+    const bootstrap = build.install.bootstrap;
+    if (bootstrap !== null && bootstrap !== undefined) {
+      body.append(element('p', 'hint', `Bootstrap: ${bootstrap.instruction}`));
+    }
+    body.append(element('p', 'hint', 'Run from the target project root. The web surface never writes to a project.'));
+  } else {
+    body.append(element(
+      'p',
+      'hint',
+      'Custom options are not a Release payload: run each chain from the framework source; it re-projects the downloaded workflow.ir.json with the selected options and installs that result into the target project.',
+    ));
+  }
   for (const item of build.install.commands) {
     body.append(copyable(item.command));
   }

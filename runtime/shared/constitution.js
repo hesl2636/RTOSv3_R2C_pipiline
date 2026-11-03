@@ -37,7 +37,7 @@ export function constitutionState(mounts) {
   }
   if (mounts.length === 0) return 'absent';
   if (mounts.length !== 1) {
-    throw new Error('PROJECTION_IR_UNSUPPORTED: hm2b.ir/v1 carries at most one constitution mount');
+    throw new Error('PROJECTION_IR_UNSUPPORTED: hm2b.ir/v2 carries at most one constitution mount');
   }
   const mount = mounts[0];
   assertMount(mount);

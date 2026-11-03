@@ -26,6 +26,7 @@ import { project } from '../projection/project.js';
 import { getProjection } from '../projection/registry.js';
 import { readReleaseTarGz } from '../installer/release-tar.js';
 import { PAYLOAD_MANIFEST_NAME } from '../scripts/lib/bundle-release.mjs';
+import { assetZip } from './helpers/minimal-bundle.js';
 import { buildZip } from './helpers/zip.js';
 import {
   ROOT,
@@ -41,8 +42,8 @@ import {
 
 const SAMPLE = join(ROOT, 'examples', 'rtosv3', 'dist', 'bundle-rtosv3-drvport-v1.0.0.zip');
 const IR_FIXTURE = join(ROOT, 'test', 'fixtures', 'ir', 'workflow.ir.json');
-const SAMPLE_SHA256 = '4b4700207e2a1398b930b46123f5e7aef27f803e3afc3596d19e31dc454d8196';
-const IR_DIGEST = 'd6e8957287117c7b476891e1807e303c9a965fbe366087a13947baf34b0da09f';
+const SAMPLE_SHA256 = 'ff1f3004c618be9d5ee6b090e0d635f6a6c7cb49a8c22e188cc11206bbe37cd4';
+const IR_DIGEST = '34d55ee62bf284594218d4923b0eafa267799edb1edbbeb7bb313a6f2ab0bc04';
 const TAG = 'bundle-rtosv3-drvport-v1.0.0';
 const ASSETS = [
   'SHA256SUMS.txt',
@@ -63,8 +64,8 @@ function tempDir(t, prefix) {
   return dir;
 }
 
-function compiledIr() {
-  const bytes = readFileSync(SAMPLE);
+function compiledIr(bundle = SAMPLE) {
+  const bytes = typeof bundle === 'string' ? readFileSync(bundle) : bundle;
   const compiled = compileBundle(new Uint8Array(bytes), { inflateRaw, sha256: sha256Hex }, { path: 'bundle.zip' });
   assert.equal(compiled.ok, true);
   return {
@@ -75,8 +76,8 @@ function compiledIr() {
 }
 
 /** Project with the shared modules: the independent oracle for every number. */
-function expected({ projectionId, raw = null, engineVersion }) {
-  const { ir, irDigest } = compiledIr();
+function expected({ projectionId, raw = null, engineVersion, bundle = SAMPLE }) {
+  const { ir, irDigest } = compiledIr(bundle);
   const manifest = getProjection(projectionId);
   const normalized = normalizeOptions({ projectionId, ir, irDigest, raw, manifest });
   assert.equal(normalized.ok, true, JSON.stringify(normalized.errors));
@@ -135,6 +136,11 @@ async function build(server, csrf, payload) {
   return jsonRequest(server, csrf, '/api/builds', payload);
 }
 
+/** Run one generated shell chain in `cwd`; the chain is `project && install`. */
+function runChain(command, cwd) {
+  return spawnSync(command, { cwd, shell: true, encoding: 'utf8', timeout: 180_000, windowsHide: true });
+}
+
 function projectionOf(data, id) {
   const found = data.projections.find((projection) => projection.id === id);
   assert.ok(found, `missing projection ${id}`);
@@ -167,6 +173,8 @@ test('canonical build is publishable and matches the CLI projection numbers', as
   const { csrf, engineVersion } = await sessionOf(server);
   const uploaded = await upload(server, csrf);
   assert.equal(uploaded.report.ok, true);
+  assert.equal(uploaded.report.schema, 'hm2b.bundle/v2');
+  assert.equal(uploaded.ir.schema, 'hm2b.ir/v2');
   assert.equal(uploaded.ir.digest, IR_DIGEST);
   const report = uploaded.report;
 
@@ -176,6 +184,7 @@ test('canonical build is publishable and matches the CLI projection numbers', as
 
   assert.match(data.buildId, /^[0-9a-f]{16}$/);
   assert.equal(data.tag, TAG);
+  assert.equal(data.ir.schema, 'hm2b.ir/v2');
   assert.equal(data.canonical, true);
   assert.equal(data.publishable, true);
   assert.deepEqual(
@@ -264,6 +273,15 @@ test('canonical build is publishable and matches the CLI projection numbers', as
 
   // Fixed-version install commands, never a project write.
   assert.equal(data.install.mode, 'release');
+  assert.deepEqual(
+    {
+      asset: data.install.bootstrap.asset,
+      path: data.install.bootstrap.path,
+    },
+    { asset: 'install.mjs', path: '.hm2b/bootstrap/install.mjs' },
+  );
+  assert.match(data.install.bootstrap.instruction, /install\.mjs/);
+  assert.match(data.install.bootstrap.instruction, /\.hm2b\/bootstrap\/install\.mjs/);
   const commands = data.install.commands;
   const runnerCommand = commands.find((item) => item.projection === 'runner');
   assert.deepEqual(
@@ -295,6 +313,35 @@ test('canonical build is publishable and matches the CLI projection numbers', as
   assert.deepEqual(list.json.data.builds.map((item) => item.buildId), [data.buildId]);
 });
 
+test('IR v2 asset groups are listed in every projection summary without extra web rules', async (t) => {
+  const server = await startWebServer(t);
+  const { csrf, engineVersion } = await sessionOf(server);
+  const zip = assetZip();
+  const uploaded = await uploadBytes(server, csrf, zip);
+  assert.equal(uploaded.report.ok, true, JSON.stringify(uploaded.report));
+  assert.equal(uploaded.ir.schema, 'hm2b.ir/v2');
+
+  const response = await build(server, csrf, { uploadId: uploaded.uploadId, options: {} });
+  assert.equal(response.status, 200, JSON.stringify(response.json));
+  const data = response.json.data;
+  assert.equal(data.ir.schema, 'hm2b.ir/v2');
+
+  for (const projectionId of ['runner', 'agent-native']) {
+    const projected = projectionOf(data, projectionId);
+    const oracle = expected({ projectionId, engineVersion, bundle: zip });
+    assertMatchesExpected(projected, oracle);
+
+    // The projection decides the kinds; the web surface only groups and lists them.
+    const assetFiles = projected.files.filter((file) => ['knowledge', 'checklist', 'hooks', 'mcp'].includes(file.kind));
+    assert.equal(assetFiles.length, 6, `${projectionId} lists every declared asset`);
+    assert.deepEqual(
+      [...new Set(assetFiles.map((file) => file.kind))].sort(),
+      ['checklist', 'hooks', 'knowledge', 'mcp'],
+      projectionId,
+    );
+  }
+});
+
 test('custom options build locally, record the actual options and stay unpublishable', async (t) => {
   const server = await startWebServer(t);
   const { csrf, engineVersion } = await sessionOf(server);
@@ -314,7 +361,33 @@ test('custom options build locally, record the actual options and stay unpublish
   assert.equal(data.canonical, false);
   assert.equal(data.publishable, false);
   assert.equal(data.install.mode, 'local');
-
+  assert.equal(data.install.bootstrap, null);
+  const runnerCommand = data.install.commands.find((item) => item.projection === 'runner');
+  assert.equal(runnerCommand.target, null);
+  assert.ok(runnerCommand.command.startsWith('node bin/hm2b-assembler.js project workflow.ir.json --projection runner '));
+  assert.ok(runnerCommand.command.includes(`--stage-order ${[...stageIds].reverse().join(',')} `));
+  assert.ok(runnerCommand.command.includes(`--skills ${twelve.join(',')} `));
+  assert.ok(runnerCommand.command.endsWith(
+    '--result .hm2b/build/runner && node installer/cli.js --result .hm2b/build/runner --ir workflow.ir.json --project .',
+  ));
+  const agentAll = data.install.commands.find((item) => item.projection === 'agent-native' && item.target === null);
+  assert.ok(agentAll.command.includes('--target claude-code --target codex'));
+  const agentTargets = data.install.commands.filter((item) => item.projection === 'agent-native' && item.target !== null);
+  for (const target of ['claude-code', 'codex']) {
+    const item = agentTargets.find((entry) => entry.target === target);
+    assert.ok(item, target);
+    assert.ok(item.command.includes(`--target ${target} `));
+    assert.ok(item.command.includes(`--result .hm2b/build/agent-native-${target} && `));
+    assert.ok(item.command.endsWith(`--result .hm2b/build/agent-native-${target} --ir workflow.ir.json --project .`));
+  }
+  for (const item of data.install.commands) {
+    assert.doesNotMatch(item.command, /--release-base/);
+    assert.doesNotMatch(item.command, /\.hm2b\/bootstrap\/install\.mjs/);
+    assert.match(
+      item.command,
+      /^node bin\/hm2b-assembler\.js project workflow\.ir\.json --projection (runner|agent-native)(?: --target [a-z-]+)* --stage-order [a-z0-9,-]+ --skills [a-z0-9,-]+ --result \.hm2b\/build\/[a-z-]+ && node installer\/cli\.js --result \.hm2b\/build\/[a-z-]+ --ir workflow\.ir\.json --project \.$/,
+    );
+  }
   const runner = projectionOf(data, 'runner');
   const agentNative = projectionOf(data, 'agent-native');
   const runnerOracle = expected({ projectionId: 'runner', raw: custom.runner, engineVersion });
@@ -347,11 +420,91 @@ test('custom options build locally, record the actual options and stay unpublish
     );
     assert.equal(manifest.projection.id, projectionId);
   }
+});
 
-  for (const item of data.install.commands) {
-    assert.match(item.command, / --release-base \.\/dist /);
-    assert.doesNotMatch(item.command, /--targets/);
+test('a custom build chain re-projects the downloaded IR and installs the result', async (t) => {
+  const server = await startWebServer(t);
+  const { csrf } = await sessionOf(server);
+  const uploaded = await upload(server, csrf);
+  const { ir } = compiledIr();
+  const skillIds = Object.keys(ir.skills).sort();
+  const stageIds = ir.stages.map((stage) => stage.id);
+  const twelve = skillIds.slice(0, 12);
+  const custom = {
+    runner: { stageOrder: [...stageIds].reverse(), skills: twelve, targets: ['runner'] },
+    'agent-native': { skills: twelve, targets: ['claude-code'] },
+  };
+
+  const response = await build(server, csrf, { uploadId: uploaded.uploadId, options: custom });
+  assert.equal(response.status, 200, JSON.stringify(response.json));
+  const data = response.json.data;
+  assert.equal(data.install.mode, 'local');
+
+  // The chain runs from the framework source, against the downloaded IR.
+  const root = copyFramework(t);
+  const irAsset = data.artifacts.find((asset) => asset.name === 'workflow.ir.json');
+  const download = await httpRequest({ port: server.port, path: irAsset.url });
+  assert.equal(download.status, 200);
+  writeFileSync(join(root, 'workflow.ir.json'), download.raw);
+
+  for (const [projectionId, target] of [['runner', null], ['agent-native', 'claude-code']]) {
+    const item = data.install.commands.find((entry) => entry.projection === projectionId && entry.target === target);
+    assert.ok(item, `${projectionId}/${String(target)}`);
+    const run = runChain(item.command, root);
+    assert.equal(run.status, 0, `${item.command}\n${run.stdout}\n${run.stderr}`);
+
+    const resultDir = join(root, '.hm2b', 'build', target === null ? projectionId : `${projectionId}-${target}`);
+    const written = JSON.parse(readFileSync(join(resultDir, 'projection-result.json'), 'utf8'));
+    assert.equal(written.schema, 'hm2b.projection-result/v1');
+    assert.equal(written.projection.id, projectionId);
+    assert.deepEqual(written.options.skills, twelve);
+    assert.deepEqual(written.targets, target === null ? ['runner'] : [target]);
+    assert.equal(existsSync(join(resultDir, 'workflow.ir.json')), true);
+    assert.equal(
+      readFileSync(join(resultDir, 'workflow.ir.json')).equals(Buffer.from(download.raw)),
+      true,
+      'the result directory carries the downloaded IR bytes',
+    );
+
+    const receiptPath = join(root, '.hm2b', 'install', 'receipts', projectionId, 'rtosv3-drvport.json');
+    assert.equal(existsSync(receiptPath), true, `missing receipt ${receiptPath}`);
+    const receipt = JSON.parse(readFileSync(receiptPath, 'utf8'));
+    assert.equal(receipt.bundle.id, 'rtosv3-drvport');
+    assert.equal(receipt.projection.id, projectionId);
+    if (target === null) {
+      assert.deepEqual(receipt.projection.targets, written.targets);
+    } else {
+      assert.deepEqual(receipt.projection.targets, [target]);
+    }
   }
+});
+
+test('the build concurrency slot is reserved before the first await', async (t) => {
+  const dir = tempDir(t, 'busy');
+  const hang = join(dir, 'hang.mjs');
+  writeFileSync(hang, 'setInterval(() => {}, 1000);\n');
+  const server = await startWebServer(t, {
+    HM2B_WEB_RELEASE_SCRIPT: hang,
+    HM2B_WEB_BUILD_TIMEOUT_MS: '800',
+  });
+  const { csrf } = await sessionOf(server);
+  const uploaded = await upload(server, csrf);
+  const payload = { uploadId: uploaded.uploadId, options: {} };
+
+  const responses = await Promise.all([
+    build(server, csrf, payload),
+    build(server, csrf, payload),
+    build(server, csrf, payload),
+  ]);
+  const statuses = responses.map((item) => item.status).sort((left, right) => left - right);
+  assert.deepEqual(statuses, [409, 504, 504]);
+  const busy = responses.find((item) => item.status === 409);
+  assert.equal(busy.json.error.code, 'WEB_BUILD_BUSY');
+
+  // The two losers time out; the slot must be free again afterwards.
+  const after = await build(server, csrf, payload);
+  assert.equal(after.status, 504, JSON.stringify(after.json));
+  assert.equal(after.json.error.code, 'WEB_CHILD_TIMEOUT');
 });
 
 test('stale digests are 409 and unknown stage/skill/target are 400 without a build', async (t) => {

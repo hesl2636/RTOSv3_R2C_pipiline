@@ -171,7 +171,7 @@ test('path rule fixtures', async (t) => {
     ['trailing space', 'tasks/do-it.md '],
     ['invalid segment characters', 'tasks/do it.md'],
     ['path over 100 bytes', `tasks/${'a'.repeat(100)}.md`],
-    ['depth over 3', 'stages/a/b/c.json'],
+    ['depth over 4', 'stages/a/b/c/d.json'],
   ];
   for (const [name, badPath] of cases) {
     await t.test(name, () => {
@@ -301,7 +301,7 @@ test('a zero-byte non-constitution text keeps its owning code', () => {
 
 test('extra paths use the frozen layout codes exactly once', async (t) => {
   const cases = [
-    ['extra skill file keeps its dedicated code', () => minimalFiles({ 'skills/helper/README.md': 'notes\n' }), 'BUNDLE_SKILL_EXTRA_FILE@skills/helper/README.md'],
+    ['extra skill file is an unexpected path', () => minimalFiles({ 'skills/helper/README.md': 'notes\n' }), 'BUNDLE_UNEXPECTED_PATH@skills/helper/README.md'],
     ['unexpected stage file', () => minimalFiles({ 'stages/extra.md': 'x\n' }), 'BUNDLE_UNEXPECTED_PATH@stages/extra.md'],
     ['repository metadata', () => minimalFiles({ '.github/workflows/ci.yml': 'x\n' }), 'BUNDLE_UNEXPECTED_PATH@.github/workflows/ci.yml'],
     ['package manifest', () => minimalFiles({ 'package.json': '{}\n' }), 'BUNDLE_UNEXPECTED_PATH@package.json'],
@@ -384,16 +384,17 @@ test('the validator is a pure bytes-in/report-out function (no filesystem writes
 test('the baseline bundle keeps 0 errors, 2 warnings and the frozen IR', () => {
   const bytes = readFileSync(BASELINE);
   assert.equal(bytes.length, 55043);
-  assert.equal(sha256Hex(bytes), '4b4700207e2a1398b930b46123f5e7aef27f803e3afc3596d19e31dc454d8196');
+  assert.equal(sha256Hex(bytes), 'ff1f3004c618be9d5ee6b090e0d635f6a6c7cb49a8c22e188cc11206bbe37cd4');
   const report = validate(bytes);
   assert.equal(report.ok, true, JSON.stringify(report.errors));
   assert.deepEqual(report.errors, []);
+  assert.equal(report.schema, 'hm2b.bundle/v2');
   assert.deepEqual(report.warnings.map((warning) => warning.code), [
     'BUNDLE_CONSTITUTION_PLACEHOLDER',
     'BUNDLE_TASK_RUNTIME_LEAK',
   ]);
   const compiled = compileBundle(bytes, PRIMITIVES);
   assert.equal(compiled.ok, true);
-  assert.equal(compiled.irBytes.length, 58829);
-  assert.equal(compiled.digest, 'd6e8957287117c7b476891e1807e303c9a965fbe366087a13947baf34b0da09f');
+  assert.equal(compiled.irBytes.length, 58904);
+  assert.equal(compiled.digest, '34d55ee62bf284594218d4923b0eafa267799edb1edbbeb7bb313a6f2ab0bc04');
 });

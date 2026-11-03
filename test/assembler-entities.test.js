@@ -279,7 +279,7 @@ test('a skill directory may only contain SKILL.md', () => {
   const diagnostic = only(report({
     overrides: { 'skills/helper/README.md': 'not allowed\n' },
   }));
-  assert.equal(diagnostic.code, 'BUNDLE_SKILL_EXTRA_FILE');
+  assert.equal(diagnostic.code, 'BUNDLE_UNEXPECTED_PATH');
   assert.equal(diagnostic.path, 'skills/helper/README.md');
 });
 

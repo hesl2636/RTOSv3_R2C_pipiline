@@ -51,7 +51,7 @@ const SAMPLE_ZIP = join(ROOT, 'examples/rtosv3/dist/bundle-rtosv3-drvport-v1.0.0
 function buildLocal() {
   const assets = [
     { name: `bundle-${ID}-v${VERSION}.zip`, data: Buffer.from('zip-bytes', 'utf8') },
-    { name: 'workflow.ir.json', data: Buffer.from('{"schema":"hm2b.ir/v1"}\n', 'utf8') },
+    { name: 'workflow.ir.json', data: Buffer.from('{"schema":"hm2b.ir/v2"}\n', 'utf8') },
     { name: 'hm2b-engine-0.1.0.tgz', data: Buffer.from('engine-bytes', 'utf8') },
     { name: 'install.mjs', data: Buffer.from('// install\n', 'utf8') },
   ];
@@ -486,6 +486,18 @@ test('a canonical build is publishable and a custom build is refused before any 
   assert.equal(result.status, 1, `${result.stdout}\n${result.stderr}`);
   assert.match(result.stdout, /WEB_PUBLISH_NOT_CANONICAL/);
   assert.equal(fixture.calls.length, 0, 'the canonical gate runs before the first remote call');
+});
+
+test('--publish --out refuses an IR that is not hm2b.ir/v2', (t) => {
+  const built = writeBuiltRelease(t);
+  const irFile = join(built.dir, 'workflow.ir.json');
+  const ir = JSON.parse(readFileSync(irFile, 'utf8'));
+  ir.schema = 'hm2b.ir/v1';
+  writeFileSync(irFile, canonicalJson(ir));
+
+  const refused = readBuiltRelease(built.dir);
+  assert.equal(refused.ok, false);
+  assert.match(refused.failures[0], /^RELEASE_IR_MISMATCH: workflow\.ir\.json schema is hm2b\.ir\/v1 \(expected hm2b\.ir\/v2\)/);
 });
 
 test('--publish --out refuses a zip whose manifest disagrees with the IR', (t) => {

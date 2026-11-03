@@ -5,7 +5,7 @@
  * It reads the agent's JSON on stdin, normalises the session/cwd, calls the
  * runner (`status`, `hook stop`, `hook pre-tool-use`) and translates the
  * result back into the agent's expected envelope. Keeping this file generic
- * means adapters only declare *where* the shim is wired, never how it works.
+ * means targets only declare *where* the shim is wired, never how it works.
  *
  * Usage:
  *   node runtime/runner/assets/shims/hook.mjs stop|pre-tool-use --runner-cmd <cmd> --agent-id <id>
@@ -19,7 +19,10 @@
  * - only `stop` writes, and only its own stop-guard counter and trace;
  * - 8 blocks per (run_id, step_id) by default (A-档), configurable via --cap
  *   (opencode A′ passes 32); `stop_hook_active` is always honoured first;
- * - node is resolved from PATH through the shell, never process.execPath.
+ * - `--runner-cmd` is executed directly (never through a shell): `node <script>`
+ *   and `*.js` run under process.execPath, anything else is one executable path;
+ * - every value passed to the runner is one argv element, so stdin payloads and
+ *   session/project paths can never become shell syntax.
  */
 import { spawn } from 'node:child_process';
 import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
@@ -49,7 +52,7 @@ function numberOption(name, fallback) {
 
 const runnerCmd = option('runner-cmd') ?? process.env.HM2B_RUNNER_CMD ?? 'hm2b';
 const agentId = option('agent-id') ?? option('agent') ?? 'unknown';
-/** Usage snapshots may only carry a declared adapter id (schema/usage.schema.json). */
+/** Usage snapshots may only carry a declared target id (schema/usage.schema.json). */
 const AGENT_IDS = new Set(['claude-code', 'codex', 'dsh', 'omp', 'opencode']);
 const projectRoot = option('project-root') ?? process.env.HM2B_PROJECT_ROOT ?? process.cwd();
 const explicitSession = option('session-id') ?? process.env.HM2B_SESSION_ID ?? null;
@@ -58,9 +61,9 @@ const format = option('format') ?? 'json';
 const dialect = option('dialect') ?? agentId;
 const cap = numberOption('cap', 8);
 // Diagnostics live under `.hm2b/runs/` so the five-path runtime closure stays true.
-const pluginData = option('plugin-data') ?? join(projectRoot, '.hm2b', 'runs', '.hooks');
-const tracePath = option('trace') ?? join(pluginData, 'trace', `${agentId}.jsonl`);
-const guardPath = join(pluginData, 'stop-guard.json');
+const hookData = option('plugin-data') ?? join(projectRoot, '.hm2b', 'runs', '.hooks');
+const tracePath = option('trace') ?? join(hookData, 'trace', `${agentId}.jsonl`);
+const guardPath = join(hookData, 'stop-guard.json');
 
 if (mode === null) {
   process.stderr.write('hook.mjs: expected stop|pre-tool-use\n');
@@ -98,16 +101,41 @@ const sessionId = explicitSession
   ?? firstString(raw, ['session_id', 'sessionId', 'conversation_id', 'conversationId', 'thread_id', 'threadId']);
 const stopHookActive = raw.stop_hook_active === true || raw.stopHookActive === true;
 
-function quote(value) {
-  return `"${String(value).split('"').join('\\"')}"`;
+/** Strip one matching pair of surrounding quotes; never any other parsing. */
+function barePath(value) {
+  const text = String(value).trim();
+  if (text.length < 2) return text;
+  const first = text[0];
+  const last = text[text.length - 1];
+  return (first === '"' || first === "'") && last === first ? text.slice(1, -1) : text;
 }
 
+/**
+ * Resolve `--runner-cmd` without a shell. Only two shapes are interpreted:
+ * `node <script>` and a single `*.js`/`*.mjs`/`*.cjs` path. Both run under
+ * `process.execPath`. Everything else is one executable path verbatim, so a
+ * command line is never re-split by a shell.
+ */
+function runnerInvocation() {
+  const text = runnerCmd.trim();
+  const node = /^node(?:\.exe)?\s+([\s\S]+)$/i.exec(text);
+  if (node !== null) {
+    const script = barePath(node[1]);
+    if (script !== '') return { file: process.execPath, prefix: [script] };
+  }
+  const single = barePath(text);
+  if (/\.(?:c|m)?js$/i.test(single)) return { file: process.execPath, prefix: [single] };
+  return { file: single, prefix: [] };
+}
+
+/** Run the runner with an argv array; `input` is stdin, never a command. */
 function runner(args, input) {
   return new Promise((resolvePromise) => {
+    const invocation = runnerInvocation();
     let child;
     try {
-      child = spawn(`${runnerCmd} ${args}`, {
-        shell: true,
+      child = spawn(invocation.file, [...invocation.prefix, ...args], {
+        shell: false,
         cwd: projectRoot,
         windowsHide: true,
         stdio: ['pipe', 'pipe', 'pipe'],
@@ -128,11 +156,6 @@ function runner(args, input) {
       child.stdin.end();
     }
   });
-}
-
-function argsFor(command, extra) {
-  const parts = [command, ...extra];
-  return parts.map((part) => (part.startsWith('--') ? part : quote(part))).join(' ');
 }
 
 function appendTrace(entry) {
@@ -207,7 +230,7 @@ async function runStop() {
     return;
   }
 
-  const status = await runner(argsFor('status', ['--json', '--session-id', sessionId, '--project-root', projectRoot]));
+  const status = await runner(['status', '--json', '--session-id', sessionId, '--project-root', projectRoot]);
   let candidate = null;
   if (status.exitCode === 0) {
     const statusEnvelope = parseJson(status.stdout.trim());
@@ -228,7 +251,7 @@ async function runStop() {
 
   const extra = ['--format', format, '--session-id', sessionId, '--project-root', projectRoot, '--runner-cmd', runnerCmd];
   if (workflow !== null) extra.push('--workflow', workflow);
-  const result = await runner(argsFor('hook', ['stop', ...extra]), stdinText);
+  const result = await runner(['hook', 'stop', ...extra], stdinText);
   if (result.exitCode !== 0) {
     appendTrace({ hook: 'stop', session_id: sessionId, run_id: candidate?.runId ?? null, step_id: candidate?.stepId ?? null, delivered: false, exit_code: result.exitCode });
     return;
@@ -253,7 +276,7 @@ async function runStop() {
   // A first stop claims a `cli-` run, so the run/step may only be known after
   // the delivery. Resolve it again and count the block under (run_id, step_id).
   if (candidate === null) {
-    const after = await runner(argsFor('status', ['--json', '--session-id', sessionId, '--project-root', projectRoot]));
+    const after = await runner(['status', '--json', '--session-id', sessionId, '--project-root', projectRoot]);
     if (after.exitCode === 0) {
       const envelope = parseJson(after.stdout.trim());
       const runId = envelope?.data?.run?.run_id ?? null;
@@ -306,7 +329,7 @@ function writeUsageSnapshot({ runId, transcriptPath, model }) {
     time: new Date().toISOString(),
     run_id: runId,
     session_id: sessionId,
-    adapter: agentId,
+    target: agentId,
     model: detectedModel ?? null,
     event: 'stop',
     cumulative: true,
@@ -329,7 +352,7 @@ function writeUsageSnapshot({ runId, transcriptPath, model }) {
 
 async function runPreToolUse() {
   const result = await runner(
-    argsFor('hook', ['pre-tool-use', '--project-root', projectRoot, ...(sessionId ? ['--session-id', sessionId] : [])]),
+    ['hook', 'pre-tool-use', '--project-root', projectRoot, ...(sessionId ? ['--session-id', sessionId] : [])],
     stdinText,
   );
   const text = result.stdout.trim();

@@ -43,6 +43,7 @@ import {
   parseBundleTag,
 } from '../../installer/release-tags.js';
 import {
+  PAYLOAD_FILE_KINDS,
   PAYLOAD_MANIFEST_NAME,
   RELEASE_PAYLOAD_SCHEMA,
   payloadResultBlock,
@@ -73,7 +74,7 @@ export {
   legacyAssetNames,
   parseBundleTag,
 };
-export { PAYLOAD_MANIFEST_NAME, RELEASE_PAYLOAD_SCHEMA, verifyPayloadArchive };
+export { PAYLOAD_FILE_KINDS, PAYLOAD_MANIFEST_NAME, RELEASE_PAYLOAD_SCHEMA, verifyPayloadArchive };
 
 /** Framework source roots (#77 §5.5, decision #74 §3.3). */
 const FRAMEWORK_DIRS = Object.freeze([
@@ -352,6 +353,27 @@ function payloadEntries(result) {
   }));
 }
 
+/**
+ * IR assets are part of the projected result, not bundle-internal bytes: a
+ * Release whose IR carries an asset kind must ship one payload member per
+ * declared asset, otherwise the install would silently drop the asset. Paths
+ * are projection-owned, so the proof is by kind and count, not by IR path.
+ */
+function missingIrAssetKinds(ir, result) {
+  const present = new Map();
+  for (const file of result.files) present.set(file.kind, (present.get(file.kind) ?? 0) + 1);
+  const missing = [];
+  const need = (kind, count) => {
+    const actual = present.get(kind) ?? 0;
+    if (actual < count) missing.push(`${kind} (${actual}/${count})`);
+  };
+  need('knowledge', (ir.knowledgeBase ?? []).length);
+  need('checklist', (ir.checklists ?? []).length);
+  need('hooks', ir.hooks === null || ir.hooks === undefined ? 0 : 1);
+  need('mcp', ir.mcp === null || ir.mcp === undefined ? 0 : 1);
+  return missing;
+}
+
 function buildPayload({ ir, irDigest, id, version, projectionId, engineVersion, raw = null }) {
   const { descriptor, options, canonical, normalized } = validateProjectionOptions({
     projectionId,
@@ -392,6 +414,13 @@ function buildPayload({ ir, irDigest, id, version, projectionId, engineVersion, 
     throw new ReleaseError(
       'RELEASE_PAYLOAD_INVALID',
       `${projectionId} result failed V1–V12: ${validation.diagnostics.map((item) => item.message).join('; ')}`,
+    );
+  }
+  const missingAssets = missingIrAssetKinds(ir, result);
+  if (missingAssets.length > 0) {
+    throw new ReleaseError(
+      'RELEASE_PAYLOAD_INVALID',
+      `${projectionId} projection omitted IR assets: ${missingAssets.join(', ')}`,
     );
   }
 

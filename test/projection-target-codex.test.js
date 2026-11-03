@@ -88,7 +88,7 @@ function role(id, extra = {}) {
 
 function miniIr({ roles, skills = {} } = {}) {
   return {
-    schema: 'hm2b.ir/v1',
+    schema: 'hm2b.ir/v2',
     id: 'mini',
     name: 'Mini workflow',
     version: '1.0.0',

@@ -22,7 +22,8 @@ import {
 import { dirname, join } from 'node:path';
 import { atomicWriteFile as coreAtomicWrite } from '../core/node/atomic-write.js';
 import { sha256Hex } from '../core/node/sha256.js';
-import { isSharedRoot, projectPath, toPosix } from './paths.js';
+import { comparePaths } from '../core/paths.js';
+import { ancestorDirs, isSharedRoot, projectPath, toPosix } from './paths.js';
 
 export { sha256Hex };
 
@@ -55,6 +56,24 @@ export function readJsonFile(file) {
 
 export function relativeInside(projectRoot, absolute) {
   return toPosix(absolute.slice(projectRoot.length).replace(/^[/\\]+/, ''));
+}
+
+/** `clock()` as a filesystem-safe stamp: `2026-01-02T03-04-05-678Z`. */
+export function timestampSlug(clock) {
+  return clock().toISOString().replace(/[:.]/g, '-');
+}
+
+/** Project-relative parent directories of `paths` that are still missing, sorted. */
+export function computeCreatedDirs(projectRoot, paths) {
+  const created = new Set();
+  for (const path of paths) {
+    for (const dir of ancestorDirs(path)) {
+      const absolute = projectPath(projectRoot, dir);
+      if (absolute === null) continue;
+      if (lstatOrNull(absolute) === null) created.add(dir);
+    }
+  }
+  return [...created].sort(comparePaths);
 }
 
 /** Create every missing directory of `relDir`, recording the created ones. */

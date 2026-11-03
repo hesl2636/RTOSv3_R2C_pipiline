@@ -17,8 +17,8 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const SAMPLE = join(ROOT, 'examples', 'rtosv3', 'dist', 'bundle-rtosv3-drvport-v1.0.0.zip');
-const SAMPLE_SHA256 = '4b4700207e2a1398b930b46123f5e7aef27f803e3afc3596d19e31dc454d8196';
-const IR_DIGEST = 'd6e8957287117c7b476891e1807e303c9a965fbe366087a13947baf34b0da09f';
+const SAMPLE_SHA256 = 'ff1f3004c618be9d5ee6b090e0d635f6a6c7cb49a8c22e188cc11206bbe37cd4';
+const IR_DIGEST = '34d55ee62bf284594218d4923b0eafa267799edb1edbbeb7bb313a6f2ab0bc04';
 
 const delay = (ms) => new Promise((resolveDelay) => setTimeout(resolveDelay, ms));
 
@@ -161,6 +161,7 @@ test('upload returns the CLI report field-by-field and the frozen IR', async (t)
 
   const cliReport = cliJson(['bin/hm2b-assembler.js', 'bundle', 'validate', zipPath, '--json']).data;
   assert.deepEqual(report, cliReport);
+  assert.equal(report.schema, 'hm2b.bundle/v2');
   assert.equal(report.artifact.sha256, SAMPLE_SHA256);
   assert.equal(report.counts.stages, 4);
   assert.equal(report.counts.skills, 35);
@@ -170,9 +171,11 @@ test('upload returns the CLI report field-by-field and the frozen IR', async (t)
   const outDir = join(work, 'out');
   mkdirSync(outDir);
   const cliCompile = cliJson(['bin/hm2b-assembler.js', 'compile', zipPath, '--out', outDir, '--json']).data;
+  assert.equal(cliCompile.schema, 'hm2b.bundle/v2');
+  assert.equal(response.json.data.ir.schema, 'hm2b.ir/v2');
   assert.equal(response.json.data.ir.digest, cliCompile.ir.sha256);
   assert.equal(response.json.data.ir.digest, IR_DIGEST);
-  assert.equal(response.json.data.ir.bytes, 58829);
+  assert.equal(response.json.data.ir.bytes, 58904);
   assert.ok(readFileSync(join(outDir, 'workflow.ir.json')).equals(Buffer.from(response.json.data.ir.data, 'base64')));
 });
 

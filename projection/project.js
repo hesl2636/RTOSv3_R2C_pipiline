@@ -8,6 +8,7 @@
  * results.
  */
 import { compareCodePoints } from '../core/code-point.js';
+import { SEVERITY } from '../core/diagnostics.js';
 import { validateOptions } from './options.js';
 import { getProjection } from './registry.js';
 
@@ -33,13 +34,31 @@ function irRef(ir, irDigest) {
   };
 }
 
+/**
+ * Normalize one failure into the diagnostic row shape (§6): every row carries
+ * `severity: 'error'` plus the CLI location fields (`path`, `pointer`), so a
+ * consumer can render failures with the same code as bundle/IR diagnostics.
+ */
+export function failureRow(error) {
+  const row = {
+    severity: SEVERITY.ERROR,
+    code: error.code,
+    path: typeof error.path === 'string' ? error.path : '',
+    pointer: typeof error.pointer === 'string' ? error.pointer : null,
+    message: error.message,
+  };
+  if (error.target !== undefined) row.target = error.target;
+  if (error.hint !== undefined) row.hint = error.hint;
+  return row;
+}
+
 function failure(descriptor, ir, irDigest, errors) {
   return {
     schema: RESULT_SCHEMA,
     ok: false,
     projection: { id: descriptor.id, version: descriptor.version },
     ir: irRef(ir, irDigest),
-    errors,
+    errors: errors.map(failureRow),
   };
 }
 

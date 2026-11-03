@@ -6,6 +6,8 @@
  * the whole supported Node range). A test asserts the file is exactly
  * `canonicalJson(RUNNER_MANIFEST)`, so the two cannot drift.
  */
+import { IR_SCHEMA } from '../../../ir/schema.js';
+
 export const RUNNER_CAPABILITIES = Object.freeze([
   'state',
   'gates',
@@ -57,13 +59,13 @@ export const RUNNER_MANIFEST = Object.freeze({
   id: 'runner',
   name: 'runner 运行时投影',
   version: '0.1.0',
-  description: '把中立 IR 投影成 runner 项目根载荷（workflows/tasks/skills/roles/constitution）；一个 target，不生成引擎资产。',
+  description: '把中立 IR 投影成 runner 项目根载荷（workflows/tasks/skills/roles/constitution/knowledge-base/checklists/hooks/mcp）；一个 target，不生成引擎资产。',
   api: {
-    ir: 'hm2b.ir/v1',
+    ir: IR_SCHEMA,
     options: 'hm2b.projection-options/v1',
     result: 'hm2b.projection-result/v1',
   },
-  writeRoots: Object.freeze(['constitution', 'roles', 'skills', 'tasks', 'workflows']),
+  writeRoots: Object.freeze(['checklists', 'constitution', 'hooks', 'knowledge-base', 'mcp.json', 'roles', 'skills', 'tasks', 'workflows']),
   targets: Object.freeze([
     Object.freeze({
       id: 'runner',

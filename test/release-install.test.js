@@ -34,6 +34,13 @@ import { LAUNCHER_TEXT, RUNTIME_RECEIPT_PATH } from '../installer/runtime.js';
 import { irPath as irRelPath } from '../installer/paths.js';
 import { createReleaseTarGz, readReleaseTarGz } from '../installer/release-tar.js';
 import { rawResponse, startGithubFixture, startHttpFixture } from './helpers/release-fixture.js';
+import {
+  ASSET_CHECKLISTS,
+  ASSET_HOOKS,
+  ASSET_KNOWLEDGE_BASE,
+  ASSET_MCP,
+  assetZip,
+} from './helpers/minimal-bundle.js';
 import { toolSentinels } from './helpers/tools.js';
 import { withPath } from './support/env.js';
 
@@ -123,6 +130,21 @@ function payloadManifest(dir, name) {
     entries: new Map(entries.map((entry) => [entry.path, entry])),
     manifest: JSON.parse(Buffer.from(manifest.data).toString('utf8')),
   };
+}
+
+/** Local Release of the minimal bundle plus every v2 IR asset kind. */
+function buildAssetRelease(t) {
+  const source = join(tempDir(t, 'asset-source'), 'bundle-minimal-demo-v1.0.0.zip');
+  writeFileSync(source, assetZip());
+  const release = tempDir(t, 'asset-release');
+  const result = spawnSync(process.execPath, [RELEASE, '--bundle', source, '--out', release], {
+    cwd: ROOT,
+    encoding: 'utf8',
+    timeout: 240_000,
+    windowsHide: true,
+  });
+  assert.equal(result.status, 0, `release build failed:\n${result.stdout}\n${result.stderr}`);
+  return release;
 }
 
 /** A home no developer state can leak through. */
@@ -276,6 +298,67 @@ test('runner installs the runtime and the pre-projected tree without compiling',
   assert.equal(existsSync(join(target, '.hm2b', 'payload')), false);
   assert.equal(walk(target).some((path) => path.endsWith('projection-result.json')), false);
   assert.equal(walk(target).some((path) => path.endsWith('bundle.json')), false);
+});
+
+test('an IR with assets round-trips through payload build and install', (t) => {
+  const release = buildAssetRelease(t);
+
+  const payload = payloadManifest(release, 'hm2b-payload-minimal-demo-v1.0.0.tgz');
+  const assetFiles = payload.manifest.files.filter((file) => ['knowledge', 'checklist', 'hooks', 'mcp'].includes(file.kind));
+  assert.equal(assetFiles.length, 6);
+  assert.deepEqual(assetFiles.map((file) => file.kind).sort(compareCodePoints), [
+    'checklist', 'checklist', 'hooks', 'knowledge', 'knowledge', 'mcp',
+  ]);
+
+  const target = project(t);
+  const { env } = isolatedEnv(t);
+  const result = install(
+    ['--bundle', 'minimal-demo', '--version', '1.0.0', '--projection', 'runner',
+      '--project', target, '--release-base', release],
+    { env },
+  );
+  assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+
+  for (const file of assetFiles) {
+    assert.equal(sha256File(join(target, ...file.path.split('/'))), file.sha256, file.path);
+  }
+  // The runner projection keeps the bundle-relative asset paths.
+  assert.equal(readFileSync(join(target, 'mcp.json'), 'utf8'), canonicalJson(ASSET_MCP));
+  assert.equal(readFileSync(join(target, 'hooks', 'hooks.json'), 'utf8'), canonicalJson(ASSET_HOOKS));
+  for (const [path, body] of ASSET_KNOWLEDGE_BASE) {
+    assert.equal(readFileSync(join(target, ...path.split('/')), 'utf8'), body, path);
+  }
+  for (const [id, body] of ASSET_CHECKLISTS) {
+    assert.equal(readFileSync(join(target, 'checklists', `${id}.md`), 'utf8'), body, id);
+  }
+
+  const own = receipt(target, 'runner', 'minimal-demo');
+  for (const file of assetFiles) {
+    assert.ok(own.data.files.some((item) => item.path === file.path), `${file.path} is not in the receipt`);
+  }
+});
+
+test('an IR asset digest that disagrees with the zip refuses before writing', (t) => {
+  const release = buildAssetRelease(t);
+  const assets = releaseAssets(release);
+  const ir = JSON.parse(assets.get('workflow.ir.json').toString('utf8'));
+  ir.knowledgeBase[0].source.sha256 = '0'.repeat(64);
+  assets.set('workflow.ir.json', Buffer.from(canonicalJson(ir), 'utf8'));
+  assets.set('SHA256SUMS.txt', sumsFor(assets));
+  const patched = writeAssets(t, assets);
+  const target = project(t);
+  const { env } = isolatedEnv(t);
+
+  const result = install(
+    ['--bundle', 'minimal-demo', '--version', '1.0.0', '--projection', 'runner',
+      '--project', target, '--release-base', patched],
+    { env },
+  );
+  assert.equal(result.status, 2, `${result.stdout}\n${result.stderr}`);
+  assert.match(result.stderr, /RELEASE_IR_MISMATCH/);
+  assert.match(result.stderr, /knowledge-base/);
+  assert.match(result.stderr, /zip bytes do not match the IR source digest/);
+  assert.equal(walk(target).length, 0);
 });
 
 test('agent-native installs the bundle only, never an engine', (t) => {
@@ -745,6 +828,27 @@ test('a truncated IR asset refuses before writing', (t) => {
   );
   assert.equal(result.status, 2, `${result.stdout}\n${result.stderr}`);
   assert.match(result.stderr, /RELEASE_IR_MISMATCH/);
+  assert.equal(walk(target).length, 0);
+});
+
+test('an IR that regresses to hm2b.ir/v1 refuses before writing', (t) => {
+  const pristine = buildRelease(t);
+  const assets = releaseAssets(pristine);
+  const ir = JSON.parse(assets.get('workflow.ir.json').toString('utf8'));
+  ir.schema = 'hm2b.ir/v1';
+  assets.set('workflow.ir.json', Buffer.from(canonicalJson(ir), 'utf8'));
+  assets.set('SHA256SUMS.txt', sumsFor(assets));
+  const release = writeAssets(t, assets);
+  const target = project(t);
+  const { env } = isolatedEnv(t);
+
+  const result = install(
+    ['--bundle', ID, '--version', VERSION, '--projection', 'runner', '--project', target, '--release-base', release],
+    { env },
+  );
+  assert.equal(result.status, 2, `${result.stdout}\n${result.stderr}`);
+  assert.match(result.stderr, /RELEASE_IR_MISMATCH/);
+  assert.match(result.stderr, /hm2b\.ir\/v2/);
   assert.equal(walk(target).length, 0);
 });
 

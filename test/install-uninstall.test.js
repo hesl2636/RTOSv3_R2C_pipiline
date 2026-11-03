@@ -223,3 +223,38 @@ test('a modified IR copy is kept and an IR shared with another receipt is preser
   assert.equal(existsSync(absolute(projectRoot, irRel)), true);
   assert.equal(shared.warnings.some((warning) => warning.code === 'IR_SHARED'), true);
 });
+
+test('uninstall removes the identity IR copy and prunes the empty bundle directories', (t) => {
+  const projectRoot = tempProject(t);
+  const { result, irBytes, ir } = sample('runner');
+  assert.equal(installProjection({ result, irBytes, projectRoot, clock: CLOCK }).code, 'OK');
+  const versionDir = `.hm2b/bundles/${ir.id}/${ir.version}`;
+  const irRel = `${versionDir}/workflow.ir.json`;
+  assert.equal(existsSync(absolute(projectRoot, irRel)), true, 'the install keeps its IR copy');
+
+  const outcome = uninstallProjection({ projectRoot, projectionId: 'runner', bundleId: ir.id, clock: CLOCK });
+  assert.equal(outcome.code, 'OK');
+  assert.equal(outcome.irRemoved, true);
+  assert.ok(outcome.removed.includes(irRel), 'the IR copy is part of the removed set');
+  assert.equal(existsSync(absolute(projectRoot, irRel)), false, 'the receipt-owned IR copy is deleted');
+  assert.equal(existsSync(absolute(projectRoot, `.hm2b/install/receipts/runner/${ir.id}.json`)), false, 'the receipt is gone');
+  assert.equal(existsSync(absolute(projectRoot, versionDir)), false, 'the version directory is pruned');
+  assert.equal(existsSync(absolute(projectRoot, `.hm2b/bundles/${ir.id}`)), false, 'the bundle directory is pruned');
+  assert.equal(existsSync(absolute(projectRoot, '.hm2b/bundles')), true, '.hm2b/bundles stays a shared root');
+  assert.ok(outcome.pruned.includes(versionDir));
+  assert.ok(outcome.pruned.includes(`.hm2b/bundles/${ir.id}`));
+});
+
+test('dry-run uninstall reports the IR copy without writing', (t) => {
+  const projectRoot = tempProject(t);
+  const { result, irBytes, ir } = sample('runner');
+  assert.equal(installProjection({ result, irBytes, projectRoot, clock: CLOCK }).code, 'OK');
+  const irRel = `.hm2b/bundles/${ir.id}/${ir.version}/workflow.ir.json`;
+  const before = snapshot(projectRoot);
+
+  const outcome = uninstallProjection({ projectRoot, projectionId: 'runner', bundleId: ir.id, dryRun: true, clock: CLOCK });
+  assert.equal(outcome.action, 'would-uninstall');
+  assert.equal(outcome.irRemoved, true);
+  assert.ok(outcome.wouldRemove.includes(irRel));
+  assert.deepEqual(snapshot(projectRoot), before, 'the IR copy and its directories are untouched');
+});

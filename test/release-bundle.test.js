@@ -29,6 +29,7 @@ import {
   BUNDLE_MAKE_LATEST,
   IR_ASSET,
   INSTALL_ASSET,
+  PAYLOAD_FILE_KINDS,
   PAYLOAD_MANIFEST_NAME,
   RELEASE_PAYLOAD_SCHEMA,
   SUMS_ASSET,
@@ -43,6 +44,13 @@ import {
   verifyPayloadArchive,
 } from '../scripts/lib/bundle-release.mjs';
 import { createReleaseTarGz, readReleaseTarGz } from '../installer/release-tar.js';
+import {
+  ASSET_CHECKLISTS,
+  ASSET_HOOKS,
+  ASSET_KNOWLEDGE_BASE,
+  ASSET_MCP,
+  assetZip,
+} from './helpers/minimal-bundle.js';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const SCRIPT = join(ROOT, 'scripts', 'release.mjs');
@@ -229,13 +237,21 @@ test('the sample bundle builds all eight assets with frozen zip and IR anchors',
 
   const zip = built.assets.find((asset) => asset.name === `bundle-${ID}-v${VERSION}.zip`);
   assert.equal(zip.data.length, 55043);
-  assert.equal(sha256Hex(zip.data), '4b4700207e2a1398b930b46123f5e7aef27f803e3afc3596d19e31dc454d8196');
+  assert.equal(sha256Hex(zip.data), 'ff1f3004c618be9d5ee6b090e0d635f6a6c7cb49a8c22e188cc11206bbe37cd4');
   assert.ok(zip.data.equals(readFileSync(SAMPLE_ZIP)));
 
   const ir = built.assets.find((asset) => asset.name === IR_ASSET);
-  assert.equal(ir.data.length, 58829);
-  assert.equal(sha256Hex(ir.data), 'd6e8957287117c7b476891e1807e303c9a965fbe366087a13947baf34b0da09f');
+  assert.equal(ir.data.length, 58904);
+  assert.equal(sha256Hex(ir.data), '34d55ee62bf284594218d4923b0eafa267799edb1edbbeb7bb313a6f2ab0bc04');
   assert.equal(built.irDigest, sha256Hex(ir.data));
+  assert.equal(built.ir.schema, 'hm2b.ir/v2');
+  assert.equal(built.ir.source.bundle.schema, 'hm2b.bundle/v2');
+  assert.equal(built.ir.source.bundle.contentSha256, '2093b03b97c90c6e77dfeb26c69d585ef78a11170032151171c31272ac7dbbf2');
+  assert.equal(built.ir.source.manifest.sha256, '6f92d763fb82cd00d36f99e8dc42ba26f0a510c4b64bd9d741e2625bec68df84');
+  assert.deepEqual(built.ir.knowledgeBase, []);
+  assert.deepEqual(built.ir.checklists, []);
+  assert.equal(built.ir.hooks, null);
+  assert.equal(built.ir.mcp, null);
 
   for (const asset of built.assets) {
     assert.ok(asset.data.length > 0, `${asset.name} is empty`);
@@ -308,13 +324,99 @@ test('payload manifests self-prove every member, mode, kind and target', () => {
     }), []);
     for (const file of payload.manifest.files) {
       assert.ok(file.mode === 0o644 || file.mode === 0o755);
-      assert.ok(file.kind.length > 0);
+      assert.ok(PAYLOAD_FILE_KINDS.includes(file.kind), `${file.path}: ${file.kind}`);
       assert.ok(file.targets.length > 0);
       const member = archive.byPath.get(`files/${file.path}`);
       assert.equal(sha256Hex(Buffer.from(member.data)), file.sha256);
       assert.equal(member.mode, file.mode);
     }
   }
+});
+
+test('an IR with assets ships knowledge, checklist, hooks and mcp payload members', (t) => {
+  const zipFile = join(tempDir(t, 'asset-zip'), 'bundle-minimal-demo-v1.0.0.zip');
+  writeFileSync(zipFile, assetZip());
+  const built = buildBundleRelease({ root: ROOT, bundlePath: zipFile });
+  assert.deepEqual(built.failures, []);
+  assert.equal(built.ok, true);
+  assert.equal(built.id, 'minimal-demo');
+  assert.equal(built.version, '1.0.0');
+  assert.equal(built.ir.schema, 'hm2b.ir/v2');
+  assert.equal(built.ir.knowledgeBase.length, 2);
+  assert.equal(built.ir.checklists.length, 2);
+  assert.notEqual(built.ir.hooks, null);
+  assert.notEqual(built.ir.mcp, null);
+
+  const digest = (text) => sha256Hex(Buffer.from(text, 'utf8'));
+  const expected = {
+    knowledge: [...ASSET_KNOWLEDGE_BASE.values()].map(digest),
+    checklist: [...ASSET_CHECKLISTS.values()].map(digest),
+    hooks: [digest(canonicalJson(ASSET_HOOKS))],
+    mcp: [digest(canonicalJson(ASSET_MCP))],
+  };
+  for (const [projectionId, payload] of built.payloads) {
+    for (const [kind, digests] of Object.entries(expected)) {
+      const members = payload.manifest.files.filter((file) => file.kind === kind);
+      assert.deepEqual(
+        members.map((file) => file.sha256).sort(compareCodePoints),
+        [...digests].sort(compareCodePoints),
+        `${projectionId}: ${kind} members`,
+      );
+      for (const file of members) {
+        assert.ok(file.targets.length > 0);
+        for (const target of file.targets) assert.ok(payload.manifest.targets.includes(target));
+      }
+    }
+    // The archive really carries the declared bytes, not just the manifest.
+    const archive = readPayload(payload.data, payload.file);
+    for (const file of payload.manifest.files.filter((item) => item.kind in expected)) {
+      const member = archive.byPath.get(`files/${file.path}`);
+      assert.notEqual(member, undefined, `${projectionId}: ${file.path}`);
+      assert.equal(sha256Hex(Buffer.from(member.data)), file.sha256);
+    }
+  }
+});
+
+test('a payload member with an unknown kind fails self-proof', () => {
+  const built = buildBundleRelease({ root: ROOT, bundlePath: SAMPLE_ZIP });
+  const payload = built.payloads.get('runner');
+  const { entries } = readReleaseTarGz(payload.data);
+  const manifest = JSON.parse(JSON.stringify(payload.manifest));
+  manifest.files[0].kind = 'bogus';
+  const tampered = createReleaseTarGz(entries.map((entry) => (entry.path === PAYLOAD_MANIFEST_NAME
+    ? { path: entry.path, data: Buffer.from(canonicalJson(manifest), 'utf8'), mode: entry.mode }
+    : { path: entry.path, data: entry.data, mode: entry.mode })));
+  const problems = verifyPayloadArchive(tampered, {
+    id: ID,
+    version: VERSION,
+    irDigest: built.irDigest,
+    contentSha256: built.ir.source.bundle.contentSha256,
+    projectionId: 'runner',
+    options: payload.manifest.options,
+    targets: payload.manifest.targets,
+  });
+  assert.ok(problems.some((problem) => /kind bogus is not a known file kind/.test(problem)), problems.join('\n'));
+});
+
+test('a payload member the manifest does not declare fails self-proof', () => {
+  const built = buildBundleRelease({ root: ROOT, bundlePath: SAMPLE_ZIP });
+  const payload = built.payloads.get('runner');
+  const { entries } = readReleaseTarGz(payload.data);
+  const tampered = createReleaseTarGz([
+    ...entries.map((entry) => ({ path: entry.path, data: entry.data, mode: entry.mode })),
+    { path: 'files/rogue.txt', data: Buffer.from('rogue\n', 'utf8'), mode: 0o644 },
+  ]);
+  const problems = verifyPayloadArchive(tampered, {
+    id: ID,
+    version: VERSION,
+    irDigest: built.irDigest,
+    contentSha256: built.ir.source.bundle.contentSha256,
+    projectionId: 'runner',
+    options: payload.manifest.options,
+    targets: payload.manifest.targets,
+  });
+  assert.ok(problems.some((problem) => /payload member is not declared: files\/rogue\.txt/.test(problem)), problems.join('\n'));
+  assert.ok(problems.some((problem) => /member count/.test(problem)), problems.join('\n'));
 });
 
 test('the CLI writes byte-identical assets twice and --check verifies the directory', (t) => {

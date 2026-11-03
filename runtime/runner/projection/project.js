@@ -1,10 +1,13 @@
 /**
  * runner projection: IR -> project-root payload (#70, spec §9, #93).
  *
- * Pure: IR + resolved options in, declarative file set out. Only the five
+ * Pure: IR + resolved options in, declarative file set out. Only the manifest
  * `writeRoots` are produced; engine assets (`commands/`, `adapters/`,
  * `schema/`, `shims/`, `hm2b-payload.json`) belong to the installer.
+ * Declared bundle assets (`knowledgeBase`, `checklists`, `hooks`, `mcp`) are
+ * projected verbatim at their bundle paths; an IR without them emits nothing.
  */
+import { IR_CHECKLIST_ROOT, IR_KNOWLEDGE_BASE_ROOT, IR_SCHEMA } from '../../../ir/schema.js';
 import { checkEngineRequirement } from '../../../projection/engine-requirement.js';
 import { constitutionBlock, constitutionState } from '../../shared/constitution.js';
 import { placeholderInstructions } from '../../shared/placeholder.js';
@@ -85,6 +88,49 @@ function capabilityUses(capability, ir, allSkills, selectedSkills) {
   return [];
 }
 
+/** Asset path -> artifact key (`knowledge-base/<...>.md` -> `knowledge-<slug>`). */
+function knowledgeArtifactKey(path) {
+  const prefix = `${IR_KNOWLEDGE_BASE_ROOT}/`;
+  const relative = path.startsWith(prefix) ? path.slice(prefix.length) : path;
+  const slug = relative.replace(/\.md$/, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  return `knowledge-${slug}`;
+}
+
+/** `base`, or `base-2`, `base-3`, … so two assets never share one artifact key. */
+function uniqueKey(keys, base) {
+  let key = base;
+  for (let index = 2; keys.has(key); index += 1) key = `${base}-${index}`;
+  return key;
+}
+
+/**
+ * Declared bundle assets at their bundle paths (project root). `knowledge-base/`,
+ * `checklists/`, `hooks/hooks.json` and `mcp.json` are the only locations the IR
+ * admits; an absent collection emits nothing and no artifact entry.
+ */
+function projectAssets(ir, addFile) {
+  const artifacts = new Map();
+  for (const entry of ir.knowledgeBase ?? []) {
+    addFile(entry.path, 'knowledge', entry.body);
+    const key = uniqueKey(artifacts, knowledgeArtifactKey(entry.path));
+    artifacts.set(key, entry.path);
+  }
+  for (const entry of ir.checklists ?? []) {
+    const path = `${IR_CHECKLIST_ROOT}/${entry.id}.md`;
+    addFile(path, 'checklist', entry.body);
+    artifacts.set(uniqueKey(artifacts, `checklist-${entry.id}`), path);
+  }
+  if (ir.hooks !== null && ir.hooks !== undefined) {
+    addFile(ir.hooks.path, 'hooks', ir.hooks.body);
+    artifacts.set('hooks', ir.hooks.path);
+  }
+  if (ir.mcp !== null && ir.mcp !== undefined) {
+    addFile(ir.mcp.path, 'mcp', ir.mcp.body);
+    artifacts.set('mcp', ir.mcp.path);
+  }
+  return artifacts;
+}
+
 function engineFailure(ir, environment) {
   const range = ir.requires?.engine;
   if (range === undefined) return null;
@@ -101,8 +147,8 @@ function engineFailure(ir, environment) {
 
 export function projectRunner(input) {
   const { ir, options } = input;
-  if (ir === null || typeof ir !== 'object' || ir.schema !== 'hm2b.ir/v1') {
-    return failure([nameError('PROJECTION_IR_UNSUPPORTED', 'input is not an hm2b.ir/v1 document')]);
+  if (ir === null || typeof ir !== 'object' || ir.schema !== IR_SCHEMA) {
+    return failure([nameError('PROJECTION_IR_UNSUPPORTED', `input is not an ${IR_SCHEMA} document`)]);
   }
   if (options === null || typeof options !== 'object' || !Array.isArray(options.stageOrder)) {
     return failure([nameError('PROJECTION_OPTIONS_INVALID', 'normalized options are required')]);
@@ -347,6 +393,9 @@ export function projectRunner(input) {
     addFile('constitution/CONSTITUTION.md', 'constitution', constitutionBlock(constitutionMount));
   }
 
+  // --- bundle assets ------------------------------------------------------
+  const assetArtifacts = projectAssets(ir, addFile);
+
   // --- warnings -----------------------------------------------------------
   if (options.stageOrder.some((id, index) => id !== stages[index]?.id)) {
     warnings.push({
@@ -369,6 +418,7 @@ export function projectRunner(input) {
   }
   for (const roleId of roleIds) artifacts.set(`role-${roleId}`, `roles/${roleId}.md`);
   if (constitutionMount !== null) artifacts.set('constitution', 'constitution/CONSTITUTION.md');
+  for (const [key, path] of assetArtifacts) artifacts.set(key, path);
 
   const metadata = {
     idMap: {

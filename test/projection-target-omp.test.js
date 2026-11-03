@@ -86,7 +86,7 @@ function skills(ids) {
 
 function miniIr({ id = 'mini', roleId = 'worker', role = {}, skills: skillMap = {}, gates = [], outputs = [] } = {}) {
   return {
-    schema: 'hm2b.ir/v1',
+    schema: 'hm2b.ir/v2',
     id,
     name: 'Mini workflow',
     version: '1.0.0',

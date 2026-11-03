@@ -7,6 +7,8 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { isAbsolute, join, resolve } from 'node:path';
 import { compareCodePoints } from '../core/code-point.js';
+import { foldCase } from '../core/paths.js';
+import { BUNDLES_DIR, IR_FILENAME } from './paths.js';
 import { readJournal } from './transaction.js';
 import { readReceipts } from './receipt.js';
 import { LAUNCHER_PATH, LAUNCHER_SHA256, readRuntimeReceipt } from './runtime.js';
@@ -214,6 +216,33 @@ function extraFilesCheck(projectRoot, receipts, runtime) {
 }
 
 /**
+ * IR copies are installer-owned but no receipt lists them (#76 §3.3), so a
+ * leftover from an interrupted upgrade or a hand copy is invisible to
+ * `receipt:` and `extra.files`. One warning line per orphan, keyed by path;
+ * an orphan is never a failure, it only suggests a cleanup.
+ */
+function irOrphanCheck(projectRoot, receipts) {
+  const referenced = new Set();
+  for (const item of receipts) {
+    const path = item.receipt.ir?.path;
+    if (typeof path === 'string' && path !== '') referenced.add(foldCase(path));
+  }
+  const root = join(projectRoot, ...BUNDLES_DIR.split('/'));
+  const orphans = walkFiles(root)
+    .filter((rel) => rel.slice(rel.lastIndexOf('/') + 1) === IR_FILENAME)
+    .map((rel) => `${BUNDLES_DIR}/${rel}`)
+    .filter((path) => !referenced.has(foldCase(path)))
+    .sort(compareCodePoints);
+  if (orphans.length === 0) {
+    return [pass('ir.orphan', `every ${IR_FILENAME} copy under ${BUNDLES_DIR} is referenced by a receipt`)];
+  }
+  return orphans.map((path) => warn('ir.orphan', path, {
+    path,
+    fix: `delete ${path}, or reinstall the bundle that owns it`,
+  }));
+}
+
+/**
  * Target smoke: every selected host's installed file groups still satisfy the
  * descriptor's structural expectation (skills have frontmatter, agents carry a
  * name/description, the roles.json metadata parses). This is the replacement
@@ -385,6 +414,7 @@ export function doctor(projectRootInput) {
   checks.push(...engineChecks(projectRoot, runtime));
   checks.push(manifestCheck(projectRoot, receipts));
   checks.push(extraFilesCheck(projectRoot, receipts, runtime));
+  checks.push(...irOrphanCheck(projectRoot, receipts));
   checks.push(hostDetectionCheck(projectRoot, receipts, runtime));
   checks.push(...targetSmokeCheck(projectRoot, receipts));
   checks.push(transactionCheck(projectRoot));

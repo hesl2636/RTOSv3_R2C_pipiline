@@ -5,11 +5,31 @@ hm2b 的词汇表。新文档只使用本表术语；文末“退役词汇”列
 ## 领域
 
 **bundle**:
-一个可版本化的移植工作流包：`bundle.json` 清单 + stages / steps / tasks / roles / skills / constitution。唯一可编辑形式在 `examples/rtosv3/bundle/`，`hm2b.bundle/v1` 是它的契约修订。
+一个可版本化的移植工作流包：`bundle.json` 清单 + stages / steps / tasks / roles / skills / constitution，外加可选的 `knowledge-base/`、`checklists/`、`hooks/hooks.json` 与 `mcp.json` 四类资产。唯一可编辑形式在 `examples/rtosv3/bundle/`，`hm2b.bundle/v2` 是它的契约修订。
 _Avoid_: 工作流包、pack、plugin、载荷
 
+**asset**:
+bundle 携带的非流程内容：知识库、检查单、hooks 与 MCP 声明。资产按清单声明接纳、随 IR 一起发布；投影把它们写成 runner 项目根的文件，或 agent-native 命名空间 `.agents/agent-native/<bundle-id>/` 下的文件。
+_Avoid_: 附件、资源、插件
+
+**knowledge-base**:
+声明在 `knowledgeBase[]` 里的 Markdown 知识文件，归档路径 `knowledge-base/<group>/<subgroup>/<file>.md`，路径最多 4 段。
+_Avoid_: 文档库、KB
+
+**checklist**:
+`checklists[]` 里的检查单 id；文件恒为 `checklists/<id>.md`，正文与 `source.sha256` 进入 IR。
+_Avoid_: 清单、todo
+
+**hooks**:
+bundle 的 `hooks.path` 声明 `hooks/hooks.json`；该文件必须是规范 JSON，只按声明接纳，未声明时 IR 的 `hooks` 为 `null`。
+_Avoid_: 钩子脚本、hook 载体
+
+**mcp**:
+bundle 的 `mcp.path` 声明 `mcp.json`；该文件必须是规范 JSON 且在 `mcpServers` 下携带对象，未声明时 IR 的 `mcp` 为 `null`。
+_Avoid_: MCP 配置、server 列表
+
 **manifest**:
-`bundle.json`（bundle manifest），bundle 的封闭索引：id、version、阶段/任务/角色/技能列表、宪法路径。规范 JSON 字节是唯一比较形式。
+`bundle.json`（bundle manifest），bundle 的封闭索引：id、version、阶段/任务/角色/技能列表、资产声明（`knowledgeBase`、`checklists`、`hooks`、`mcp`）与宪法路径。规范 JSON 字节是唯一比较形式。
 _Avoid_: 配置文件、index
 
 **stage**:
@@ -41,7 +61,7 @@ _Avoid_: 规则、policy
 _Avoid_: stub、空实现
 
 **IR**:
-`hm2b.ir/v1` 中立中间表示：`workflow.ir.json`，bundle 编译后的唯一输入，带 digest 与 `contentSha256`。投影、发布与 Web 都只读 IR。
+`hm2b.ir/v2` 中立中间表示：`workflow.ir.json`，bundle 编译后的唯一输入，带 digest 与 `contentSha256`。顶层字段固定为 `schema`、`id`、`name`、`version`、`description`、`source`、`requires`、`stages`、`roles`、`tasks`、`skills`、`knowledgeBase`、`checklists`、`hooks`、`mcp`、`constitution`；资产正文内嵌，未声明的资产是 `[]` 或 `null`。投影、发布与 Web 都只读 IR。
 _Avoid_: AST、中间文件
 
 **projection**:
@@ -65,7 +85,7 @@ _Avoid_: 需求、requirement
 _Avoid_: 警告、warning
 
 **install root**:
-投影路径的锚点；v1 恒为项目根，所有 `files[].path` 相对它拼接，bundle 内容从不写入用户 home（只有引擎可用 `--engine-home`）。
+投影路径的锚点；投影结果 v1 恒为项目根，所有 `files[].path` 相对它拼接，bundle 内容从不写入用户 home（只有引擎可用 `--engine-home`）。
 _Avoid_: 安装目录、target dir
 
 **install identity**:
@@ -105,7 +125,7 @@ _Avoid_: 公共目录
 _Avoid_: 跳过、skip
 
 **takeover**:
-把旧的 `r2c.install/v1` 安装经校验、备份、指针级撤销后转为新回执，旧回执移到 `.hm2b/install/legacy/*.retired`；失败整体回滚。
+把旧的 `r2c.install/v1` 安装经校验、备份、指针级撤销后转为新回执，旧回执移到 `.hm2b/install/legacy/*.retired`；失败整体回滚。takeover 只读取旧通道留在 `.r2c/install` 的回执，新的退役记录一律写 `.hm2b/install/legacy`。
 _Avoid_: 覆盖、force
 
 ## 退役词汇

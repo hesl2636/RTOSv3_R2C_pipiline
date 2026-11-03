@@ -41,7 +41,7 @@
     "workflow_id": { "type": "string", "minLength": 1 },
     "workflow_engine": {
       "type": ["string", "null"],
-      "description": "Adapter/plugin name when a multi-workflow route selected this run; null otherwise."
+      "description": "Target name when a multi-workflow route selected this run; null otherwise."
     },
     "engine": { "type": "string", "minLength": 1 },
     "engine_version": { "type": "string", "minLength": 1 },

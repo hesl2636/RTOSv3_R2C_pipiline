@@ -8,11 +8,11 @@
   "ir": {
     "id": "rtosv3-drvport",
     "version": "1.0.0",
-    "digest": "d6e8957287117c7b476891e1807e303c9a965fbe366087a13947baf34b0da09f",
-    "contentSha256": "006ec1b7831ac6c3c980d8c606880c87cc7fbc48f662bc2e1dbd152c9ccf6237",
-    "bytes": 58829
+    "digest": "34d55ee62bf284594218d4923b0eafa267799edb1edbbeb7bb313a6f2ab0bc04",
+    "contentSha256": "2093b03b97c90c6e77dfeb26c69d585ef78a11170032151171c31272ac7dbbf2",
+    "bytes": 58904
   },
-  "resultDigest": "aff4120d47367491ce8fbeb6377cb6f43e80098b126dfc8fc09c7a047816a7d4",
+  "resultDigest": "b67aa212922ed4eed7d49133a569d3a51663f5d2ba6d5482aee99ef4eae63d6e",
   "counts": {
     "files": 98,
     "bytes": 142657,
@@ -45,7 +45,7 @@
     "schema": "hm2b.projection-options/v1",
     "projection": "agent-native",
     "ir": {
-      "digest": "d6e8957287117c7b476891e1807e303c9a965fbe366087a13947baf34b0da09f",
+      "digest": "34d55ee62bf284594218d4923b0eafa267799edb1edbbeb7bb313a6f2ab0bc04",
       "id": "rtosv3-drvport",
       "version": "1.0.0"
     },
@@ -1570,7 +1570,7 @@
   "files": [
     {
       "path": ".agents/agent-native/rtosv3-drvport/roles.json",
-      "sha256": "472c28d22113a078818c04661251c197c6fb940d0bcc1f4d57b80321390d0647"
+      "sha256": "5dfd3cbe7086a1009f95ef516d28a316f604f4e896075aea3043dfde724b0c28"
     },
     {
       "path": ".agents/skills/rtosv3-drvport-skill-aceharness-rag/SKILL.md",
@@ -1963,7 +1963,7 @@
   ],
   "rolesJson": {
     "path": ".agents/agent-native/rtosv3-drvport/roles.json",
-    "sha256": "472c28d22113a078818c04661251c197c6fb940d0bcc1f4d57b80321390d0647",
+    "sha256": "5dfd3cbe7086a1009f95ef516d28a316f604f4e896075aea3043dfde724b0c28",
     "bytes": 29890
   }
 }

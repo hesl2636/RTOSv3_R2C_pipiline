@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import {
   existsSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
@@ -16,7 +17,7 @@ import { writeTwoStepProject } from './helpers/two-step.js';
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const BIN = join(REPO, 'runtime', 'runner', 'engine', 'bin', 'hm2b.js');
 const SHIM = join(REPO, 'runtime', 'runner', 'assets', 'shims', 'hook.mjs');
-const RUNNER_CMD = `"${process.execPath}" "${BIN}"`;
+const RUNNER_CMD = `node "${BIN}"`;
 
 function tempDir(t, prefix) {
   const dir = mkdtempSync(join(tmpdir(), `hm2b-shim-${prefix}-`));
@@ -206,7 +207,7 @@ test('a delivered stop appends a cumulative transcript usage snapshot', (t) => {
   assert.equal(snapshot.schema, 'hm2b.usage/v1');
   assert.equal(snapshot.run_id, runId);
   assert.equal(snapshot.session_id, sid);
-  assert.equal(snapshot.adapter, 'claude-code');
+  assert.equal(snapshot.target, 'claude-code');
   assert.equal(snapshot.model, 'claude-test');
   assert.equal(snapshot.cumulative, true);
   assert.deepEqual(snapshot.usage, {
@@ -230,4 +231,61 @@ test('a stop without a session exits 0 silently and records no delivery', (t) =>
   assert.equal(entries[0].session_id, null);
   assert.equal(entries[0].delivered, false);
   assert.equal(entries[0].reason, 'no-session');
+});
+
+test('runner argv stays literal: shell metacharacters and spaced paths never execute', (t) => {
+  const base = tempDir(t, 'literal');
+  const root = join(base, 'project with spaces');
+  const runnerDir = join(base, 'runner dir');
+  mkdirSync(root, { recursive: true });
+  mkdirSync(runnerDir, { recursive: true });
+  const recorder = join(runnerDir, 'record runner.mjs');
+  const argvFile = join(base, 'argv.jsonl');
+  writeFileSync(
+    recorder,
+    [
+      "import { appendFileSync } from 'node:fs';",
+      "process.stdin.on('data', () => {});",
+      "process.stdin.on('end', () => {",
+      "  appendFileSync(process.env.HM2B_ARGV_OUT, `${JSON.stringify({ argv: process.argv.slice(2), cwd: process.cwd() })}\\n`);",
+      '});',
+      '',
+    ].join('\n'),
+  );
+  const sid = 'sid $(touch PWNED) `touch PWNED2` & echo "x y"';
+  const result = spawnSync(
+    process.execPath,
+    [
+      SHIM,
+      '--agent', 'claude-code',
+      '--event', 'pre-tool-use',
+      '--format', 'json',
+      '--runner-cmd', `node "${recorder}"`,
+      '--project-root', root,
+      '--session-id', sid,
+    ],
+    {
+      cwd: root,
+      encoding: 'utf8',
+      env: { ...cleanEnv(), HM2B_ARGV_OUT: argvFile },
+      input: JSON.stringify({ session_id: sid, cwd: root }),
+      timeout: 60_000,
+    },
+  );
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stdout, '');
+  const records = readFileSync(argvFile, 'utf8')
+    .split(/\r?\n/)
+    .filter((line) => line.trim() !== '')
+    .map((line) => JSON.parse(line));
+  assert.equal(records.length, 1);
+  assert.deepEqual(records[0].argv, [
+    'hook', 'pre-tool-use', '--project-root', root, '--session-id', sid,
+  ]);
+  assert.equal(records[0].cwd, root);
+  for (const name of ['PWNED', 'PWNED2']) {
+    assert.equal(existsSync(join(root, name)), false, `${name} must never be created`);
+    assert.equal(existsSync(join(base, name)), false, `${name} must never be created`);
+  }
 });

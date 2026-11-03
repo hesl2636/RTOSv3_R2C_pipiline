@@ -5,7 +5,7 @@
   "version": "0.1.0",
   "description": "把中立 IR 投影成原生 agent runtime 的技能与子 agent 定义；不生成 runner，不写用户自有配置文件。",
   "api": {
-    "ir": "hm2b.ir/v1",
+    "ir": "hm2b.ir/v2",
     "options": "hm2b.projection-options/v1",
     "result": "hm2b.projection-result/v1"
   },
@@ -255,7 +255,7 @@
     {
       "id": "dsh-index",
       "path": "runtime/agent-native/targets/dsh/assets/index.mjs",
-      "sha256": "6357068f46b5af30ffbffd39766d443599d1e181dd6fc0d6a9fd3bb7522862ec"
+      "sha256": "485d979b63f439c69fc26bccea9ee2b9ec2673660ff3e1b81e425ea8c267faf7"
     },
     {
       "id": "dsh-package",
