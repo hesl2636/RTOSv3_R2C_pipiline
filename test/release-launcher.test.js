@@ -10,6 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { runInNewContext } from 'node:vm';
 import { canonicalJson } from '../core/canonical-json.js';
 import { buildBundleRelease } from '../scripts/lib/bundle-release.mjs';
+import { installCommands } from '../web/build.js';
 import { MINIMAL_MANIFEST, minimalZip } from './helpers/minimal-bundle.js';
 
 const ROOT = fileURLToPath(new URL('../', import.meta.url));
@@ -335,7 +336,7 @@ test('a tampered installer is rejected before any code is executed', async () =>
   assert.deepEqual(result.removed, result.created);
 });
 
-test('the real stdin launcher installs runner or a selected host from local Release assets', async (t) => {
+test('the generated per-agent commands install only their selected host through the real stdin launcher', async (t) => {
   // Build fresh bytes so the launcher, its pinned installer and framework archive
   // are the same Release, independently of the VM fixture cached above.
   const built = buildBundleRelease({ root: ROOT, bundlePath: SAMPLE });
@@ -348,6 +349,11 @@ test('the real stdin launcher installs runner or a selected host from local Rele
   mkdirSync(temporary);
   for (const asset of built.assets) writeFileSync(path.join(release, asset.name), asset.data);
   const launcher = built.assets.find((asset) => asset.name === 'install').data;
+  const hostRoots = { 'claude-code': '.claude', codex: '.codex', dsh: '.dsh', omp: '.omp', opencode: '.opencode' };
+  const install = installCommands({
+    id: 'rtosv3-drvport', version: '1.0.0', publishable: true, repo: 'hesl2636/hm2B_drvport_pipiline',
+    projections: [{ id: 'runner', targets: ['runner'] }, { id: 'agent-native', targets: Object.keys(hostRoots) }],
+  });
   const env = { ...process.env };
   for (const key of Object.keys(env)) {
     if (/^(?:GH_|GITHUB_|HM2B_|R2C_)/.test(key)) delete env[key];
@@ -393,21 +399,27 @@ test('the real stdin launcher installs runner or a selected host from local Rele
     assert.equal(existsSync(path.join(project, '.hm2b/install/receipts/agent-native/rtosv3-drvport.json')), false);
   });
 
-  await t.test('--target omp installs only agent-native and no runtime', async () => {
-    const project = path.join(sandbox, 'omp-project');
-    const result = await runStdin(project, ['--target', 'omp']);
-    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
-    const receipt = JSON.parse(readFileSync(path.join(project, '.hm2b/install/receipts/agent-native/rtosv3-drvport.json'), 'utf8'));
-    assert.equal(receipt.schema, 'hm2b.install/v2');
-    assert.equal(receipt.projection.id, 'agent-native');
-    assert.deepEqual(receipt.projection.targets, ['omp']);
-    assert.deepEqual(receipt.options.targets, ['omp']);
-    assert.equal(receipt.bundle.id, 'rtosv3-drvport');
-    assert.ok(existsSync(path.join(project, '.omp')));
-    assert.equal(existsSync(path.join(project, '.hm2b/install/runtime.json')), false);
-    assert.equal(existsSync(path.join(project, '.hm2b/engine')), false);
-    assert.equal(existsSync(path.join(project, '.hm2b/install/receipts/runner/rtosv3-drvport.json')), false);
-  });
+  for (const item of install.commands.filter((entry) => entry.projection === 'agent-native')) {
+    await t.test(`generated ${item.target} command installs only that host and no runtime`, async () => {
+      const project = path.join(sandbox, `${item.target}-project`);
+      const args = item.command.split(' | node - ')[1].split(' ');
+      assert.deepEqual(item.powershellCommand.split(' | node - ')[1].split(' '), args);
+      const result = await runStdin(project, args);
+      assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+      const receipt = JSON.parse(readFileSync(path.join(project, '.hm2b/install/receipts/agent-native/rtosv3-drvport.json'), 'utf8'));
+      assert.equal(receipt.schema, 'hm2b.install/v2');
+      assert.equal(receipt.projection.id, 'agent-native');
+      assert.deepEqual(receipt.projection.targets, [item.target]);
+      assert.deepEqual(receipt.options.targets, [item.target]);
+      assert.equal(receipt.bundle.id, 'rtosv3-drvport');
+      for (const [target, root] of Object.entries(hostRoots)) {
+        assert.equal(existsSync(path.join(project, root)), target === item.target, `${target} host files`);
+      }
+      assert.equal(existsSync(path.join(project, '.hm2b/install/runtime.json')), false);
+      assert.equal(existsSync(path.join(project, '.hm2b/engine')), false);
+      assert.equal(existsSync(path.join(project, '.hm2b/install/receipts/runner/rtosv3-drvport.json')), false);
+    });
+  }
 
   assert.deepEqual(readdirSync(temporary), [], 'both launcher and verified framework temporary directories were removed');
 });

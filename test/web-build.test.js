@@ -26,6 +26,7 @@ import { project } from '../projection/project.js';
 import { getProjection } from '../projection/registry.js';
 import { readReleaseTarGz } from '../installer/release-tar.js';
 import { PAYLOAD_MANIFEST_NAME } from '../scripts/lib/bundle-release.mjs';
+import { installCommands } from '../web/build.js';
 import { assetZip } from './helpers/minimal-bundle.js';
 import { buildZip } from './helpers/zip.js';
 import {
@@ -272,14 +273,21 @@ test('canonical build is publishable and matches the CLI projection numbers', as
     );
   }
 
-  // Exactly one flag-free online command for the whole Release.
+  // Each available host has a pinned command for Bash and Windows PowerShell.
   assert.equal(data.install.mode, 'release');
   assert.equal(data.install.bootstrap, null);
   assert.deepEqual(data.install.commands, [
+    ...['claude-code', 'codex', 'dsh', 'omp', 'opencode'].map((target) => ({
+      projection: 'agent-native',
+      target,
+      command: `curl -fsSL https://github.com/hesl2636/hm2B_drvport_pipiline/releases/download/${TAG}/install | node - --target ${target}`,
+      powershellCommand: `curl.exe -fsSL https://github.com/hesl2636/hm2B_drvport_pipiline/releases/download/${TAG}/install | node - --target ${target}`,
+    })),
     {
-      projection: null,
+      projection: 'runner',
       target: null,
-      command: 'curl -fsSL https://github.com/hesl2636/hm2B_drvport_pipiline/releases/download/bundle-rtosv3-drvport-v1.0.0/install | node -',
+      command: 'curl -fsSL https://github.com/hesl2636/hm2B_drvport_pipiline/releases/download/bundle-rtosv3-drvport-v1.0.0/install | node - --projection runner',
+      powershellCommand: 'curl.exe -fsSL https://github.com/hesl2636/hm2B_drvport_pipiline/releases/download/bundle-rtosv3-drvport-v1.0.0/install | node - --projection runner',
     },
   ]);
 
@@ -698,10 +706,29 @@ test('a configured publish repository is pinned in the build launcher and instal
   const response = await build(server, csrf, { uploadId: uploaded.uploadId, options: {} });
   assert.equal(response.status, 200, JSON.stringify(response.json));
   const data = response.json.data;
-  assert.equal(data.install.commands[0].command, `curl -fsSL https://github.com/${repo}/releases/download/${TAG}/install | node -`);
+  for (const item of data.install.commands) {
+    assert.ok(item.command.startsWith(`curl -fsSL https://github.com/${repo}/releases/download/${TAG}/install | node - `));
+    assert.ok(item.powershellCommand.startsWith(`curl.exe -fsSL https://github.com/${repo}/releases/download/${TAG}/install | node - `));
+  }
   const launcher = await httpRequest({ port: server.port, path: `/api/builds/${data.buildId}/artifacts/install` });
   assert.equal(launcher.status, 200);
   assert.match(launcher.raw.toString('utf8'), /const REPO = "another-owner\/private-workflows";/);
+});
+
+test('Release install instructions only offer the projections and hosts present in the build', () => {
+  for (const projection of [{ id: 'runner', targets: ['runner'] }, { id: 'agent-native', targets: ['omp'] }]) {
+    const install = installCommands({
+      id: 'rtosv3-drvport', version: '1.0.0', projections: [projection], publishable: true,
+      repo: 'another-owner/private-workflows',
+    });
+    assert.equal(install.commands.length, 1);
+    assert.equal(install.commands[0].projection, projection.id);
+    assert.equal(install.commands[0].target, projection.id === 'runner' ? null : 'omp');
+    const flags = projection.id === 'runner' ? '--projection runner' : '--target omp';
+    for (const field of ['command', 'powershellCommand']) {
+      assert.ok(install.commands[0][field].endsWith(`| node - ${flags}`));
+    }
+  }
 });
 
 test('build endpoints keep the Host/Origin/fetch-site/CSRF/CSP envelope and JSON limit', async (t) => {
