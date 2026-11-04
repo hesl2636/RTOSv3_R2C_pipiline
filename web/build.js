@@ -23,7 +23,7 @@ import { project } from '../projection/project.js';
 import { allowedProjections, getProjection } from '../projection/registry.js';
 import { validateResult } from '../projection/validate-result.js';
 import { runReleaseChild } from './child.js';
-import { buildChildEnv } from './env.js';
+import { buildChildEnv, redactSecrets } from './env.js';
 import { createRateLimiter, webError } from './http.js';
 
 export const UPLOAD_MAX_BYTES = LIMITS.MAX_ZIP_BYTES + 4 * 1024;
@@ -138,7 +138,8 @@ function manifestFiles(result) {
 
 const PROJECT_CLI = 'node bin/hm2b-assembler.js';
 const INSTALLER_CLI = 'node installer/cli.js';
-const RELEASE_BASE = '.hm2b/release';
+/** The one bootstrap every generated command runs; fetched once, then online. */
+const BOOTSTRAP_SCRIPT = '.hm2b/bootstrap/install.mjs';
 
 /** Quote one shell token; every value here still has to pass its id check. */
 function shellToken(value) {
@@ -146,19 +147,23 @@ function shellToken(value) {
   return /^[A-Za-z0-9._:/=+,-]+$/.test(text) ? text : `'${text.replaceAll("'", "'\\''")}'`;
 }
 
-function releaseCommand({ id, version, projection, target, installScript, releaseBase }) {
+/**
+ * One online install command: the Release's own `install.mjs` downloads and
+ * verifies the pinned assets over HTTPS, so no `gh` login or whole-Release
+ * pre-download is involved.
+ */
+function releaseCommand({ id, version, projection, target }) {
   if (!isValidId(id, BUNDLE_ID_MAX) || !isValidVersion(version) || String(version).includes('+')) return null;
   const descriptor = getProjection(projection);
   if (descriptor === null) return null;
   if (target !== null && !descriptor.targets.some((item) => item.id === target)) return null;
   const parts = [
-    `node ${installScript}`,
+    `node ${BOOTSTRAP_SCRIPT}`,
     '--bundle', id,
     '--version', version,
     '--projection', projection,
   ];
   if (target !== null) parts.push('--target', target);
-  if (releaseBase !== null) parts.push('--release-base', releaseBase);
   parts.push('--project', '.');
   return parts.join(' ');
 }
@@ -197,21 +202,32 @@ function localCommand({ projection, target, options }) {
   return `${parts.join(' ')} && ${INSTALLER_CLI} --result ${shellToken(resultDir)} --compiled-workflow workflow.compiled.json --project .`;
 }
 
-/** One install command per projection (and per selected agent target). */
+/**
+ * Canonical builds have exactly one install command: the Release's own
+ * flag-free launcher. It fetches `install.mjs` and installs runner by default
+ * (or the bundle's only projection); --target selects agent-native hosts.
+ */
+function launcherCommand({ repo, tag }) {
+  return `curl -fsSL https://github.com/${repo}/releases/download/${tag}/install | node -`;
+}
+
+/** One Release launcher, or per-projection commands for local/custom builds. */
 export function installCommands({ id, version, projections, publishable, repo = null }) {
   const tag = `bundle-${id}-v${version}`;
   const validRepo = typeof repo === 'string' && /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo);
-  const releaseDir = `${RELEASE_BASE}/${tag}`;
-  const installScript = publishable && validRepo ? `${releaseDir}/install.mjs` : '.hm2b/bootstrap/install.mjs';
-  const releaseBase = publishable && validRepo ? RELEASE_BASE : null;
   const commands = [];
   const add = (projection, target, command) => {
     commands.push({ projection, target, command });
   };
+  if (publishable && validRepo) {
+    if (!isValidId(id, BUNDLE_ID_MAX) || !isValidVersion(version) || String(version).includes('+')) return null;
+    add(null, null, launcherCommand({ repo, tag }));
+    return { mode: 'release', bootstrap: null, commands };
+  }
   for (const projection of projections) {
     if (projection.id === 'runner') {
       const command = publishable
-        ? releaseCommand({ id, version, projection: 'runner', target: null, installScript, releaseBase })
+        ? releaseCommand({ id, version, projection: 'runner', target: null })
         : localCommand({ projection: 'runner', target: null, options: projection.options });
       if (command === null) return null;
       add('runner', null, command);
@@ -219,7 +235,7 @@ export function installCommands({ id, version, projections, publishable, repo = 
     }
     for (const target of projection.targets) {
       const command = publishable
-        ? releaseCommand({ id, version, projection: projection.id, target, installScript, releaseBase })
+        ? releaseCommand({ id, version, projection: projection.id, target })
         : localCommand({ projection: projection.id, target, options: projection.options });
       if (command === null) return null;
       add(projection.id, target, command);
@@ -227,38 +243,23 @@ export function installCommands({ id, version, projections, publishable, repo = 
     // The all-targets form is useful only when there is more than one target.
     if (projection.targets.length > 1) {
       const all = publishable
-        ? releaseCommand({ id, version, projection: projection.id, target: null, installScript, releaseBase })
+        ? releaseCommand({ id, version, projection: projection.id, target: null })
         : localCommand({ projection: projection.id, target: null, options: projection.options });
       if (all === null) return null;
       add(projection.id, null, all);
     }
   }
-  const bootstrap = publishable && validRepo
+  const bootstrap = publishable
     ? {
       asset: 'install.mjs',
-      path: installScript,
-      base: RELEASE_BASE,
-      repo,
+      path: BOOTSTRAP_SCRIPT,
+      base: null,
+      repo: null,
       tag,
-      command: `gh release download ${tag} --repo ${repo} --dir ${releaseDir} --clobber`,
-      instruction: `先用 gh 把整个 Release（含 install.mjs）下载到 ${releaseDir}，再从本地目录离线安装；不需要再把 token 传给安装器。`,
+      command: null,
+      instruction: `先从该 Release 的资产里把 install.mjs 下载到 ${BOOTSTRAP_SCRIPT}；下面每条命令随后在线读取其余资产。`,
     }
-    : publishable
-      ? {
-        asset: 'install.mjs',
-        path: installScript,
-        base: null,
-        repo: null,
-        tag,
-        command: null,
-        instruction: `Download install.mjs from the Release assets into ${installScript} before running the commands below.`,
-      }
-      : null;
-  for (const item of commands) {
-    item.oneLiner = bootstrap?.command === null || bootstrap?.command === undefined
-      ? item.command
-      : `${bootstrap.command}; ${item.command}`;
-  }
+    : null;
   return {
     mode: publishable ? 'release' : 'local',
     bootstrap,
@@ -584,6 +585,7 @@ export function createBuildService({
       ],
       env: buildChildEnv({
         ...process.env,
+        GH_REPO: repo ?? '',
         TMPDIR: tempDir,
         TEMP: tempDir,
         TMP: tempDir,
@@ -603,12 +605,22 @@ export function createBuildService({
     const resultEvent = child.events.filter((event) => event.event === 'result').pop();
     const projectionEvents = child.events.filter((event) => event.event === 'projection');
     if (child.status !== 'exited' || resultEvent === undefined || resultEvent.ok !== true) {
+      // The `--json` child reports its own failures as an `error` event, not on
+      // stderr; without it the card would only show an empty stderr and log.
+      const errorEvent = child.events.filter((event) => event.event === 'error').pop();
+      const childFailures = Array.isArray(errorEvent?.failures)
+        ? errorEvent.failures
+          .slice(0, 20)
+          .map((failure) => redactSecrets(String(failure), secrets).slice(0, 2000))
+        : [];
       await rm(workDir, { recursive: true, force: true }).catch(() => {});
       return webError(500, 'WEB_CHILD_FAILED', 'the build child failed', {
         stderr: child.stderr,
         stderrTruncated: child.stderrTruncated,
         log: child.logLines.slice(0, 50),
         exitCode: child.code,
+        ...(typeof errorEvent?.code === 'string' ? { childCode: errorEvent.code } : {}),
+        ...(childFailures.length > 0 ? { failures: childFailures } : {}),
       });
     }
 

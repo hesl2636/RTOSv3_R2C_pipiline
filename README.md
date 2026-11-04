@@ -50,11 +50,11 @@ node web/serve.mjs
 
 - 已发布的 tag 与资产永不改写；发布失败后要换新 patch 版本，不能覆盖。
 - 自定义投影选项（**05**）产生的构建是 `publishable=false`，只能本地使用，不能发布。
-- 发布成功后，**06 构建产物** 会给出每个目标可直接复制的安装命令。
+- 发布成功后，**06 构建产物** 只给出一条可直接复制的在线安装命令。
 
 ### 1.3 一条命令安装
 
-安装器只需取一次：从 Release 页面下载 `install.mjs`，或
+在**目标项目根目录**执行一条命令即可。Release 里自带 `install` 启动器，bundle id、版本和允许的投影都已写死；它会拉取同 tag 的 `install.mjs`，校验 `SHA256SUMS.txt` 后安装：
 
 ```powershell
 $REPO    = "hesl2636/hm2B_drvport_pipiline"
@@ -62,23 +62,17 @@ $BUNDLE  = "rtosv3-drvport"
 $VERSION = "1.0.2"
 $TAG     = "bundle-$BUNDLE-v$VERSION"
 
-curl.exe -L -o install.mjs "https://github.com/$REPO/releases/download/$TAG/install.mjs"
+curl.exe -fsSL "https://github.com/$REPO/releases/download/$TAG/install" | node -
 ```
 
-在**目标项目根目录**执行安装。安装器直接读取该 Release 的资产、校验 `SHA256SUMS.txt` 后写入项目，不依赖 `gh`：
-
-```powershell
-node install.mjs --bundle $BUNDLE --version $VERSION --projection runner --project .
-```
-
-agent-native（`--target` 取 `omp`、`claude-code`、`codex`、`dsh`、`opencode`；省略则安装全部目标）：
-
-```powershell
-node install.mjs --bundle $BUNDLE --version $VERSION --projection agent-native --target omp --project .
-```
-
+- 默认安装 `runner`；`--target omp`（或 `claude-code`、`codex`、`dsh`、`opencode`）改为安装该宿主的 agent-native 文件，`--projection agent-native` 安装全部宿主。
+- runner 与 agent-native 共用一批宿主角色文件，同一个项目只装其中一个。
+- 其他可选参数只有 `--project <dir>` 与 `--force`；不再需要 `gh` 预下载，也不需要记住一堆资产名。
 - 仓库公开时无需凭据；私有仓库需要 `GH_TOKEN` / `GITHUB_TOKEN`，或可用的 github.com git 凭据。
+- 私有仓库请先从已登录的 Release 页面下载 `install`，再运行 `node install`；启动器会通过 GitHub API 获取后续资产，并在执行 `install.mjs` 前校验内置的 SHA-256。
+- 环境变量 `GH_REPO` 可指定其他发布仓库（`owner/name`），构建和发布时需保持一致；启动器会固定到该仓库。使用镜像时设置 `HM2B_RELEASE_BASE`，GitHub 凭据不会自动发送给镜像。
 - 网络需要代理时，先设置 `$env:NODE_USE_ENV_PROXY="1"` 和 `$env:HTTPS_PROXY`，Node 的 `fetch` 才走代理。
+- 链路很慢时，每个资产的下载预算是 300 秒，可用 `HM2B_INSTALL_DOWNLOAD_TIMEOUT_MS`（毫秒）调大；超时会报 `RELEASE_DOWNLOAD_FAILED` 而不是内部错误。
 - agent-native 的共享资产（`knowledge-base/`、`checklists/`、`hooks/hooks.json`、`mcp.json`）写在 `.agents/agent-native/<bundle-id>/`，技能与角色写到各宿主自己的目录。
 
 安装后自检（仅 runner）：

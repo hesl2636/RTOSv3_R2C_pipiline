@@ -52,6 +52,7 @@ const ASSETS = [
   'hm2b-engine-0.1.0.tgz',
   'hm2b-framework-0.1.0.tgz',
   'hm2b-payload-rtosv3-drvport-v1.0.0.tgz',
+  'install',
   'install.mjs',
   'workflow.compiled.json',
 ];
@@ -271,46 +272,16 @@ test('canonical build is publishable and matches the CLI projection numbers', as
     );
   }
 
-  // Fixed-version install commands, never a project write.
+  // Exactly one flag-free online command for the whole Release.
   assert.equal(data.install.mode, 'release');
-  assert.deepEqual(
+  assert.equal(data.install.bootstrap, null);
+  assert.deepEqual(data.install.commands, [
     {
-      asset: data.install.bootstrap.asset,
-      path: data.install.bootstrap.path,
-    },
-    { asset: 'install.mjs', path: '.hm2b/release/bundle-rtosv3-drvport-v1.0.0/install.mjs' },
-  );
-  assert.match(data.install.bootstrap.instruction, /install\.mjs/);
-  assert.match(data.install.bootstrap.instruction, /\.hm2b\/release\/bundle-rtosv3-drvport-v1\.0\.0/);
-  assert.equal(
-    data.install.bootstrap.command,
-    'gh release download bundle-rtosv3-drvport-v1.0.0 --repo hesl2636/hm2B_drvport_pipiline --dir .hm2b/release/bundle-rtosv3-drvport-v1.0.0 --clobber',
-  );
-  const commands = data.install.commands;
-  const runnerCommand = commands.find((item) => item.projection === 'runner');
-  assert.deepEqual(
-    { projection: runnerCommand.projection, target: runnerCommand.target, command: runnerCommand.command },
-    {
-      projection: 'runner',
+      projection: null,
       target: null,
-      command: 'node .hm2b/release/bundle-rtosv3-drvport-v1.0.0/install.mjs --bundle rtosv3-drvport --version 1.0.0 --projection runner --release-base .hm2b/release --project .',
+      command: 'curl -fsSL https://github.com/hesl2636/hm2B_drvport_pipiline/releases/download/bundle-rtosv3-drvport-v1.0.0/install | node -',
     },
-  );
-  const agentCommands = commands.filter((item) => item.projection === 'agent-native');
-  assert.equal(agentCommands.filter((item) => item.target === null).length, 1);
-  for (const target of ['claude-code', 'codex', 'dsh', 'omp', 'opencode']) {
-    assert.ok(
-      agentCommands.some((item) => item.target === target && item.command.includes(`--target ${target}`)),
-      target,
-    );
-  }
-  for (const item of commands) {
-    assert.match(
-      item.command,
-      /^node \.hm2b\/release\/bundle-[a-z0-9-]+-v\d+\.\d+\.\d+\/install\.mjs --bundle [a-z0-9-]+ --version \d+\.\d+\.\d+ --projection (runner|agent-native)( --target [a-z-]+)? --release-base \.hm2b\/release --project \.$/,
-    );
-    assert.equal(item.oneLiner, `${data.install.bootstrap.command}; ${item.command}`);
-  }
+  ]);
 
   const list = await httpRequest({ port: server.port, path: '/api/builds' });
   assert.equal(list.status, 200);
@@ -357,7 +328,9 @@ test('upload version override rewrites the bundle manifest and every release art
   const data = response.json.data;
   assert.equal(data.tag, 'bundle-rtosv3-drvport-v1.0.1');
   assert.ok(data.artifacts.some((asset) => asset.name === 'bundle-rtosv3-drvport-v1.0.1.zip'));
-  for (const item of data.install.commands) assert.match(item.command, /--version 1\.0\.1\b/);
+  for (const item of data.install.commands) {
+    assert.match(item.command, /releases\/download\/bundle-[a-z0-9-]+-v1\.0\.1\/install/);
+  }
 
   const native = projectionOf(data, 'agent-native');
   const paths = native.files.map((file) => file.path);
@@ -690,6 +663,45 @@ test('a crashed, hung or non-JSON child maps to WEB_CHILD_FAILED/TIMEOUT and the
     const alive = await httpRequest({ port: server.port, path: '/api/session' });
     assert.equal(alive.status, 200, 'server survives a failed build child');
   }
+});
+
+test('a child that reports failures as a JSON error event surfaces them in the details', async (t) => {
+  const dir = tempDir(t, 'error-event');
+  const script = join(dir, 'fail.mjs');
+  const token = `ghp_${'a'.repeat(30)}`;
+  writeFileSync(script, [
+    `process.stdout.write(JSON.stringify({ event: 'error', ok: false, code: 'RELEASE_BUILD_FAILED',`
+      + ` failures: ['RELEASE_SOURCE_SET_MISMATCH: missing engine archive path: node_modules/yaml ${token}'] }) + '\\n');`,
+    'process.exit(1);',
+    '',
+  ].join('\n'));
+
+  const server = await startWebServer(t, { HM2B_WEB_RELEASE_SCRIPT: script });
+  const { csrf } = await sessionOf(server);
+  const uploaded = await upload(server, csrf);
+  const response = await build(server, csrf, { uploadId: uploaded.uploadId, options: {} });
+
+  assert.equal(response.status, 500);
+  assert.equal(response.json.error.code, 'WEB_CHILD_FAILED');
+  const details = response.json.error.details;
+  assert.equal(details.exitCode, 1);
+  assert.equal(details.childCode, 'RELEASE_BUILD_FAILED');
+  assert.match(details.failures.join(' '), /missing engine archive path: node_modules\/yaml/);
+  assert.equal(JSON.stringify(details).includes(token), false, 'child failures must be redacted');
+});
+
+test('a configured publish repository is pinned in the build launcher and install command', async (t) => {
+  const repo = 'another-owner/private-workflows';
+  const server = await startWebServer(t, { GH_REPO: repo });
+  const { csrf } = await sessionOf(server);
+  const uploaded = await upload(server, csrf);
+  const response = await build(server, csrf, { uploadId: uploaded.uploadId, options: {} });
+  assert.equal(response.status, 200, JSON.stringify(response.json));
+  const data = response.json.data;
+  assert.equal(data.install.commands[0].command, `curl -fsSL https://github.com/${repo}/releases/download/${TAG}/install | node -`);
+  const launcher = await httpRequest({ port: server.port, path: `/api/builds/${data.buildId}/artifacts/install` });
+  assert.equal(launcher.status, 200);
+  assert.match(launcher.raw.toString('utf8'), /const REPO = "another-owner\/private-workflows";/);
 });
 
 test('build endpoints keep the Host/Origin/fetch-site/CSRF/CSP envelope and JSON limit', async (t) => {

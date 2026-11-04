@@ -17,6 +17,8 @@ import { COMPILED_WORKFLOW_FILENAME } from '../compiled/schema.js';
 
 export const COMPILED_WORKFLOW_ASSET = COMPILED_WORKFLOW_FILENAME;
 export const INSTALL_ASSET = 'install.mjs';
+/** The flag-free launcher: `curl -fsSL <tag>/install | node -`. */
+export const LAUNCHER_ASSET = 'install';
 export const SUMS_ASSET = 'SHA256SUMS.txt';
 
 export const BUNDLE_ID_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -68,6 +70,7 @@ export function isLegacyEngineTag(tag) {
 export function bundleAssetNames({ id, version, allowed, engineVersion, frameworkVersion }) {
   const names = [
     INSTALL_ASSET,
+    LAUNCHER_ASSET,
     COMPILED_WORKFLOW_ASSET,
     `bundle-${id}-v${version}.zip`,
     `hm2b-framework-${frameworkVersion}.tgz`,

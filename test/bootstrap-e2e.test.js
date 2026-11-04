@@ -8,7 +8,7 @@
  * installs the host files and a receipt, and a tampered asset writes nothing.
  */
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import {
   copyFileSync,
   existsSync,
@@ -22,9 +22,10 @@ import {
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import test from 'node:test';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { isCanonicalJson } from '../core/canonical-json.js';
 import { doctor } from '../installer/doctor.js';
+import { jsonResponse, startGithubFixture } from './helpers/release-fixture.js';
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const BOOTSTRAP = join(REPO, 'scripts', 'install.mjs');
@@ -58,6 +59,7 @@ function cleanEnv(home) {
     'DSH_HOME',
     'GH_TOKEN',
     'GITHUB_TOKEN',
+    'GH_REPO',
   ]) {
     delete env[key];
   }
@@ -211,3 +213,55 @@ function reportOk(project) {
   const report = doctor(project);
   return report.checks.every((check) => check.status !== 'fail');
 }
+
+test('a private fork bootstrap resolves and downloads assets from its configured repository', async (t) => {
+  const { tagDir } = buildMirror(t);
+  const repo = 'another-owner/private-workflows';
+  const token = 'fixture-private-repository-token';
+  const fixture = await startGithubFixture(t, {
+    repo,
+    requireToken: true,
+    releases: [{ tag: TAG, assets: readdirSync(tagDir).map((name) => ({ name, data: readFileSync(join(tagDir, name)) })) }],
+  });
+  fixture.intercept = (request) => request.path.startsWith('/download/')
+    ? jsonResponse(404, { message: 'Private browser URLs are unavailable' })
+    : undefined;
+  const preload = join(tempDir(t, 'fetch-router'), 'route.mjs');
+  writeFileSync(preload, [
+    'const originalFetch = globalThis.fetch;',
+    'globalThis.fetch = (input, options) => {',
+    '  const url = new URL(String(input));',
+    "  if (url.hostname !== 'api.github.com' && url.hostname !== 'github.com') throw new Error('unexpected external request');",
+    `  return originalFetch(${JSON.stringify(fixture.origin)} + url.pathname + url.search, options);`,
+    '};',
+  ].join('\n'));
+  for (const explicitVersion of [true, false]) {
+    const project = tempDir(t, explicitVersion ? 'fork-fixed' : 'fork-latest');
+    const env = {
+      ...cleanEnv(tempDir(t, 'fork-home')),
+      GH_REPO: repo,
+      GH_TOKEN: token,
+    };
+    const args = ['--bundle', BUNDLE_ID, '--projection', 'agent-native', '--target', 'omp', '--project', project];
+    if (explicitVersion) args.push('--version', VERSION);
+    const result = await new Promise((resolveChild, rejectChild) => {
+      const child = spawn(process.execPath, ['--import', pathToFileURL(preload).href, BOOTSTRAP, ...args], { cwd: project, env, windowsHide: true });
+      let stdout = '';
+      let stderr = '';
+      child.stdout.setEncoding('utf8');
+      child.stderr.setEncoding('utf8');
+      child.stdout.on('data', (chunk) => { stdout += chunk; });
+      child.stderr.on('data', (chunk) => { stderr += chunk; });
+      child.once('error', rejectChild);
+      child.once('exit', (status) => resolveChild({ status, stdout, stderr }));
+    });
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    assert.ok(existsSync(join(project, `.hm2b/install/receipts/agent-native/${BUNDLE_ID}.json`)));
+    assert.ok(existsSync(join(project, '.omp/agents/bys-architect.md')));
+  }
+  assert.ok(fixture.calls.some((call) => call.path === `/repos/${repo}/releases/tags/${TAG}`));
+  assert.ok(fixture.calls.some((call) => call.path === `/repos/${repo}/releases`));
+  assert.ok(fixture.calls.some((call) => call.path.startsWith(`/repos/${repo}/releases/assets/`)));
+  assert.ok(fixture.calls.every((call) => call.headers.authorization === `Bearer ${token}`));
+  assert.equal(fixture.calls.some((call) => call.path.startsWith('/download/')), false);
+});

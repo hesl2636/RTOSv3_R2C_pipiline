@@ -461,14 +461,14 @@ test('publish walks draft → upload → verify → publish against the fixture 
     assert.equal(sha256Hex(fixture.assetData(TAG, name)), digest, name);
   }
 
-  // The generated commands are the frozen install shape (§13/§75 §9).
-  const commands = job.result.install.commands;
-  const runnerCommand = commands.find((item) => item.projection === 'runner');
-  assert.equal(
-    runnerCommand.command,
-    `node .hm2b/release/${TAG}/install.mjs --bundle ${BUNDLE} --version ${VERSION} --projection runner --release-base .hm2b/release --project .`,
-  );
-  assert.ok(commands.some((item) => item.projection === 'agent-native' && item.target === 'claude-code'));
+  // One flag-free online command: the Release's own launcher.
+  assert.deepEqual(job.result.install.commands, [
+    {
+      projection: null,
+      target: null,
+      command: `curl -fsSL https://github.com/${REPO}/releases/download/${TAG}/install | node -`,
+    },
+  ]);
 
   // Credential hygiene: token only in the Authorization header.
   const blobs = [
@@ -610,17 +610,15 @@ test('end-to-end: publish once, take the generated command and install the Relea
   const job = await waitForJob(server, accepted.json.data.jobId);
   assert.equal(job.state, 'PUBLISHED', JSON.stringify(job));
 
-  // 1. The generated command is the release form and names this release.
-  const command = job.result.install.commands.find((item) => item.projection === 'runner').command;
-  const tokens = command.split(' ');
-  assert.equal(tokens[0], 'node');
-  assert.equal(tokens[1], `.hm2b/release/${TAG}/install.mjs`);
-  const flag = (name) => tokens[tokens.indexOf(name) + 1];
-  assert.equal(flag('--bundle'), BUNDLE);
-  assert.equal(flag('--version'), VERSION);
-  assert.equal(flag('--projection'), 'runner');
-  assert.equal(flag('--project'), '.');
-  assert.equal(tokens.includes('--release-base'), true, 'the one-click command uses the local gh mirror');
+  // 1. One flag-free online command names this release.
+  const command = job.result.install.commands[0].command;
+  assert.equal(job.result.install.commands.length, 1);
+  assert.equal(
+    command,
+    `curl -fsSL https://github.com/${REPO}/releases/download/${TAG}/install | node -`,
+  );
+  assert.equal(job.result.install.bootstrap, null);
+  assert.equal(command.includes('--'), false, 'the launcher needs no flags');
 
   // 2. Every published byte is verified against the Release manifest.
   const payloadName = `hm2b-payload-${BUNDLE}-v${VERSION}.tgz`;
@@ -681,16 +679,13 @@ test('end-to-end: publish once, take the generated command and install the Relea
     assert.equal(declared.mode, file.mode);
   }
 
-  // 4. Take the generated command, fetch the frozen bootstrap exactly as the
-  //    gh step would, and run it from the target project root. The local mirror
-  //    is repointed at the loopback GitHub fixture; everything else is verbatim.
+  // 4. Run the Release's own launcher exactly as the generated command feeds
+  //    it (`node -`), with the loopback fixture standing in for github.com.
   const projectRoot = tempDir(t, 'project');
-  const bootstrap = join(projectRoot, ...tokens[1].split('/'));
-  mkdirSync(dirname(bootstrap), { recursive: true });
-  writeFileSync(bootstrap, downloaded.get('install.mjs'));
+  const launcher = join(projectRoot, 'install');
+  writeFileSync(launcher, downloaded.get('install'));
 
-  const installArgs = tokens.slice(2);
-  installArgs[installArgs.indexOf('--release-base') + 1] = `${fixture.origin}/download`;
+  const installArgs = ['--project', projectRoot];
   const env = { ...process.env };
   for (const key of [
     'HM2B_SESSION_ID', 'HM2B_PROJECT_ROOT', 'HM2B_RELEASE_BASE', 'HM2B_HOME', 'HM2B_GITHUB_API',
@@ -700,8 +695,9 @@ test('end-to-end: publish once, take the generated command and install the Relea
   ]) {
     delete env[key];
   }
+  env.HM2B_RELEASE_BASE = `${fixture.origin}/download`;
   const installed = await new Promise((resolveInstall, rejectInstall) => {
-    const child = spawn(process.execPath, [tokens[1], ...installArgs], {
+    const child = spawn(process.execPath, [launcher, ...installArgs], {
       cwd: projectRoot,
       env,
       windowsHide: true,

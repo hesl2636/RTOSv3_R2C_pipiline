@@ -12,21 +12,29 @@ node install.mjs --bundle rtosv3-drvport --version 1.0.0 --projection runner --p
 node .hm2b/bin/hm2b.js status
 ```
 
-The web page emits one complete command per target. It first downloads the
-whole Release through `gh` into `.hm2b/release/<tag>/`, then installs from that
-local directory, so the installer never needs a second network call or a token:
+The web page emits exactly one command: the Release's own `install` launcher.
+It has the bundle id, version and allowed projections baked in, fetches
+`install.mjs` from the same tag, and installs one projection:
 
 ```bash
-gh release download bundle-rtosv3-drvport-v1.0.0 \
-  --repo hesl2636/hm2B_drvport_pipiline \
-  --dir .hm2b/release/bundle-rtosv3-drvport-v1.0.0 --clobber
-node .hm2b/release/bundle-rtosv3-drvport-v1.0.0/install.mjs \
-  --bundle rtosv3-drvport --version 1.0.0 --projection runner \
-  --release-base .hm2b/release --project .
+curl -fsSL https://github.com/hesl2636/hm2B_drvport_pipiline/releases/download/bundle-rtosv3-drvport-v1.0.0/install | node -
 ```
 
-`gh` must be logged in (`gh auth login`); the downloaded tree is disposable and
-ignored by `git` when `.hm2b/` is ignored.
+The default is `runner`; `--target <id>` (repeatable) selects agent-native for
+those hosts, and `--projection agent-native` installs every host. Runner and
+agent-native own overlapping host role paths, so one project installs exactly
+one projection. `--project <dir>` and `--force` are the only other flags; no
+`gh` login or whole-Release pre-download is involved. The installer reads
+`GH_TOKEN`, then `GITHUB_TOKEN`, then a github.com credential when the
+repository is private.
+
+For a private repository, download `install` from its signed-in Release page
+first, then run `node install` with the same optional flags. The launcher
+fetches private assets through the GitHub API and verifies its pinned
+`install.mjs` SHA-256 before executing it. `GH_REPO=owner/name` at build time
+pins the launcher and its installer to that publishing repository.
+Use the same `GH_REPO` when publishing an existing build directory; a different
+repository is rejected before any GitHub write and requires a rebuild.
 
 If the tag is already published, do not reuse it: type the next patch (for
 example `1.0.1`) into the web page's **版本** field before uploading. The server
@@ -42,6 +50,11 @@ re-projecting; the bundle's `roles.json` is still installed. `--project <dir>`
 selects the project root, `--release-base <dir|url>` points at a mirror, and
 `--force` is the explicit override for the conflict matrix (it never crosses
 another receipt's ownership).
+
+`--release-base` belongs to `install.mjs`; for the flag-free launcher, set
+`HM2B_RELEASE_BASE` to the mirror directory or URL instead. Both stages keep
+GitHub credentials off custom mirrors, and temporary launcher files are
+removed even when the download or installer fails.
 
 The pre-projected payload already carries the bundle's v2 assets: the runner
 payload writes `knowledge-base/**`, `checklists/**`, `hooks/hooks.json` and
@@ -99,4 +112,7 @@ Credentials come from the launch environment only: `GH_TOKEN`, then
 `GITHUB_TOKEN`, then `git credential fill` (never an interactive prompt).
 A private repository answers 404 without a token; the error names the
 credential to fix. The bootstrap checks the Node floor before the first
-download.
+download. Each asset body has one download budget (300 s by default, raised
+with `HM2B_INSTALL_DOWNLOAD_TIMEOUT_MS`); a slow or blocked transfer reports
+`RELEASE_DOWNLOAD_FAILED` with the proxy hint instead of an internal error.
+Node's `fetch` only reads proxy settings when `NODE_USE_ENV_PROXY=1`.

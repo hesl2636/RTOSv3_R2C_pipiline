@@ -28,10 +28,24 @@ step-by-step across the engine, the payload, and all five agent adapters; see
   `bundle.json`, recompiles it, and the **构建并发布** action builds and
   publishes in one click. The server reads the local `gh auth token` at
   startup, so no `GH_TOKEN` shell wrapper is needed.
-- Web build output lists every target's install command at once, and each
-  command first runs `gh release download` into `.hm2b/release/<tag>/` then
-  installs offline with `--release-base`. The manual `install.mjs` bootstrap
-  step is gone, and the install phase no longer needs a GitHub token.
+- Every bundle Release ships a flag-free `install` launcher, so the web page
+  emits one command: `curl -fsSL <release>/install | node -`. The launcher has
+  the bundle id, version and allowed projections baked in, fetches the same
+  tag's `install.mjs`, and installs one projection (default `runner`;
+  `--target <t>` selects agent-native for those hosts, `--projection`
+  overrides). Runner and agent-native share host role paths, so a project
+  installs exactly one of them. The per-target command list and the `gh`
+  pre-download into `.hm2b/release/` are retired. `install` joins
+  `SHA256SUMS.txt` and is verified like every other asset.
+- The generated launcher pins its publishing repository and installer digest,
+  uses the non-interactive environment/Git credential chain and GitHub API for
+  private assets, keeps GitHub tokens off mirrors, honors the configured
+  download timeout, and removes temporary files on failed installs.
+- Publishing an existing build directory rejects a repository that differs
+  from the launcher's pinned repository before making remote changes.
+- The local Web UI now has workflow navigation, zip drag and drop, selected
+  file details, useful waiting states, responsive layouts and system light/dark
+  themes, with keyboard focus and reduced-motion support.
 - P6 cutover (#111): the engine moved to `runtime/runner/engine/`, the pure
   manifest contract to `runtime/runner/contract/`, and the runtime assets to the
   two runtimes. The legacy directory trees, the declaration-driven install
@@ -113,6 +127,13 @@ step-by-step across the engine, the payload, and all five agent adapters; see
 
 ### Fixed
 
+- Web build failures are diagnosable: the page used to show only
+  `stderr`/`log`/`exitCode` from a `--json` child, and that child reports
+  packager failures as an `error` event on stdout, so a failed build (for
+  example `node_modules` never installed →
+  `RELEASE_SOURCE_SET_MISMATCH: missing engine archive path: node_modules/yaml`)
+  rendered as `stderr:"" , log:[], exitCode:1`. `WEB_CHILD_FAILED` details now
+  carry the redacted `childCode` and `failures`.
 - Review pass on the spec-83 integration: the Release install is one
   all-or-rollback transaction (legacy/occupancy/V1–V12 preflight before any
   runtime write, and a bundle failure restores the runtime snapshot); the runner

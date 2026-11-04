@@ -14,7 +14,7 @@
  * The API is a loopback fixture recording every call; no real network.
  */
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
@@ -452,14 +452,64 @@ test('the release source API is reachable from the installer composition root', 
   assert.equal(installedPublishBundle, publishBundle);
 });
 
-function writeBuiltRelease(t, options = null) {
+function writeBuiltRelease(t, options = null, repo = undefined) {
   const dir = mkdtempSync(join(tmpdir(), 'hm2b-built-'));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
-  const result = buildBundleRelease({ root: ROOT, bundlePath: SAMPLE_ZIP, options });
+  const result = buildBundleRelease({ root: ROOT, bundlePath: SAMPLE_ZIP, options, repo });
   assert.equal(result.ok, true, result.failures.join('; '));
   for (const asset of result.assets) writeFileSync(join(dir, asset.name), asset.data);
   return { dir, result };
 }
+
+async function publishBuiltRelease(dir, fixture) {
+  return new Promise((resolveChild, rejectChild) => {
+    const child = spawn(
+      process.execPath,
+      ['scripts/release.mjs', '--publish', '--out', dir, '--commit', COMMIT, '--json'],
+      {
+        cwd: ROOT,
+        env: { ...process.env, GH_TOKEN: TOKEN, GH_REPO: fixture.repo, HM2B_GITHUB_API: fixture.origin },
+        windowsHide: true,
+      },
+    );
+    let stdout = '';
+    let stderr = '';
+    child.stdout.setEncoding('utf8');
+    child.stderr.setEncoding('utf8');
+    child.stdout.on('data', (chunk) => { stdout += chunk; });
+    child.stderr.on('data', (chunk) => { stderr += chunk; });
+    child.once('error', rejectChild);
+    child.once('close', (status) => resolveChild({ status, stdout, stderr }));
+  });
+}
+
+test('--publish --out rejects a different pinned repository before any request', async (t) => {
+  const built = writeBuiltRelease(t);
+  const fixture = await startGithubFixture(t, { repo: REPO });
+  const result = await publishBuiltRelease(built.dir, fixture);
+  assert.equal(result.status, 1, `${result.stdout}\n${result.stderr}`);
+  assert.match(result.stdout, /RELEASE_REPOSITORY_MISMATCH/);
+  assert.match(result.stdout, /rebuild the release with GH_REPO=owner\/repo/);
+  assert.equal(fixture.calls.length, 0, 'repository validation runs before the first remote call');
+  for (const asset of built.result.assets) {
+    assert.deepEqual(readFileSync(join(built.dir, asset.name)), asset.data, `${asset.name} must stay frozen`);
+  }
+});
+
+test('--publish --out preserves bytes and publishes when the pinned repository matches', async (t) => {
+  const built = writeBuiltRelease(t, null, REPO);
+  const fixture = await startGithubFixture(t, { repo: REPO });
+  const result = await publishBuiltRelease(built.dir, fixture);
+  assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+  const final = result.stdout.split('\n').filter((line) => line.startsWith('{')).map((line) => JSON.parse(line))
+    .find((event) => event.event === 'result');
+  assert.equal(final?.state, 'PUBLISHED', result.stdout);
+  for (const asset of built.result.assets) {
+    assert.deepEqual(readFileSync(join(built.dir, asset.name)), asset.data, `${asset.name} must stay frozen`);
+    const upload = uploadCalls(fixture).find((call) => new URL(call.url, fixture.origin).searchParams.get('name') === asset.name);
+    assert.deepEqual(upload?.body, asset.data, `${asset.name} uploads the built bytes`);
+  }
+});
 
 test('a canonical build is publishable and a custom build is refused before any call', async (t) => {
   const canonical = writeBuiltRelease(t);

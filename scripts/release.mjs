@@ -518,13 +518,17 @@ function writeBundleAssets(result, outDir) {
 }
 
 function buildBundle(options) {
-  const requested = readRequestedOptions(options);
+  const repo = publishRepo();
+  const requested = repo === null
+    ? { ok: false, message: 'RELEASE_OPTION_CONFLICT: GH_REPO must be owner/name' }
+    : readRequestedOptions(options);
   const result = requested.ok
     ? buildBundleRelease({
       root: ROOT,
       bundlePath: options.bundle,
       tag: options.tag,
       options: requested.options,
+      repo,
     })
     : { ok: false, failures: [requested.message], notes: [], assets: null, plan: null };
   if (!result.ok) {
@@ -660,6 +664,7 @@ async function publishBundleCli(options) {
       root: ROOT,
       bundlePath: options.bundle,
       tag: options.tag,
+      repo,
     });
     if (!result.ok) {
       if (options.json) {
@@ -674,7 +679,7 @@ async function publishBundleCli(options) {
     plan = result.plan;
     assets = result.assets;
   } else {
-    const built = readBuiltRelease(options.out);
+    const built = readBuiltRelease(options.out, { repo });
     if (!built.ok) {
       if (options.json) {
         emitJsonLine({ event: 'result', ok: false, state: 'FAILED', failures: built.failures });
@@ -750,6 +755,7 @@ function checkBundle(options) {
     bundlePath: options.bundle,
     tag: options.tag,
     outDir: options.outSet ? options.out : null,
+    repo: publishRepo(),
   });
   if (!result.ok) {
     process.stderr.write(`bundle release --check failed for ${options.tag ?? options.bundle}:\n`);
