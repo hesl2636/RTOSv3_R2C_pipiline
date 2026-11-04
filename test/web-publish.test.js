@@ -461,12 +461,19 @@ test('publish walks draft → upload → verify → publish against the fixture 
     assert.equal(sha256Hex(fixture.assetData(TAG, name)), digest, name);
   }
 
-  // One flag-free online command: the Release's own launcher.
+  // Publishing returns the same per-host choices as the build screen.
   assert.deepEqual(job.result.install.commands, [
+    ...['claude-code', 'codex', 'dsh', 'omp', 'opencode'].map((target) => ({
+      projection: 'agent-native',
+      target,
+      command: `curl -fsSL https://github.com/${REPO}/releases/download/${TAG}/install | node - --target ${target}`,
+      powershellCommand: `curl.exe -fsSL https://github.com/${REPO}/releases/download/${TAG}/install | node - --target ${target}`,
+    })),
     {
-      projection: null,
+      projection: 'runner',
       target: null,
-      command: `curl -fsSL https://github.com/${REPO}/releases/download/${TAG}/install | node -`,
+      command: `curl -fsSL https://github.com/${REPO}/releases/download/${TAG}/install | node - --projection runner`,
+      powershellCommand: `curl.exe -fsSL https://github.com/${REPO}/releases/download/${TAG}/install | node - --projection runner`,
     },
   ]);
 
@@ -610,15 +617,15 @@ test('end-to-end: publish once, take the generated command and install the Relea
   const job = await waitForJob(server, accepted.json.data.jobId);
   assert.equal(job.state, 'PUBLISHED', JSON.stringify(job));
 
-  // 1. One flag-free online command names this release.
-  const command = job.result.install.commands[0].command;
-  assert.equal(job.result.install.commands.length, 1);
+  // 1. Every host command names this release and selects its intended mode.
+  const command = job.result.install.commands.find((item) => item.projection === 'runner').command;
+  assert.equal(job.result.install.commands.length, 6);
   assert.equal(
     command,
-    `curl -fsSL https://github.com/${REPO}/releases/download/${TAG}/install | node -`,
+    `curl -fsSL https://github.com/${REPO}/releases/download/${TAG}/install | node - --projection runner`,
   );
   assert.equal(job.result.install.bootstrap, null);
-  assert.equal(command.includes('--'), false, 'the launcher needs no flags');
+  assert.equal(command.endsWith('--projection runner'), true);
 
   // 2. Every published byte is verified against the Release manifest.
   const payloadName = `hm2b-payload-${BUNDLE}-v${VERSION}.tgz`;
@@ -685,7 +692,7 @@ test('end-to-end: publish once, take the generated command and install the Relea
   const launcher = join(projectRoot, 'install');
   writeFileSync(launcher, downloaded.get('install'));
 
-  const installArgs = ['--project', projectRoot];
+  const installArgs = [...command.split(' | node - ')[1].split(' '), '--project', projectRoot];
   const env = { ...process.env };
   for (const key of [
     'HM2B_SESSION_ID', 'HM2B_PROJECT_ROOT', 'HM2B_RELEASE_BASE', 'HM2B_HOME', 'HM2B_GITHUB_API',

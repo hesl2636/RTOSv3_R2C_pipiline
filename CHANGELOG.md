@@ -28,14 +28,19 @@ step-by-step across the engine, the payload, and all five agent adapters; see
   `bundle.json`, recompiles it, and the **构建并发布** action builds and
   publishes in one click. The server reads the local `gh auth token` at
   startup, so no `GH_TOKEN` shell wrapper is needed.
-- Every bundle Release ships a flag-free `install` launcher, so the web page
-  emits one command: `curl -fsSL <release>/install | node -`. The launcher has
+- Every bundle Release ships an `install` launcher. The web build and published
+  results now show one command per agent (OMP, OpenCode, Codex, Claude Code and
+  dsh), plus an explicit runner command. A shell selector uses `curl.exe` for
+  Windows PowerShell and `curl` for macOS/Linux, including the copied text.
+  README and install docs include each agent's full command and explain
+  individual skills, stage invocation and runner's enforced workflow checks.
+  The launcher still accepts `curl -fsSL <release>/install | node -` and has
   the bundle id, version and allowed projections baked in, fetches the same
   tag's `install.mjs`, and installs one projection (default `runner`;
   `--target <t>` selects agent-native for those hosts, `--projection`
   overrides). Runner and agent-native share host role paths, so a project
-  installs exactly one of them. The per-target command list and the `gh`
-  pre-download into `.hm2b/release/` are retired. `install` joins
+  installs exactly one of them. The `gh` pre-download into `.hm2b/release/`
+  remains retired. `install` joins
   `SHA256SUMS.txt` and is verified like every other asset.
 - The generated launcher pins its publishing repository and installer digest,
   uses the non-interactive environment/Git credential chain and GitHub API for

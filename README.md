@@ -50,22 +50,56 @@ node web/serve.mjs
 
 - 已发布的 tag 与资产永不改写；发布失败后要换新 patch 版本，不能覆盖。
 - 自定义投影选项（**05**）产生的构建是 `publishable=false`，只能本地使用，不能发布。
-- 发布成功后，**06 构建产物** 只给出一条可直接复制的在线安装命令。
+- **06 构建产物** 和 **07 发布 Release** 按 agent 列出安装命令，可切换 Windows PowerShell 与 macOS/Linux。
 
 ### 1.3 一条命令安装
 
-在**目标项目根目录**执行一条命令即可。Release 里自带 `install` 启动器，bundle id、版本和允许的投影都已写死；它会拉取同 tag 的 `install.mjs`，校验 `SHA256SUMS.txt` 后安装：
+在**目标项目根目录**选择所用 agent，执行对应的一条命令。下面以 `rtosv3-drvport` 的 `1.0.0` Release 为例；其他版本直接复制网页生成的指令。
+
+以下是 **Windows PowerShell** 命令，使用 `curl.exe` 避免 `curl` 被解析成 `Invoke-WebRequest`。在 **macOS/Linux（Bash）** 中，将 `curl.exe` 改为 `curl`。
+
+每个 agent 的命令安装 `agent-native`：可直接调用 bundle 中的单个 skill、阶段技能和角色，不必执行整个工作流。需要记录进度、控制步骤顺序并强制验收时，选择下方的 `runner`。
+
+#### OMP（Oh My Pi）
 
 ```powershell
-$REPO    = "hesl2636/hm2B_drvport_pipiline"
-$BUNDLE  = "rtosv3-drvport"
-$VERSION = "1.0.2"
-$TAG     = "bundle-$BUNDLE-v$VERSION"
-
-curl.exe -fsSL "https://github.com/$REPO/releases/download/$TAG/install" | node -
+curl.exe -fsSL https://github.com/hesl2636/hm2B_drvport_pipiline/releases/download/bundle-rtosv3-drvport-v1.0.0/install | node - --target omp
 ```
 
-- 默认安装 `runner`；`--target omp`（或 `claude-code`、`codex`、`dsh`、`opencode`）改为安装该宿主的 agent-native 文件，`--projection agent-native` 安装全部宿主。
+#### OpenCode
+
+```powershell
+curl.exe -fsSL https://github.com/hesl2636/hm2B_drvport_pipiline/releases/download/bundle-rtosv3-drvport-v1.0.0/install | node - --target opencode
+```
+
+#### Codex
+
+```powershell
+curl.exe -fsSL https://github.com/hesl2636/hm2B_drvport_pipiline/releases/download/bundle-rtosv3-drvport-v1.0.0/install | node - --target codex
+```
+
+#### Claude Code
+
+```powershell
+curl.exe -fsSL https://github.com/hesl2636/hm2B_drvport_pipiline/releases/download/bundle-rtosv3-drvport-v1.0.0/install | node - --target claude-code
+```
+
+#### dsh
+
+```powershell
+curl.exe -fsSL https://github.com/hesl2636/hm2B_drvport_pipiline/releases/download/bundle-rtosv3-drvport-v1.0.0/install | node - --target dsh
+```
+
+#### runner（完整流程，接入全部支持的工具）
+
+```powershell
+curl.exe -fsSL https://github.com/hesl2636/hm2B_drvport_pipiline/releases/download/bundle-rtosv3-drvport-v1.0.0/install | node - --projection runner
+```
+
+Release 自带的 `install` 启动器固定了 bundle id、版本和允许的投影；它拉取同 tag 的 `install.mjs`，校验安装脚本及资产摘要后安装。
+
+- 不传参数默认安装 `runner`。`--target <id>` 选择该工具的 `agent-native` 文件；可重复，例如 `--target omp --target codex`。`--projection agent-native` 安装全部宿主。
+- `--target` 会选择 `agent-native`，不能用来筛选 runner 的宿主；当前 Release 入口的 runner 安装全部支持工具的接入文件。runner 安装的技能也可由宿主单独调用。
 - runner 与 agent-native 共用一批宿主角色文件，同一个项目只装其中一个。
 - 其他可选参数只有 `--project <dir>` 与 `--force`；不再需要 `gh` 预下载，也不需要记住一堆资产名。
 - 仓库公开时无需凭据；私有仓库需要 `GH_TOKEN` / `GITHUB_TOKEN`，或可用的 github.com git 凭据。

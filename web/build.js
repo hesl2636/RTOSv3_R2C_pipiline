@@ -202,16 +202,13 @@ function localCommand({ projection, target, options }) {
   return `${parts.join(' ')} && ${INSTALLER_CLI} --result ${shellToken(resultDir)} --compiled-workflow workflow.compiled.json --project .`;
 }
 
-/**
- * Canonical builds have exactly one install command: the Release's own
- * flag-free launcher. It fetches `install.mjs` and installs runner by default
- * (or the bundle's only projection); --target selects agent-native hosts.
- */
-function launcherCommand({ repo, tag }) {
-  return `curl -fsSL https://github.com/${repo}/releases/download/${tag}/install | node -`;
+/** The same pinned Release launcher, with an explicit projection/host choice. */
+function launcherCommand({ repo, tag, projection, target, curl = 'curl' }) {
+  const flags = target === null ? `--projection ${projection}` : `--target ${target}`;
+  return `${curl} -fsSL https://github.com/${repo}/releases/download/${tag}/install | node - ${flags}`;
 }
 
-/** One Release launcher, or per-projection commands for local/custom builds. */
+/** Per-host Release commands, or re-projection commands for local/custom builds. */
 export function installCommands({ id, version, projections, publishable, repo = null }) {
   const tag = `bundle-${id}-v${version}`;
   const validRepo = typeof repo === 'string' && /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo);
@@ -221,7 +218,21 @@ export function installCommands({ id, version, projections, publishable, repo = 
   };
   if (publishable && validRepo) {
     if (!isValidId(id, BUNDLE_ID_MAX) || !isValidVersion(version) || String(version).includes('+')) return null;
-    add(null, null, launcherCommand({ repo, tag }));
+    for (const projection of projections) {
+      const descriptor = getProjection(projection.id);
+      if (descriptor === null) return null;
+      const targets = projection.id === 'runner' ? [null] : projection.targets;
+      for (const target of targets) {
+        if (target !== null && !descriptor.targets.some((entry) => entry.id === target)) return null;
+        const choice = { repo, tag, projection: projection.id, target };
+        commands.push({
+          projection: projection.id,
+          target,
+          command: launcherCommand(choice),
+          powershellCommand: launcherCommand({ ...choice, curl: 'curl.exe' }),
+        });
+      }
+    }
     return { mode: 'release', bootstrap: null, commands };
   }
   for (const projection of projections) {

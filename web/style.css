@@ -579,6 +579,9 @@ label input, label select { margin-left: 0.35rem; }
 
 .command { display: flex; gap: 0.5rem; align-items: stretch; margin: 0.35rem 0; }
 .command-title { margin: 0.55rem 0 0.1rem; font-size: 0.78rem; font-weight: 600; color: var(--muted); }
+.install-shell-picker { display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem; margin: 0.85rem 0; color: var(--muted); font-size: 0.85rem; }
+.install-command-list { display: grid; gap: 0.5rem; }
+.install-command { min-width: 0; }
 .command code {
   flex: 1;
   min-width: 0;

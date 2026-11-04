@@ -12,13 +12,62 @@ node install.mjs --bundle rtosv3-drvport --version 1.0.0 --projection runner --p
 node .hm2b/bin/hm2b.js status
 ```
 
-The web page emits exactly one command: the Release's own `install` launcher.
-It has the bundle id, version and allowed projections baked in, fetches
-`install.mjs` from the same tag, and installs one projection:
+The web build and published results list one command per agent, plus a separate
+runner command. Select **Windows PowerShell** or **macOS / Linux (Bash)** before
+copying. All commands use the same Release's `install` launcher, with the bundle
+id, version and allowed projections pinned.
 
-```bash
-curl -fsSL https://github.com/hesl2636/hm2B_drvport_pipiline/releases/download/bundle-rtosv3-drvport-v1.0.0/install | node -
+### One command per agent
+
+Run one of these commands in the target project root. These are PowerShell
+commands: `curl.exe` bypasses Windows PowerShell's `curl` alias for
+`Invoke-WebRequest`. On macOS/Linux (Bash), replace `curl.exe` with `curl`.
+
+**OMP (Oh My Pi)**
+
+```powershell
+curl.exe -fsSL https://github.com/hesl2636/hm2B_drvport_pipiline/releases/download/bundle-rtosv3-drvport-v1.0.0/install | node - --target omp
 ```
+
+**OpenCode**
+
+```powershell
+curl.exe -fsSL https://github.com/hesl2636/hm2B_drvport_pipiline/releases/download/bundle-rtosv3-drvport-v1.0.0/install | node - --target opencode
+```
+
+**Codex**
+
+```powershell
+curl.exe -fsSL https://github.com/hesl2636/hm2B_drvport_pipiline/releases/download/bundle-rtosv3-drvport-v1.0.0/install | node - --target codex
+```
+
+**Claude Code**
+
+```powershell
+curl.exe -fsSL https://github.com/hesl2636/hm2B_drvport_pipiline/releases/download/bundle-rtosv3-drvport-v1.0.0/install | node - --target claude-code
+```
+
+**dsh**
+
+```powershell
+curl.exe -fsSL https://github.com/hesl2636/hm2B_drvport_pipiline/releases/download/bundle-rtosv3-drvport-v1.0.0/install | node - --target dsh
+```
+
+Each agent command installs agent-native skills and roles for that host. An
+agent can invoke an individual skill or stage without running the entire
+workflow. Progress and acceptance checks are maintained by the executor rather
+than enforced by a runner.
+
+### Runner: managed workflow, all supported hosts
+
+```powershell
+curl.exe -fsSL https://github.com/hesl2636/hm2B_drvport_pipiline/releases/download/bundle-rtosv3-drvport-v1.0.0/install | node - --projection runner
+```
+
+Runner records progress, controls step order and enforces output/gate checks.
+Its installed skills can also be invoked individually through the host.
+This Release entry installs runner integrations for all supported hosts;
+`--target` selects agent-native, not a subset of runner hosts.
 
 The default is `runner`; `--target <id>` (repeatable) selects agent-native for
 those hosts, and `--projection agent-native` installs every host. Runner and

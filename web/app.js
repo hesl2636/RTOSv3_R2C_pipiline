@@ -965,11 +965,12 @@ async function preview() {
   if (buildPublish !== null) buildPublish.disabled = !ok || state.uploadId === null;
 }
 
-function copyable(text) {
+function copyable(text, label = null) {
   const row = element('div', 'command');
   row.append(element('code', null, text));
   const button = element('button', null, '复制');
   button.type = 'button';
+  if (label !== null) button.setAttribute('aria-label', `复制 ${label} 安装命令`);
   button.addEventListener('click', () => {
     const clipboard = navigator.clipboard;
     if (clipboard === undefined || typeof clipboard.writeText !== 'function') {
@@ -997,19 +998,45 @@ function publishNote(view) {
 
 function installLabel(item) {
   if (item.projection === null || item.projection === undefined) return '一条命令安装';
-  return item.target === null || item.target === undefined
-    ? `${item.projection} · 全部目标`
-    : `${item.projection} · ${item.target}`;
+  if (item.projection === 'runner') return 'runner · 流程运行器（全部工具）';
+  if (item.target === null || item.target === undefined) return `${item.projection} · 全部工具`;
+  const target = getProjection(item.projection)?.targets.find((entry) => entry.id === item.target);
+  return `${target?.name ?? item.target} · 原生技能与角色`;
 }
 
 function appendInstallCommands(parent, commands) {
   if (!Array.isArray(commands) || commands.length === 0) return;
-  for (const item of commands) {
-    const block = element('div', 'install-command');
-    block.append(element('div', 'command-title', installLabel(item)));
-    block.append(copyable(item.command));
-    parent.append(block);
+  const hasShellChoice = commands.some((item) => typeof item.powershellCommand === 'string');
+  const list = element('div', 'install-command-list');
+  let shell = 'bash';
+  const render = () => {
+    list.replaceChildren();
+    for (const item of commands) {
+      const label = installLabel(item);
+      const command = shell === 'powershell' ? (item.powershellCommand ?? item.command) : item.command;
+      const block = element('div', 'install-command');
+      block.append(element('div', 'command-title', label));
+      block.append(copyable(command, label));
+      list.append(block);
+    }
+  };
+  if (hasShellChoice) {
+    const picker = element('label', 'install-shell-picker', '命令环境');
+    const select = element('select');
+    for (const [value, name] of [['powershell', 'Windows PowerShell'], ['bash', 'macOS / Linux（Bash）']]) {
+      const option = element('option', null, name);
+      option.value = value;
+      select.append(option);
+    }
+    const platform = navigator.userAgentData?.platform ?? navigator.platform ?? navigator.userAgent ?? '';
+    shell = /win/i.test(platform) ? 'powershell' : 'bash';
+    select.value = shell;
+    select.addEventListener('change', () => { shell = select.value; render(); });
+    picker.append(select);
+    parent.append(picker);
   }
+  render();
+  parent.append(list);
 }
 
 /** The one-time `install.mjs` fetch; every install command then runs online. */
@@ -1075,8 +1102,8 @@ function renderPublishJob(job) {
   body.append(head);
   if (job.error !== null) body.append(element('p', 'status', publishFailureText(job.error)));
   if (job.result?.install?.commands !== undefined) {
-    body.append(element('h3', null, '安装命令'));
-    body.append(element('p', 'hint', `一条命令在线安装 ${job.tag}：默认 runner；追加 --target omp 安装该宿主的 agent-native 文件（runner 与 agent-native 同一项目只装一个）。`));
+    body.append(element('h3', null, '一条命令安装 · 按 agent 选择'));
+    body.append(element('p', 'hint', `在目标项目根目录执行对应工具的指令，安装固定版本 ${job.tag}。agent 指令安装 agent-native，可单独调用技能或阶段；runner 提供进度与强制验收。同一个项目只安装其中一种模式。`));
     appendInstallBootstrap(body, job.result.install.bootstrap);
     appendInstallCommands(body, job.result.install.commands);
     const assetsFold = element('details', 'fold');
@@ -1186,13 +1213,13 @@ function renderBuild(build) {
   body.append(head);
 
   const releaseMode = build.install.mode === 'release';
-  body.append(element('h3', null, releaseMode ? '安装命令（固定版本）' : '安装命令（重投影后安装）'));
+  body.append(element('h3', null, releaseMode ? '一条命令安装 · 按 agent 选择' : '安装命令（重投影后安装）'));
   if (releaseMode) {
     appendInstallBootstrap(body, build.install.bootstrap);
     body.append(element(
       'p',
       'hint',
-      `一条命令在线安装 GitHub Release ${build.tag}：自动取该 Release 的 install.mjs 和资产，并校验 SHA256SUMS.txt，不需要 gh；私有仓库用 GH_TOKEN/GITHUB_TOKEN。默认安装 runner；要装宿主技能时追加 --target omp（或 --projection agent-native 装全部宿主）。runner 与 agent-native 共用一批宿主角色文件，同一个项目只装其中一个。`,
+      `选择命令环境，在目标项目根目录执行对应工具的指令，安装固定版本 ${build.tag}。agent 指令安装 agent-native，可单独调用技能或阶段；runner 提供进度与强制验收。同一个项目只安装其中一种模式。`,
     ));
     body.append(element('p', 'hint', '若该版本尚未发布，或已发布资产与本次构建不同，请先在 07 发布新版本。'));
   } else {
