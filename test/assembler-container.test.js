@@ -21,7 +21,7 @@ import {
 } from './helpers/minimal-bundle.js';
 
 const REPO = fileURLToPath(new URL('..', import.meta.url));
-const BIN = fileURLToPath(new URL('../bin/r2c-assembler.js', import.meta.url));
+const BIN = fileURLToPath(new URL('../bin/hm2b-assembler.js', import.meta.url));
 const BASELINE = join(
   REPO,
   'examples',
@@ -47,7 +47,7 @@ function expectErrors(zip, expected) {
 }
 
 function withTempDir(fn) {
-  const dir = mkdtempSync(join(tmpdir(), 'r2c-container-'));
+  const dir = mkdtempSync(join(tmpdir(), 'hm2b-container-'));
   try {
     return fn(dir);
   } finally {
@@ -171,7 +171,7 @@ test('path rule fixtures', async (t) => {
     ['trailing space', 'tasks/do-it.md '],
     ['invalid segment characters', 'tasks/do it.md'],
     ['path over 100 bytes', `tasks/${'a'.repeat(100)}.md`],
-    ['depth over 3', 'stages/a/b/c.json'],
+    ['depth over 4', 'stages/a/b/c/d.json'],
   ];
   for (const [name, badPath] of cases) {
     await t.test(name, () => {
@@ -301,7 +301,7 @@ test('a zero-byte non-constitution text keeps its owning code', () => {
 
 test('extra paths use the frozen layout codes exactly once', async (t) => {
   const cases = [
-    ['extra skill file keeps its dedicated code', () => minimalFiles({ 'skills/helper/README.md': 'notes\n' }), 'BUNDLE_SKILL_EXTRA_FILE@skills/helper/README.md'],
+    ['extra skill file is an unexpected path', () => minimalFiles({ 'skills/helper/README.md': 'notes\n' }), 'BUNDLE_UNEXPECTED_PATH@skills/helper/README.md'],
     ['unexpected stage file', () => minimalFiles({ 'stages/extra.md': 'x\n' }), 'BUNDLE_UNEXPECTED_PATH@stages/extra.md'],
     ['repository metadata', () => minimalFiles({ '.github/workflows/ci.yml': 'x\n' }), 'BUNDLE_UNEXPECTED_PATH@.github/workflows/ci.yml'],
     ['package manifest', () => minimalFiles({ 'package.json': '{}\n' }), 'BUNDLE_UNEXPECTED_PATH@package.json'],
@@ -355,7 +355,7 @@ test('a container failure exits 2 and repeated runs produce identical JSON', () 
 
 test('warnings never change the exit code', () => {
   const zip = minimalZip({
-    overrides: { 'tasks/do-it.md': MINIMAL_TASK.replace('完成唯一一步。', '先跑 r2c-status。') },
+    overrides: { 'tasks/do-it.md': MINIMAL_TASK.replace('完成唯一一步。', '先跑 hm2b-status。') },
   });
   withTempDir((dir) => {
     const zipPath = join(dir, 'warning.zip');
@@ -381,19 +381,20 @@ test('the validator is a pure bytes-in/report-out function (no filesystem writes
   }
 });
 
-test('the baseline bundle keeps 0 errors, 2 warnings and the frozen IR', () => {
+test('the baseline bundle keeps 0 errors, 2 warnings and the frozen compiled workflow', () => {
   const bytes = readFileSync(BASELINE);
-  assert.equal(bytes.length, 55042);
-  assert.equal(sha256Hex(bytes), 'c22064539aa189b4d9345b1d39b148967a450584badd2593dcf47c0c5b75a13e');
+  assert.equal(bytes.length, 55043);
+  assert.equal(sha256Hex(bytes), 'ff1f3004c618be9d5ee6b090e0d635f6a6c7cb49a8c22e188cc11206bbe37cd4');
   const report = validate(bytes);
   assert.equal(report.ok, true, JSON.stringify(report.errors));
   assert.deepEqual(report.errors, []);
+  assert.equal(report.schema, 'hm2b.bundle/v2');
   assert.deepEqual(report.warnings.map((warning) => warning.code), [
     'BUNDLE_CONSTITUTION_PLACEHOLDER',
     'BUNDLE_TASK_RUNTIME_LEAK',
   ]);
   const compiled = compileBundle(bytes, PRIMITIVES);
   assert.equal(compiled.ok, true);
-  assert.equal(compiled.irBytes.length, 58827);
-  assert.equal(compiled.digest, '8a2a57593939f91117d57f9ca34c56b2fc631f6837168ef74032daa95202d395');
+  assert.equal(compiled.compiledWorkflowBytes.length, 58919);
+  assert.equal(compiled.digest, '518643ab9c92d270a66bd4545cba660d0511243070c3479234edec3225b6d23c');
 });

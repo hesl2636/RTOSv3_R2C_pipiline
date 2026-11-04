@@ -49,7 +49,7 @@ export const SECURITY_HEADERS = Object.freeze({
 /** Server-only modules under `web/` are never part of the static surface. */
 const SERVER_MODULES = new Set(['serve.mjs', 'http.js', 'build.js', 'publish.js', 'child.js']);
 /** Only these trees are public (decision #75 §10.6). */
-const STATIC_PREFIXES = new Set(['web', 'core', 'ir', 'assembler', 'projection', 'runtime']);
+const STATIC_PREFIXES = new Set(['web', 'core', 'compiled', 'assembler', 'projection', 'runtime']);
 const DENIED_TOP_LEVEL = new Set([
   '.git', 'node_modules', 'src', 'test', 'docs', 'examples', 'scripts', 'bin',
   'installer', 'adapters', 'pack', 'shims', 'plugins',
@@ -99,7 +99,7 @@ export function parsePort(argv) {
 }
 
 export function rateLimitFromEnv(env = process.env) {
-  const raw = env.R2C_WEB_RATE_LIMIT;
+  const raw = env.HM2B_WEB_RATE_LIMIT;
   if (raw === undefined || raw === '') return DEFAULT_RATE_LIMIT;
   const value = Number(raw);
   return Number.isInteger(value) && value > 0 ? value : DEFAULT_RATE_LIMIT;
@@ -379,7 +379,7 @@ export function createHttpGuards(node) {
       if (site !== 'same-origin' && site !== 'none') {
         return webError(403, 'WEB_FETCH_SITE_INVALID', 'cross-site requests are not allowed');
       }
-      if (!timingSafeEqualText(request.headers['x-r2c-csrf'], csrf)) {
+      if (!timingSafeEqualText(request.headers['x-hm2b-csrf'], csrf)) {
         return webError(403, 'WEB_CSRF_INVALID', 'CSRF token is missing or invalid');
       }
     }

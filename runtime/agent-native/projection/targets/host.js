@@ -25,9 +25,9 @@ export function hostProfile({ detect, assets, smoke }) {
  * `json` or `yaml` and tells the checker which structural guarantee applies.
  */
 export function layoutSmoke(namespace, { skillsRoot, agentsRoot = null, agentFormat = 'md', extra = [] }) {
-  const smoke = [{ kind: 'skills', root: skillsRoot, prefix: `${namespace}-`, format: 'skill' }];
+  const smoke = [{ kind: 'skills', root: skillsRoot, prefix: '', format: 'skill' }];
   if (agentsRoot !== null) {
-    smoke.push({ kind: 'agents', root: agentsRoot, prefix: `${namespace}-`, format: agentFormat });
+    smoke.push({ kind: 'agents', root: agentsRoot, prefix: '', format: agentFormat });
   }
   smoke.push({ kind: 'metadata', root: '.agents/agent-native', prefix: `${namespace}/roles.json`, format: 'json' });
   return [...smoke, ...extra];

@@ -3,7 +3,7 @@
  *
  * Tasks may omit frontmatter, but the body must carry the four fixed H2
  * sections and exactly one `{{submit}}` code block. The structural scanner is
- * shared with IR validation.
+ * shared with compiled workflow validation.
  */
 import { codePointLength } from '../../core/code-point.js';
 import { parseFrontmatter } from '../frontmatter.js';
@@ -11,7 +11,7 @@ import { scanTaskBody, FENCE_RE, TASK_HEADINGS } from '../markdown.js';
 import { nonEmptyLines } from '../util.js';
 
 const TASK_FRONTMATTER_KEYS = ['id', 'title', 'description'];
-const LEAK_RE = /\br2c-(status|run|submit|pause|resume|cancel)\b|\br2c (status|run|submit|pause|resume|cancel)\b|\.r2c\/engine\b/;
+const LEAK_RE = /\b(?:hm2b|r2c)-(?:status|run|submit|pause|resume|cancel)\b|\b(?:hm2b|r2c) (?:status|run|submit|pause|resume|cancel)\b|\.(?:hm2b|r2c)\/engine\b/;
 
 function frontmatterError(context, path, line, reason, message) {
   context.fail(path, 'BUNDLE_FRONTMATTER_INVALID', message, {

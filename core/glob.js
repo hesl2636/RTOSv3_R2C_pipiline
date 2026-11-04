@@ -1,5 +1,5 @@
 /**
- * Minimal glob grammar shared by bundle outputs, IR outputs and gates.
+ * Minimal glob grammar shared by bundle outputs, compiled workflow outputs and gates.
  *
  * `isValidGlob` only rejects patterns that can never match (unbalanced
  * braces/brackets, empty, NUL). `matchesGlob` implements the same subset the

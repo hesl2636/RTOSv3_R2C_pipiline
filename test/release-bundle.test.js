@@ -27,8 +27,9 @@ import { compareCodePoints } from '../core/code-point.js';
 import { sha256Hex } from '../core/node/sha256.js';
 import {
   BUNDLE_MAKE_LATEST,
-  IR_ASSET,
+  COMPILED_WORKFLOW_ASSET,
   INSTALL_ASSET,
+  PAYLOAD_FILE_KINDS,
   PAYLOAD_MANIFEST_NAME,
   RELEASE_PAYLOAD_SCHEMA,
   SUMS_ASSET,
@@ -43,6 +44,13 @@ import {
   verifyPayloadArchive,
 } from '../scripts/lib/bundle-release.mjs';
 import { createReleaseTarGz, readReleaseTarGz } from '../installer/release-tar.js';
+import {
+  ASSET_CHECKLISTS,
+  ASSET_HOOKS,
+  ASSET_KNOWLEDGE_BASE,
+  ASSET_MCP,
+  assetZip,
+} from './helpers/minimal-bundle.js';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const SCRIPT = join(ROOT, 'scripts', 'release.mjs');
@@ -55,15 +63,15 @@ const SAMPLE_ASSETS = [
   'SHA256SUMS.txt',
   'agent-native-rtosv3-drvport-v1.0.0.tgz',
   'bundle-rtosv3-drvport-v1.0.0.zip',
+  'hm2b-engine-0.1.0.tgz',
+  'hm2b-framework-0.1.0.tgz',
+  'hm2b-payload-rtosv3-drvport-v1.0.0.tgz',
   'install.mjs',
-  'r2c-engine-0.1.0.tgz',
-  'r2c-framework-0.1.0.tgz',
-  'r2c-payload-rtosv3-drvport-v1.0.0.tgz',
-  'workflow.ir.json',
+  'workflow.compiled.json',
 ];
 
 function tempDir(t, prefix) {
-  const dir = mkdtempSync(join(tmpdir(), `r2c-bundle-release-${prefix}-`));
+  const dir = mkdtempSync(join(tmpdir(), `hm2b-bundle-release-${prefix}-`));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   return dir;
 }
@@ -165,21 +173,21 @@ test('bundle tags parse right-to-left with the known id and reject near misses',
 });
 
 test('the asset matrix follows requires.projections and never emits legacy assets', () => {
-  const r2c = bundleAssetNames({
+  const runner = bundleAssetNames({
     id: 'x',
     version: '1.0.0',
-    allowed: ['r2c'],
+    allowed: ['runner'],
     engineVersion: '0.2.0',
     frameworkVersion: '0.3.0',
   });
-  assert.deepEqual(r2c, [
+  assert.deepEqual(runner, [
     'SHA256SUMS.txt',
     'bundle-x-v1.0.0.zip',
+    'hm2b-engine-0.2.0.tgz',
+    'hm2b-framework-0.3.0.tgz',
+    'hm2b-payload-x-v1.0.0.tgz',
     'install.mjs',
-    'r2c-engine-0.2.0.tgz',
-    'r2c-framework-0.3.0.tgz',
-    'r2c-payload-x-v1.0.0.tgz',
-    'workflow.ir.json',
+    'workflow.compiled.json',
   ]);
 
   const agent = bundleAssetNames({
@@ -193,34 +201,34 @@ test('the asset matrix follows requires.projections and never emits legacy asset
     'SHA256SUMS.txt',
     'agent-native-x-v1.0.0.tgz',
     'bundle-x-v1.0.0.zip',
+    'hm2b-framework-0.3.0.tgz',
     'install.mjs',
-    'r2c-framework-0.3.0.tgz',
-    'workflow.ir.json',
+    'workflow.compiled.json',
   ]);
 
   const both = bundleAssetNames({
     id: 'x',
     version: '1.0.0',
-    allowed: ['r2c', 'agent-native'],
+    allowed: ['runner', 'agent-native'],
     engineVersion: '0.2.0',
     frameworkVersion: '0.3.0',
   });
   assert.equal(both.length, 8);
-  for (const name of [...r2c, ...agent, ...both]) {
-    assert.doesNotMatch(name, /^r2c-payload-\d+\.\d+\.\d+\.tgz$/, 'legacy payload name leaked');
+  for (const name of [...runner, ...agent, ...both]) {
+    assert.doesNotMatch(name, /^r2c-/, 'legacy channel name leaked');
     assert.notEqual(name, 'projection-result.json');
   }
   assert.equal(bundleTag(ID, VERSION), TAG);
   assert.equal(BUNDLE_MAKE_LATEST, false);
 });
 
-test('the sample bundle builds all eight assets with frozen zip and IR anchors', () => {
+test('the sample bundle builds all eight assets with frozen zip and compiled workflow anchors', () => {
   const built = buildBundleRelease({ root: ROOT, bundlePath: SAMPLE_ZIP, tag: TAG });
   assert.deepEqual(built.failures, []);
   assert.equal(built.ok, true);
   assert.equal(built.id, ID);
   assert.equal(built.version, VERSION);
-  assert.deepEqual(built.allowed, ['r2c', 'agent-native']);
+  assert.deepEqual(built.allowed, ['runner', 'agent-native']);
   assert.deepEqual(built.assets.map((asset) => asset.name), SAMPLE_ASSETS);
   assert.deepEqual(built.plan.assets.map((asset) => asset.name), SAMPLE_ASSETS);
   assert.equal(built.plan.tag, TAG);
@@ -228,14 +236,22 @@ test('the sample bundle builds all eight assets with frozen zip and IR anchors',
   assert.equal(built.plan.prerelease, false);
 
   const zip = built.assets.find((asset) => asset.name === `bundle-${ID}-v${VERSION}.zip`);
-  assert.equal(zip.data.length, 55042);
-  assert.equal(sha256Hex(zip.data), 'c22064539aa189b4d9345b1d39b148967a450584badd2593dcf47c0c5b75a13e');
+  assert.equal(zip.data.length, 55043);
+  assert.equal(sha256Hex(zip.data), 'ff1f3004c618be9d5ee6b090e0d635f6a6c7cb49a8c22e188cc11206bbe37cd4');
   assert.ok(zip.data.equals(readFileSync(SAMPLE_ZIP)));
 
-  const ir = built.assets.find((asset) => asset.name === IR_ASSET);
-  assert.equal(ir.data.length, 58827);
-  assert.equal(sha256Hex(ir.data), '8a2a57593939f91117d57f9ca34c56b2fc631f6837168ef74032daa95202d395');
-  assert.equal(built.irDigest, sha256Hex(ir.data));
+  const compiledWorkflow = built.assets.find((asset) => asset.name === COMPILED_WORKFLOW_ASSET);
+  assert.equal(compiledWorkflow.data.length, 58919);
+  assert.equal(sha256Hex(compiledWorkflow.data), '518643ab9c92d270a66bd4545cba660d0511243070c3479234edec3225b6d23c');
+  assert.equal(built.compiledWorkflowDigest, sha256Hex(compiledWorkflow.data));
+  assert.equal(built.compiledWorkflow.schema, 'hm2b.compiled-workflow/v2');
+  assert.equal(built.compiledWorkflow.source.bundle.schema, 'hm2b.bundle/v2');
+  assert.equal(built.compiledWorkflow.source.bundle.contentSha256, '2093b03b97c90c6e77dfeb26c69d585ef78a11170032151171c31272ac7dbbf2');
+  assert.equal(built.compiledWorkflow.source.manifest.sha256, '6f92d763fb82cd00d36f99e8dc42ba26f0a510c4b64bd9d741e2625bec68df84');
+  assert.deepEqual(built.compiledWorkflow.knowledgeBase, []);
+  assert.deepEqual(built.compiledWorkflow.checklists, []);
+  assert.equal(built.compiledWorkflow.hooks, null);
+  assert.equal(built.compiledWorkflow.mcp, null);
 
   for (const asset of built.assets) {
     assert.ok(asset.data.length > 0, `${asset.name} is empty`);
@@ -261,7 +277,7 @@ test('payload manifests self-prove every member, mode, kind and target', () => {
   assert.equal(built.ok, true);
 
   const expected = new Map([
-    ['r2c', { file: 'r2c-payload-rtosv3-drvport-v1.0.0.tgz', count: 45, targets: ['r2c'] }],
+    ['runner', { file: 'hm2b-payload-rtosv3-drvport-v1.0.0.tgz', count: 45, targets: ['runner'] }],
     [
       'agent-native',
       {
@@ -277,8 +293,8 @@ test('payload manifests self-prove every member, mode, kind and target', () => {
     assert.equal(payload.data.readUInt32LE(4), 0, 'gzip MTIME must be zero');
     assert.equal(payload.manifest.schema, RELEASE_PAYLOAD_SCHEMA);
     assert.deepEqual(payload.manifest.bundle, { id: ID, version: VERSION });
-    assert.equal(payload.manifest.ir.digest, built.irDigest);
-    assert.equal(payload.manifest.ir.contentSha256, built.ir.source.bundle.contentSha256);
+    assert.equal(payload.manifest.compiledWorkflow.digest, built.compiledWorkflowDigest);
+    assert.equal(payload.manifest.compiledWorkflow.contentSha256, built.compiledWorkflow.source.bundle.contentSha256);
     assert.equal(payload.manifest.projection.id, projectionId);
     assert.match(payload.manifest.projection.version, /^\d+\.\d+\.\d+/);
     assert.deepEqual(payload.manifest.options, {
@@ -300,21 +316,107 @@ test('payload manifests self-prove every member, mode, kind and target', () => {
     assert.deepEqual(verifyPayloadArchive(payload.data, {
       id: ID,
       version: VERSION,
-      irDigest: built.irDigest,
-      contentSha256: built.ir.source.bundle.contentSha256,
+      compiledWorkflowDigest: built.compiledWorkflowDigest,
+      contentSha256: built.compiledWorkflow.source.bundle.contentSha256,
       projectionId,
       options: payload.manifest.options,
       targets: payload.manifest.targets,
     }), []);
     for (const file of payload.manifest.files) {
       assert.ok(file.mode === 0o644 || file.mode === 0o755);
-      assert.ok(file.kind.length > 0);
+      assert.ok(PAYLOAD_FILE_KINDS.includes(file.kind), `${file.path}: ${file.kind}`);
       assert.ok(file.targets.length > 0);
       const member = archive.byPath.get(`files/${file.path}`);
       assert.equal(sha256Hex(Buffer.from(member.data)), file.sha256);
       assert.equal(member.mode, file.mode);
     }
   }
+});
+
+test('a compiled workflow with assets ships knowledge, checklist, hooks and mcp payload members', (t) => {
+  const zipFile = join(tempDir(t, 'asset-zip'), 'bundle-minimal-demo-v1.0.0.zip');
+  writeFileSync(zipFile, assetZip());
+  const built = buildBundleRelease({ root: ROOT, bundlePath: zipFile });
+  assert.deepEqual(built.failures, []);
+  assert.equal(built.ok, true);
+  assert.equal(built.id, 'minimal-demo');
+  assert.equal(built.version, '1.0.0');
+  assert.equal(built.compiledWorkflow.schema, 'hm2b.compiled-workflow/v2');
+  assert.equal(built.compiledWorkflow.knowledgeBase.length, 2);
+  assert.equal(built.compiledWorkflow.checklists.length, 2);
+  assert.notEqual(built.compiledWorkflow.hooks, null);
+  assert.notEqual(built.compiledWorkflow.mcp, null);
+
+  const digest = (text) => sha256Hex(Buffer.from(text, 'utf8'));
+  const expected = {
+    knowledge: [...ASSET_KNOWLEDGE_BASE.values()].map(digest),
+    checklist: [...ASSET_CHECKLISTS.values()].map(digest),
+    hooks: [digest(canonicalJson(ASSET_HOOKS))],
+    mcp: [digest(canonicalJson(ASSET_MCP))],
+  };
+  for (const [projectionId, payload] of built.payloads) {
+    for (const [kind, digests] of Object.entries(expected)) {
+      const members = payload.manifest.files.filter((file) => file.kind === kind);
+      assert.deepEqual(
+        members.map((file) => file.sha256).sort(compareCodePoints),
+        [...digests].sort(compareCodePoints),
+        `${projectionId}: ${kind} members`,
+      );
+      for (const file of members) {
+        assert.ok(file.targets.length > 0);
+        for (const target of file.targets) assert.ok(payload.manifest.targets.includes(target));
+      }
+    }
+    // The archive really carries the declared bytes, not just the manifest.
+    const archive = readPayload(payload.data, payload.file);
+    for (const file of payload.manifest.files.filter((item) => item.kind in expected)) {
+      const member = archive.byPath.get(`files/${file.path}`);
+      assert.notEqual(member, undefined, `${projectionId}: ${file.path}`);
+      assert.equal(sha256Hex(Buffer.from(member.data)), file.sha256);
+    }
+  }
+});
+
+test('a payload member with an unknown kind fails self-proof', () => {
+  const built = buildBundleRelease({ root: ROOT, bundlePath: SAMPLE_ZIP });
+  const payload = built.payloads.get('runner');
+  const { entries } = readReleaseTarGz(payload.data);
+  const manifest = JSON.parse(JSON.stringify(payload.manifest));
+  manifest.files[0].kind = 'bogus';
+  const tampered = createReleaseTarGz(entries.map((entry) => (entry.path === PAYLOAD_MANIFEST_NAME
+    ? { path: entry.path, data: Buffer.from(canonicalJson(manifest), 'utf8'), mode: entry.mode }
+    : { path: entry.path, data: entry.data, mode: entry.mode })));
+  const problems = verifyPayloadArchive(tampered, {
+    id: ID,
+    version: VERSION,
+    compiledWorkflowDigest: built.compiledWorkflowDigest,
+    contentSha256: built.compiledWorkflow.source.bundle.contentSha256,
+    projectionId: 'runner',
+    options: payload.manifest.options,
+    targets: payload.manifest.targets,
+  });
+  assert.ok(problems.some((problem) => /kind bogus is not a known file kind/.test(problem)), problems.join('\n'));
+});
+
+test('a payload member the manifest does not declare fails self-proof', () => {
+  const built = buildBundleRelease({ root: ROOT, bundlePath: SAMPLE_ZIP });
+  const payload = built.payloads.get('runner');
+  const { entries } = readReleaseTarGz(payload.data);
+  const tampered = createReleaseTarGz([
+    ...entries.map((entry) => ({ path: entry.path, data: entry.data, mode: entry.mode })),
+    { path: 'files/rogue.txt', data: Buffer.from('rogue\n', 'utf8'), mode: 0o644 },
+  ]);
+  const problems = verifyPayloadArchive(tampered, {
+    id: ID,
+    version: VERSION,
+    compiledWorkflowDigest: built.compiledWorkflowDigest,
+    contentSha256: built.compiledWorkflow.source.bundle.contentSha256,
+    projectionId: 'runner',
+    options: payload.manifest.options,
+    targets: payload.manifest.targets,
+  });
+  assert.ok(problems.some((problem) => /payload member is not declared: files\/rogue\.txt/.test(problem)), problems.join('\n'));
+  assert.ok(problems.some((problem) => /member count/.test(problem)), problems.join('\n'));
 });
 
 test('the CLI writes byte-identical assets twice and --check verifies the directory', (t) => {
@@ -342,7 +444,7 @@ test('the CLI writes byte-identical assets twice and --check verifies the direct
   );
 });
 
-test('--check rejects a tag that disagrees with zip/IR and a legacy tag', (t) => {
+test('--check rejects a tag that disagrees with zip/compiled workflow and a legacy tag', (t) => {
   const wrongVersion = runRelease(['--bundle', SAMPLE_ZIP, '--check', '--tag', 'bundle-rtosv3-drvport-v1.0.1']);
   assert.equal(wrongVersion.status, 1, wrongVersion.stdout);
   assert.match(wrongVersion.stderr, /RELEASE_TAG_MISMATCH/);
@@ -364,15 +466,15 @@ test('--check rejects a tag that disagrees with zip/IR and a legacy tag', (t) =>
 test('--check fails for tampered assets, missing assets and legacy channel leakage', (t) => {
   const out = buildTo(t, 'tamper');
 
-  writeFileSync(join(out, IR_ASSET), `${readFileSync(join(out, IR_ASSET), 'utf8')} `);
+  writeFileSync(join(out, COMPILED_WORKFLOW_ASSET), `${readFileSync(join(out, COMPILED_WORKFLOW_ASSET), 'utf8')} `);
   let result = runRelease(['--bundle', SAMPLE_ZIP, '--check', '--out', out]);
   assert.equal(result.status, 1, result.stdout);
-  assert.match(result.stderr, /workflow\.ir\.json in .* is not byte-identical/);
+  assert.match(result.stderr, /workflow\.compiled\.json in .* is not byte-identical/);
 
-  rmSync(join(out, IR_ASSET));
+  rmSync(join(out, COMPILED_WORKFLOW_ASSET));
   result = runRelease(['--bundle', SAMPLE_ZIP, '--check', '--out', out]);
   assert.equal(result.status, 1);
-  assert.match(result.stderr, /RELEASE_ASSET_SET_MISMATCH.*missing \[workflow\.ir\.json\]/);
+  assert.match(result.stderr, /RELEASE_ASSET_SET_MISMATCH.*missing \[workflow\.compiled\.json\]/);
 
   const fresh = buildTo(t, 'leak');
   writeFileSync(join(fresh, 'r2c-payload-0.1.0.tgz'), 'legacy');
@@ -397,43 +499,43 @@ test('--check fails for tampered assets, missing assets and legacy channel leaka
 
 test('a tampered payload archive fails manifest self-proof', () => {
   const built = buildBundleRelease({ root: ROOT, bundlePath: SAMPLE_ZIP });
-  const payload = built.payloads.get('r2c');
+  const payload = built.payloads.get('runner');
   const { entries } = readReleaseTarGz(payload.data);
   const tampered = createReleaseTarGz(
     entries.map((entry) => (entry.path === 'files/workflows/rtosv3-drvport.yaml'
-      ? { path: entry.path, data: Buffer.from('schema: "r2c.workflow/v1"\n'), mode: entry.mode }
+      ? { path: entry.path, data: Buffer.from('schema: "hm2b.workflow/v1"\n'), mode: entry.mode }
       : { path: entry.path, data: entry.data, mode: entry.mode })),
   );
   const problems = verifyPayloadArchive(tampered, {
     id: ID,
     version: VERSION,
-    irDigest: built.irDigest,
-    contentSha256: built.ir.source.bundle.contentSha256,
-    projectionId: 'r2c',
+    compiledWorkflowDigest: built.compiledWorkflowDigest,
+    contentSha256: built.compiledWorkflow.source.bundle.contentSha256,
+    projectionId: 'runner',
     options: payload.manifest.options,
     targets: payload.manifest.targets,
   });
   assert.ok(problems.some((problem) => /hash does not match/.test(problem)), problems.join('\n'));
 });
 
-test('r2c-only and agent-native-only bundles produce the conditional asset sets', (t) => {
-  const r2cBundle = copySampleBundle(t, ['r2c']);
-  const r2cOut = tempDir(t, 'r2c');
-  const r2cRun = runRelease(['--bundle', r2cBundle, '--out', r2cOut]);
-  assert.equal(r2cRun.status, 0, r2cRun.stderr);
-  assert.deepEqual(assetNames(r2cOut), [
+test('runner-only and agent-native-only bundles produce the conditional asset sets', (t) => {
+  const runnerBundle = copySampleBundle(t, ['runner']);
+  const runnerOut = tempDir(t, 'runner');
+  const runnerRun = runRelease(['--bundle', runnerBundle, '--out', runnerOut]);
+  assert.equal(runnerRun.status, 0, runnerRun.stderr);
+  assert.deepEqual(assetNames(runnerOut), [
     'SHA256SUMS.txt',
     'bundle-rtosv3-drvport-v1.0.0.zip',
+    'hm2b-engine-0.1.0.tgz',
+    'hm2b-framework-0.1.0.tgz',
+    'hm2b-payload-rtosv3-drvport-v1.0.0.tgz',
     'install.mjs',
-    'r2c-engine-0.1.0.tgz',
-    'r2c-framework-0.1.0.tgz',
-    'r2c-payload-rtosv3-drvport-v1.0.0.tgz',
-    'workflow.ir.json',
+    'workflow.compiled.json',
   ]);
-  const r2cPayload = payloadArchive(r2cOut, 'r2c-payload-rtosv3-drvport-v1.0.0.tgz');
-  assert.deepEqual(r2cPayload.manifest.options, { stageOrder: null, skills: null, targets: ['r2c'] });
-  const r2cCheck = runRelease(['--bundle', r2cBundle, '--check', '--out', r2cOut]);
-  assert.equal(r2cCheck.status, 0, r2cCheck.stderr);
+  const runnerPayload = payloadArchive(runnerOut, 'hm2b-payload-rtosv3-drvport-v1.0.0.tgz');
+  assert.deepEqual(runnerPayload.manifest.options, { stageOrder: null, skills: null, targets: ['runner'] });
+  const runnerCheck = runRelease(['--bundle', runnerBundle, '--check', '--out', runnerOut]);
+  assert.equal(runnerCheck.status, 0, runnerCheck.stderr);
 
   const agentBundle = copySampleBundle(t, ['agent-native']);
   const agentOut = tempDir(t, 'agent');
@@ -443,9 +545,9 @@ test('r2c-only and agent-native-only bundles produce the conditional asset sets'
     'SHA256SUMS.txt',
     'agent-native-rtosv3-drvport-v1.0.0.tgz',
     'bundle-rtosv3-drvport-v1.0.0.zip',
+    'hm2b-framework-0.1.0.tgz',
     'install.mjs',
-    'r2c-framework-0.1.0.tgz',
-    'workflow.ir.json',
+    'workflow.compiled.json',
   ]);
   const agentPayload = payloadArchive(agentOut, 'agent-native-rtosv3-drvport-v1.0.0.tgz');
   assert.deepEqual(agentPayload.manifest.options, {
@@ -465,15 +567,15 @@ test('the framework source set excludes repo-only trees and keeps the toolchain'
   assert.deepEqual(frameworkSourceProblems(rels), []);
   for (const rel of rels) {
     assert.doesNotMatch(rel, /^(test|tests|docs|scripts|\.github|examples|plugins|pack|src|adapters|shims|schema|node_modules|dist)\//);
-    assert.notEqual(rel, 'bin/r2c.js');
+    assert.notEqual(rel, 'bin/hm2b.js');
   }
   for (const required of [
     'package.json',
     'LICENSE',
-    'bin/r2c-assembler.js',
+    'bin/hm2b-assembler.js',
     'bin/assembler/common.js',
     'core/canonical-json.js',
-    'ir/schema.js',
+    'compiled/schema.js',
     'assembler/compile.js',
     'projection/project.js',
     'runtime/shared/render-role.js',
@@ -493,11 +595,11 @@ test('the framework source set excludes repo-only trees and keeps the toolchain'
     '.github/workflows/ci.yml',
     'examples/rtosv3/bundle/bundle.json',
     'plugins/x.js',
-    'bin/r2c.js',
+    'bin/hm2b.js',
   ]);
   assert.equal(violations.length, 8);
   assert.ok(violations.some((message) => message.includes('test/x.test.js')));
-  assert.ok(violations.some((message) => message.includes('bin/r2c.js')));
+  assert.ok(violations.some((message) => message.includes('bin/hm2b.js')));
 });
 
 test('the engine archive keeps its own whitelist', () => {
@@ -508,7 +610,7 @@ test('the engine archive keeps its own whitelist', () => {
     assert.doesNotMatch(rel, /^(test|tests|docs|scripts|pack|adapters|plugins|dist)\//);
   }
   assert.ok(built.engineFiles.includes('package.json'));
-  assert.ok(built.engineFiles.includes('bin/r2c.js'));
+  assert.ok(built.engineFiles.includes('bin/hm2b.js'));
 });
 
 test('--bundle requires an explicit --out', () => {

@@ -29,11 +29,18 @@ import { canonicalJson } from '../core/canonical-json.js';
 import { compareCodePoints } from '../core/code-point.js';
 import { sha256Hex } from '../core/node/sha256.js';
 import { installRelease, selectProjection } from '../installer/release-install.js';
-import { serializeIr } from '../ir/serialize.js';
+import { serializeCompiledWorkflow } from '../compiled/serialize.js';
 import { LAUNCHER_TEXT, RUNTIME_RECEIPT_PATH } from '../installer/runtime.js';
-import { irPath as irRelPath } from '../installer/paths.js';
+import { compiledWorkflowPath as compiledWorkflowRelPath } from '../installer/paths.js';
 import { createReleaseTarGz, readReleaseTarGz } from '../installer/release-tar.js';
 import { rawResponse, startGithubFixture, startHttpFixture } from './helpers/release-fixture.js';
+import {
+  ASSET_CHECKLISTS,
+  ASSET_HOOKS,
+  ASSET_KNOWLEDGE_BASE,
+  ASSET_MCP,
+  assetZip,
+} from './helpers/minimal-bundle.js';
 import { toolSentinels } from './helpers/tools.js';
 import { withPath } from './support/env.js';
 
@@ -48,7 +55,7 @@ const ENGINE_VERSION = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8
 const AGENT_TARGETS = ['claude-code', 'codex', 'dsh', 'omp', 'opencode'];
 
 function tempDir(t, prefix) {
-  const dir = mkdtempSync(join(tmpdir(), `r2c-release-install-${prefix}-`));
+  const dir = mkdtempSync(join(tmpdir(), `hm2b-release-install-${prefix}-`));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   return dir;
 }
@@ -125,10 +132,32 @@ function payloadManifest(dir, name) {
   };
 }
 
+/** Local Release of the minimal bundle plus every v2 compiled workflow asset kind. */
+function buildAssetRelease(t) {
+  const source = join(tempDir(t, 'asset-source'), 'bundle-minimal-demo-v1.0.0.zip');
+  writeFileSync(source, assetZip());
+  const release = tempDir(t, 'asset-release');
+  const result = spawnSync(process.execPath, [RELEASE, '--bundle', source, '--out', release], {
+    cwd: ROOT,
+    encoding: 'utf8',
+    timeout: 240_000,
+    windowsHide: true,
+  });
+  assert.equal(result.status, 0, `release build failed:\n${result.stdout}\n${result.stderr}`);
+  return release;
+}
+
 /** A home no developer state can leak through. */
 function cleanEnv(home) {
   const env = { ...process.env };
   for (const key of [
+    'HM2B_SESSION_ID',
+    'HM2B_PROJECT_ROOT',
+    'HM2B_RELEASE_BASE',
+    'HM2B_HOME',
+    'HM2B_GITHUB_API',
+    // Frozen legacy names: `R2C_HOME` is still the `--agent` fallback and the
+    // legacy engine reads `R2C_RELEASE_BASE`.
     'R2C_SESSION_ID',
     'R2C_PROJECT_ROOT',
     'R2C_PLUGIN_SOURCE',
@@ -139,7 +168,6 @@ function cleanEnv(home) {
     'GITHUB_TOKEN',
     'DSH_SESSION_ID',
     'DSH_HOME',
-    'R2C_GITHUB_API',
   ]) {
     delete env[key];
   }
@@ -191,8 +219,8 @@ function project(t) {
   return tempDir(t, 'project');
 }
 
-function receipt(projectRoot, projectionId = 'r2c', bundleId = ID) {
-  const file = join(projectRoot, '.r2c', 'install', 'receipts', projectionId, `${bundleId}.json`);
+function receipt(projectRoot, projectionId = 'runner', bundleId = ID) {
+  const file = join(projectRoot, '.hm2b', 'install', 'receipts', projectionId, `${bundleId}.json`);
   assert.ok(existsSync(file), `missing receipt ${file}`);
   return { file, data: readJson(file) };
 }
@@ -202,74 +230,135 @@ function payloadPaths(manifest) {
   return manifest.files.map((file) => `files/${file.path}`);
 }
 
-test('r2c installs the runtime and the pre-projected tree without compiling', (t) => {
+test('runner installs the runtime and the pre-projected tree without compiling', (t) => {
   const release = buildRelease(t);
   const target = project(t);
   const { env, shims } = isolatedEnv(t);
 
   const result = install(
-    ['--bundle', ID, '--version', VERSION, '--projection', 'r2c', '--project', target, '--release-base', release],
+    ['--bundle', ID, '--version', VERSION, '--projection', 'runner', '--project', target, '--release-base', release],
     { env },
   );
   assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
-  assert.match(result.stdout, /r2c\/rtosv3-drvport@1\.0\.0/);
+  assert.match(result.stdout, /runner\/rtosv3-drvport@1\.0\.0/);
   assert.equal(shims.invoked(), false, 'the chain called no npm, npx, gh or git');
 
-  const r2cPayload = payloadManifest(release, `r2c-payload-${ID}-v${VERSION}.tgz`);
-  const projected = r2cPayload.manifest.files.map((file) => file.path).sort(compareCodePoints);
+  const runnerPayload = payloadManifest(release, `hm2b-payload-${ID}-v${VERSION}.tgz`);
+  const projected = runnerPayload.manifest.files.map((file) => file.path).sort(compareCodePoints);
   assert.equal(projected.length, 45);
 
   // The five roots carry exactly the projected files, byte for byte.
   const outside = walk(target).filter((path) => path !== '.mcp.json' && path !== 'opencode.json'
-    && !path.startsWith('.r2c/') && !path.startsWith('.claude/')
+    && !path.startsWith('.hm2b/') && !path.startsWith('.claude/')
     && !path.startsWith('.agents/') && !path.startsWith('.codex/') && !path.startsWith('.omp/')
     && !path.startsWith('.opencode/') && !path.startsWith('.dsh/'));
   const roots = projected.filter((path) => /^(workflows|tasks|skills|roles|constitution)\//.test(path));
   assert.deepEqual(outside.sort(compareCodePoints), [...roots].sort(compareCodePoints));
-  for (const file of r2cPayload.manifest.files) {
+  for (const file of runnerPayload.manifest.files) {
     assert.equal(sha256File(join(target, ...file.path.split('/'))), file.sha256, file.path);
   }
 
   // Runtime: engine, fixed launcher, runtime receipt.
-  const engineEntry = join(target, '.r2c', 'engine', ENGINE_VERSION, 'bin', 'r2c.js');
+  const engineEntry = join(target, '.hm2b', 'engine', ENGINE_VERSION, 'bin', 'hm2b.js');
   assert.ok(existsSync(engineEntry), 'the release engine was unpacked');
-  assert.equal(readFileSync(join(target, '.r2c', 'bin', 'r2c.js'), 'utf8'), LAUNCHER_TEXT);
+  assert.equal(readFileSync(join(target, '.hm2b', 'bin', 'hm2b.js'), 'utf8'), LAUNCHER_TEXT);
   const runtime = readJson(join(target, ...RUNTIME_RECEIPT_PATH.split('/')));
-  assert.equal(runtime.schema, 'r2c.runtime/v1');
+  assert.equal(runtime.schema, 'hm2b.runtime/v1');
   assert.equal(runtime.engine.version, ENGINE_VERSION);
   assert.deepEqual(runtime.host_targets, AGENT_TARGETS);
 
   // Host roles and roles.json are installer-owned: four role files + one report.
-  const hostRoles = walk(target).filter((path) => /^\.(claude\/agents|codex\/agents|omp\/agents|opencode\/agents)\/r2c-.*/.test(path));
+  const hostRoles = walk(target).filter((path) => /^\.(claude\/agents|codex\/agents|omp\/agents|opencode\/agents)\/bys-.*/.test(path));
   assert.equal(hostRoles.length, 16, 'four roles × four host targets');
-  const roles = readJson(join(target, '.r2c', 'projection', 'roles.json'));
-  assert.equal(roles.schema, 'r2c.projection.roles/v1');
+  const roles = readJson(join(target, '.hm2b', 'projection', 'roles.json'));
+  assert.equal(roles.schema, 'hm2b.projection.roles/v1');
   assert.deepEqual(Object.keys(roles.targets), ['claude-code', 'codex', 'omp', 'opencode']);
 
-  // Receipt: every owned path hashes from disk, the IR copy matches its digest.
+  // Receipt: every owned path hashes from disk, the compiled workflow copy matches its digest.
   const own = receipt(target);
-  assert.equal(own.data.schema, 'r2c.install/v2');
-  assert.equal(own.data.projection.id, 'r2c');
-  assert.deepEqual(own.data.projection.targets, ['r2c']);
+  assert.equal(own.data.schema, 'hm2b.install/v2');
+  assert.equal(own.data.projection.id, 'runner');
+  assert.deepEqual(own.data.projection.targets, ['runner']);
   assert.equal(own.data.bundle.id, ID);
   assert.equal(own.data.bundle.version, VERSION);
   assert.equal(own.data.mode, 'fresh');
   assert.deepEqual(own.data.host_targets, ['claude-code', 'codex', 'omp', 'opencode']);
   assert.equal(own.data.requires_engine, null);
   const ownedPaths = own.data.files.map((file) => file.path).sort(compareCodePoints);
-  assert.deepEqual(ownedPaths, [...projected, ...hostRoles, '.r2c/projection/roles.json'].sort(compareCodePoints));
+  assert.deepEqual(ownedPaths, [...projected, ...hostRoles, '.hm2b/projection/roles.json'].sort(compareCodePoints));
   for (const file of own.data.files) {
     assert.equal(sha256File(join(target, ...file.path.split('/'))), file.sha256, file.path);
   }
-  const irCopy = join(target, ...own.data.ir.path.split('/'));
-  assert.equal(sha256File(irCopy), own.data.ir.digest);
+  const compiledWorkflowCopy = join(target, ...own.data.compiledWorkflow.path.split('/'));
+  assert.equal(sha256File(compiledWorkflowCopy), own.data.compiledWorkflow.digest);
   assert.equal(own.data.metadata.placeholders.constitution, 'placeholder');
   assert.equal(own.data.capability_report.length, 8);
 
   // Install-time evidence: no payload cache, no projection result, no compile.
-  assert.equal(existsSync(join(target, '.r2c', 'payload')), false);
+  assert.equal(existsSync(join(target, '.hm2b', 'payload')), false);
   assert.equal(walk(target).some((path) => path.endsWith('projection-result.json')), false);
   assert.equal(walk(target).some((path) => path.endsWith('bundle.json')), false);
+});
+
+test('a compiled workflow with assets round-trips through payload build and install', (t) => {
+  const release = buildAssetRelease(t);
+
+  const payload = payloadManifest(release, 'hm2b-payload-minimal-demo-v1.0.0.tgz');
+  const assetFiles = payload.manifest.files.filter((file) => ['knowledge', 'checklist', 'hooks', 'mcp'].includes(file.kind));
+  assert.equal(assetFiles.length, 6);
+  assert.deepEqual(assetFiles.map((file) => file.kind).sort(compareCodePoints), [
+    'checklist', 'checklist', 'hooks', 'knowledge', 'knowledge', 'mcp',
+  ]);
+
+  const target = project(t);
+  const { env } = isolatedEnv(t);
+  const result = install(
+    ['--bundle', 'minimal-demo', '--version', '1.0.0', '--projection', 'runner',
+      '--project', target, '--release-base', release],
+    { env },
+  );
+  assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+
+  for (const file of assetFiles) {
+    assert.equal(sha256File(join(target, ...file.path.split('/'))), file.sha256, file.path);
+  }
+  // The runner projection keeps the bundle-relative asset paths.
+  assert.equal(readFileSync(join(target, 'mcp.json'), 'utf8'), canonicalJson(ASSET_MCP));
+  assert.equal(readFileSync(join(target, 'hooks', 'hooks.json'), 'utf8'), canonicalJson(ASSET_HOOKS));
+  for (const [path, body] of ASSET_KNOWLEDGE_BASE) {
+    assert.equal(readFileSync(join(target, ...path.split('/')), 'utf8'), body, path);
+  }
+  for (const [id, body] of ASSET_CHECKLISTS) {
+    assert.equal(readFileSync(join(target, 'checklists', `${id}.md`), 'utf8'), body, id);
+  }
+
+  const own = receipt(target, 'runner', 'minimal-demo');
+  for (const file of assetFiles) {
+    assert.ok(own.data.files.some((item) => item.path === file.path), `${file.path} is not in the receipt`);
+  }
+});
+
+test('a compiled workflow asset digest that disagrees with the zip refuses before writing', (t) => {
+  const release = buildAssetRelease(t);
+  const assets = releaseAssets(release);
+  const compiledWorkflow = JSON.parse(assets.get('workflow.compiled.json').toString('utf8'));
+  compiledWorkflow.knowledgeBase[0].source.sha256 = '0'.repeat(64);
+  assets.set('workflow.compiled.json', Buffer.from(canonicalJson(compiledWorkflow), 'utf8'));
+  assets.set('SHA256SUMS.txt', sumsFor(assets));
+  const patched = writeAssets(t, assets);
+  const target = project(t);
+  const { env } = isolatedEnv(t);
+
+  const result = install(
+    ['--bundle', 'minimal-demo', '--version', '1.0.0', '--projection', 'runner',
+      '--project', target, '--release-base', patched],
+    { env },
+  );
+  assert.equal(result.status, 2, `${result.stdout}\n${result.stderr}`);
+  assert.match(result.stderr, /RELEASE_COMPILED_WORKFLOW_MISMATCH/);
+  assert.match(result.stderr, /knowledge-base/);
+  assert.match(result.stderr, /zip bytes do not match the compiled workflow source digest/);
+  assert.equal(walk(target).length, 0);
 });
 
 test('agent-native installs the bundle only, never an engine', (t) => {
@@ -286,21 +375,21 @@ test('agent-native installs the bundle only, never an engine', (t) => {
   const payload = payloadManifest(release, `agent-native-${ID}-v${VERSION}.tgz`);
   assert.equal(payload.manifest.files.length, 98);
   const expected = payload.manifest.files.map((file) => file.path).sort(compareCodePoints);
-  assert.deepEqual(walk(target).filter((path) => !path.startsWith('.r2c/')), expected);
+  assert.deepEqual(walk(target).filter((path) => !path.startsWith('.hm2b/')), expected);
   for (const file of payload.manifest.files) {
     assert.equal(sha256File(join(target, ...file.path.split('/'))), file.sha256, file.path);
   }
   assert.ok(existsSync(join(target, '.agents', 'agent-native', ID, 'roles.json')));
-  assert.ok(existsSync(join(target, '.dsh', 'agent-native', `${ID}.roles.md`)));
-  assert.ok(walk(target).some((path) => /^\.claude\/agents\/rtosv3-drvport-.*\.md$/.test(path)));
-  assert.ok(walk(target).some((path) => /^\.codex\/agents\/rtosv3-drvport-.*\.toml$/.test(path)));
+  assert.ok(existsSync(join(target, '.dsh', 'agent-native', `roles.md`)));
+  assert.ok(walk(target).some((path) => /^\.claude\/agents\/bys-.*\.md$/.test(path)));
+  assert.ok(walk(target).some((path) => /^\.codex\/agents\/bys-.*\.toml$/.test(path)));
 
-  // No engine, no launcher, no runtime receipt, no r2c host roles.
-  assert.equal(existsSync(join(target, '.r2c', 'engine')), false);
-  assert.equal(existsSync(join(target, '.r2c', 'bin')), false);
+  // No engine, no launcher, no runtime receipt, no runner host roles.
+  assert.equal(existsSync(join(target, '.hm2b', 'engine')), false);
+  assert.equal(existsSync(join(target, '.hm2b', 'bin')), false);
   assert.equal(existsSync(join(target, ...RUNTIME_RECEIPT_PATH.split('/'))), false);
-  assert.equal(existsSync(join(target, '.r2c', 'projection')), false);
-  assert.equal(walk(target).some((path) => /^\.\w+\/agents\/r2c-/.test(path)), false);
+  assert.equal(existsSync(join(target, '.hm2b', 'projection')), false);
+  assert.equal(walk(target).some((path) => /^\.\w+\/agents\/runner-/.test(path)), false);
 
   const own = receipt(target, 'agent-native');
   assert.deepEqual(own.data.projection.targets, AGENT_TARGETS);
@@ -329,7 +418,7 @@ test('--target narrows the written files but roles.json is still installed', (t)
     .filter((file) => file.targets.includes('claude-code'))
     .map((file) => file.path)
     .sort(compareCodePoints);
-  assert.deepEqual(walk(target).filter((path) => !path.startsWith('.r2c/')), wanted);
+  assert.deepEqual(walk(target).filter((path) => !path.startsWith('.hm2b/')), wanted);
   assert.ok(wanted.includes(`.agents/agent-native/${ID}/roles.json`));
   for (const other of ['.codex', '.omp', '.opencode', '.dsh']) {
     assert.equal(existsSync(join(target, other)), false, `${other} was not written`);
@@ -360,7 +449,7 @@ test('--target narrows the written files but roles.json is still installed', (t)
   assert.equal(two.status, 0, `${two.stdout}\n${two.stderr}`);
   assert.ok(existsSync(join(multi, '.claude', 'agents')));
   assert.ok(existsSync(join(multi, '.codex', 'agents')));
-  assert.ok(walk(multi).some((path) => path.startsWith('.agents/skills/rtosv3-drvport-')));
+  assert.ok(walk(multi).some((path) => path.startsWith('.agents/skills/workflow')));
   assert.equal(existsSync(join(multi, '.omp')), false);
   assert.equal(existsSync(join(multi, '.opencode')), false);
   assert.equal(existsSync(join(multi, '.dsh')), false);
@@ -369,14 +458,14 @@ test('--target narrows the written files but roles.json is still installed', (t)
   assert.equal(twoReceipt.data.capability_report.length, 16);
 });
 
-test('a release that only allows agent-native refuses r2c before any write', (t) => {
+test('a release that only allows agent-native refuses runner before any write', (t) => {
   const release = buildRelease(t, { projections: ['agent-native'] });
   const target = project(t);
   const { env } = isolatedEnv(t);
   const before = snapshot(target);
 
   const refused = install(
-    ['--bundle', ID, '--version', VERSION, '--projection', 'r2c', '--project', target, '--release-base', release],
+    ['--bundle', ID, '--version', VERSION, '--projection', 'runner', '--project', target, '--release-base', release],
     { env },
   );
   assert.equal(refused.status, 2, `${refused.stdout}\n${refused.stderr}`);
@@ -389,7 +478,7 @@ test('a release that only allows agent-native refuses r2c before any write', (t)
     { env },
   );
   assert.equal(auto.status, 0, `${auto.stdout}\n${auto.stderr}`);
-  assert.equal(existsSync(join(target, '.r2c', 'engine')), false);
+  assert.equal(existsSync(join(target, '.hm2b', 'engine')), false);
   assert.ok(existsSync(join(target, '.agents', 'agent-native', ID, 'roles.json')));
 });
 
@@ -405,7 +494,7 @@ test('two allowed projections require an explicit choice', (t) => {
   );
   assert.equal(ambiguous.status, 2, `${ambiguous.stdout}\n${ambiguous.stderr}`);
   assert.match(ambiguous.stderr, /RELEASE_PROJECTION_REQUIRED/);
-  assert.match(ambiguous.stderr, /r2c/);
+  assert.match(ambiguous.stderr, /runner/);
   assert.match(ambiguous.stderr, /agent-native/);
   assert.deepEqual(snapshot(target), before);
 });
@@ -435,7 +524,7 @@ test('three-way tampering refuses with zero writes', (t) => {
   // 1) one byte flipped in the payload asset: sums catch it.
   {
     const dir = copy('payload-byte');
-    mutate(dir, `r2c-payload-${ID}-v${VERSION}.tgz`, (bytes) => {
+    mutate(dir, `hm2b-payload-${ID}-v${VERSION}.tgz`, (bytes) => {
       bytes[bytes.length - 20] = (bytes[bytes.length - 20] + 1) % 256;
       return bytes;
     });
@@ -446,7 +535,7 @@ test('three-way tampering refuses with zero writes', (t) => {
   //    member/hash self-proof catches it.
   {
     const dir = copy('payload-truncated');
-    const name = `r2c-payload-${ID}-v${VERSION}.tgz`;
+    const name = `hm2b-payload-${ID}-v${VERSION}.tgz`;
     const original = readFileSync(join(dir, name));
     const { entries } = readReleaseTarGz(original);
     const truncated = Buffer.concat([original.subarray(0, Math.max(64, original.length - 4096))]);
@@ -458,18 +547,18 @@ test('three-way tampering refuses with zero writes', (t) => {
   // 3) payload member hash mismatch: manifest untouched, sums re-frozen.
   {
     const dir = copy('payload-member');
-    const name = `r2c-payload-${ID}-v${VERSION}.tgz`;
+    const name = `hm2b-payload-${ID}-v${VERSION}.tgz`;
     const { entries } = readReleaseTarGz(readFileSync(join(dir, name)));
     const targetPath = entries.find((entry) => entry.path.startsWith('files/workflows/')).path;
     const tampered = createReleaseTarGz(entries.map((entry) => (entry.path === targetPath
-      ? { path: entry.path, data: Buffer.from('schema: "r2c.workflow/v1"\n'), mode: entry.mode }
+      ? { path: entry.path, data: Buffer.from('schema: "hm2b.workflow/v1"\n'), mode: entry.mode }
       : { path: entry.path, data: entry.data, mode: entry.mode })));
     writeFileSync(join(dir, name), tampered);
     rewriteSums(dir, name);
     cases.push({ dir, label: 'payload member hash' });
   }
 
-  // 4) zip member edited in place + sums re-frozen: IR's manifest digest breaks.
+  // 4) zip member edited in place + sums re-frozen: compiled workflow's manifest digest breaks.
   {
     const dir = copy('zip-member');
     const name = `bundle-${ID}-v${VERSION}.zip`;
@@ -486,7 +575,7 @@ test('three-way tampering refuses with zero writes', (t) => {
   // 5) a missing asset.
   {
     const dir = copy('missing');
-    rmSync(join(dir, `r2c-payload-${ID}-v${VERSION}.tgz`));
+    rmSync(join(dir, `hm2b-payload-${ID}-v${VERSION}.tgz`));
     cases.push({ dir, label: 'missing payload asset' });
   }
 
@@ -495,12 +584,12 @@ test('three-way tampering refuses with zero writes', (t) => {
     const { env } = isolatedEnv(t);
     const before = snapshot(target);
     const result = install(
-      ['--bundle', ID, '--version', VERSION, '--projection', 'r2c', '--project', target, '--release-base', dir],
+      ['--bundle', ID, '--version', VERSION, '--projection', 'runner', '--project', target, '--release-base', dir],
       { env },
     );
     assert.equal(result.status, 2, `${label}: ${result.stdout}\n${result.stderr}`);
     assert.deepEqual(snapshot(target), before, `${label} wrote into the project`);
-    assert.equal(existsSync(join(target, '.r2c')), false, `${label} created state`);
+    assert.equal(existsSync(join(target, '.hm2b')), false, `${label} created state`);
   }
 });
 
@@ -510,11 +599,11 @@ test('a wrong --version or unknown --target refuses before writing', (t) => {
   const { env } = isolatedEnv(t);
 
   const wrong = install(
-    ['--bundle', ID, '--version', '9.9.9', '--projection', 'r2c', '--project', target, '--release-base', release],
+    ['--bundle', ID, '--version', '9.9.9', '--projection', 'runner', '--project', target, '--release-base', release],
     { env },
   );
   assert.equal(wrong.status, 2, `${wrong.stdout}\n${wrong.stderr}`);
-  assert.match(wrong.stderr, /workflow\.ir\.json|RELEASE_/);
+  assert.match(wrong.stderr, /workflow\.compiled\.json|RELEASE_/);
 
   const unknown = install(
     ['--bundle', ID, '--version', VERSION, '--projection', 'agent-native', '--target', 'cursor',
@@ -525,7 +614,7 @@ test('a wrong --version or unknown --target refuses before writing', (t) => {
   assert.match(unknown.stderr, /RELEASE_PAYLOAD_TARGET_UNKNOWN/);
 
   const conflict = install(
-    ['--bundle', ID, '--version', VERSION, '--projection', 'r2c', '--target', 'claude-code',
+    ['--bundle', ID, '--version', VERSION, '--projection', 'runner', '--target', 'claude-code',
       '--project', target, '--release-base', release],
     { env },
   );
@@ -534,7 +623,7 @@ test('a wrong --version or unknown --target refuses before writing', (t) => {
   assert.equal(walk(target).length, 0);
 
   const custom = install(
-    ['--bundle', ID, '--version', VERSION, '--projection', 'r2c', '--stage-order', 'reverse',
+    ['--bundle', ID, '--version', VERSION, '--projection', 'runner', '--stage-order', 'reverse',
       '--project', target, '--release-base', release],
     { env },
   );
@@ -565,7 +654,7 @@ test('the bootstrap keeps the legacy surface byte-compatible', (t) => {
   assert.match(mixed.stderr, /RELEASE_OPTION_CONFLICT/);
 
   const userScope = install(
-    ['--bundle', ID, '--version', VERSION, '--projection', 'r2c', '--scope', 'user'],
+    ['--bundle', ID, '--version', VERSION, '--projection', 'runner', '--scope', 'user'],
     { env: cleanEnv(tempDir(t, 'home')) },
   );
   assert.equal(userScope.status, 2);
@@ -592,14 +681,14 @@ test('an omitted --version resolves the latest bundle release through the releas
   // the run must pick even though newer draft/prerelease tags exist.
   const target = project(t);
   const env = cleanEnv(tempDir(t, 'home'));
-  env.R2C_GITHUB_API = fixture.apiBase;
+  env.HM2B_GITHUB_API = fixture.apiBase;
 
   const result = await installAsync(
-    ['--bundle', ID, '--projection', 'r2c', '--project', target, '--release-base', `${fixture.origin}/download`],
+    ['--bundle', ID, '--projection', 'runner', '--project', target, '--release-base', `${fixture.origin}/download`],
     { env },
   );
   assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
-  assert.equal(existsSync(join(target, '.r2c', 'engine', ENGINE_VERSION, 'bin', 'r2c.js')), true);
+  assert.equal(existsSync(join(target, '.hm2b', 'engine', ENGINE_VERSION, 'bin', 'hm2b.js')), true);
   const own = receipt(target);
   assert.equal(own.data.bundle.version, VERSION);
   const listCalls = fixture.callsOf('GET', '/releases(\\?|$)');
@@ -608,15 +697,15 @@ test('an omitted --version resolves the latest bundle release through the releas
 
 test('projection and engine requirement evaluation is the release contract', () => {
   assert.deepEqual(
-    selectProjection({ allowed: ['r2c', 'agent-native'], requested: 'r2c' }),
-    { ok: true, projection: 'r2c' },
+    selectProjection({ allowed: ['runner', 'agent-native'], requested: 'runner' }),
+    { ok: true, projection: 'runner' },
   );
   assert.deepEqual(selectProjection({ allowed: ['agent-native'], requested: undefined }), {
     ok: true,
     projection: 'agent-native',
   });
-  assert.equal(selectProjection({ allowed: ['agent-native'], requested: 'r2c' }).code, 'RELEASE_PROJECTION_NOT_ALLOWED');
-  assert.equal(selectProjection({ allowed: ['r2c', 'agent-native'], requested: undefined }).code, 'RELEASE_PROJECTION_REQUIRED');
+  assert.equal(selectProjection({ allowed: ['agent-native'], requested: 'runner' }).code, 'RELEASE_PROJECTION_NOT_ALLOWED');
+  assert.equal(selectProjection({ allowed: ['runner', 'agent-native'], requested: undefined }).code, 'RELEASE_PROJECTION_REQUIRED');
   assert.equal(selectProjection({ allowed: ['agent-native'], requested: 'nope' }).code, 'RELEASE_PROJECTION_NOT_ALLOWED');
 
   // `checkEngineRequirement` itself is covered by the CLI seam and its own
@@ -638,7 +727,7 @@ function sumsFor(assets) {
 test('installRelease refuses a payload whose result block is missing', (t) => {
   const release = buildRelease(t);
   const target = project(t);
-  const name = `r2c-payload-${ID}-v${VERSION}.tgz`;
+  const name = `hm2b-payload-${ID}-v${VERSION}.tgz`;
   const payload = payloadManifest(release, name);
   delete payload.manifest.result;
   const rebuilt = createReleaseTarGz([...payload.entries.values()].map((entry) => ({
@@ -655,7 +744,7 @@ test('installRelease refuses a payload whose result block is missing', (t) => {
     projectRoot: target,
     bundleId: ID,
     version: VERSION,
-    projection: 'r2c',
+    projection: 'runner',
     sumsBytes,
     assets: Object.fromEntries(assets),
   });
@@ -672,22 +761,22 @@ function writeAssets(t, assets) {
   return dir;
 }
 
-/** A coherent Release whose IR asks for an engine the Release does not ship. */
+/** A coherent Release whose compiled workflow asks for an engine the Release does not ship. */
 function withEngineRequirement(t, release, range) {
   const assets = releaseAssets(release);
-  const ir = JSON.parse(assets.get('workflow.ir.json').toString('utf8'));
-  ir.requires = { ...(ir.requires ?? {}), engine: range };
-  const irBytes = Buffer.from(serializeIr(ir), 'utf8');
-  const irDigest = sha256Hex(irBytes);
-  assets.set('workflow.ir.json', irBytes);
-  for (const projectionId of ['r2c', 'agent-native']) {
-    const name = projectionId === 'r2c'
-      ? `r2c-payload-${ID}-v${VERSION}.tgz`
+  const compiledWorkflow = JSON.parse(assets.get('workflow.compiled.json').toString('utf8'));
+  compiledWorkflow.requires = { ...(compiledWorkflow.requires ?? {}), engine: range };
+  const compiledWorkflowBytes = Buffer.from(serializeCompiledWorkflow(compiledWorkflow), 'utf8');
+  const compiledWorkflowDigest = sha256Hex(compiledWorkflowBytes);
+  assets.set('workflow.compiled.json', compiledWorkflowBytes);
+  for (const projectionId of ['runner', 'agent-native']) {
+    const name = projectionId === 'runner'
+      ? `hm2b-payload-${ID}-v${VERSION}.tgz`
       : `agent-native-${ID}-v${VERSION}.tgz`;
     const payload = payloadManifest(release, name);
-    payload.manifest.ir.digest = irDigest;
-    payload.manifest.result.ir.digest = irDigest;
-    payload.manifest.result.options.ir.digest = irDigest;
+    payload.manifest.compiledWorkflow.digest = compiledWorkflowDigest;
+    payload.manifest.result.compiledWorkflow.digest = compiledWorkflowDigest;
+    payload.manifest.result.options.compiledWorkflow.digest = compiledWorkflowDigest;
     assets.set(name, createReleaseTarGz([...payload.entries.values()].map((entry) => ({
       path: entry.path,
       mode: entry.mode,
@@ -700,13 +789,13 @@ function withEngineRequirement(t, release, range) {
   return writeAssets(t, assets);
 }
 
-test('requires.engine gates r2c and is ignored by agent-native', (t) => {
+test('requires.engine gates runner and is ignored by agent-native', (t) => {
   const release = withEngineRequirement(t, buildRelease(t), '^9.0.0');
   const runtimeTarget = project(t);
   const { env } = isolatedEnv(t);
 
   const refused = install(
-    ['--bundle', ID, '--version', VERSION, '--projection', 'r2c', '--project', runtimeTarget, '--release-base', release],
+    ['--bundle', ID, '--version', VERSION, '--projection', 'runner', '--project', runtimeTarget, '--release-base', release],
     { env },
   );
   assert.equal(refused.status, 2, `${refused.stdout}\n${refused.stderr}`);
@@ -720,39 +809,60 @@ test('requires.engine gates r2c and is ignored by agent-native', (t) => {
     { env },
   );
   assert.equal(accepted.status, 0, `${accepted.stdout}\n${accepted.stderr}`);
-  assert.equal(existsSync(join(agentTarget, '.r2c', 'engine')), false);
+  assert.equal(existsSync(join(agentTarget, '.hm2b', 'engine')), false);
 });
 
-test('a truncated IR asset refuses before writing', (t) => {
+test('a truncated compiled workflow asset refuses before writing', (t) => {
   const pristine = buildRelease(t);
   const assets = releaseAssets(pristine);
-  const irBytes = assets.get('workflow.ir.json');
-  assets.set('workflow.ir.json', irBytes.subarray(0, Math.floor(irBytes.length / 2)));
+  const compiledWorkflowBytes = assets.get('workflow.compiled.json');
+  assets.set('workflow.compiled.json', compiledWorkflowBytes.subarray(0, Math.floor(compiledWorkflowBytes.length / 2)));
   assets.set('SHA256SUMS.txt', sumsFor(assets));
   const release = writeAssets(t, assets);
   const target = project(t);
   const { env } = isolatedEnv(t);
 
   const result = install(
-    ['--bundle', ID, '--version', VERSION, '--projection', 'r2c', '--project', target, '--release-base', release],
+    ['--bundle', ID, '--version', VERSION, '--projection', 'runner', '--project', target, '--release-base', release],
     { env },
   );
   assert.equal(result.status, 2, `${result.stdout}\n${result.stderr}`);
-  assert.match(result.stderr, /RELEASE_IR_MISMATCH/);
+  assert.match(result.stderr, /RELEASE_COMPILED_WORKFLOW_MISMATCH/);
   assert.equal(walk(target).length, 0);
 });
 
-test('--target r2c is accepted for r2c and writes the same tree', (t) => {
+test('a compiled workflow that regresses to hm2b.compiled-workflow/v1 refuses before writing', (t) => {
+  const pristine = buildRelease(t);
+  const assets = releaseAssets(pristine);
+  const compiledWorkflow = JSON.parse(assets.get('workflow.compiled.json').toString('utf8'));
+  compiledWorkflow.schema = 'hm2b.compiled-workflow/v1';
+  assets.set('workflow.compiled.json', Buffer.from(canonicalJson(compiledWorkflow), 'utf8'));
+  assets.set('SHA256SUMS.txt', sumsFor(assets));
+  const release = writeAssets(t, assets);
+  const target = project(t);
+  const { env } = isolatedEnv(t);
+
+  const result = install(
+    ['--bundle', ID, '--version', VERSION, '--projection', 'runner', '--project', target, '--release-base', release],
+    { env },
+  );
+  assert.equal(result.status, 2, `${result.stdout}\n${result.stderr}`);
+  assert.match(result.stderr, /RELEASE_COMPILED_WORKFLOW_MISMATCH/);
+  assert.match(result.stderr, /hm2b\.compiled-workflow\/v2/);
+  assert.equal(walk(target).length, 0);
+});
+
+test('--target runner is accepted for runner and writes the same tree', (t) => {
   const release = buildRelease(t);
   const target = project(t);
   const { env } = isolatedEnv(t);
   const result = install(
-    ['--bundle', ID, '--version', VERSION, '--projection', 'r2c', '--target', 'r2c',
+    ['--bundle', ID, '--version', VERSION, '--projection', 'runner', '--target', 'runner',
       '--project', target, '--release-base', release],
     { env },
   );
   assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
-  assert.ok(existsSync(join(target, '.r2c', 'engine', ENGINE_VERSION, 'bin', 'r2c.js')));
+  assert.ok(existsSync(join(target, '.hm2b', 'engine', ENGINE_VERSION, 'bin', 'hm2b.js')));
 });
 
 test('an explicit version downloads anonymously over the mirror URL without the API', async (t) => {
@@ -808,6 +918,8 @@ test('a legacy receipt refuses before the first runtime write', (t) => {
   const release = buildRelease(t);
   const target = project(t);
   const { env } = isolatedEnv(t);
+  // Frozen legacy layout: the fixture is a `r2c.install/v1` receipt under
+  // `.r2c/install/`, which old installs still carry on disk.
   mkdirSync(join(target, '.r2c', 'install'), { recursive: true });
   const legacy = canonicalJson({
     schema: 'r2c.install/v1',
@@ -821,7 +933,7 @@ test('a legacy receipt refuses before the first runtime write', (t) => {
   const beforeBytes = new Map(before.map((path) => [path, sha256File(join(target, ...path.split('/'))) ]));
 
   const result = install(
-    ['--bundle', ID, '--version', VERSION, '--projection', 'r2c', '--project', target, '--release-base', release],
+    ['--bundle', ID, '--version', VERSION, '--projection', 'runner', '--project', target, '--release-base', release],
     { env },
   );
   assert.equal(result.status, 2, `${result.stdout}\n${result.stderr}`);
@@ -831,7 +943,8 @@ test('a legacy receipt refuses before the first runtime write', (t) => {
     assert.equal(sha256File(join(target, ...path.split('/'))), beforeBytes.get(path), path);
   }
   assert.equal(existsSync(join(target, '.r2c', 'engine')), false);
-  assert.equal(existsSync(join(target, '.r2c', 'bin', 'r2c.js')), false);
+  assert.equal(existsSync(join(target, '.hm2b', 'engine')), false);
+  assert.equal(existsSync(join(target, '.hm2b', 'bin', 'hm2b.js')), false);
   assert.equal(existsSync(join(target, RUNTIME_RECEIPT_PATH)), false);
 });
 
@@ -839,19 +952,19 @@ test('a bundle failure after the runtime rolls the runtime back (one transaction
   const release = buildRelease(t);
   const target = project(t);
   const { env } = isolatedEnv(t);
-  // The preflight cannot see this: the IR slot is a directory, so the bundle
+  // The preflight cannot see this: the compiled workflow slot is a directory, so the bundle
   // half fails only after the runtime has been written.
-  const irDir = join(target, ...irRelPath(ID, VERSION).split('/'));
-  mkdirSync(irDir, { recursive: true });
+  const compiledWorkflowDir = join(target, ...compiledWorkflowRelPath(ID, VERSION).split('/'));
+  mkdirSync(compiledWorkflowDir, { recursive: true });
   const before = walk(target);
 
   const result = install(
-    ['--bundle', ID, '--version', VERSION, '--projection', 'r2c', '--project', target, '--release-base', release],
+    ['--bundle', ID, '--version', VERSION, '--projection', 'runner', '--project', target, '--release-base', release],
     { env },
   );
   assert.equal(result.status, 2, `${result.stdout}\n${result.stderr}`);
   assert.deepEqual(walk(target), before, 'the bundle half rolled back without leaving runtime files');
-  assert.equal(existsSync(join(target, '.r2c', 'engine')), false);
-  assert.equal(existsSync(join(target, '.r2c', 'bin', 'r2c.js')), false);
+  assert.equal(existsSync(join(target, '.hm2b', 'engine')), false);
+  assert.equal(existsSync(join(target, '.hm2b', 'bin', 'hm2b.js')), false);
   assert.equal(existsSync(join(target, RUNTIME_RECEIPT_PATH)), false);
 });

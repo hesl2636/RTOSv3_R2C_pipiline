@@ -1,5 +1,5 @@
 /**
- * Deterministic YAML writer for `r2c.workflow/v1` (spec §9).
+ * Deterministic YAML writer for `hm2b.workflow/v1` (spec §9).
  *
  * No general-purpose serializer: key order is the caller's insertion order,
  * every string scalar is JSON-quoted, block sequences indent by two spaces,

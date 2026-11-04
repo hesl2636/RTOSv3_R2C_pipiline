@@ -1,8 +1,8 @@
 /**
- * Pre-projected payload contract (`r2c.release-payload/v1`, #74 §3.4, #105).
+ * Pre-projected payload contract (`hm2b.release-payload/v1`, #74 §3.4, #105).
  *
  * A Release payload is the validated projection result minus file contents:
- * `manifest.json` declares bundle/IR/projection/options/targets/file hashes,
+ * `manifest.json` declares bundle/compiled workflow/projection/options/targets/file hashes,
  * and the archive carries exactly `files/<path>` members. The manifest also
  * records the projection result's non-file members (`result`), so an installer
  * can rebuild the exact object V1–V12 validated at release time and never has
@@ -19,8 +19,35 @@ import { isValidVersion } from '../core/semver.js';
 import { RESULT_BLOCK_FIELDS, RESULT_FIELDS } from '../projection/result-fields.js';
 import { readReleaseTarGz } from './release-tar.js';
 
-export const RELEASE_PAYLOAD_SCHEMA = 'r2c.release-payload/v1';
+export const RELEASE_PAYLOAD_SCHEMA = 'hm2b.release-payload/v1';
 export const PAYLOAD_MANIFEST_NAME = 'manifest.json';
+
+/**
+ * File kinds a payload member may declare. Mirrors
+ * `projection/schema/result.schema.json` `files[].kind`, including the v2 compiled workflow
+ * assets (`knowledge`, `checklist`, `hooks`, `mcp`): a compiled workflow that carries asset
+ * bodies projects them as payload members, so the installer must never refuse
+ * a Release for shipping them.
+ */
+export const PAYLOAD_FILE_KINDS = Object.freeze([
+  'workflow',
+  'stage',
+  'task',
+  'role',
+  'skill',
+  'constitution',
+  'knowledge',
+  'checklist',
+  'hooks',
+  'mcp',
+  'agent',
+  'command',
+  'rules',
+  'metadata',
+  'readme',
+  'other',
+]);
+const PAYLOAD_FILE_KIND_SET = new Set(PAYLOAD_FILE_KINDS);
 
 // The top-level member order is the projection-result contract; the manifest
 // and the validator must agree, so both import `projection/result-fields.js`.
@@ -69,7 +96,7 @@ export function readPayloadArchive(bytes) {
  * hashes/modes == manifest, canonical manifest bytes, sorted paths, no
  * file/dir prefix conflicts, deterministic metadata.
  *
- * `expected` = `{id, version, irDigest, contentSha256, projectionId, options,
+ * `expected` = `{id, version, compiledWorkflowDigest, contentSha256, projectionId, options,
  * targets}`; when it also carries `result`, the manifest's recorded result
  * block must equal it (build-time proof of the install-time contract).
  */
@@ -84,11 +111,11 @@ export function verifyPayloadArchive(bytes, expected) {
   if (!sameValue(manifest?.bundle, { id: expected.id, version: expected.version })) {
     problems.push(`${PAYLOAD_MANIFEST_NAME} bundle ${JSON.stringify(manifest?.bundle)} does not match ${expected.id}@${expected.version}`);
   }
-  if (manifest?.ir?.digest !== expected.irDigest) {
-    problems.push(`${PAYLOAD_MANIFEST_NAME} ir.digest does not match the IR bytes`);
+  if (manifest?.compiledWorkflow?.digest !== expected.compiledWorkflowDigest) {
+    problems.push(`${PAYLOAD_MANIFEST_NAME} compiledWorkflow.digest does not match the compiled workflow bytes`);
   }
-  if (manifest?.ir?.contentSha256 !== expected.contentSha256) {
-    problems.push(`${PAYLOAD_MANIFEST_NAME} ir.contentSha256 does not match the IR source`);
+  if (manifest?.compiledWorkflow?.contentSha256 !== expected.contentSha256) {
+    problems.push(`${PAYLOAD_MANIFEST_NAME} compiledWorkflow.contentSha256 does not match the compiled workflow source`);
   }
   if (manifest?.projection?.id !== expected.projectionId) {
     problems.push(`${PAYLOAD_MANIFEST_NAME} projection.id is ${String(manifest?.projection?.id)}`);
@@ -152,6 +179,9 @@ export function verifyPayloadArchive(bytes, expected) {
       }
     }
     if (typeof file.kind !== 'string' || file.kind === '') problems.push(`${file.path}: kind is missing`);
+    else if (!PAYLOAD_FILE_KIND_SET.has(file.kind)) {
+      problems.push(`${file.path}: kind ${file.kind} is not a known file kind`);
+    }
     if (file.origin !== 'generated' && file.origin !== 'asset') {
       problems.push(`${file.path}: origin must be generated or asset`);
     }

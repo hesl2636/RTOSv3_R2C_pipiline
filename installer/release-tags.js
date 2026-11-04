@@ -7,15 +7,15 @@
  * reused. Parsing always anchors on the caller's known id — never
  * `split('-v')`, never guesses an id, never accepts build metadata.
  *
- * This module is pure (core/ + ir/ imports only) and ships inside the
+ * This module is pure (core/ + compiled/ imports only) and ships inside the
  * framework archive, so the installer and the web publisher can use it
  * without `scripts/`.
  */
 import { compareCodePoints } from '../core/code-point.js';
 import { isValidVersion } from '../core/semver.js';
-import { IR_FILENAME } from '../ir/schema.js';
+import { COMPILED_WORKFLOW_FILENAME } from '../compiled/schema.js';
 
-export const IR_ASSET = IR_FILENAME;
+export const COMPILED_WORKFLOW_ASSET = COMPILED_WORKFLOW_FILENAME;
 export const INSTALL_ASSET = 'install.mjs';
 export const SUMS_ASSET = 'SHA256SUMS.txt';
 
@@ -63,24 +63,24 @@ export function isLegacyEngineTag(tag) {
 
 /**
  * The exact asset names of one bundle Release, sorted by code point.
- * `allowed` is `ir.requires.projections` (default: both projections).
+ * `allowed` is `compiledWorkflow.requires.projections` (default: both projections).
  */
 export function bundleAssetNames({ id, version, allowed, engineVersion, frameworkVersion }) {
   const names = [
     INSTALL_ASSET,
-    IR_ASSET,
+    COMPILED_WORKFLOW_ASSET,
     `bundle-${id}-v${version}.zip`,
-    `r2c-framework-${frameworkVersion}.tgz`,
+    `hm2b-framework-${frameworkVersion}.tgz`,
   ];
-  if (allowed.includes('r2c')) {
-    names.push(`r2c-payload-${id}-v${version}.tgz`, `r2c-engine-${engineVersion}.tgz`);
+  if (allowed.includes('runner')) {
+    names.push(`hm2b-payload-${id}-v${version}.tgz`, `hm2b-engine-${engineVersion}.tgz`);
   }
   if (allowed.includes('agent-native')) names.push(`agent-native-${id}-v${version}.tgz`);
   names.push(SUMS_ASSET);
   return [...new Set(names)].sort(compareCodePoints);
 }
 
-/** The four legacy `v<E>` asset names, for cross-channel isolation checks. */
+/** The four frozen legacy `v<E>` asset names, for cross-channel isolation checks. */
 export function legacyAssetNames(engineVersion) {
   return [
     INSTALL_ASSET,

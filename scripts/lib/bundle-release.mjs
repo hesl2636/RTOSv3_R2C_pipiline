@@ -6,17 +6,17 @@
  * zip, the framework checkout and the engine checkout:
  *
  *   bundle-<id>-v<version>.zip          always
- *   workflow.ir.json                    always
- *   r2c-payload-<id>-v<version>.tgz     r2c in requires.projections
+ *   workflow.compiled.json                    always
+ *   hm2b-payload-<id>-v<version>.tgz    runner in requires.projections
  *   agent-native-<id>-v<version>.tgz    agent-native in requires.projections
- *   r2c-engine-<E>.tgz                  r2c in requires.projections
- *   r2c-framework-<F>.tgz               always (framework sources + installer/)
+ *   hm2b-engine-<E>.tgz                 runner in requires.projections
+ *   hm2b-framework-<F>.tgz              always (framework sources + installer/)
  *   install.mjs                         always, byte-identical to scripts/install.mjs
  *   SHA256SUMS.txt                      always, covers every other asset
  *
  * The payloads are pre-projected with canonical options, validated V1–V12,
  * packed deterministically and accompanied by `manifest.json`
- * (`r2c.release-payload/v1`). Installation never compiles or projects again.
+ * (`hm2b.release-payload/v1`). Installation never compiles or projects again.
  *
  * No legacy asset is produced here: `r2c-payload-<E>.tgz` belongs to the
  * `v<E>` channel, and the two tag namespaces never overlap.
@@ -33,7 +33,7 @@ import { foldCase, hasFileDirPrefixConflict } from '../../core/paths.js';
 import { isValidRange, isValidVersion, satisfiesRange } from '../../core/semver.js';
 import {
   INSTALL_ASSET,
-  IR_ASSET,
+  COMPILED_WORKFLOW_ASSET,
   SUMS_ASSET,
   bundleAssetNames,
   bundleTag,
@@ -43,6 +43,7 @@ import {
   parseBundleTag,
 } from '../../installer/release-tags.js';
 import {
+  PAYLOAD_FILE_KINDS,
   PAYLOAD_MANIFEST_NAME,
   RELEASE_PAYLOAD_SCHEMA,
   payloadResultBlock,
@@ -52,19 +53,19 @@ import { canonicalInputOptions, isCanonicalOptions, normalizeOptions, payloadInp
 import { project } from '../../projection/project.js';
 import { getProjection } from '../../projection/registry.js';
 import { validateResult } from '../../projection/validate-result.js';
-import { collectEngine, engineEntryBytes } from './engine-archive.mjs';
+import { collectEngine, engineAssetName, engineEntryBytes } from './engine-archive.mjs';
 import { collectBundleFiles } from './file-set.mjs';
 import { createReleaseTarGz, readReleaseTarGz, releasePathProblem } from '../../installer/release-tar.js';
 import { writeZip } from './zip-writer.mjs';
 
 export const BUNDLE_MAKE_LATEST = false;
-export const CANONICAL_PROJECTIONS = Object.freeze(['r2c', 'agent-native']);
+export const CANONICAL_PROJECTIONS = Object.freeze(['runner', 'agent-native']);
 
 // The tag/asset-name contract is shared with the installer and the web
 // publisher (#107); this module re-exports it so #105 callers keep working.
 export {
   INSTALL_ASSET,
-  IR_ASSET,
+  COMPILED_WORKFLOW_ASSET,
   SUMS_ASSET,
   bundleAssetNames,
   bundleTag,
@@ -73,12 +74,12 @@ export {
   legacyAssetNames,
   parseBundleTag,
 };
-export { PAYLOAD_MANIFEST_NAME, RELEASE_PAYLOAD_SCHEMA, verifyPayloadArchive };
+export { PAYLOAD_FILE_KINDS, PAYLOAD_MANIFEST_NAME, RELEASE_PAYLOAD_SCHEMA, verifyPayloadArchive };
 
 /** Framework source roots (#77 §5.5, decision #74 §3.3). */
 const FRAMEWORK_DIRS = Object.freeze([
   'core',
-  'ir',
+  'compiled',
   'assembler',
   'projection',
   'installer',
@@ -86,7 +87,7 @@ const FRAMEWORK_DIRS = Object.freeze([
   'bin/assembler',
 ]);
 const FRAMEWORK_RUNTIME_DIRS = Object.freeze(['projection', 'assets', 'targets']);
-const FRAMEWORK_ROOT_FILES = Object.freeze(['package.json', 'LICENSE', 'bin/r2c-assembler.js']);
+const FRAMEWORK_ROOT_FILES = Object.freeze(['package.json', 'LICENSE', 'bin/hm2b-assembler.js']);
 const FRAMEWORK_FORBIDDEN = Object.freeze([
   'test/',
   'tests/',
@@ -235,7 +236,7 @@ export function frameworkSourceProblems(rels) {
     if (FRAMEWORK_FORBIDDEN.some((prefix) => rel.startsWith(prefix))) {
       problems.push(`framework source set must not ship ${rel}`);
     }
-    if (rel.startsWith('bin/') && rel !== 'bin/r2c-assembler.js' && !rel.startsWith('bin/assembler/')) {
+    if (rel.startsWith('bin/') && rel !== 'bin/hm2b-assembler.js' && !rel.startsWith('bin/assembler/')) {
       problems.push(`framework source set must not ship ${rel}`);
     }
   }
@@ -252,7 +253,7 @@ function engineSourceProblems(rels) {
  * Engine version and file set.
  *
  * Both channels ship the same bytes: `scripts/lib/engine-archive.mjs` owns
- * the P6 layout (root launcher + `runtime/r2c/engine/**` + `core/**` +
+ * the P6 layout (root launcher + `runtime/runner/engine/**` + `core/**` +
  * vendored `yaml`), and the version is the engine package version E, not the
  * framework version.
  */
@@ -269,19 +270,19 @@ export function readEngine(root) {
  * Resolve one projection's options. `raw` is the caller's request (canonical
  * `null` for a Release build, or the exact local selection from the web/CLI).
  */
-function validateProjectionOptions({ projectionId, ir, irDigest, raw = null }) {
+function validateProjectionOptions({ projectionId, compiledWorkflow, compiledWorkflowDigest, raw = null }) {
   const descriptor = getProjection(projectionId);
   const normalized = normalizeOptions({
     projectionId,
-    ir,
-    irDigest,
+    compiledWorkflow,
+    compiledWorkflowDigest,
     raw,
     manifest: descriptor,
   });
   const canonical = normalized.ok && isCanonicalOptions({
     projectionId,
-    ir,
-    irDigest,
+    compiledWorkflow,
+    compiledWorkflowDigest,
     options: normalized.options,
     manifest: descriptor,
   });
@@ -289,8 +290,8 @@ function validateProjectionOptions({ projectionId, ir, irDigest, raw = null }) {
     ? canonicalInputOptions(projectionId, descriptor)
     : payloadInputOptions({
       projectionId,
-      ir,
-      irDigest,
+      compiledWorkflow,
+      compiledWorkflowDigest,
       options: normalized.options,
       manifest: descriptor,
     });
@@ -298,8 +299,8 @@ function validateProjectionOptions({ projectionId, ir, irDigest, raw = null }) {
 }
 
 function payloadFileName(projectionId, id, version) {
-  return projectionId === 'r2c'
-    ? `r2c-payload-${id}-v${version}.tgz`
+  return projectionId === 'runner'
+    ? `hm2b-payload-${id}-v${version}.tgz`
     : `agent-native-${id}-v${version}.tgz`;
 }
 
@@ -307,7 +308,7 @@ function payloadFileName(projectionId, id, version) {
  * Build the canonical payload manifest for one projection. `options` records
  * the canonical *input* (nulls), never `result.options`.
  */
-export function buildPayloadManifest({ id, version, projection, ir, irDigest, options, targets, files, result = null }) {
+export function buildPayloadManifest({ id, version, projection, compiledWorkflow, compiledWorkflowDigest, options, targets, files, result = null }) {
   const sorted = [...files]
     .map((file) => {
       const entry = {
@@ -325,9 +326,9 @@ export function buildPayloadManifest({ id, version, projection, ir, irDigest, op
   const manifest = {
     schema: RELEASE_PAYLOAD_SCHEMA,
     bundle: { id, version },
-    ir: {
-      digest: irDigest,
-      contentSha256: ir?.source?.bundle?.contentSha256 ?? null,
+    compiledWorkflow: {
+      digest: compiledWorkflowDigest,
+      contentSha256: compiledWorkflow?.source?.bundle?.contentSha256 ?? null,
     },
     projection: { id: projection.id, version: projection.version },
     options: {
@@ -352,11 +353,32 @@ function payloadEntries(result) {
   }));
 }
 
-function buildPayload({ ir, irDigest, id, version, projectionId, engineVersion, raw = null }) {
+/**
+ * compiled workflow assets are part of the projected result, not bundle-internal bytes: a
+ * Release whose compiled workflow carries an asset kind must ship one payload member per
+ * declared asset, otherwise the install would silently drop the asset. Paths
+ * are projection-owned, so the proof is by kind and count, not by compiled workflow path.
+ */
+function missingIrAssetKinds(compiledWorkflow, result) {
+  const present = new Map();
+  for (const file of result.files) present.set(file.kind, (present.get(file.kind) ?? 0) + 1);
+  const missing = [];
+  const need = (kind, count) => {
+    const actual = present.get(kind) ?? 0;
+    if (actual < count) missing.push(`${kind} (${actual}/${count})`);
+  };
+  need('knowledge', (compiledWorkflow.knowledgeBase ?? []).length);
+  need('checklist', (compiledWorkflow.checklists ?? []).length);
+  need('hooks', compiledWorkflow.hooks === null || compiledWorkflow.hooks === undefined ? 0 : 1);
+  need('mcp', compiledWorkflow.mcp === null || compiledWorkflow.mcp === undefined ? 0 : 1);
+  return missing;
+}
+
+function buildPayload({ compiledWorkflow, compiledWorkflowDigest, id, version, projectionId, engineVersion, raw = null }) {
   const { descriptor, options, canonical, normalized } = validateProjectionOptions({
     projectionId,
-    ir,
-    irDigest,
+    compiledWorkflow,
+    compiledWorkflowDigest,
     raw,
   });
   if (!normalized.ok) {
@@ -368,8 +390,8 @@ function buildPayload({ ir, irDigest, id, version, projectionId, engineVersion, 
   const environment = { engineVersion };
   const result = project({
     projectionId,
-    ir,
-    irDigest,
+    compiledWorkflow,
+    compiledWorkflowDigest,
     options: normalized.options,
     environment,
     assets: {},
@@ -381,8 +403,8 @@ function buildPayload({ ir, irDigest, id, version, projectionId, engineVersion, 
     );
   }
   const validation = validateResult(result, {
-    ir,
-    irDigest,
+    compiledWorkflow,
+    compiledWorkflowDigest,
     manifest: descriptor,
     options: normalized.options,
     environment,
@@ -394,13 +416,20 @@ function buildPayload({ ir, irDigest, id, version, projectionId, engineVersion, 
       `${projectionId} result failed V1–V12: ${validation.diagnostics.map((item) => item.message).join('; ')}`,
     );
   }
+  const missingAssets = missingIrAssetKinds(compiledWorkflow, result);
+  if (missingAssets.length > 0) {
+    throw new ReleaseError(
+      'RELEASE_PAYLOAD_INVALID',
+      `${projectionId} projection omitted compiled workflow assets: ${missingAssets.join(', ')}`,
+    );
+  }
 
   const manifest = buildPayloadManifest({
     id,
     version,
     projection: descriptor,
-    ir,
-    irDigest,
+    compiledWorkflow,
+    compiledWorkflowDigest,
     options,
     targets: result.targets,
     files: result.files,
@@ -412,8 +441,8 @@ function buildPayload({ ir, irDigest, id, version, projectionId, engineVersion, 
   const problems = verifyPayloadArchive(data, {
     id,
     version,
-    irDigest,
-    contentSha256: ir?.source?.bundle?.contentSha256 ?? null,
+    compiledWorkflowDigest,
+    contentSha256: compiledWorkflow?.source?.bundle?.contentSha256 ?? null,
     projectionId,
     options: manifest.options,
     targets: manifest.targets,
@@ -517,12 +546,12 @@ export function buildBundleRelease({ root, bundlePath, tag = null, options = nul
     failures.push(...buildReportErrors(compiled.report));
     return failureResult(failures, notes);
   }
-  const irBytes = Buffer.from(compiled.irBytes);
-  const ir = JSON.parse(irBytes.toString('utf8'));
-  const irDigest = compiled.digest;
-  if (ir.id !== id || ir.version !== version) {
+  const compiledWorkflowBytes = Buffer.from(compiled.compiledWorkflowBytes);
+  const compiledWorkflow = JSON.parse(compiledWorkflowBytes.toString('utf8'));
+  const compiledWorkflowDigest = compiled.digest;
+  if (compiledWorkflow.id !== id || compiledWorkflow.version !== version) {
     failures.push(
-      `RELEASE_TAG_MISMATCH: zip bundle.json ${id}@${version} != IR ${String(ir.id)}@${String(ir.version)}`,
+      `RELEASE_TAG_MISMATCH: zip bundle.json ${id}@${version} != compiled workflow ${String(compiledWorkflow.id)}@${String(compiledWorkflow.version)}`,
     );
   }
   if (tag !== null) {
@@ -530,12 +559,12 @@ export function buildBundleRelease({ root, bundlePath, tag = null, options = nul
     if (parsed === null) {
       failures.push(`RELEASE_TAG_MISMATCH: ${tag} is not a bundle tag for ${id}`);
     } else if (parsed.version !== version) {
-      failures.push(`RELEASE_TAG_MISMATCH: tag ${tag} carries ${parsed.version} but the zip/IR carry ${version}`);
+      failures.push(`RELEASE_TAG_MISMATCH: tag ${tag} carries ${parsed.version} but the zip/compiled workflow carry ${version}`);
     }
   }
   if (failures.length > 0) return failureResult(failures, notes);
 
-  const declared = ir?.requires?.projections;
+  const declared = compiledWorkflow?.requires?.projections;
   const allowed = Array.isArray(declared) ? [...declared].sort(compareCodePoints) : [...CANONICAL_PROJECTIONS];
   if (allowed.length === 0) failures.push('RELEASE_ASSET_SET_MISMATCH: requires.projections is empty');
   for (const projectionId of allowed) {
@@ -556,8 +585,8 @@ export function buildBundleRelease({ root, bundlePath, tag = null, options = nul
     failures.push(`RELEASE_VERSION_MISMATCH: engine version ${String(engineVersion)} is not a valid semver`);
   }
   failures.push(...sourceProblemMessages(engine.problems, 'RELEASE_SOURCE_SET_MISMATCH'));
-  const requiredEngine = ir?.requires?.engine;
-  if (allowed.includes('r2c')) {
+  const requiredEngine = compiledWorkflow?.requires?.engine;
+  if (allowed.includes('runner')) {
     if (requiredEngine !== undefined) {
       if (!isValidRange(requiredEngine)) {
         failures.push(`RELEASE_ENGINE_UNSATISFIED: requires.engine ${String(requiredEngine)} is not a valid range`);
@@ -597,8 +626,8 @@ export function buildBundleRelease({ root, bundlePath, tag = null, options = nul
   try {
     for (const projectionId of allowed) {
       payloads.set(projectionId, buildPayload({
-        ir,
-        irDigest,
+        compiledWorkflow,
+        compiledWorkflowDigest,
         id,
         version,
         projectionId,
@@ -616,12 +645,12 @@ export function buildBundleRelease({ root, bundlePath, tag = null, options = nul
 
   const assets = [];
   assets.push({ name: `bundle-${id}-v${version}.zip`, data: Buffer.from(source.bytes) });
-  assets.push({ name: IR_ASSET, data: irBytes });
+  assets.push({ name: COMPILED_WORKFLOW_ASSET, data: compiledWorkflowBytes });
   for (const payload of payloads.values()) assets.push({ name: payload.file, data: payload.data });
-  if (allowed.includes('r2c')) {
-    assets.push({ name: `r2c-engine-${engineVersion}.tgz`, data: engineArchive(engine.files) });
+  if (allowed.includes('runner')) {
+    assets.push({ name: engineAssetName(engineVersion), data: engineArchive(engine.files) });
   }
-  assets.push({ name: `r2c-framework-${frameworkVersion}.tgz`, data: frameworkArchive(framework) });
+  assets.push({ name: `hm2b-framework-${frameworkVersion}.tgz`, data: frameworkArchive(framework) });
   assets.push({ name: INSTALL_ASSET, data: installBytes });
   assets.sort((left, right) => compareCodePoints(left.name, right.name));
   assets.push({ name: SUMS_ASSET, data: sumsBuffer(assets) });
@@ -660,9 +689,9 @@ export function buildBundleRelease({ root, bundlePath, tag = null, options = nul
     publishable: canonical,
     engineVersion,
     frameworkVersion,
-    ir,
-    irBytes,
-    irDigest,
+    compiledWorkflow,
+    compiledWorkflowBytes,
+    compiledWorkflowDigest,
     payloads,
     projections: [...payloads.values()].map((payload) => ({
       id: payload.projectionId,
@@ -771,7 +800,7 @@ export function checkBundleRelease({ root, bundlePath, tag = null, outDir = null
   }
   if (first.plan.makeLatest !== false) failures.push('RELEASE_ASSET_SET_MISMATCH: bundle releases must set make_latest=false');
 
-  const framework = first.assets.find((asset) => asset.name === `r2c-framework-${first.frameworkVersion}.tgz`);
+  const framework = first.assets.find((asset) => asset.name === `hm2b-framework-${first.frameworkVersion}.tgz`);
   if (framework !== undefined) {
     const frameworkVersion = archiveVersion(framework.data, 'package.json', framework.name, failures);
     if (frameworkVersion !== first.frameworkVersion) {
@@ -783,8 +812,8 @@ export function checkBundleRelease({ root, bundlePath, tag = null, outDir = null
       failures.push(`${framework.name} members do not match the framework source set`);
     }
   }
-  if (first.allowed.includes('r2c')) {
-    const engineAsset = first.assets.find((asset) => asset.name === `r2c-engine-${first.engineVersion}.tgz`);
+  if (first.allowed.includes('runner')) {
+    const engineAsset = first.assets.find((asset) => asset.name === engineAssetName(first.engineVersion));
     if (engineAsset !== undefined) {
       const members = readReleaseTarGz(engineAsset.data).entries.map((entry) => entry.path);
       if (!sameValue([...members].sort(compareCodePoints), [...first.engineFiles].sort(compareCodePoints))) {
@@ -800,8 +829,8 @@ export function checkBundleRelease({ root, bundlePath, tag = null, outDir = null
     const problems = verifyPayloadArchive(payload.data, {
       id: first.id,
       version: first.version,
-      irDigest: first.irDigest,
-      contentSha256: first.ir?.source?.bundle?.contentSha256 ?? null,
+      compiledWorkflowDigest: first.compiledWorkflowDigest,
+      contentSha256: first.compiledWorkflow?.source?.bundle?.contentSha256 ?? null,
       projectionId: payload.projectionId,
       options: payload.manifest.options,
       targets: payload.manifest.targets,

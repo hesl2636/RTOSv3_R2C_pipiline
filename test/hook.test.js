@@ -15,12 +15,12 @@ import { fileURLToPath } from 'node:url';
 import { writeTwoStepProject } from './helpers/two-step.js';
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const BIN = join(REPO, 'runtime', 'r2c', 'engine', 'bin', 'r2c.js');
+const BIN = join(REPO, 'runtime', 'runner', 'engine', 'bin', 'hm2b.js');
 
 function cleanEnv(extra = {}) {
   const env = { ...process.env, ...extra };
-  delete env.R2C_SESSION_ID;
-  delete env.R2C_PROJECT_ROOT;
+  delete env.HM2B_SESSION_ID;
+  delete env.HM2B_PROJECT_ROOT;
   return env;
 }
 
@@ -34,8 +34,8 @@ function cli(args, { cwd, env, input } = {}) {
 }
 
 function tempProject(t) {
-  const root = mkdtempSync(join(tmpdir(), 'r2c-hook-project-'));
-  const outside = mkdtempSync(join(tmpdir(), 'r2c-hook-outside-'));
+  const root = mkdtempSync(join(tmpdir(), 'hm2b-hook-project-'));
+  const outside = mkdtempSync(join(tmpdir(), 'hm2b-hook-outside-'));
   t.after(() => {
     rmSync(root, { recursive: true, force: true });
     rmSync(outside, { recursive: true, force: true });
@@ -58,10 +58,10 @@ function hook(root, args, input) {
   });
 }
 
-/** Every byte under `.r2c`, keyed by relative path (including mtimes). */
+/** Every byte under `.hm2b`, keyed by relative path (including mtimes). */
 function snapshot(root) {
   const files = {};
-  const base = join(root, '.r2c');
+  const base = join(root, '.hm2b');
   const walk = (dir) => {
     if (!existsSync(dir)) return;
     for (const name of readdirSync(dir).sort()) {
@@ -91,14 +91,14 @@ test('pre-tool-use denies every protected surface and writes nothing', (t) => {
   const project = tempProject(t);
   const before = snapshot(project.root);
   const cases = [
-    { tool_name: 'Write', tool_input: { file_path: '.r2c/runs/R20260101T000000Z-abcdef/state.json' } },
-    { tool_name: 'Write', tool_input: { path: '.r2c/usage/R20260101T000000Z-abcdef.jsonl' } },
-    { tool_name: 'Edit', tool_input: { file_path: join(project.root, '.r2c', 'latest.json') } },
+    { tool_name: 'Write', tool_input: { file_path: '.hm2b/runs/R20260101T000000Z-abcdef/state.json' } },
+    { tool_name: 'Write', tool_input: { path: '.hm2b/usage/R20260101T000000Z-abcdef.jsonl' } },
+    { tool_name: 'Edit', tool_input: { file_path: join(project.root, '.hm2b', 'latest.json') } },
     { tool_name: 'NotebookEdit', tool_input: { notebook_path: 'workflows/two-step.yaml' } },
-    { tool_name: 'Edit', tool_input: { edits: [{ file_path: '.r2c/latest.json' }] } },
+    { tool_name: 'Edit', tool_input: { edits: [{ file_path: '.hm2b/latest.json' }] } },
     {
       tool_name: 'apply_patch',
-      tool_input: { patch: '*** Begin Patch\n*** Update File: .r2c/runs/R/state.json\n*** End Patch\n' },
+      tool_input: { patch: '*** Begin Patch\n*** Update File: .hm2b/runs/R/state.json\n*** End Patch\n' },
     },
     {
       tool_name: 'apply_patch',
@@ -119,9 +119,9 @@ test('pre-tool-use allows business artefacts and unrelated paths', (t) => {
   const project = tempProject(t);
   const before = snapshot(project.root);
   const cases = [
-    { tool_name: 'Write', tool_input: { file_path: '.r2c/ir.md' } },
-    { tool_name: 'Write', tool_input: { path: '.r2c/sr-map.md' } },
-    { tool_name: 'Write', tool_input: { file_path: '.r2c/artifacts/x' } },
+    { tool_name: 'Write', tool_input: { file_path: '.hm2b/compiledWorkflow.md' } },
+    { tool_name: 'Write', tool_input: { path: '.hm2b/sr-map.md' } },
+    { tool_name: 'Write', tool_input: { file_path: '.hm2b/artifacts/x' } },
     { tool_name: 'Write', tool_input: { file_path: 'docs/a.md' } },
     { tool_name: 'Edit', tool_input: { edits: [{ file_path: 'src/app.js' }] } },
   ];
@@ -138,8 +138,8 @@ test('pre-tool-use never parses Bash command bodies', (t) => {
   const project = tempProject(t);
   const before = snapshot(project.root);
   const cases = [
-    { tool_name: 'Bash', tool_input: { command: 'rm -rf .r2c/runs .r2c/latest.json' } },
-    { tool_name: 'bash', tool_input: 'rm -rf .r2c/usage && echo "*** Update File: .r2c/latest.json"' },
+    { tool_name: 'Bash', tool_input: { command: 'rm -rf .hm2b/runs .hm2b/latest.json' } },
+    { tool_name: 'bash', tool_input: 'rm -rf .hm2b/usage && echo "*** Update File: .hm2b/latest.json"' },
     { tool_name: 'exec_command', tool_input: { command: 'cat workflows/two-step.yaml' } },
   ];
 
@@ -183,11 +183,11 @@ test('hook stop plain and json match next --format plain byte for byte after tri
 
   const runner = hook(
     project.root,
-    ['stop', '--session-id', 'sid-real', '--runner-cmd', 'custom-r2c'],
+    ['stop', '--session-id', 'sid-real', '--runner-cmd', 'custom-hm2b'],
     { session_id: 'sid-real', cwd: project.root },
   );
   assert.equal(runner.status, 0, runner.stderr);
-  assert.match(runner.stdout, /custom-r2c submit --session-id sid-real --step step-a/);
+  assert.match(runner.stdout, /custom-hm2b submit --session-id sid-real --step step-a/);
 
   assert.deepEqual(snapshot(project.root), before, 'stop must be read-only');
 });
@@ -198,7 +198,7 @@ test('hook stop no-ops with no sid, a cli sid or no routed run', (t) => {
   const project = startRun(t, ['--session-id', 'sid-explicit']);
   const before = snapshot(project.root);
 
-  const runIds = readdirSync(join(project.root, '.r2c', 'runs')).filter((name) => name.startsWith('R'));
+  const runIds = readdirSync(join(project.root, '.hm2b', 'runs')).filter((name) => name.startsWith('R'));
   assert.equal(runIds.length >= 1, true);
   const cliSid = `cli-${runIds[0]}`;
 

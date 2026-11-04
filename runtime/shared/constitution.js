@@ -6,38 +6,38 @@
  * consumers use; a boolean erases "declared but not written yet".
  */
 
-export const CONSTITUTION_SCHEMA = 'r2c.constitution-block/v1';
+export const CONSTITUTION_SCHEMA = 'hm2b.constitution-block/v1';
 
 const BANNER_PRESENT = '> **项目宪法（constitution）** — 项目级规则，先于本步任务书生效；与任务书冲突时以本段为准。';
 const BANNER_PLACEHOLDER = '> **占位（placeholder）** 本宪法本期未实现：不构成生效规则；如有正文，仅为草稿，不得据此推断约束。';
 
 function assertMount(mount) {
   if (mount === null || typeof mount !== 'object') {
-    throw new Error('PROJECTION_IR_UNSUPPORTED: constitution mount must be an object');
+    throw new Error('PROJECTION_COMPILED_WORKFLOW_UNSUPPORTED: constitution mount must be an object');
   }
   if (mount.scope !== 'global') {
-    throw new Error(`PROJECTION_IR_UNSUPPORTED: constitution scope ${String(mount.scope)} is not supported by v1 consumers`);
+    throw new Error(`PROJECTION_COMPILED_WORKFLOW_UNSUPPORTED: constitution scope ${String(mount.scope)} is not supported by v1 consumers`);
   }
   if (typeof mount.placeholder !== 'boolean') {
-    throw new Error('PROJECTION_IR_UNSUPPORTED: constitution placeholder must be boolean');
+    throw new Error('PROJECTION_COMPILED_WORKFLOW_UNSUPPORTED: constitution placeholder must be boolean');
   }
   if (typeof mount.body !== 'string') {
-    throw new Error('PROJECTION_IR_UNSUPPORTED: constitution body must be a string');
+    throw new Error('PROJECTION_COMPILED_WORKFLOW_UNSUPPORTED: constitution body must be a string');
   }
 }
 
 /**
- * `absent | present | placeholder` for an IR `constitution` array.
+ * `absent | present | placeholder` for a compiled workflow `constitution` array.
  * Non-global and multi-mount arrays are rejected, never silently ignored.
  */
 export function constitutionState(mounts) {
   if (mounts === undefined || mounts === null) return 'absent';
   if (!Array.isArray(mounts)) {
-    throw new Error('PROJECTION_IR_UNSUPPORTED: constitution must be an array');
+    throw new Error('PROJECTION_COMPILED_WORKFLOW_UNSUPPORTED: constitution must be an array');
   }
   if (mounts.length === 0) return 'absent';
   if (mounts.length !== 1) {
-    throw new Error('PROJECTION_IR_UNSUPPORTED: r2c.ir/v1 carries at most one constitution mount');
+    throw new Error('PROJECTION_COMPILED_WORKFLOW_UNSUPPORTED: hm2b.compiled-workflow/v2 carries at most one constitution mount');
   }
   const mount = mounts[0];
   assertMount(mount);

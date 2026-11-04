@@ -49,9 +49,9 @@ function resolvePublishRepo(root, env, spawnSync) {
   return repo !== null && GH_REPO_RE.test(repo) ? repo : null;
 }
 
-/** `R2C_GITHUB_API` is operator-only (local fixture or mirror), never browser-settable. */
+/** `HM2B_GITHUB_API` is operator-only (local fixture or mirror), never browser-settable. */
 function resolveGithubApi(env) {
-  const raw = env.R2C_GITHUB_API;
+  const raw = env.HM2B_GITHUB_API;
   if (raw === undefined || raw.trim() === '') return DEFAULT_GITHUB_API;
   try {
     const url = new URL(raw.trim());
@@ -75,11 +75,11 @@ function isPlainObject(value) {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-/** `{confirmTag, resume?, irDigest?, resultDigests?}` (decision #75 §8.4/§8.5). */
+/** `{confirmTag, resume?, compiledWorkflowDigest?, resultDigests?}` (decision #75 §8.4/§8.5). */
 export function parsePublishBody(body) {
   if (!isPlainObject(body)) return webError(400, 'WEB_BODY_INVALID', 'publish body must be a JSON object');
   for (const key of Object.keys(body)) {
-    if (!['confirmTag', 'resume', 'irDigest', 'resultDigests'].includes(key)) {
+    if (!['confirmTag', 'resume', 'compiledWorkflowDigest', 'resultDigests'].includes(key)) {
       return webError(400, 'WEB_BODY_INVALID', `unknown field ${key}`);
     }
   }
@@ -89,8 +89,8 @@ export function parsePublishBody(body) {
   if (body.resume !== undefined && typeof body.resume !== 'boolean') {
     return webError(400, 'WEB_BODY_INVALID', 'resume must be a boolean');
   }
-  if (body.irDigest !== undefined && (typeof body.irDigest !== 'string' || !/^[0-9a-f]{64}$/.test(body.irDigest))) {
-    return webError(400, 'WEB_BODY_INVALID', 'irDigest must be a sha256 digest');
+  if (body.compiledWorkflowDigest !== undefined && (typeof body.compiledWorkflowDigest !== 'string' || !/^[0-9a-f]{64}$/.test(body.compiledWorkflowDigest))) {
+    return webError(400, 'WEB_BODY_INVALID', 'compiledWorkflowDigest must be a sha256 digest');
   }
   if (body.resultDigests !== undefined && body.resultDigests !== null) {
     if (!isPlainObject(body.resultDigests)) {
@@ -105,7 +105,7 @@ export function parsePublishBody(body) {
   return {
     confirmTag: body.confirmTag,
     resume: body.resume === true,
-    irDigest: body.irDigest,
+    compiledWorkflowDigest: body.compiledWorkflowDigest,
     resultDigests: body.resultDigests ?? null,
   };
 }
@@ -142,7 +142,7 @@ export function createPublishService({
   const { randomBytes, spawnSync, mkdir, resolve, spawn } = node;
   // Release credentials stay in this closure: never serialized, never logged,
   // never placed in a URL or an argv (decision #75 §8).
-  const token = startupToken(env);
+  const token = startupToken(env) ?? secrets.find((value) => typeof value === 'string' && value !== '') ?? null;
   const repo = resolvePublishRepo(root, env, spawnSync);
   const apiBase = resolveGithubApi(env);
   const config = Object.freeze({
@@ -163,10 +163,11 @@ export function createPublishService({
 
   /** Release-form install commands for a published build (§13 frozen shape). */
   const publishedInstall = (build) => installCommands({
-    id: build.summary.ir.id,
-    version: build.summary.ir.version,
+    id: build.summary.compiledWorkflow.id,
+    version: build.summary.compiledWorkflow.version,
     projections: build.summary.projections,
     publishable: true,
+    repo,
   });
 
   const view = (job) => ({
@@ -222,10 +223,11 @@ export function createPublishService({
         TMPDIR: tmpDir,
         TEMP: tmpDir,
         TMP: tmpDir,
+        GH_TOKEN: token,
         GH_REPO: config.repo,
       });
-      if (apiBase === DEFAULT_GITHUB_API) delete childEnv.R2C_GITHUB_API;
-      else childEnv.R2C_GITHUB_API = apiBase;
+      if (apiBase === DEFAULT_GITHUB_API) delete childEnv.HM2B_GITHUB_API;
+      else childEnv.HM2B_GITHUB_API = apiBase;
 
       child = await runReleaseChild({
         spawn,
@@ -311,7 +313,7 @@ export function createPublishService({
     const headers = {
       Accept: 'application/vnd.github+json',
       'X-GitHub-Api-Version': '2022-11-28',
-      'User-Agent': 'r2c-web',
+      'User-Agent': 'hm2b-web',
     };
     headers.Authorization = `Bearer ${token}`;
     const request = async (path) => {

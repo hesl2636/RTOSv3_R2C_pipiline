@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to `r2c-runner` are recorded here. The version is locked
+All notable changes to `hm2b-runner` are recorded here. The version is locked
 step-by-step across the engine, the payload, and all five agent adapters; see
 `docs/compat.md`.
 
@@ -8,8 +8,32 @@ step-by-step across the engine, the payload, and all five agent adapters; see
 
 ### Changed
 
-- P6 cutover (#111): the engine moved to `runtime/r2c/engine/`, the pure
-  manifest contract to `runtime/r2c/contract/`, and the runtime assets to the
+- Rename: the project is `hm2b`, the framework package is `hm2b-framework`, the
+  engine package is `hm2b-runner`, and the runtime projection is `runner`. The
+  runtime receipt is `hm2b.runtime/v1`, the payload manifest is
+  `hm2b.release-payload/v1`, and `HM2B_GITHUB_API` replaces the old API
+  override.
+- Terminology: the compiled bundle artifact is the **compiled workflow**
+  (`hm2b.compiled-workflow/v2`, `workflow.compiled.json`). The old `IR` name,
+  module, constants, CLI command, API fields and UI labels are retired because
+  Huawei uses IR for *initial requirement*; `hm2b.ir/v2` documents are now
+  rejected. The R2C bundle's own IR/SR/AR references remain domain content and
+  are unchanged.
+- Agent-native no longer renders the bundle id in any host-visible name:
+  skill, stage, workflow and role directories/frontmatter are bare
+  (`r2c-design`, `stage-analysis-design`, `bys-architect`), and dsh writes
+  `.dsh/agent-native/roles.md`. Two bundles whose bare names overlap now fail
+  with `INSTALL_CONFLICTS` instead of relying on a namespace prefix.
+- The web upload accepts an explicit version override, rewrites
+  `bundle.json`, recompiles it, and the **构建并发布** action builds and
+  publishes in one click. The server reads the local `gh auth token` at
+  startup, so no `GH_TOKEN` shell wrapper is needed.
+- Web build output lists every target's install command at once, and each
+  command first runs `gh release download` into `.hm2b/release/<tag>/` then
+  installs offline with `--release-base`. The manual `install.mjs` bootstrap
+  step is gone, and the install phase no longer needs a GitHub token.
+- P6 cutover (#111): the engine moved to `runtime/runner/engine/`, the pure
+  manifest contract to `runtime/runner/contract/`, and the runtime assets to the
   two runtimes. The legacy directory trees, the declaration-driven install
   mechanism, the four role templates, the old acceptance command and the
   top-level schema/shims/pack/plugin trees are retired with wired
@@ -19,40 +43,48 @@ step-by-step across the engine, the payload, and all five agent adapters; see
 
 ### Added
 
+- Contract v2 assets: `hm2b.bundle/v2` and `hm2b.compiled-workflow/v2` carry the optional
+  `knowledgeBase`, `checklists`, `hooks` and `mcp` declarations with their
+  directories `knowledge-base/`, `checklists/`, `hooks/hooks.json` and
+  `mcp.json` (at most 4 path segments each). `compile` embeds every declared
+  body and source hash in the compiled workflow; the `runner` projection installs the assets
+  at the project root and `agent-native` installs them once under
+  `.agents/agent-native/<bundle-id>/`.
 - Install from a per-bundle Release (#106): `install.mjs` keeps its name and
   legacy flags and gains `--bundle <id>`, `--version`, `--projection
-  r2c|agent-native`, repeatable `--target` and `--project`. The bootstrap
+  runner|agent-native`, repeatable `--target` and `--project`. The bootstrap
   downloads the Release, verifies assets against `SHA256SUMS.txt`, cross-checks
-  the zip / IR / payload manifest (id, version, IR digest, content digest) and
+  the zip / compiled workflow / payload manifest (id, version, compiled workflow digest, content digest) and
   the payload members against the manifest, then hands the verified bytes to
   the framework's installer — never compiling or projecting. Any mismatch exits
   2 before a write. `requires.projections` is a hard whitelist,
-  `requires.engine` is evaluated only for r2c, and `--target` narrows writes
-  without re-projecting (the bundle `roles.json` is still installed). r2c
-  installs the runtime plus the bundle; agent-native installs its five targets.
-- `r2c.release-payload/v1` manifest and the pre-projected payload tgz contract
+  `requires.engine` is evaluated only for runner, and `--target` narrows writes
+  without re-projecting (the bundle `roles.json` is still installed). The
+  runner projection installs the runtime plus the bundle; agent-native installs
+  its five targets.
+- `hm2b.release-payload/v1` manifest and the pre-projected payload tgz contract
   moved to `installer/release-payload.js` and `installer/release-tar.js`; the
   manifest records the validated projection result without file content, and
   every file entry records its `origin` (and `assetId` when projected from an
   asset) so an installer can rebuild the exact V1–V12-validated result.
-- r2c runtime install surface: one `r2c.runtime/v1` receipt per project owns
-  the versioned engine (`.r2c/engine/<V>/`), the fixed resolver launcher
-  `.r2c/bin/r2c.js`, the `/r2c-*` host commands, hook carriers, pointer-level
+- Runner runtime install surface: one `hm2b.runtime/v1` receipt per project owns
+  the versioned engine (`.hm2b/engine/<V>/`), the fixed resolver launcher
+  `.hm2b/bin/hm2b.js`, the `/hm2b-*` host commands, hook carriers, pointer-level
   `settings.json`/`opencode.json`/mcp merges and the dsh runtime patch. Engine
   upgrades rewrite only `runtime.json` and the engine directory; bundle
   receipts never record an engine version.
 - Install-time `render-roles`: the installer renders `claude-code`, `codex`,
-  `omp` and `opencode` agent definitions from the IR through
-  `runtime/shared/render-role.js` as `r2c-<id>`, records them (with field-level
-  degradations) in the receipt and writes `.r2c/projection/roles.json`; dsh
+  `omp` and `opencode` agent definitions from the compiled workflow through
+  `runtime/shared/render-role.js` as `runner-<id>`, records them (with field-level
+  degradations) in the receipt and writes `.hm2b/projection/roles.json`; dsh
   renders no roles.
 - Installer `status` (works without a run) and `doctor` (receipt hashes,
   missing/extra files, engine entry/launcher/version, manifest selection, host
   detection, degradation/placeholder summary, transaction residue); engine
-  `r2c status` gains `installs[]` and trailing install lines without changing
+  `hm2b status` gains `installs[]` and trailing install lines without changing
   exit codes or existing lines.
 - Local web build surface: `POST /api/uploads` keeps the uploaded zip and
-  compiled IR in the 0700 session directory; `POST /api/builds` re-runs the
+  compiled workflow in the 0700 session directory; `POST /api/builds` re-runs the
   shared projections in-process and packages through `scripts/release.mjs` as an
   isolated child (`shell:false`, 120 s kill, no `GH_TOKEN`/`GITHUB_TOKEN`,
   JSON-lines stdout, capped and redacted stderr, crash → `WEB_CHILD_FAILED`).
@@ -76,25 +108,25 @@ step-by-step across the engine, the payload, and all five agent adapters; see
   published release's frozen install commands are shown for the installer.
 - `scripts/release.mjs --publish --out <built-dir> [--tag TAG] --json`:
   publish an existing build without re-projecting or re-packing; `GH_REPO` and
-  the operator-only `R2C_GITHUB_API` select the target, and every asset is
+  the operator-only `HM2B_GITHUB_API` select the target, and every asset is
   checked against its own `SHA256SUMS.txt` before the draft is created.
 
 ### Fixed
 
 - Review pass on the spec-83 integration: the Release install is one
   all-or-rollback transaction (legacy/occupancy/V1–V12 preflight before any
-  runtime write, and a bundle failure restores the runtime snapshot); the r2c
+  runtime write, and a bundle failure restores the runtime snapshot); the runner
   singleton is re-checked under the install lock; `--publish --out` re-opens
-  the built zip and refuses a zip/IR/tag mismatch or a non-canonical payload
+  the built zip and refuses a zip/compiled workflow/tag mismatch or a non-canonical payload
   (`WEB_PUBLISH_NOT_CANONICAL`) before the first remote call.
 - Correctness: V8 now rejects over-degradation not explained by an exclusive
   skill option; `BUNDLE_STEP_NO_SKILLS` respects S8 and never doubles a
   `BUNDLE_SCHEMA_INVALID`; distinct frontmatter/tool violations keep distinct
-  pointers; `options.extra` is echoed verbatim; r2c host roles render only the
+  pointers; `options.extra` is echoed verbatim; runner host roles render only the
   selected skills and record the #82 preload loss at the seam.
 - Shared contracts: one module for result field order, capability vocabulary
   and level ranks, and one `requires.engine` evaluator (projection, web,
-  installer); receipts also carry top-level `ir_path`; the agent-native
+  installer); receipts also carry top-level `compiled_workflow_path`; the agent-native
   manifest declares its static target assets (id/path/sha256).
 - Web hardening: missing `Sec-Fetch-Site` is refused and an oversized header
   returns 413; the engine version (not the framework version) feeds web build

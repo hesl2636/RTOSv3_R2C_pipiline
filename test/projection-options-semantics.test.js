@@ -1,9 +1,9 @@
 /**
  * Projection options semantics (#100).
  *
- * Covers the four input classes end to end: resolved echo, IR-digest binding,
+ * Covers the four input classes end to end: resolved echo, compiled workflow-digest binding,
  * stage reordering, skill subsetting with its preload/capability losses, and
- * target narrowing. The sample bundle is the frozen RTOSv3 IR; the mini IR
+ * target narrowing. The sample bundle is the frozen RTOSv3 compiled workflow; the mini compiled workflow
  * adds the role skill references the sample does not carry.
  */
 import assert from 'node:assert/strict';
@@ -24,35 +24,35 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const ZIP = join(ROOT, 'examples/rtosv3/dist/bundle-rtosv3-drvport-v1.0.0.zip');
 
 let sample;
-function sampleIr() {
+function sampleCompiledWorkflow() {
   if (sample !== undefined) return sample;
   const compiled = compileBundle(new Uint8Array(readFileSync(ZIP)), { inflateRaw, sha256: sha256Hex });
   assert.equal(compiled.ok, true);
-  sample = { ir: JSON.parse(new TextDecoder().decode(compiled.irBytes)), irDigest: compiled.digest };
+  sample = { compiledWorkflow: JSON.parse(new TextDecoder().decode(compiled.compiledWorkflowBytes)), compiledWorkflowDigest: compiled.digest };
   return sample;
 }
 
-function runProject({ projectionId, ir, irDigest, raw }) {
+function runProject({ projectionId, compiledWorkflow, compiledWorkflowDigest, raw }) {
   const manifest = getProjection(projectionId);
-  const normalized = normalizeOptions({ projectionId, ir, irDigest, raw, manifest });
+  const normalized = normalizeOptions({ projectionId, compiledWorkflow, compiledWorkflowDigest, raw, manifest });
   assert.equal(normalized.ok, true, JSON.stringify(normalized.errors));
-  const result = project({ projectionId, ir, irDigest, options: normalized.options, environment: {}, assets: {} });
+  const result = project({ projectionId, compiledWorkflow, compiledWorkflowDigest, options: normalized.options, environment: {}, assets: {} });
   assert.equal(result.ok, true, JSON.stringify(result.errors));
-  const validation = validateResult(result, { ir, irDigest, options: normalized.options, manifest, environment: {}, assets: {} });
+  const validation = validateResult(result, { compiledWorkflow, compiledWorkflowDigest, options: normalized.options, manifest, environment: {}, assets: {} });
   assert.equal(validation.ok, true, JSON.stringify(validation.diagnostics, null, 2));
   return result;
 }
 
-function miniIr({ model } = {}) {
+function miniCompiledWorkflow({ model } = {}) {
   const source = (path, fill) => ({ path, sha256: fill.repeat(64) });
   return {
-    schema: 'r2c.ir/v1',
+    schema: 'hm2b.compiled-workflow/v2',
     id: 'mini',
     name: 'Mini workflow',
     version: '1.0.0',
     description: 'A miniature workflow used by projection option tests.',
     source: {
-      bundle: { schema: 'r2c.bundle/v1', id: 'mini', version: '1.0.0', contentSha256: 'b'.repeat(64) },
+      bundle: { schema: 'hm2b.bundle/v1', id: 'mini', version: '1.0.0', contentSha256: 'b'.repeat(64) },
       manifest: { path: 'bundle.json', sha256: 'c'.repeat(64) },
     },
     stages: [{
@@ -105,13 +105,13 @@ function file(result, path) {
 // --- target subset + skill subset ----------------------------------------
 
 test('five targets with 12 skills: 52 files, 40 capability rows, all targets lose the excluded skills', () => {
-  const { ir, irDigest } = sampleIr();
-  const skills = Object.keys(ir.skills).sort().slice(0, 12);
-  const result = runProject({ projectionId: 'agent-native', ir, irDigest, raw: { skills } });
+  const { compiledWorkflow, compiledWorkflowDigest } = sampleCompiledWorkflow();
+  const skills = Object.keys(compiledWorkflow.skills).sort().slice(0, 12);
+  const result = runProject({ projectionId: 'agent-native', compiledWorkflow, compiledWorkflowDigest, raw: { skills } });
 
   assert.deepEqual(result.options.skills, skills);
   assert.deepEqual(result.options.targets, ['claude-code', 'codex', 'dsh', 'omp', 'opencode']);
-  assert.deepEqual(result.options.stageOrder, ir.stages.map((stage) => stage.id));
+  assert.deepEqual(result.options.stageOrder, compiledWorkflow.stages.map((stage) => stage.id));
   assert.deepEqual(result.options.extra, {});
   assert.equal(result.files.length, 52);
   assert.equal(result.files.filter((item) => item.kind === 'skill').length, 24);
@@ -123,22 +123,22 @@ test('five targets with 12 skills: 52 files, 40 capability rows, all targets los
     assert.deepEqual(row.uses, skills.map((id) => `/skills/${id}`));
   }
 
-  const again = runProject({ projectionId: 'agent-native', ir, irDigest, raw: { skills } });
+  const again = runProject({ projectionId: 'agent-native', compiledWorkflow, compiledWorkflowDigest, raw: { skills } });
   assert.equal(JSON.stringify(again), JSON.stringify(result));
 });
 
 test('stage reversal keeps 98 files, only warns, and follows the overridden order', () => {
-  const { ir, irDigest } = sampleIr();
-  const baseline = runProject({ projectionId: 'agent-native', ir, irDigest, raw: {} });
-  const stages = ir.stages.map((stage) => stage.id).reverse();
-  const result = runProject({ projectionId: 'agent-native', ir, irDigest, raw: { stageOrder: stages } });
+  const { compiledWorkflow, compiledWorkflowDigest } = sampleCompiledWorkflow();
+  const baseline = runProject({ projectionId: 'agent-native', compiledWorkflow, compiledWorkflowDigest, raw: {} });
+  const stages = compiledWorkflow.stages.map((stage) => stage.id).reverse();
+  const result = runProject({ projectionId: 'agent-native', compiledWorkflow, compiledWorkflowDigest, raw: { stageOrder: stages } });
 
   assert.equal(baseline.files.length, 98);
   assert.equal(result.files.length, 98);
   assert.deepEqual(result.options.stageOrder, stages);
   assert.deepEqual(result.coverage.stages, stages);
   assert.deepEqual(result.coverage.steps, [...stages]
-    .flatMap((id) => ir.stages.find((stage) => stage.id === id).steps.map((step) => step.id)));
+    .flatMap((id) => compiledWorkflow.stages.find((stage) => stage.id === id).steps.map((step) => step.id)));
   assert.deepEqual(result.warnings.map((warning) => warning.code), ['SKILL_MIRRORED_ROOTS', 'STAGE_ORDER_OVERRIDDEN']);
   assert.deepEqual(result.degradations, baseline.degradations);
   assert.equal(result.installPlan.steps.length, 98);
@@ -146,21 +146,21 @@ test('stage reversal keeps 98 files, only warns, and follows the overridden orde
 });
 
 test('reversed stage order plus a 12-skill subset still yields the 52-file set', () => {
-  const { ir, irDigest } = sampleIr();
-  const skills = Object.keys(ir.skills).sort().slice(0, 12);
-  const stages = ir.stages.map((stage) => stage.id).reverse();
-  const result = runProject({ projectionId: 'agent-native', ir, irDigest, raw: { stageOrder: stages, skills } });
+  const { compiledWorkflow, compiledWorkflowDigest } = sampleCompiledWorkflow();
+  const skills = Object.keys(compiledWorkflow.skills).sort().slice(0, 12);
+  const stages = compiledWorkflow.stages.map((stage) => stage.id).reverse();
+  const result = runProject({ projectionId: 'agent-native', compiledWorkflow, compiledWorkflowDigest, raw: { stageOrder: stages, skills } });
   assert.equal(result.files.length, 52);
   assert.deepEqual(result.coverage.stages, stages);
   assert.ok(result.warnings.some((warning) => warning.code === 'STAGE_ORDER_OVERRIDDEN'));
 });
 
 test('narrow targets render only those targets and normalise to manifest order', () => {
-  const { ir, irDigest } = sampleIr();
+  const { compiledWorkflow, compiledWorkflowDigest } = sampleCompiledWorkflow();
   const result = runProject({
     projectionId: 'agent-native',
-    ir,
-    irDigest,
+    compiledWorkflow,
+    compiledWorkflowDigest,
     raw: { targets: ['opencode', 'claude-code'] },
   });
   assert.deepEqual(result.options.targets, ['claude-code', 'opencode']);
@@ -175,9 +175,9 @@ test('narrow targets render only those targets and normalise to manifest order',
 // --- preload seam losses --------------------------------------------------
 
 test('an excluded role skill degrades preload only on targets with a seam', () => {
-  const ir = miniIr();
-  const irDigest = sha256Hex(canonicalJson(ir));
-  const result = runProject({ projectionId: 'agent-native', ir, irDigest, raw: { skills: ['helper'] } });
+  const compiledWorkflow = miniCompiledWorkflow();
+  const compiledWorkflowDigest = sha256Hex(canonicalJson(compiledWorkflow));
+  const result = runProject({ projectionId: 'agent-native', compiledWorkflow, compiledWorkflowDigest, raw: { skills: ['helper'] } });
 
   const excluded = result.degradations.filter((record) => record.code === 'CAP_PRELOAD_EXCLUDED');
   assert.deepEqual(excluded.map((record) => record.target), ['claude-code', 'omp']);
@@ -202,28 +202,28 @@ test('an excluded role skill degrades preload only on targets with a seam', () =
     assert.deepEqual(row.uses, ['/roles/worker/skills/0']);
   }
 
-  const claude = file(result, '.claude/agents/mini-worker.md').content;
+  const claude = file(result, '.claude/agents/worker.md').content;
   assert.equal(claude, [
     '---',
-    'name: mini-worker',
+    'name: worker',
     'description: Runs the miniature step.',
     'skills:',
-    '  - mini-skill-helper',
+    '  - helper',
     '---',
     '',
     'Do the work.',
     '',
   ].join('\n'));
-  assert.equal(claude.includes('mini-skill-other'), false);
-  const ompAgent = file(result, '.omp/agents/mini-worker.md').content;
-  assert.ok(ompAgent.includes('autoloadSkills:\n  - mini-skill-helper\n'));
-  assert.equal(ompAgent.includes('mini-skill-other'), false);
+  assert.equal(claude.includes('other'), false);
+  const ompAgent = file(result, '.omp/agents/worker.md').content;
+  assert.ok(ompAgent.includes('autoloadSkills:\n  - helper\n'));
+  assert.equal(ompAgent.includes('other'), false);
 });
 
 test('adapted and field-level states never worsen capability aggregation', () => {
-  const ir = miniIr({ model: 'strong' });
-  const irDigest = sha256Hex(canonicalJson(ir));
-  const result = runProject({ projectionId: 'agent-native', ir, irDigest, raw: { targets: ['claude-code', 'codex'] } });
+  const compiledWorkflow = miniCompiledWorkflow({ model: 'strong' });
+  const compiledWorkflowDigest = sha256Hex(canonicalJson(compiledWorkflow));
+  const result = runProject({ projectionId: 'agent-native', compiledWorkflow, compiledWorkflowDigest, raw: { targets: ['claude-code', 'codex'] } });
 
   const claudeModel = result.degradations.filter((record) => record.target === 'claude-code' && record.pointer === '/roles/worker');
   assert.deepEqual(claudeModel, []);
@@ -245,32 +245,32 @@ test('adapted and field-level states never worsen capability aggregation', () =>
   assert.equal(result.capabilityReport.find((row) => row.target === 'codex' && row.capability === 'preload').level, 'unavailable');
 });
 
-// --- r2c ------------------------------------------------------------------
+// --- runner ------------------------------------------------------------------
 
-test('r2c narrowing drops copies and preloads only the selected role skills', () => {
-  const { ir, irDigest } = sampleIr();
-  const skills = Object.keys(ir.skills).sort().slice(0, 12);
-  const stages = ir.stages.map((stage) => stage.id).reverse();
-  const result = runProject({ projectionId: 'r2c', ir, irDigest, raw: { stageOrder: stages, skills } });
+test('runner narrowing drops copies and preloads only the selected role skills', () => {
+  const { compiledWorkflow, compiledWorkflowDigest } = sampleCompiledWorkflow();
+  const skills = Object.keys(compiledWorkflow.skills).sort().slice(0, 12);
+  const stages = compiledWorkflow.stages.map((stage) => stage.id).reverse();
+  const result = runProject({ projectionId: 'runner', compiledWorkflow, compiledWorkflowDigest, raw: { stageOrder: stages, skills } });
 
-  assert.deepEqual(result.options.targets, ['r2c']);
+  assert.deepEqual(result.options.targets, ['runner']);
   assert.equal(result.files.length, 22);
   assert.equal(result.files.filter((item) => item.kind === 'skill').length, 12);
   assert.ok(result.warnings.some((warning) => warning.code === 'STAGE_ORDER_OVERRIDDEN'));
   assert.equal(result.warnings.some((warning) => warning.code === 'PROJECTION_EMPTY_TARGET'), false);
   assert.equal(result.capabilityReport.find((row) => row.capability === 'skills').level, 'unavailable');
   assert.equal(result.capabilityReport.find((row) => row.capability === 'preload').level, 'unavailable');
-  const excluded = result.degradations.filter((record) => record.code === 'R2C_SKILL_EXCLUDED');
+  const excluded = result.degradations.filter((record) => record.code === 'RUNNER_SKILL_EXCLUDED');
   assert.equal(excluded.length, 35 - 12);
 });
 
-test('r2c keeps the declared preload loss only for selected role references', () => {
-  const ir = miniIr();
-  const irDigest = sha256Hex(canonicalJson(ir));
-  const result = runProject({ projectionId: 'r2c', ir, irDigest, raw: { skills: ['helper'] } });
+test('runner keeps the declared preload loss only for selected role references', () => {
+  const compiledWorkflow = miniCompiledWorkflow();
+  const compiledWorkflowDigest = sha256Hex(canonicalJson(compiledWorkflow));
+  const result = runProject({ projectionId: 'runner', compiledWorkflow, compiledWorkflowDigest, raw: { skills: ['helper'] } });
   const preload = result.degradations.filter((record) => record.capability === 'preload');
   assert.deepEqual(preload.map((record) => record.pointer), ['/roles/worker/skills/0']);
-  assert.equal(preload[0].code, 'R2C_PRELOAD_UNAVAILABLE');
+  assert.equal(preload[0].code, 'RUNNER_PRELOAD_UNAVAILABLE');
   const row = result.capabilityReport.find((item) => item.capability === 'preload');
   assert.deepEqual(row.uses, ['/roles/worker/skills/0']);
   assert.equal(file(result, 'roles/worker.md').content.includes('- "helper"'), true);
@@ -279,36 +279,36 @@ test('r2c keeps the declared preload loss only for selected role references', ()
 
 // --- binding and rejection ------------------------------------------------
 
-test('a stale IR binding is rejected and produces no partial result', () => {
-  const { ir, irDigest } = sampleIr();
+test('a stale compiled workflow binding is rejected and produces no partial result', () => {
+  const { compiledWorkflow, compiledWorkflowDigest } = sampleCompiledWorkflow();
   const manifest = getProjection('agent-native');
-  const normalized = normalizeOptions({ projectionId: 'agent-native', ir, irDigest, raw: {}, manifest });
+  const normalized = normalizeOptions({ projectionId: 'agent-native', compiledWorkflow, compiledWorkflowDigest, raw: {}, manifest });
   assert.equal(normalized.ok, true);
   const stale = project({
     projectionId: 'agent-native',
-    ir,
-    irDigest: 'f'.repeat(64),
+    compiledWorkflow,
+    compiledWorkflowDigest: 'f'.repeat(64),
     options: normalized.options,
     environment: {},
     assets: {},
   });
   assert.equal(stale.ok, false);
-  assert.deepEqual([...new Set(stale.errors.map((item) => item.code))], [OPTION_CODES.IR_MISMATCH]);
+  assert.deepEqual([...new Set(stale.errors.map((item) => item.code))], [OPTION_CODES.COMPILED_WORKFLOW_MISMATCH]);
   assert.equal(Object.hasOwn(stale, 'files'), false);
-  assert.equal(OPTION_CODES.IR_MISMATCH, 'PROJECTION_OPTIONS_IR_MISMATCH');
+  assert.equal(OPTION_CODES.COMPILED_WORKFLOW_MISMATCH, 'PROJECTION_OPTIONS_COMPILED_WORKFLOW_MISMATCH');
 });
 
 test('unknown stage ids, skills, targets and extra are rejected with stable codes', () => {
-  const { ir, irDigest } = sampleIr();
+  const { compiledWorkflow, compiledWorkflowDigest } = sampleCompiledWorkflow();
   const manifest = getProjection('agent-native');
   const normalize = (raw, projectionId = 'agent-native') => normalizeOptions({
     projectionId,
-    ir,
-    irDigest,
+    compiledWorkflow,
+    compiledWorkflowDigest,
     raw,
     manifest: projectionId === 'agent-native' ? manifest : getProjection(projectionId),
   });
-  const unknownStage = normalize({ stageOrder: ['nope', ...ir.stages.map((stage) => stage.id).slice(1)] });
+  const unknownStage = normalize({ stageOrder: ['nope', ...compiledWorkflow.stages.map((stage) => stage.id).slice(1)] });
   assert.equal(unknownStage.ok, false);
   assert.deepEqual(unknownStage.errors.map((item) => item.code), [OPTION_CODES.INVALID]);
   assert.equal(unknownStage.errors[0].pointer, '/stageOrder');
@@ -320,7 +320,7 @@ test('unknown stage ids, skills, targets and extra are rejected with stable code
   const unknownTarget = normalize({ targets: ['claude-code', 'nope'] });
   assert.deepEqual(unknownTarget.errors.map((item) => item.code), [OPTION_CODES.TARGET_UNKNOWN]);
 
-  for (const projectionId of ['agent-native', 'r2c']) {
+  for (const projectionId of ['agent-native', 'runner']) {
     const extra = normalize({ extra: { roleModels: {} } }, projectionId);
     assert.equal(extra.ok, false);
     assert.deepEqual(extra.errors.map((item) => item.code), [OPTION_CODES.INVALID]);

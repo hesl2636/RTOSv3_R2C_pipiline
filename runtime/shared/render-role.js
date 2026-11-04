@@ -8,7 +8,7 @@
  *
  * `ctx = { namespace, skillNames, targets, roleModels?, roleEfforts?, trailer? }`
  * is required: `targets` is the projection-owned descriptor map (target id ->
- * descriptor) and `skillNames` maps IR skill ids to runtime-visible names.
+ * descriptor) and `skillNames` maps compiled workflow skill ids to runtime-visible names.
  */
 import { placeholderInstructions } from './placeholder.js';
 import { TARGETS as DEFAULT_TARGETS } from '../agent-native/projection/targets/index.js';
@@ -152,12 +152,12 @@ export function tomlMultiline(instructions) {
 }
 
 /**
- * Render one IR role for one target.
+ * Render one compiled workflow role for one target.
  *
  * Returns `{name, basename, format, content, exposure, fields}` where
  * `content === null` only when the descriptor refuses to expose the role
  * (`exposure: "skipped"`). `fields` always covers exactly the role fields the
- * IR actually set, plus `id`.
+ * compiled workflow actually set, plus `id`.
  */
 export function renderRole(role, targetId, ctx) {
   if (role === null || typeof role !== 'object') {
@@ -167,7 +167,7 @@ export function renderRole(role, targetId, ctx) {
     throw projectionError('PROJECTION_INTERNAL', 'renderRole needs role.id');
   }
   const descriptor = descriptorFor(ctx, targetId);
-  const name = `${ctx.namespace}-${role.id}`;
+  const name = role.id;
   if (!ROLE_ID_RE.test(name) || [...name].length > MAX_ROLE_NAME) {
     throw projectionError('PROJECTION_NAME_TOO_LONG', `rendered role name ${name} is not a kebab id of at most 64 characters`, {
       target: targetId,

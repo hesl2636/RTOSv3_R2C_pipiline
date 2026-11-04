@@ -101,13 +101,13 @@ test('framework and engine versions are independent everywhere they are read', a
   const { installStatus } = await import('../installer/status.js');
   const { checkEngineRequirement } = await import('../projection/engine-requirement.js');
 
-  const root = mkdtempSync(join(tmpdir(), 'r2c-version-'));
+  const root = mkdtempSync(join(tmpdir(), 'hm2b-version-'));
   t.after(() => rmSync(root, { recursive: true, force: true }));
-  writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'r2c-framework', version: '9.9.9' }));
-  mkdirSync(join(root, 'runtime/r2c/engine'), { recursive: true });
+  writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'hm2b-framework', version: '9.9.9' }));
+  mkdirSync(join(root, 'runtime/runner/engine'), { recursive: true });
   writeFileSync(
-    join(root, 'runtime/r2c/engine/package.json'),
-    JSON.stringify({ name: 'r2c-runner', version: '1.2.3' }),
+    join(root, 'runtime/runner/engine/package.json'),
+    JSON.stringify({ name: 'hm2b-runner', version: '1.2.3' }),
   );
 
   // The release reads the engine package, never the root package.
@@ -115,8 +115,8 @@ test('framework and engine versions are independent everywhere they are read', a
 
   // The installer records the engine source's own version.
   mkdirSync(join(root, 'engine-source/bin'), { recursive: true });
-  writeFileSync(join(root, 'engine-source/bin/r2c.js'), '#!/usr/bin/env node\n');
-  writeFileSync(join(root, 'engine-source/package.json'), JSON.stringify({ name: 'r2c-runner', version: '4.5.6' }));
+  writeFileSync(join(root, 'engine-source/bin/hm2b.js'), '#!/usr/bin/env node\n');
+  writeFileSync(join(root, 'engine-source/package.json'), JSON.stringify({ name: 'hm2b-runner', version: '4.5.6' }));
   const projectRoot = join(root, 'project');
   mkdirSync(projectRoot);
   const installed = installRuntime({ projectRoot, engineSource: join(root, 'engine-source') });

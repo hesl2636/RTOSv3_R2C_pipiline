@@ -2,7 +2,7 @@
  * `requires.engine` evaluation (spec §13), shared by the web build and the
  * installer.
  *
- * The range constrains the **engine** version (`runtime/r2c/engine/package.json`),
+ * The range constrains the **engine** version (`runtime/runner/engine/package.json`),
  * never the framework version: the two ship independently. An absent range is
  * no constraint; an unreadable version or an invalid range is
  * `PROJECTION_ENGINE_UNKNOWN`; an unsatisfied range is

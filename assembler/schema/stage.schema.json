@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://r2c.runner/schema/stage/v1",
-  "title": "r2c.bundle/v1 stage file (stages/<id>.json)",
+  "$id": "https://hm2b.runner/schema/stage/v1",
+  "title": "hm2b.bundle/v1 stage file (stages/<id>.json)",
   "description": "One declared stage. Documentation only: assembler/checks/stages.js is authoritative and reports BUNDLE_SCHEMA_INVALID / BUNDLE_STEP_* / BUNDLE_GATE_INVALID.",
   "$comment": "Rules the validator enforces and this document does not express: the file id must equal both the file stem and a bundle.json.stages entry; step ids are unique across the whole bundle (not only within a stage); steps order is execution order and gates run in order until a non-zero exit; outputs are project-root-relative globs that must not target skills/ or SKILL.md; stage files must be canonical JSON (two-space indent, trailing LF).",
   "type": "object",

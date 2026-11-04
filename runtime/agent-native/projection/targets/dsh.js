@@ -6,7 +6,7 @@
  * v1 does not guess that row (the `insert:` entry key and the preset plugin
  * shape were not first-hand verified when the contract froze), so the target
  * ships the shared `.agents/skills` tree plus one aggregate, manually driven
- * role catalogue `.dsh/agent-native/<ns>.roles.md`. No preset lines, no
+ * role catalogue `.dsh/agent-native/roles.md`. No preset lines, no
  * `allowedAgentPresets`, and `subagents` stays `unavailable`.
  *
  * Data only: capability matrix, exposure, field states and the catalogue byte
@@ -42,7 +42,7 @@ const CAPABILITY_NOTES = Object.freeze({
   gates: '命令原文 + 超时写入阶段技能；执行者运行并自证，机器不强制',
   outputs: 'glob 原样列出自检清单；回执逐项写存在/缺失，机器不检查',
   subagents: 'v1 不生成 dsh 原生 preset；角色正文进项目内角色目录，由主会话按同名段落执行',
-  skills: '技能安装到 .agents/skills（dsh 项目级技能根）；名字加 bundle 前缀，语义不变',
+  skills: '技能安装到 .agents/skills（dsh 项目级技能根）；显示名不加 bundle 前缀；目录名仅用于避免多 bundle 冲突',
   preload: 'dsh 无按角色预载技能的接缝；v1 也不按角色挂 skill provider',
   'stage-invocation': '阶段技能可单独加载',
   'skill-invocation': '技能工具可按需加载单个技能',
@@ -76,16 +76,16 @@ function renderSection({ role, name, instructions }) {
   return `${lines.join('\n')}\n${instructions}`;
 }
 
-function roleCatalogue({ ir, roleIds, renderedByRole }) {
+function roleCatalogue({ compiledWorkflow, roleIds, renderedByRole }) {
   const files = [];
   const artifacts = {};
   if (roleIds.length === 0) return { files, artifacts };
-  const path = `${AGENTS_ROOT}/${ir.id}.roles.md`;
+  const path = `${AGENTS_ROOT}/roles.md`;
   const sections = roleIds.map((roleId) => renderedByRole.get(roleId).content);
   files.push({
     path,
     kind: 'role',
-    content: `${banner(ir.id)}\n\n${sections.join('\n')}`,
+    content: `${banner(compiledWorkflow.id)}\n\n${sections.join('\n')}`,
   });
   for (const roleId of roleIds) artifacts[roleId] = { path, format: 'md' };
   return { files, artifacts, metadataArtifacts: { 'dsh-roles': path } };
@@ -95,9 +95,9 @@ function roleCatalogue({ ir, roleIds, renderedByRole }) {
  * Every delegation use point loses the native seam in v1: the record carries
  * the step pointer (#82 keeps `/stages/<i>/steps/<j>/role`).
  */
-function capabilityDegradations({ ir }) {
+function capabilityDegradations({ compiledWorkflow }) {
   const records = [];
-  for (const [stageIndex, stage] of ir.stages.entries()) {
+  for (const [stageIndex, stage] of compiledWorkflow.stages.entries()) {
     for (const [stepIndex, step] of stage.steps.entries()) {
       if (step.role === undefined) continue;
       records.push({
@@ -122,12 +122,12 @@ export const dshTarget = Object.freeze({
   ...hostProfile({
     detect: {"commands":[["dsh","-V"]],"paths":["$DSH_HOME","~/.dsh"]},
     assets: [
-    Object.freeze({ path: 'runtime/agent-native/targets/dsh/assets/dsh.patch.yml', sha256: '07d1046db9972a3aa8df188fdad3b5e23ee2efda1804a095a8861f1f63dc8b58' }),
+    Object.freeze({ path: 'runtime/agent-native/targets/dsh/assets/dsh.patch.yml', sha256: '13de8ce3d23d38fc86426fb6ff21279af7eec0b11fd47950513900472b2fa029' }),
     Object.freeze({ path: 'runtime/agent-native/targets/dsh/assets/hooks.json', sha256: 'bf2247ed875939700b1f8014a19cbcd51b67bc40e88c6c452a6c295e995ceaed' }),
-    Object.freeze({ path: 'runtime/agent-native/targets/dsh/assets/index.mjs', sha256: '2163df89409f376f585b86b635374938c49ad56dfaa23785e1486a5d10f4d803' }),
-    Object.freeze({ path: 'runtime/agent-native/targets/dsh/assets/package.json', sha256: 'f468c9020560b06b437fc282b3f44cb468f3c57b5b2f692f28cac0f20bc53ef0' }),
+    Object.freeze({ path: 'runtime/agent-native/targets/dsh/assets/index.mjs', sha256: '485d979b63f439c69fc26bccea9ee2b9ec2673660ff3e1b81e425ea8c267faf7' }),
+    Object.freeze({ path: 'runtime/agent-native/targets/dsh/assets/package.json', sha256: '2a3fd663c4034d73957def32f48ce2f44bf566d915d19c4543dc376c6472bf30' }),
     ],
-    smoke: (namespace) => layoutSmoke(namespace, { skillsRoot: '.agents/skills', extra: [{ kind: 'agents', root: '.dsh/agent-native', prefix: `${namespace}.`, format: 'md' }] }),
+    smoke: (namespace) => layoutSmoke(namespace, { skillsRoot: '.agents/skills', extra: [{ kind: 'agents', root: '.dsh/agent-native', prefix: '', format: 'md' }] }),
   }),
   layout: Object.freeze({
     skillsRoot: '.agents/skills',
@@ -141,7 +141,7 @@ export const dshTarget = Object.freeze({
     extension: 'md',
     formatName: 'md',
     identity: Object.freeze({ state: 'adapted', reason: '角色段落标题承载渲染名' }),
-    basename: (name) => `${name}.roles.md`,
+    basename: () => 'roles.md',
     exposure({ mode }) {
       if (mode === 'any') return 'both';
       return mode;

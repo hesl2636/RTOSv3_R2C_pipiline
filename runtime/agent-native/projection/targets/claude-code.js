@@ -41,7 +41,7 @@ const CAPABILITY_NOTES = Object.freeze({
   gates: '命令原文 + 超时写入阶段技能；执行者运行并自证，机器不强制',
   outputs: 'glob 原样列出自检清单；回执逐项写存在/缺失，机器不检查',
   subagents: '角色定义落在 runtime 自动发现的项目目录',
-  skills: '技能安装到 runtime 技能根；名字加 bundle 前缀，语义不变',
+  skills: '技能安装到 runtime 技能根；显示名不加 bundle 前缀；目录名仅用于避免多 bundle 冲突',
   preload: 'Claude skills: 整份注入',
   'stage-invocation': '阶段技能可单独加载',
   'skill-invocation': '技能副本可单独加载',

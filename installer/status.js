@@ -13,7 +13,7 @@ import { readReceipts } from './receipt.js';
 import { readRuntimeReceipt } from './runtime.js';
 import { sorted } from '../core/sort.js';
 
-export const STATUS_SCHEMA = 'r2c.install-status/v1';
+export const STATUS_SCHEMA = 'hm2b.install-status/v1';
 
 /** Cross-receipt ownership conflicts (literal, case-folded and prefix). */
 function receiptConflicts(receipts) {
@@ -128,7 +128,7 @@ function unsupportedInstall(item) {
   };
 }
 
-/** `r2c.install-status/v1` object; no run state is consulted. */
+/** `hm2b.install-status/v1` object; no run state is consulted. */
 export function installStatus(projectRootInput) {
   const projectRoot = resolve(projectRootInput);
   const { receipts, invalid, legacy } = readReceipts(projectRoot);

@@ -1,9 +1,9 @@
 /**
- * `r2c.install/v2` receipts (#76 §5, #82 §11, spec §12).
+ * `hm2b.install/v2` receipts (#76 §5, #82 §11, spec §12).
  *
  * One receipt per install identity `(projection.id, bundle.id)`, project
  * relative, canonical JSON, no absolute paths. `files[]` records every path the
- * identity owns, with hashes computed from disk after the write; the IR copy
+ * identity owns, with hashes computed from disk after the write; the compiled workflow copy
  * and the receipt itself are installer bookkeeping and never appear in
  * `files[]` (#76 R3).
  */
@@ -13,7 +13,7 @@ import { canonicalJson, isCanonicalJson } from '../core/canonical-json.js';
 import { compareCodePoints } from '../core/code-point.js';
 import { comparePaths } from '../core/paths.js';
 import {
-  INSTALL_DIR,
+  LEGACY_INSTALL_DIR,
   LEGACY_RECEIPT_SCHEMA,
   RECEIPT_SCHEMA,
   RECEIPTS_DIR,
@@ -53,7 +53,7 @@ export function fileEntry({ path, kind, targets, sha256, mode, origin, source })
 export function buildReceipt({
   projection,
   bundle,
-  ir,
+  compiledWorkflow,
   mode,
   hostTargets,
   options,
@@ -78,10 +78,10 @@ export function buildReceipt({
       targets: [...projection.targets].sort(compareCodePoints),
     },
     bundle: { id: bundle.id, version: bundle.version },
-    // Spec §12 spells the IR copy at the top level; the nested object stays
-    // for readers that already bind `ir.digest`/`ir.contentSha256`.
-    ir_path: ir.path,
-    ir: { path: ir.path, digest: ir.digest, contentSha256: ir.contentSha256 },
+    // Spec §12 spells the compiled workflow copy at the top level; the nested object stays
+    // for readers that already bind `compiledWorkflow.digest`/`compiledWorkflow.contentSha256`.
+    compiled_workflow_path: compiledWorkflow.path,
+    compiledWorkflow: { path: compiledWorkflow.path, digest: compiledWorkflow.digest, contentSha256: compiledWorkflow.contentSha256 },
     root: 'project',
     scope: 'project',
     mode,
@@ -106,15 +106,15 @@ export function serializeReceipt(receipt) {
   return canonicalJson(receipt);
 }
 
-/** True when a parsed value is a canonical `r2c.install/v2` receipt header. */
+/** True when a parsed value is a canonical `hm2b.install/v2` receipt header. */
 export function isReceiptV2(value) {
   return value !== null && typeof value === 'object' && value.schema === RECEIPT_SCHEMA;
 }
 
 /**
- * Load every receipt under `.r2c/install/receipts/`. Unreadable or
+ * Load every receipt under `.hm2b/install/receipts/`. Unreadable or
  * non-v2 files are reported, never trusted. Legacy `r2c.install/v1` receipts
- * live directly in `.r2c/install/` and are reported separately.
+ * live directly in the legacy `.r2c/install/` and are reported separately.
  */
 export function readReceipts(projectRoot) {
   const receipts = [];
@@ -159,9 +159,9 @@ export function readReceipts(projectRoot) {
   return { receipts, invalid, legacy };
 }
 
-/** `r2c.install/v1` receipts still sitting in `.r2c/install/*.json`. */
+/** `r2c.install/v1` receipts still sitting in the legacy `.r2c/install/*.json`. */
 export function scanLegacyInstallDir(projectRoot) {
-  const dir = join(projectRoot, ...INSTALL_DIR.split('/'));
+  const dir = join(projectRoot, ...LEGACY_INSTALL_DIR.split('/'));
   let names = [];
   try {
     names = readdirSync(dir, { withFileTypes: true })
@@ -173,7 +173,7 @@ export function scanLegacyInstallDir(projectRoot) {
   }
   const out = [];
   for (const name of names) {
-    const rel = `${INSTALL_DIR}/${name}`;
+    const rel = `${LEGACY_INSTALL_DIR}/${name}`;
     const read = readJsonFile(join(projectRoot, ...rel.split('/')));
     if (read.ok && read.value?.schema === LEGACY_RECEIPT_SCHEMA) {
       out.push({ path: rel, receipt: read.value });

@@ -19,9 +19,9 @@ import { constitutionState } from '../runtime/shared/constitution.js';
 import { CAPABILITIES, ID_PATTERN as ID_RE, LEVEL_RANK, SEMANTIC_CAPABILITIES } from './contract.js';
 import { RESULT_FIELDS as TOP_LEVEL_ORDER } from './result-fields.js';
 
-const RESULT_SCHEMA = 'r2c.projection-result/v1';
-const INSTALL_PLAN_SCHEMA = 'r2c.install-plan/v1';
-const OPTIONS_SCHEMA = 'r2c.projection-options/v1';
+const RESULT_SCHEMA = 'hm2b.projection-result/v1';
+const INSTALL_PLAN_SCHEMA = 'hm2b.install-plan/v1';
+const OPTIONS_SCHEMA = 'hm2b.projection-options/v1';
 const SEMANTIC = new Set(SEMANTIC_CAPABILITIES);
 const SEGMENT_RE = /^[A-Za-z0-9._-]+$/;
 const CODE_RE = /^[A-Z][A-Z0-9_]{2,63}$/;
@@ -30,11 +30,11 @@ const MAX_TOTAL_BYTES = 64 * 1024 * 1024;
 const MAX_FILE_BYTES = 4 * 1024 * 1024;
 const encoder = new TextEncoder();
 
-function resolvePointer(ir, pointer) {
-  if (pointer === '') return ir;
+function resolvePointer(compiledWorkflow, pointer) {
+  if (pointer === '') return compiledWorkflow;
   if (typeof pointer !== 'string' || !pointer.startsWith('/')) return undefined;
   const parts = pointer.slice(1).split('/').map((part) => part.replaceAll('~1', '/').replaceAll('~0', '~'));
-  let node = ir;
+  let node = compiledWorkflow;
   for (const part of parts) {
     if (node === null || node === undefined) return undefined;
     if (Array.isArray(node)) {
@@ -65,7 +65,7 @@ function pathIssues(path, writeRoots) {
   }
   if (segments.includes('.git')) issues.push('.git path');
   const last = segments[segments.length - 1];
-  if (last === 'workflow.ir.json' || last === 'bundle.json') issues.push('reserved filename');
+  if (last === 'workflow.compiled.json' || last === 'bundle.json') issues.push('reserved filename');
   if (!Array.isArray(writeRoots) || writeRoots.length === 0) issues.push('manifest has no writeRoots');
   else if (!writeRoots.some((root) => path === root || path.startsWith(`${root}/`))) issues.push('outside writeRoots');
   return issues;
@@ -82,19 +82,19 @@ function declaredLevel(manifest, target, capability) {
  * the manifest level is legitimate only when the worst use point is one of
  * these (a selection loss, not a projection defect).
  */
-function excludedSkillIds(ir, options) {
+function excludedSkillIds(compiledWorkflow, options) {
   const selected = Array.isArray(options?.skills) ? new Set(options.skills) : null;
   if (selected === null) return new Set();
-  return new Set(Object.keys(ir?.skills ?? {}).filter((id) => !selected.has(id)));
+  return new Set(Object.keys(compiledWorkflow?.skills ?? {}).filter((id) => !selected.has(id)));
 }
 
 /** True when a degradation pointer lands on a skill the options excluded. */
-function pointsAtExcludedSkill(ir, pointer, excluded) {
+function pointsAtExcludedSkill(compiledWorkflow, pointer, excluded) {
   if (excluded.size === 0 || typeof pointer !== 'string' || !pointer.startsWith('/')) return false;
   const parts = pointer.slice(1).split('/').map((part) => part.replaceAll('~1', '/').replaceAll('~0', '~'));
   for (let index = 0; index < parts.length; index += 1) {
     if (parts[index] !== 'skills' || parts[index + 1] === undefined) continue;
-    const resolved = resolvePointer(ir, `/${parts.slice(0, index + 2).join('/')}`);
+    const resolved = resolvePointer(compiledWorkflow, `/${parts.slice(0, index + 2).join('/')}`);
     const id = typeof resolved === 'string' ? resolved : parts[index + 1];
     if (excluded.has(id)) return true;
   }
@@ -113,7 +113,7 @@ function expectedTargets(manifest, options) {
  * `code: PROJECTION_RESULT_INVALID` and `details.check` (`V1`…`V12`).
  */
 export function validateResult(result, input) {
-  const { ir, irDigest, manifest } = input ?? {};
+  const { compiledWorkflow, compiledWorkflowDigest, manifest } = input ?? {};
   const options = input?.options ?? result?.options;
   const environment = input?.environment ?? { engineVersion: null };
   const assets = input?.assets ?? {};
@@ -138,11 +138,11 @@ export function validateResult(result, input) {
   if (result.projection?.id !== manifest?.id || result.projection?.version !== manifest?.version) {
     fail('V1', 'projection reference does not match the manifest');
   }
-  if (result.ir?.id !== ir?.id
-    || result.ir?.version !== ir?.version
-    || result.ir?.digest !== irDigest
-    || result.ir?.contentSha256 !== ir?.source?.bundle?.contentSha256) {
-    fail('V1', 'ir reference does not match the input IR');
+  if (result.compiledWorkflow?.id !== compiledWorkflow?.id
+    || result.compiledWorkflow?.version !== compiledWorkflow?.version
+    || result.compiledWorkflow?.digest !== compiledWorkflowDigest
+    || result.compiledWorkflow?.contentSha256 !== compiledWorkflow?.source?.bundle?.contentSha256) {
+    fail('V1', 'compiledWorkflow reference does not match the input compiled workflow');
   }
 
   // V2 ---------------------------------------------------------------------
@@ -150,7 +150,7 @@ export function validateResult(result, input) {
     fail('V2', 'missing normalized options');
   } else {
     const echoed = result.options;
-    const fields = ['schema', 'projection', 'ir', 'stageOrder', 'skills', 'targets', 'extra'];
+    const fields = ['schema', 'projection', 'compiledWorkflow', 'stageOrder', 'skills', 'targets', 'extra'];
     for (const field of fields) {
       if (JSON.stringify(echoed?.[field]) !== JSON.stringify(options[field])) fail('V2', `options.${field} does not echo the resolved input`);
     }
@@ -176,16 +176,16 @@ export function validateResult(result, input) {
   }
 
   // V4 ---------------------------------------------------------------------
-  const stageOrder = Array.isArray(options?.stageOrder) ? options.stageOrder : (ir?.stages ?? []).map((stage) => stage.id);
+  const stageOrder = Array.isArray(options?.stageOrder) ? options.stageOrder : (compiledWorkflow?.stages ?? []).map((stage) => stage.id);
   const expectedStages = stageOrder;
-  const byId = new Map((ir?.stages ?? []).map((stage) => [stage.id, stage]));
+  const byId = new Map((compiledWorkflow?.stages ?? []).map((stage) => [stage.id, stage]));
   const expectedSteps = stageOrder.flatMap((id) => (byId.get(id)?.steps ?? []).map((step) => step.id));
   const coverageStages = result.coverage?.stages;
   const coverageSteps = result.coverage?.steps;
   if (JSON.stringify(coverageStages) !== JSON.stringify(expectedStages)) fail('V4', 'coverage.stages is not the applied stage order');
   else if (JSON.stringify(coverageSteps) !== JSON.stringify(expectedSteps)) fail('V4', 'coverage.steps is not the applied step order');
   else {
-    const all = (ir?.stages ?? []).flatMap((stage) => stage.steps.map((step) => step.id));
+    const all = (compiledWorkflow?.stages ?? []).flatMap((stage) => stage.steps.map((step) => step.id));
     if (new Set(coverageSteps).size !== all.length) fail('V4', 'coverage.steps does not cover every step exactly once');
   }
 
@@ -268,11 +268,11 @@ export function validateResult(result, input) {
           // Worse than declared is only legitimate when the worst use point is
           // a skill the options excluded (a selection loss); any other
           // over-degradation is a projection defect.
-          const excluded = excludedSkillIds(ir, options);
+          const excluded = excludedSkillIds(compiledWorkflow, options);
           const explained = (result.degradations ?? []).some((record) => record.target === target
             && record.capability === capability
             && LEVEL_RANK[record.level] === LEVEL_RANK[entry.level]
-            && pointsAtExcludedSkill(ir, record.pointer, excluded));
+            && pointsAtExcludedSkill(compiledWorkflow, record.pointer, excluded));
           if (!explained) {
             fail('V8', `${target}/${capability} level ${entry.level} is worse than declared ${declared} with no option exclusion`);
           }
@@ -280,7 +280,7 @@ export function validateResult(result, input) {
         if (!Array.isArray(entry?.uses)) fail('V8', `${target}/${capability} uses is not an array`);
         else {
           for (const use of entry.uses) {
-            if (resolvePointer(ir, use) === undefined) fail('V8', `${target}/${capability}: use pointer ${use} does not resolve`);
+            if (resolvePointer(compiledWorkflow, use) === undefined) fail('V8', `${target}/${capability}: use pointer ${use} does not resolve`);
           }
         }
       }
@@ -296,7 +296,7 @@ export function validateResult(result, input) {
     if (typeof record?.reason !== 'string' || record.reason.length === 0 || record.reason.length > 500) fail('V9', `${record?.code}: reason must be 1..500 characters`);
     if (typeof record?.effect !== 'string' || record.effect.length === 0 || record.effect.length > 500) fail('V9', `${record?.code}: effect must be 1..500 characters`);
     if (record?.capability !== undefined && !CAPABILITIES.includes(record.capability)) fail('V9', `bad capability ${record?.capability}`);
-    if (typeof record?.pointer !== 'string' || resolvePointer(ir, record.pointer) === undefined) {
+    if (typeof record?.pointer !== 'string' || resolvePointer(compiledWorkflow, record.pointer) === undefined) {
       fail('V9', `pointer ${record?.pointer} does not resolve`, record?.pointer ?? null);
     }
     const key = [record?.target ?? '', record?.capability ?? '', record?.pointer ?? '', record?.field ?? ''].join('|');
@@ -319,12 +319,12 @@ export function validateResult(result, input) {
 
   // V10 --------------------------------------------------------------------
   const expectedPlaceholders = {
-    roles: Object.keys(ir?.roles ?? {}).filter((id) => ir.roles[id].placeholder).sort(compareCodePoints),
-    skills: Object.keys(ir?.skills ?? {}).filter((id) => ir.skills[id].placeholder).sort(compareCodePoints),
-    constitution: constitutionState(ir?.constitution ?? []),
+    roles: Object.keys(compiledWorkflow?.roles ?? {}).filter((id) => compiledWorkflow.roles[id].placeholder).sort(compareCodePoints),
+    skills: Object.keys(compiledWorkflow?.skills ?? {}).filter((id) => compiledWorkflow.skills[id].placeholder).sort(compareCodePoints),
+    constitution: constitutionState(compiledWorkflow?.constitution ?? []),
   };
   if (JSON.stringify(result.metadata?.placeholders) !== JSON.stringify(expectedPlaceholders)) {
-    fail('V10', 'metadata.placeholders does not equal the IR placeholder set');
+    fail('V10', 'metadata.placeholders does not equal the compiled workflow placeholder set');
   }
   for (const target of result.targets ?? []) {
     const map = result.metadata?.idMap?.[target];
@@ -344,10 +344,10 @@ export function validateResult(result, input) {
         if (typeof value !== 'string' || value === '') fail('V10', `idMap ${target}/${kind} has an empty value`);
       }
       for (const key of Object.keys(entries)) {
-        if (kind === 'stages' && !(ir?.stages ?? []).some((stage) => stage.id === key)) fail('V10', `idMap source stage ${key} is absent`);
-        if (kind === 'steps' && !(ir?.stages ?? []).some((stage) => stage.steps.some((step) => step.id === key))) fail('V10', `idMap source step ${key} is absent`);
-        if (kind === 'roles' && ir?.roles?.[key] === undefined) fail('V10', `idMap source role ${key} is absent`);
-        if (kind === 'skills' && ir?.skills?.[key] === undefined) fail('V10', `idMap source skill ${key} is absent`);
+        if (kind === 'stages' && !(compiledWorkflow?.stages ?? []).some((stage) => stage.id === key)) fail('V10', `idMap source stage ${key} is absent`);
+        if (kind === 'steps' && !(compiledWorkflow?.stages ?? []).some((stage) => stage.steps.some((step) => step.id === key))) fail('V10', `idMap source step ${key} is absent`);
+        if (kind === 'roles' && compiledWorkflow?.roles?.[key] === undefined) fail('V10', `idMap source role ${key} is absent`);
+        if (kind === 'skills' && compiledWorkflow?.skills?.[key] === undefined) fail('V10', `idMap source skill ${key} is absent`);
       }
     }
   }

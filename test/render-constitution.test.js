@@ -14,8 +14,8 @@ import { fileURLToPath } from 'node:url';
 import { TWO_STEP_YAML, writeTwoStepProject } from './helpers/two-step.js';
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const BIN = join(REPO, 'runtime', 'r2c', 'engine', 'bin', 'r2c.js');
-const RUNNER = 'node .r2c/bin/r2c.js';
+const BIN = join(REPO, 'runtime', 'runner', 'engine', 'bin', 'hm2b.js');
+const RUNNER = 'node .hm2b/bin/hm2b.js';
 const SESSION = 'sid-render';
 
 const CONSTITUTION = [
@@ -36,15 +36,15 @@ const TASK_WITH_SUBMIT = [
   '## 提交',
   '',
   '```',
-  'node .r2c/bin/r2c.js submit --step step-a',
+  'node .hm2b/bin/hm2b.js submit --step step-a',
   '```',
   '',
 ].join('\n');
 
 function cleanEnv(extra = {}) {
   const env = { ...process.env, ...extra };
-  delete env.R2C_SESSION_ID;
-  delete env.R2C_PROJECT_ROOT;
+  delete env.HM2B_SESSION_ID;
+  delete env.HM2B_PROJECT_ROOT;
   return env;
 }
 
@@ -58,8 +58,8 @@ function cli(args, { cwd, input } = {}) {
 }
 
 function tempProject(t, { constitution = null, task = null, yaml = TWO_STEP_YAML } = {}) {
-  const root = mkdtempSync(join(tmpdir(), 'r2c-render-project-'));
-  const outside = mkdtempSync(join(tmpdir(), 'r2c-render-outside-'));
+  const root = mkdtempSync(join(tmpdir(), 'hm2b-render-project-'));
+  const outside = mkdtempSync(join(tmpdir(), 'hm2b-render-outside-'));
   t.after(() => {
     rmSync(root, { recursive: true, force: true });
     rmSync(outside, { recursive: true, force: true });
@@ -97,8 +97,8 @@ test('a task that already has a `## 提交` section gets no second submit block'
   assert.equal(result.status, 0, result.stderr);
   assert.equal(result.stderr, '');
   assert.match(result.stdout, /^## 提交$/m);
-  assert.match(result.stdout, /node \.r2c\/bin\/r2c\.js submit --step step-a/);
-  assert.doesNotMatch(result.stdout, /提交命令（完成后执行；不要手改 \.r2c）：/);
+  assert.match(result.stdout, /node \.hm2b\/bin\/hm2b\.js submit --step step-a/);
+  assert.doesNotMatch(result.stdout, /提交命令（完成后执行；不要手改 \.hm2b）：/);
   assert.equal(submitInstructionCount(result.stdout), 1);
 });
 
@@ -111,7 +111,7 @@ test('an inline prompt that already has a `## 提交` section gets no second sub
       '          ## 提交',
       '',
       '          ```',
-      '          node .r2c/bin/r2c.js submit --step step-b',
+      '          node .hm2b/bin/hm2b.js submit --step step-b',
       '          ```',
       '',
     ].join('\n'),
@@ -125,8 +125,8 @@ test('an inline prompt that already has a `## 提交` section gets no second sub
     { cwd: outside },
   );
   assert.equal(submitted.status, 0, submitted.stderr);
-  assert.match(submitted.stdout, /node \.r2c\/bin\/r2c\.js submit --step step-b/);
-  assert.doesNotMatch(submitted.stdout, /提交命令（完成后执行；不要手改 \.r2c）：/);
+  assert.match(submitted.stdout, /node \.hm2b\/bin\/hm2b\.js submit --step step-b/);
+  assert.doesNotMatch(submitted.stdout, /提交命令（完成后执行；不要手改 \.hm2b）：/);
   assert.equal(submitInstructionCount(submitted.stdout), 1);
 });
 
@@ -148,7 +148,7 @@ test('without a `## 提交` section or a constitution the rendered bytes are unc
       '',
       '执行第一步，产出可以提交的结果。',
       '',
-      '提交命令（完成后执行；不要手改 .r2c）：',
+      '提交命令（完成后执行；不要手改 .hm2b）：',
       `${RUNNER} submit --session-id ${SESSION} --step step-a`,
       '',
     ].join('\n'),
@@ -215,7 +215,7 @@ test('run, submit, next and hook deliver the identical constitution block', (t) 
       '',
       '执行第二步（内联提示）。',
       '',
-      '提交命令（完成后执行；不要手改 .r2c）：',
+      '提交命令（完成后执行；不要手改 .hm2b）：',
       `${RUNNER} submit --session-id ${SESSION} --step step-b`,
       '',
     ].join('\n'),

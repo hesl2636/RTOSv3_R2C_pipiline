@@ -1,8 +1,8 @@
 /**
- * Browser host primitives for the shared assembler/IR modules (decision #75
+ * Browser host primitives for the shared assembler/compiled workflow modules (decision #75
  * §2.4, ticket #108).
  *
- * `validateBundleAsync` / `validateIr` take hashing and raw-deflate as injected
+ * `validateBundleAsync` / `validateCompiledWorkflow` take hashing and raw-deflate as injected
  * primitives; this module is the only browser implementation of them. It uses
  * Web APIs exclusively and is safe to import in Node for tests (all Web API
  * lookups happen at call time).

@@ -1,21 +1,21 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://r2c.runner/schema/projection-roles/v1",
-  "title": "r2c.projection.roles/v1",
-  "description": "Per-target role report (roles.json) sectioned by target. Documentation only: runtime/shared/render-role.js produces the field states and installer/r2c.js / runtime/agent-native/projection/project.js write the file.",
-  "$comment": "Rules the producers enforce and this document does not express: targets and roles are sorted by id; roles covers every IR role including exposure skipped (artifact null); fields holds exactly the fields the IR set plus id, in ROLE_FIELD_ORDER; a degraded or unavailable field must have a matching entry in result.degradations; roles[].name equals metadata.idMap[target].roles[id]; placeholder equals the IR boolean; the file is canonical JSON (two-space indent, trailing LF) with no timestamps, host names or versions.",
+  "$id": "https://hm2b.runner/schema/projection-roles/v1",
+  "title": "hm2b.projection.roles/v1",
+  "description": "Per-target role report (roles.json) sectioned by target. Documentation only: runtime/shared/render-role.js produces the field states and installer/runner.js / runtime/agent-native/projection/project.js write the file.",
+  "$comment": "Rules the producers enforce and this document does not express: targets and roles are sorted by id; roles covers every compiled workflow role including exposure skipped (artifact null); fields holds exactly the fields the compiled workflow set plus id, in ROLE_FIELD_ORDER; a degraded or unavailable field must have a matching entry in result.degradations; roles[].name equals metadata.idMap[target].roles[id]; placeholder equals the compiled workflow boolean; the file is canonical JSON (two-space indent, trailing LF) with no timestamps, host names or versions.",
   "type": "object",
   "additionalProperties": false,
   "required": [
     "schema",
-    "ir",
+    "compiledWorkflow",
     "targets"
   ],
   "properties": {
     "schema": {
-      "const": "r2c.projection.roles/v1"
+      "const": "hm2b.projection.roles/v1"
     },
-    "ir": {
+    "compiledWorkflow": {
       "type": "object",
       "additionalProperties": false,
       "required": [
@@ -71,7 +71,7 @@
       "properties": {
         "namespace": {
           "$ref": "#/$defs/id",
-          "description": "Prefix applied to rendered role names: r2c for the r2c projection, the bundle id for agent-native."
+          "description": "Prefix applied to rendered role names: runner for the runner projection, the bundle id for agent-native."
         },
         "roles": {
           "type": "array",

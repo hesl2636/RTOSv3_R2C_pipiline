@@ -1,9 +1,9 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://r2c.runner/schema/projection-result/v1",
-  "title": "r2c.projection-result/v1",
+  "$id": "https://hm2b.runner/schema/projection-result/v1",
+  "title": "hm2b.projection-result/v1",
   "description": "Projection result envelope: a success with files and an install plan, or a failure with errors and no files. Documentation only: projection/validate-result.js is authoritative for success results and projection/project.js assembles both branches.",
-  "$comment": "Rules the validator enforces and this document does not express: top-level member order is fixed by projection/result-fields.js; options must echo the resolved input field by field; environment must echo the input; targets must be the resolved option targets; coverage must cover every IR step exactly once in the applied stage order; files are ordered by path; targets are a non-empty subset of result.targets; paths must stay inside the manifest writeRoots without case-folded collisions or file/directory conflicts; content is LF text without a BOM plus one trailing LF and without a submit marker residue; modes are 0644 or 0755; installPlan has exactly one write per file; capabilityReport is selected targets times the eight capabilities in fixed order; degradation pointers must resolve in the IR; metadata.placeholders must equal the IR placeholder set.",
+  "$comment": "Rules the validator enforces and this document does not express: top-level member order is fixed by projection/result-fields.js; options must echo the resolved input field by field; environment must echo the input; targets must be the resolved option targets; coverage must cover every compiled workflow step exactly once in the applied stage order; files are ordered by path; targets are a non-empty subset of result.targets; paths must stay inside the manifest writeRoots (bundle asset roots are declared only by the projection that emits them: runner at the project root, agent-native under its namespace) without case-folded collisions or file/directory conflicts; content is LF text without a BOM plus one trailing LF and without a submit marker residue; modes are 0644 or 0755; installPlan has exactly one write per file; capabilityReport is selected targets times the eight capabilities in fixed order; degradation pointers must resolve in the compiled workflow; metadata.placeholders must equal the compiled workflow placeholder set.",
   "oneOf": [
     {
       "$ref": "#/$defs/success"
@@ -20,7 +20,7 @@
         "schema",
         "ok",
         "projection",
-        "ir",
+        "compiledWorkflow",
         "options",
         "environment",
         "targets",
@@ -34,7 +34,7 @@
       ],
       "properties": {
         "schema": {
-          "const": "r2c.projection-result/v1"
+          "const": "hm2b.projection-result/v1"
         },
         "ok": {
           "const": true
@@ -42,8 +42,8 @@
         "projection": {
           "$ref": "#/$defs/projectionRef"
         },
-        "ir": {
-          "$ref": "#/$defs/irRef"
+        "compiledWorkflow": {
+          "$ref": "#/$defs/compiledWorkflowRef"
         },
         "options": {
           "$ref": "#/$defs/options"
@@ -101,12 +101,12 @@
         "schema",
         "ok",
         "projection",
-        "ir",
+        "compiledWorkflow",
         "errors"
       ],
       "properties": {
         "schema": {
-          "const": "r2c.projection-result/v1"
+          "const": "hm2b.projection-result/v1"
         },
         "ok": {
           "const": false
@@ -114,8 +114,8 @@
         "projection": {
           "$ref": "#/$defs/projectionRef"
         },
-        "ir": {
-          "$ref": "#/$defs/irRefFailure"
+        "compiledWorkflow": {
+          "$ref": "#/$defs/compiledWorkflowRefFailure"
         },
         "errors": {
           "type": "array",
@@ -136,7 +136,7 @@
       "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
       "maxLength": 40,
       "not": {
-        "const": "r2c"
+        "const": "hm2b"
       }
     },
     "version": {
@@ -161,7 +161,7 @@
       "properties": {
         "id": {
           "enum": [
-            "r2c",
+            "runner",
             "agent-native"
           ]
         },
@@ -171,7 +171,7 @@
         }
       }
     },
-    "irRef": {
+    "compiledWorkflowRef": {
       "type": "object",
       "additionalProperties": false,
       "required": [
@@ -195,10 +195,10 @@
         }
       }
     },
-    "irRefFailure": {
+    "compiledWorkflowRefFailure": {
       "type": "object",
       "additionalProperties": false,
-      "description": "A failure is emitted before the IR is trusted, so the echoed identity fields may be null.",
+      "description": "A failure is emitted before the compiled workflow is trusted, so the echoed identity fields may be null.",
       "required": [
         "id",
         "version",
@@ -239,7 +239,7 @@
       "required": [
         "schema",
         "projection",
-        "ir",
+        "compiledWorkflow",
         "stageOrder",
         "skills",
         "targets",
@@ -247,15 +247,15 @@
       ],
       "properties": {
         "schema": {
-          "const": "r2c.projection-options/v1"
+          "const": "hm2b.projection-options/v1"
         },
         "projection": {
           "enum": [
-            "r2c",
+            "runner",
             "agent-native"
           ]
         },
-        "ir": {
+        "compiledWorkflow": {
           "type": "object",
           "additionalProperties": false,
           "required": [
@@ -315,7 +315,7 @@
             "string",
             "null"
           ],
-          "description": "Echoed input; only the r2c target reads it (ir.requires.engine)."
+          "description": "Echoed input; only the runner target reads it (compiledWorkflow.requires.engine)."
         }
       }
     },
@@ -360,7 +360,7 @@
         "path": {
           "type": "string",
           "minLength": 1,
-          "description": "Project-root relative POSIX path inside the manifest writeRoots."
+          "description": "Project-root relative POSIX path inside the manifest writeRoots; bundle assets live at their declared paths (runner: project root, agent-native: under the namespace root)."
         },
         "targets": {
           "type": "array",
@@ -378,6 +378,10 @@
             "role",
             "skill",
             "constitution",
+            "knowledge",
+            "checklist",
+            "hooks",
+            "mcp",
             "agent",
             "command",
             "rules",
@@ -421,7 +425,7 @@
       ],
       "properties": {
         "schema": {
-          "const": "r2c.install-plan/v1"
+          "const": "hm2b.install-plan/v1"
         },
         "root": {
           "const": "project"
@@ -500,7 +504,7 @@
           "items": {
             "type": "string"
           },
-          "description": "IR JSON Pointers; the empty string addresses the whole workflow."
+          "description": "compiled workflow JSON Pointers; the empty string addresses the whole workflow."
         }
       }
     },
@@ -532,7 +536,7 @@
         },
         "pointer": {
           "type": "string",
-          "description": "IR JSON Pointer that must resolve."
+          "description": "compiled workflow JSON Pointer that must resolve."
         },
         "field": {
           "type": "string",
@@ -617,7 +621,7 @@
               }
             }
           },
-          "description": "One entry per selected target; each kind maps IR ids to non-identity runtime names and is injective."
+          "description": "One entry per selected target; each kind maps compiled workflow ids to non-identity runtime names and is injective."
         },
         "artifacts": {
           "type": "object",
@@ -625,7 +629,7 @@
             "type": "string",
             "minLength": 1
           },
-          "description": "Logical artifact name to one of the result file paths."
+          "description": "Logical artifact name to one of the result file paths; bundle assets get one kebab-case entry per file (knowledge-<slug>, checklist-<id>, hooks, mcp)."
         },
         "placeholders": {
           "type": "object",
@@ -669,12 +673,27 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
+        "severity",
         "code",
+        "path",
+        "pointer",
         "message"
       ],
       "properties": {
+        "severity": {
+          "const": "error"
+        },
         "code": {
           "$ref": "#/$defs/code"
+        },
+        "path": {
+          "type": "string"
+        },
+        "pointer": {
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "message": {
           "type": "string",
@@ -683,9 +702,6 @@
         },
         "target": {
           "$ref": "#/$defs/id"
-        },
-        "pointer": {
-          "type": "string"
         },
         "hint": {
           "type": "string"

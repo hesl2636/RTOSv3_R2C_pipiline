@@ -31,28 +31,28 @@ const CAPABILITIES = [
 ];
 
 let sample;
-function sampleIr() {
+function sampleCompiledWorkflow() {
   if (sample !== undefined) return sample;
   const compiled = compileBundle(new Uint8Array(readFileSync(ZIP)), { inflateRaw, sha256: sha256Hex });
   assert.equal(compiled.ok, true);
-  sample = { ir: JSON.parse(new TextDecoder().decode(compiled.irBytes)), irDigest: compiled.digest };
+  sample = { compiledWorkflow: JSON.parse(new TextDecoder().decode(compiled.compiledWorkflowBytes)), compiledWorkflowDigest: compiled.digest };
   return sample;
 }
 
-function runProject({ ir, irDigest, raw }) {
-  const normalized = normalizeOptions({ projectionId: 'agent-native', ir, irDigest, raw, manifest: MANIFEST });
+function runProject({ compiledWorkflow, compiledWorkflowDigest, raw }) {
+  const normalized = normalizeOptions({ projectionId: 'agent-native', compiledWorkflow, compiledWorkflowDigest, raw, manifest: MANIFEST });
   assert.equal(normalized.ok, true, JSON.stringify(normalized.errors));
-  return project({ projectionId: 'agent-native', ir, irDigest, options: normalized.options, environment: {}, assets: {} });
+  return project({ projectionId: 'agent-native', compiledWorkflow, compiledWorkflowDigest, options: normalized.options, environment: {}, assets: {} });
 }
 
 function opencodeSample() {
-  const { ir, irDigest } = sampleIr();
-  return { ir, irDigest, result: runProject({ ir, irDigest, raw: { targets: ['opencode'] } }) };
+  const { compiledWorkflow, compiledWorkflowDigest } = sampleCompiledWorkflow();
+  return { compiledWorkflow, compiledWorkflowDigest, result: runProject({ compiledWorkflow, compiledWorkflowDigest, raw: { targets: ['opencode'] } }) };
 }
 
 const source = (path, fill) => ({ path, sha256: fill.repeat(64) });
 
-function miniIr({ id = 'mini', role = {}, skills = {} } = {}) {
+function miniCompiledWorkflow({ id = 'mini', role = {}, skills = {} } = {}) {
   const roleId = role.id ?? 'worker';
   const roleFields = {
     description: 'Runs the miniature step.',
@@ -61,13 +61,13 @@ function miniIr({ id = 'mini', role = {}, skills = {} } = {}) {
     ...role,
   };
   return {
-    schema: 'r2c.ir/v1',
+    schema: 'hm2b.compiled-workflow/v2',
     id,
     name: 'Mini workflow',
     version: '1.0.0',
     description: 'A miniature workflow used by projection tests.',
     source: {
-      bundle: { schema: 'r2c.bundle/v1', id, version: '1.0.0', contentSha256: 'b'.repeat(64) },
+      bundle: { schema: 'hm2b.bundle/v1', id, version: '1.0.0', contentSha256: 'b'.repeat(64) },
       manifest: { path: 'bundle.json', sha256: 'c'.repeat(64) },
     },
     stages: [{
@@ -96,7 +96,7 @@ function miniIr({ id = 'mini', role = {}, skills = {} } = {}) {
 }
 
 function roleFile(result, roleId = 'worker') {
-  return result.files.find((file) => file.path === `.opencode/agents/mini-${roleId}.md`);
+  return result.files.find((file) => file.path === `.opencode/agents/${roleId}.md`);
 }
 
 function permissionLines(content) {
@@ -118,7 +118,7 @@ function rolesJson(result) {
 // --- the frozen opencode file set ----------------------------------------
 
 test('opencode-only: 45 files, 8 capability rows, V1–V12 pass', () => {
-  const { ir, irDigest, result } = opencodeSample();
+  const { compiledWorkflow, compiledWorkflowDigest, result } = opencodeSample();
   assert.equal(result.ok, true);
   assert.deepEqual(result.targets, ['opencode']);
   assert.equal(result.files.length, 45);
@@ -140,7 +140,7 @@ test('opencode-only: 45 files, 8 capability rows, V1–V12 pass', () => {
   assert.deepEqual(result.metadata.runtime.skillsRoots, { opencode: '.agents/skills' });
   assert.equal(result.metadata.runtime.constitutionPlacement, 'stage-skill-prefix');
   assert.equal(result.metadata.runtime.submitProtocol, 'receipt-v1');
-  const validation = validateResult(result, { ir, irDigest, options: result.options, manifest: MANIFEST });
+  const validation = validateResult(result, { compiledWorkflow, compiledWorkflowDigest, options: result.options, manifest: MANIFEST });
   assert.equal(validation.ok, true, JSON.stringify(validation.diagnostics, null, 2));
 });
 
@@ -164,7 +164,7 @@ test('the opencode capability matrix is the fixed declared order', () => {
 
 test('the rendered placeholder agent matches the prototype byte for byte', () => {
   const { result } = opencodeSample();
-  const file = result.files.find((path) => path.path === '.opencode/agents/rtosv3-drvport-bys-architect.md');
+  const file = result.files.find((path) => path.path === '.opencode/agents/bys-architect.md');
   const expected = [
     '---',
     'description: 占位：分析设计阶段主控角色，正文待补；委派时机见分析设计任务书。',
@@ -175,11 +175,11 @@ test('the rendered placeholder agent matches the prototype byte for byte', () =>
     '',
     '按当前步骤的任务书执行；不要臆测本角色未声明的专有职责。',
     '',
-    '<!-- r2c:placeholder role=bys-architect -->',
+    '<!-- hm2b:placeholder role=bys-architect -->',
     '',
   ].join('\n');
   assert.equal(file.content, expected);
-  assert.equal(sha256Hex(file.content), 'c1d042c68f52f409795e4789f10463f8f38a68dd1d289d85b5c138e0ae483ac2');
+  assert.equal(sha256Hex(file.content), 'caa5393db87cb14e97a12b5f26f34cad52cfb30d1b702de608eb660d15563bae');
 });
 
 test('mode maps to opencode semantics: subagent/all/primary with matching exposure', () => {
@@ -189,8 +189,8 @@ test('mode maps to opencode semantics: subagent/all/primary with matching exposu
     { mode: 'primary', literal: 'primary', exposure: 'primary' },
   ];
   for (const item of cases) {
-    const ir = miniIr({ role: { mode: item.mode } });
-    const result = runProject({ ir, irDigest: 'a'.repeat(64), raw: { targets: ['opencode'] } });
+    const compiledWorkflow = miniCompiledWorkflow({ role: { mode: item.mode } });
+    const result = runProject({ compiledWorkflow, compiledWorkflowDigest: 'a'.repeat(64), raw: { targets: ['opencode'] } });
     assert.equal(result.ok, true, item.mode);
     const file = roleFile(result);
     assert.match(file.content, new RegExp(`^---\\ndescription: [^\\n]+\\nmode: ${item.literal}\\n---\\n`));
@@ -198,9 +198,9 @@ test('mode maps to opencode semantics: subagent/all/primary with matching exposu
     assert.equal(roles.exposure, item.exposure);
     assert.equal(roles.fields.mode.state, 'native');
   }
-  // The IR default is subagent; opencode's own default is all, so the
+  // The compiled workflow default is subagent; opencode's own default is all, so the
   // renderer writes it explicitly instead of relying on the runtime default.
-  const implicit = runProject({ ir: miniIr(), irDigest: 'a'.repeat(64), raw: { targets: ['opencode'] } });
+  const implicit = runProject({ compiledWorkflow: miniCompiledWorkflow(), compiledWorkflowDigest: 'a'.repeat(64), raw: { targets: ['opencode'] } });
   assert.match(roleFile(implicit).content, /^---\ndescription: [^\n]+\nmode: subagent\n---\n/);
   assert.equal(rolesJson(implicit).targets.opencode.roles[0].exposure, 'subagent');
   assert.equal(rolesJson(implicit).targets.opencode.roles[0].fields.mode, undefined);
@@ -209,8 +209,8 @@ test('mode maps to opencode semantics: subagent/all/primary with matching exposu
 // --- tools: allow-list, deny-only and the write/edit collision -----------
 
 test('tools map to opencode permission literals; web splits and write shares edit', () => {
-  const ir = miniIr({ role: { tools: ['read', 'write', 'edit', 'glob', 'bash', 'task', 'web'], tools_deny: ['bash'] } });
-  const result = runProject({ ir, irDigest: 'a'.repeat(64), raw: { targets: ['opencode'] } });
+  const compiledWorkflow = miniCompiledWorkflow({ role: { tools: ['read', 'write', 'edit', 'glob', 'bash', 'task', 'web'], tools_deny: ['bash'] } });
+  const result = runProject({ compiledWorkflow, compiledWorkflowDigest: 'a'.repeat(64), raw: { targets: ['opencode'] } });
   const content = roleFile(result).content;
   assert.deepEqual(permissionLines(content), {
     read: 'allow',
@@ -230,8 +230,8 @@ test('tools map to opencode permission literals; web splits and write shares edi
 });
 
 test('tools: [] denies every opencode permission key', () => {
-  const ir = miniIr({ role: { tools: [] } });
-  const result = runProject({ ir, irDigest: 'a'.repeat(64), raw: { targets: ['opencode'] } });
+  const compiledWorkflow = miniCompiledWorkflow({ role: { tools: [] } });
+  const result = runProject({ compiledWorkflow, compiledWorkflowDigest: 'a'.repeat(64), raw: { targets: ['opencode'] } });
   assert.deepEqual(permissionLines(roleFile(result).content), {
     read: 'deny',
     edit: 'deny',
@@ -246,8 +246,8 @@ test('tools: [] denies every opencode permission key', () => {
 });
 
 test('tools_deny alone writes deny rules and keeps web as two literals', () => {
-  const ir = miniIr({ role: { tools_deny: ['web', 'task'] } });
-  const result = runProject({ ir, irDigest: 'a'.repeat(64), raw: { targets: ['opencode'] } });
+  const compiledWorkflow = miniCompiledWorkflow({ role: { tools_deny: ['web', 'task'] } });
+  const result = runProject({ compiledWorkflow, compiledWorkflowDigest: 'a'.repeat(64), raw: { targets: ['opencode'] } });
   assert.deepEqual(permissionLines(roleFile(result).content), {
     task: 'deny',
     webfetch: 'deny',
@@ -257,8 +257,8 @@ test('tools_deny alone writes deny rules and keeps web as two literals', () => {
 });
 
 test('an unexpressible write-only deny degrades with the exact field and pointer', () => {
-  const ir = miniIr({ role: { tools_deny: ['write'] } });
-  const result = runProject({ ir, irDigest: 'a'.repeat(64), raw: { targets: ['opencode'] } });
+  const compiledWorkflow = miniCompiledWorkflow({ role: { tools_deny: ['write'] } });
+  const result = runProject({ compiledWorkflow, compiledWorkflowDigest: 'a'.repeat(64), raw: { targets: ['opencode'] } });
   assert.deepEqual(permissionLines(roleFile(result).content), { edit: 'deny' });
   const role = rolesJson(result).targets.opencode.roles[0];
   assert.equal(role.fields.tools_deny.state, 'degraded');
@@ -274,8 +274,8 @@ test('an unexpressible write-only deny degrades with the exact field and pointer
 });
 
 test('an allow-list that keeps edit but drops write is degraded, never silently widened', () => {
-  const ir = miniIr({ role: { tools: ['read', 'edit'] } });
-  const result = runProject({ ir, irDigest: 'a'.repeat(64), raw: { targets: ['opencode'] } });
+  const compiledWorkflow = miniCompiledWorkflow({ role: { tools: ['read', 'edit'] } });
+  const result = runProject({ compiledWorkflow, compiledWorkflowDigest: 'a'.repeat(64), raw: { targets: ['opencode'] } });
   assert.deepEqual(permissionLines(roleFile(result).content), {
     read: 'allow',
     edit: 'deny',
@@ -303,8 +303,8 @@ test('preload is unavailable and degraded per role use point', () => {
       source: source('skills/helper/SKILL.md', 'f'),
     },
   };
-  const ir = miniIr({ role: { skills: ['helper'] }, skills });
-  const result = runProject({ ir, irDigest: 'a'.repeat(64), raw: { targets: ['opencode'] } });
+  const compiledWorkflow = miniCompiledWorkflow({ role: { skills: ['helper'] }, skills });
+  const result = runProject({ compiledWorkflow, compiledWorkflowDigest: 'a'.repeat(64), raw: { targets: ['opencode'] } });
   assert.equal(result.ok, true);
   const records = result.degradations.filter((record) => record.code === 'CAP_PRELOAD_UNAVAILABLE');
   assert.equal(records.length, 1);
@@ -323,17 +323,17 @@ test('preload is unavailable and degraded per role use point', () => {
 // --- roles.json, idMap and visibility ------------------------------------
 
 test('roles.json has one opencode section consistent with idMap and artifacts', () => {
-  const { ir, irDigest, result } = opencodeSample();
+  const { compiledWorkflow, compiledWorkflowDigest, result } = opencodeSample();
   const roles = rolesJson(result);
-  assert.equal(roles.schema, 'r2c.projection.roles/v1');
+  assert.equal(roles.schema, 'hm2b.projection.roles/v1');
   assert.deepEqual(Object.keys(roles.targets), ['opencode']);
-  assert.equal(roles.ir.sha256, irDigest);
+  assert.equal(roles.compiledWorkflow.sha256, compiledWorkflowDigest);
   const section = roles.targets.opencode;
   assert.equal(section.namespace, 'rtosv3-drvport');
-  assert.deepEqual(section.roles.map((role) => role.id), Object.keys(ir.roles).sort());
+  assert.deepEqual(section.roles.map((role) => role.id), Object.keys(compiledWorkflow.roles).sort());
   for (const role of section.roles) {
     assert.equal(role.name, result.metadata.idMap.opencode.roles[role.id]);
-    assert.equal(role.placeholder, ir.roles[role.id].placeholder);
+    assert.equal(role.placeholder, compiledWorkflow.roles[role.id].placeholder);
     assert.equal(role.artifact.path, `.opencode/agents/${role.name}.md`);
     const file = result.files.find((item) => item.path === role.artifact.path);
     assert.equal(role.artifact.sha256, sha256Hex(file.content));
@@ -360,11 +360,11 @@ test('roles.json has one opencode section consistent with idMap and artifacts', 
 });
 
 test('placeholder banners and the {{submit}} receipt stay identical to Claude', () => {
-  const { ir, irDigest } = sampleIr();
-  const opencode = runProject({ ir, irDigest, raw: { targets: ['opencode'] } });
-  const claude = runProject({ ir, irDigest, raw: { targets: ['claude-code'] } });
+  const { compiledWorkflow, compiledWorkflowDigest } = sampleCompiledWorkflow();
+  const opencode = runProject({ compiledWorkflow, compiledWorkflowDigest, raw: { targets: ['opencode'] } });
+  const claude = runProject({ compiledWorkflow, compiledWorkflowDigest, raw: { targets: ['claude-code'] } });
   const byName = (result, name) => result.files.find((file) => file.path.endsWith(`/${name}/SKILL.md`)).content;
-  for (const name of ['rtosv3-drvport-stage-analysis-design', 'rtosv3-drvport-workflow', 'rtosv3-drvport-skill-ar-miner']) {
+  for (const name of ['stage-analysis-design', 'workflow', 'ar-miner']) {
     assert.equal(byName(opencode, name), byName(claude, name), name);
   }
   for (const file of opencode.files.filter((item) => item.kind === 'stage')) {
@@ -373,8 +373,8 @@ test('placeholder banners and the {{submit}} receipt stay identical to Claude', 
   assert.equal(opencode.files.find((file) => file.kind === 'workflow').content.includes('constitution:begin'), false);
   for (const file of opencode.files) assert.equal(file.content.includes('{{submit}}'), false, file.path);
   const body = (content) => content.slice(content.indexOf('\n---\n') + 5);
-  const claudeRole = claude.files.find((file) => file.path === '.claude/agents/rtosv3-drvport-bys-architect.md');
-  const opencodeRole = opencode.files.find((file) => file.path === '.opencode/agents/rtosv3-drvport-bys-architect.md');
+  const claudeRole = claude.files.find((file) => file.path === '.claude/agents/bys-architect.md');
+  const opencodeRole = opencode.files.find((file) => file.path === '.opencode/agents/bys-architect.md');
   assert.equal(body(opencodeRole.content), body(claudeRole.content));
 });
 
@@ -382,7 +382,7 @@ test('placeholder banners and the {{submit}} receipt stay identical to Claude', 
 
 test('the same input twice yields byte-identical opencode results', () => {
   const first = opencodeSample().result;
-  const second = runProject({ ...sampleIr(), raw: { targets: ['opencode'] } });
+  const second = runProject({ ...sampleCompiledWorkflow(), raw: { targets: ['opencode'] } });
   assert.equal(JSON.stringify(second), JSON.stringify(first));
   assert.deepEqual(second.files.map((file) => [file.path, file.content]), first.files.map((file) => [file.path, file.content]));
 });
@@ -405,15 +405,15 @@ test('projection.json is canonical and carries the opencode capability row', () 
 });
 
 test('claude + opencode share skills and warn once about the mirrored roots', () => {
-  const { ir, irDigest } = sampleIr();
-  const result = runProject({ ir, irDigest, raw: { targets: ['claude-code', 'opencode'] } });
+  const { compiledWorkflow, compiledWorkflowDigest } = sampleCompiledWorkflow();
+  const result = runProject({ compiledWorkflow, compiledWorkflowDigest, raw: { targets: ['claude-code', 'opencode'] } });
   assert.equal(result.ok, true);
   const shared = result.files.filter((file) => file.path.startsWith('.agents/skills/'));
   for (const file of shared) assert.deepEqual(file.targets, ['opencode']);
-  assert.ok(result.files.some((file) => file.path === '.claude/agents/rtosv3-drvport-bys-architect.md'));
-  assert.ok(result.files.some((file) => file.path === '.opencode/agents/rtosv3-drvport-bys-architect.md'));
+  assert.ok(result.files.some((file) => file.path === '.claude/agents/bys-architect.md'));
+  assert.ok(result.files.some((file) => file.path === '.opencode/agents/bys-architect.md'));
   assert.deepEqual(result.warnings.map((warning) => warning.code), ['SKILL_MIRRORED_ROOTS']);
   assert.equal(result.warnings[0].target, 'opencode');
-  const validation = validateResult(result, { ir, irDigest, options: result.options, manifest: MANIFEST });
+  const validation = validateResult(result, { compiledWorkflow, compiledWorkflowDigest, options: result.options, manifest: MANIFEST });
   assert.equal(validation.ok, true, JSON.stringify(validation.diagnostics, null, 2));
 });

@@ -11,7 +11,7 @@
  * the query string, a log line or a result object.
  */
 export const GITHUB_API_BASE = 'https://api.github.com';
-export const GITHUB_USER_AGENT = 'r2c-release-client';
+export const GITHUB_USER_AGENT = 'hm2b-release-client';
 
 export class GithubClientError extends Error {
   constructor(code, message, { cause = undefined } = {}) {

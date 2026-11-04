@@ -1,5 +1,5 @@
 /**
- * #104 engine `r2c status` install surface: additive `installs[]` and install
+ * #104 engine `hm2b status` install surface: additive `installs[]` and install
  * lines; exit codes and existing lines stay untouched.
  */
 import assert from 'node:assert/strict';
@@ -13,10 +13,10 @@ import { canonicalJson } from '../core/canonical-json.js';
 import { writeTwoStepProject } from './helpers/two-step.js';
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const BIN = join(REPO, 'runtime', 'r2c', 'engine', 'bin', 'r2c.js');
+const BIN = join(REPO, 'runtime', 'runner', 'engine', 'bin', 'hm2b.js');
 
 function tempProject(t) {
-  const root = mkdtempSync(join(tmpdir(), 'r2c-engine-status-'));
+  const root = mkdtempSync(join(tmpdir(), 'hm2b-engine-status-'));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   writeTwoStepProject(root);
   return root;
@@ -24,8 +24,8 @@ function tempProject(t) {
 
 function cleanEnv() {
   const env = { ...process.env };
-  delete env.R2C_SESSION_ID;
-  delete env.R2C_PROJECT_ROOT;
+  delete env.HM2B_SESSION_ID;
+  delete env.HM2B_PROJECT_ROOT;
   return env;
 }
 
@@ -41,15 +41,15 @@ function cliJson(args, cwd) {
 }
 
 const RECEIPT = {
-  schema: 'r2c.install/v2',
-  projection: { id: 'r2c', version: '1.0.0', targets: ['r2c'] },
+  schema: 'hm2b.install/v2',
+  projection: { id: 'runner', version: '1.0.0', targets: ['runner'] },
   bundle: { id: 'demo-bundle', version: '2.3.4' },
-  ir: { path: '.r2c/bundles/demo-bundle/2.3.4/workflow.ir.json', digest: '0'.repeat(64), contentSha256: '0'.repeat(64) },
+  compiledWorkflow: { path: '.hm2b/bundles/demo-bundle/2.3.4/workflow.compiled.json', digest: '0'.repeat(64), contentSha256: '0'.repeat(64) },
   root: 'project',
   scope: 'project',
   mode: 'fresh',
   host_targets: ['claude-code', 'codex', 'omp', 'opencode'],
-  options: { stageOrder: null, skills: null, targets: ['r2c'], digest: '0'.repeat(64) },
+  options: { stageOrder: null, skills: null, targets: ['runner'], digest: '0'.repeat(64) },
   requires_engine: null,
   files: [],
   metadata: {},
@@ -65,16 +65,16 @@ const RECEIPT = {
 };
 
 function writeInstallSurface(root, { receipts = [RECEIPT], runtime = true } = {}) {
-  const receiptsDir = join(root, '.r2c/install/receipts/r2c');
+  const receiptsDir = join(root, '.hm2b/install/receipts/runner');
   mkdirSync(receiptsDir, { recursive: true });
   for (const [index, receipt] of receipts.entries()) {
     writeFileSync(join(receiptsDir, `bundle-${index}.json`), canonicalJson(receipt));
   }
   if (runtime) {
-    writeFileSync(join(root, '.r2c/install/runtime.json'), canonicalJson({
-      schema: 'r2c.runtime/v1',
-      engine: { version: '0.1.0', home: '.r2c/engine', entry: '.r2c/engine/0.1.0/bin/r2c.js' },
-      launcher: '.r2c/bin/r2c.js',
+    writeFileSync(join(root, '.hm2b/install/runtime.json'), canonicalJson({
+      schema: 'hm2b.runtime/v1',
+      engine: { version: '0.1.0', home: '.hm2b/engine', entry: '.hm2b/engine/0.1.0/bin/hm2b.js' },
+      launcher: '.hm2b/bin/hm2b.js',
       host_targets: ['claude-code'],
       files: [],
       merged: [],
@@ -105,11 +105,11 @@ test('engine status JSON gains installs[] without changing existing fields', (t)
   assert.equal(typeof envelope.data.steps.length, 'number');
   assert.ok(envelope.data.next !== undefined);
   assert.deepEqual(envelope.data.installs, [{
-    projection: 'r2c',
+    projection: 'runner',
     bundle: 'demo-bundle',
     version: '2.3.4',
     targets: ['claude-code', 'codex', 'omp', 'opencode'],
-    receipt: '.r2c/install/receipts/r2c/bundle-0.json',
+    receipt: '.hm2b/install/receipts/runner/bundle-0.json',
   }]);
 });
 
@@ -124,7 +124,7 @@ test('engine status text keeps existing lines and appends install/engine/manifes
   const lines = withInstall.stdout.trimEnd().split(/\r?\n/);
   const runLines = lines.filter((line) => /^(run|stage|step|next)\//.test(line));
   assert.deepEqual(runLines.slice(0, 1), [baseline.stdout.trimEnd().split(/\r?\n/)[0]]);
-  assert.match(withInstall.stdout, /^install\/r2c\/demo-bundle 2\.3\.4 targets=claude-code,codex,omp,opencode$/m);
+  assert.match(withInstall.stdout, /^install\/runner\/demo-bundle 2\.3\.4 targets=claude-code,codex,omp,opencode$/m);
   assert.match(withInstall.stdout, /^engine\/0\.1\.0$/m);
   assert.match(withInstall.stdout, /^manifest\/workflows\/two-step\.yaml$/m);
   const installAt = lines.findIndex((line) => line.startsWith('install/'));
@@ -135,17 +135,17 @@ test('engine status text keeps existing lines and appends install/engine/manifes
 test('engine status reports unsupported receipts without failing', (t) => {
   const root = tempProject(t);
   const started = startRun(t, root);
-  writeInstallSurface(root, { receipts: [{ schema: 'r2c.install/v9', projection: { id: 'r2c' }, bundle: { id: 'future' } }] });
+  writeInstallSurface(root, { receipts: [{ schema: 'hm2b.install/v9', projection: { id: 'runner' }, bundle: { id: 'future' } }] });
 
   const { result, envelope } = cliJson(['status', '--project-root', root, '--session-id', started.session_id], root);
   assert.equal(result.status, 0, result.stderr);
   assert.deepEqual(envelope.data.installs, [{
-    projection: 'r2c',
+    projection: 'runner',
     bundle: 'future',
     version: null,
     targets: [],
-    receipt: '.r2c/install/receipts/r2c/bundle-0.json',
-    schema: 'r2c.install/v9',
+    receipt: '.hm2b/install/receipts/runner/bundle-0.json',
+    schema: 'hm2b.install/v9',
     unsupported: true,
   }]);
 });
@@ -162,8 +162,8 @@ test('engine status exit code and error stay NO_ACTIVE_RUN/4 when no run exists'
 test('engine status silently ignores an unreadable install surface', (t) => {
   const root = tempProject(t);
   const started = startRun(t, root);
-  mkdirSync(join(root, '.r2c/install/receipts/r2c'), { recursive: true });
-  writeFileSync(join(root, '.r2c/install/receipts/r2c/broken.json'), '{not json');
+  mkdirSync(join(root, '.hm2b/install/receipts/runner'), { recursive: true });
+  writeFileSync(join(root, '.hm2b/install/receipts/runner/broken.json'), '{not json');
 
   const { result, envelope } = cliJson(['status', '--project-root', root, '--session-id', started.session_id], root);
   assert.equal(result.status, 0, result.stderr);

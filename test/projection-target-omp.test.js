@@ -35,27 +35,27 @@ const CAPABILITIES = [
 ];
 
 let sample;
-function sampleIr() {
+function sampleCompiledWorkflow() {
   if (sample !== undefined) return sample;
   const compiled = compileBundle(new Uint8Array(readFileSync(ZIP)), { inflateRaw, sha256: sha256Hex });
   assert.equal(compiled.ok, true);
-  sample = { ir: JSON.parse(new TextDecoder().decode(compiled.irBytes)), irDigest: compiled.digest };
+  sample = { compiledWorkflow: JSON.parse(new TextDecoder().decode(compiled.compiledWorkflowBytes)), compiledWorkflowDigest: compiled.digest };
   return sample;
 }
 
-function runProject({ ir, irDigest, raw }) {
+function runProject({ compiledWorkflow, compiledWorkflowDigest, raw }) {
   const normalized = normalizeOptions({
     projectionId: 'agent-native',
-    ir,
-    irDigest,
+    compiledWorkflow,
+    compiledWorkflowDigest,
     raw,
     manifest: MANIFEST,
   });
   assert.equal(normalized.ok, true, JSON.stringify(normalized.errors));
   return project({
     projectionId: 'agent-native',
-    ir,
-    irDigest,
+    compiledWorkflow,
+    compiledWorkflowDigest,
     options: normalized.options,
     environment: {},
     assets: {},
@@ -63,8 +63,8 @@ function runProject({ ir, irDigest, raw }) {
 }
 
 function ompSample() {
-  const { ir, irDigest } = sampleIr();
-  return { ir, irDigest, result: runProject({ ir, irDigest, raw: { targets: ['omp'] } }) };
+  const { compiledWorkflow, compiledWorkflowDigest } = sampleCompiledWorkflow();
+  return { compiledWorkflow, compiledWorkflowDigest, result: runProject({ compiledWorkflow, compiledWorkflowDigest, raw: { targets: ['omp'] } }) };
 }
 
 function source(path, fill) {
@@ -84,15 +84,15 @@ function skills(ids) {
   return out;
 }
 
-function miniIr({ id = 'mini', roleId = 'worker', role = {}, skills: skillMap = {}, gates = [], outputs = [] } = {}) {
+function miniCompiledWorkflow({ id = 'mini', roleId = 'worker', role = {}, skills: skillMap = {}, gates = [], outputs = [] } = {}) {
   return {
-    schema: 'r2c.ir/v1',
+    schema: 'hm2b.compiled-workflow/v2',
     id,
     name: 'Mini workflow',
     version: '1.0.0',
     description: 'A miniature workflow used by projection tests.',
     source: {
-      bundle: { schema: 'r2c.bundle/v1', id, version: '1.0.0', contentSha256: 'b'.repeat(64) },
+      bundle: { schema: 'hm2b.bundle/v1', id, version: '1.0.0', contentSha256: 'b'.repeat(64) },
       manifest: { path: 'bundle.json', sha256: 'c'.repeat(64) },
     },
     stages: [{
@@ -135,7 +135,7 @@ function miniIr({ id = 'mini', roleId = 'worker', role = {}, skills: skillMap = 
 }
 
 function roleFile(result, roleId = 'worker') {
-  return result.files.find((file) => file.path === `.omp/agents/mini-${roleId}.md`);
+  return result.files.find((file) => file.path === `.omp/agents/${roleId}.md`);
 }
 
 function ompDegradations(result, pointer, field) {
@@ -147,7 +147,7 @@ function ompDegradations(result, pointer, field) {
 // --- baseline ---------------------------------------------------------------
 
 test('omp-only baseline: 45 files, 8 capability rows, 9 degradations, V1–V12 pass', () => {
-  const { ir, irDigest, result } = ompSample();
+  const { compiledWorkflow, compiledWorkflowDigest, result } = ompSample();
   assert.equal(result.ok, true);
   assert.deepEqual(result.targets, ['omp']);
   assert.equal(result.files.length, 45);
@@ -158,7 +158,7 @@ test('omp-only baseline: 45 files, 8 capability rows, 9 degradations, V1–V12 p
   assert.deepEqual(result.options.stageOrder, ['analysis-design', 'detailed-design', 'implementation', 'verification']);
   assert.equal(result.options.skills.length, 35);
 
-  const validation = validateResult(result, { ir, irDigest, options: result.options, manifest: MANIFEST });
+  const validation = validateResult(result, { compiledWorkflow, compiledWorkflowDigest, options: result.options, manifest: MANIFEST });
   assert.equal(validation.ok, true, JSON.stringify(validation.diagnostics, null, 2));
 });
 
@@ -176,7 +176,7 @@ test('the omp file set is .omp/agents + shared .agents/skills + roles.json', () 
   for (const path of paths) {
     assert.match(path, /^\.(?:agents|omp)\//);
     assert.doesNotMatch(path, /(?:^|\/)(?:CLAUDE\.md|AGENTS\.md|RULES\.md|opencode\.json|commands)(?:\/|$)/);
-    assert.doesNotMatch(path, /^\.r2c\//);
+    assert.doesNotMatch(path, /^\.hm2b\//);
   }
   const kinds = new Map();
   for (const file of result.files) kinds.set(file.kind, (kinds.get(file.kind) ?? 0) + 1);
@@ -189,17 +189,17 @@ test('sample omp role bytes match the prototype oracle', () => {
   const { result } = ompSample();
   const byPath = new Map(result.files.map((file) => [file.path, file.content]));
   const hashes = {
-    '.omp/agents/rtosv3-drvport-bys-architect.md': '9afc1f8b8952f22ab42e864c7cf2cbeb242e8f3f3b48e6c230d5560e094822da',
-    '.omp/agents/rtosv3-drvport-bys-designer.md': '83c2ce5a89e21663584fd1737ae82c87b54e6118acf0e726147362d92f2ce72a',
-    '.omp/agents/rtosv3-drvport-bys-impl-lead.md': '42d1d149ab93062ca6e8b41c8755e1725787ecdb411fa29e0afa189b38f9784f',
-    '.omp/agents/rtosv3-drvport-bys-release-lead.md': '1348bfcd77c01faa1157d70fca37cf1a3f69b091ea0d5a95d90a3d864d1fb6ea',
+    '.omp/agents/bys-architect.md': '7c3d5035a1d6b2ce31dc235378d21b62450161353725e7951fb452b3b45873c7',
+    '.omp/agents/bys-designer.md': 'd815d3a58ea2ab4f4062a463cf92bfcd533b8d3d81ba4b99315ab85b5600d7b1',
+    '.omp/agents/bys-impl-lead.md': 'fe7f2814ebab4833f3aabe4dcab01d132de647cd7bc34fe8a1f2a857aa5e598e',
+    '.omp/agents/bys-release-lead.md': '89db87bd699b62699e25d961a609941e0153af9d08c5236daa6405111602d347',
   };
   for (const [path, hash] of Object.entries(hashes)) assert.equal(sha256(byPath.get(path)), hash, path);
 });
 
 test('full-field omp frontmatter: tools, thinking-level and autoloadSkills order', () => {
   const skillIds = ['alpha-skill', 'beta-skill'];
-  const ir = miniIr({
+  const compiledWorkflow = miniCompiledWorkflow({
     role: {
       title: 'Worker',
       model: 'strong',
@@ -210,11 +210,11 @@ test('full-field omp frontmatter: tools, thinking-level and autoloadSkills order
     },
     skills: skills(skillIds),
   });
-  const result = runProject({ ir, irDigest: 'a'.repeat(64), raw: { targets: ['omp'] } });
+  const result = runProject({ compiledWorkflow, compiledWorkflowDigest: 'a'.repeat(64), raw: { targets: ['omp'] } });
   assert.equal(result.ok, true);
   assert.equal(roleFile(result).content, [
     '---',
-    'name: mini-worker',
+    'name: worker',
     'description: Runs the miniature step.',
     'tools:',
     '  - read',
@@ -225,8 +225,8 @@ test('full-field omp frontmatter: tools, thinking-level and autoloadSkills order
     '  - web_search',
     'thinking-level: high',
     'autoloadSkills:',
-    '  - mini-skill-beta-skill',
-    '  - mini-skill-alpha-skill',
+    '  - beta-skill',
+    '  - alpha-skill',
     '---',
     '',
     '你是满字段角色。',
@@ -245,18 +245,18 @@ test('full-field omp frontmatter: tools, thinking-level and autoloadSkills order
 // --- preload intersection ---------------------------------------------------
 
 test('autoloadSkills is role.skills ∩ skillNames; option-excluded skills are absent and recorded', () => {
-  const ir = miniIr({
+  const compiledWorkflow = miniCompiledWorkflow({
     role: { skills: ['alpha-skill', 'beta-skill'] },
     skills: skills(['alpha-skill', 'beta-skill']),
   });
-  const irDigest = 'a'.repeat(64);
-  const all = runProject({ ir, irDigest, raw: { targets: ['omp'] } });
+  const compiledWorkflowDigest = 'a'.repeat(64);
+  const all = runProject({ compiledWorkflow, compiledWorkflowDigest, raw: { targets: ['omp'] } });
   assert.equal(all.ok, true);
-  assert.match(roleFile(all).content, /autoloadSkills:\n {2}- mini-skill-alpha-skill\n {2}- mini-skill-beta-skill\n/);
+  assert.match(roleFile(all).content, /autoloadSkills:\n {2}- alpha-skill\n {2}- beta-skill\n/);
 
-  const subset = runProject({ ir, irDigest, raw: { targets: ['omp'], skills: ['beta-skill'] } });
+  const subset = runProject({ compiledWorkflow, compiledWorkflowDigest, raw: { targets: ['omp'], skills: ['beta-skill'] } });
   assert.equal(subset.ok, true);
-  assert.match(roleFile(subset).content, /autoloadSkills:\n {2}- mini-skill-beta-skill\n/);
+  assert.match(roleFile(subset).content, /autoloadSkills:\n {2}- beta-skill\n/);
   assert.equal(roleFile(subset).content.includes('alpha-skill'), false);
   const excluded = subset.degradations.filter((record) => record.code === 'CAP_PRELOAD_EXCLUDED');
   assert.deepEqual(excluded, [{
@@ -269,17 +269,17 @@ test('autoloadSkills is role.skills ∩ skillNames; option-excluded skills are a
     reason: '按投影选项 options.skills 排除',
     effect: '预载正文丢弃；技能本身也未安装',
   }]);
-  const validation = validateResult(subset, { ir, irDigest, options: subset.options, manifest: MANIFEST });
+  const validation = validateResult(subset, { compiledWorkflow, compiledWorkflowDigest, options: subset.options, manifest: MANIFEST });
   assert.equal(validation.ok, true, JSON.stringify(validation.diagnostics));
 });
 
 // --- effort -----------------------------------------------------------------
 
-test('thinking-level maps every IR effort 1:1 and clamps an out-of-ladder level downward', () => {
-  const irDigest = 'a'.repeat(64);
+test('thinking-level maps every compiled workflow effort 1:1 and clamps an out-of-ladder level downward', () => {
+  const compiledWorkflowDigest = 'a'.repeat(64);
   for (const effort of ['low', 'medium', 'high', 'xhigh', 'max']) {
-    const ir = miniIr({ role: { effort } });
-    const result = runProject({ ir, irDigest, raw: { targets: ['omp'] } });
+    const compiledWorkflow = miniCompiledWorkflow({ role: { effort } });
+    const result = runProject({ compiledWorkflow, compiledWorkflowDigest, raw: { targets: ['omp'] } });
     assert.equal(result.ok, true);
     assert.match(roleFile(result).content, new RegExp(`\\nthinking-level: ${effort}\\n`));
     const fields = JSON.parse(result.files.find((file) => file.path.endsWith('/roles.json')).content)
@@ -288,8 +288,8 @@ test('thinking-level maps every IR effort 1:1 and clamps an out-of-ladder level 
     assert.deepEqual(ompDegradations(result, '/roles/worker', 'effort'), [], effort);
   }
 
-  const ir = miniIr({ role: { effort: 'ultra' } });
-  const result = runProject({ ir, irDigest, raw: { targets: ['omp'] } });
+  const compiledWorkflow = miniCompiledWorkflow({ role: { effort: 'ultra' } });
+  const result = runProject({ compiledWorkflow, compiledWorkflowDigest, raw: { targets: ['omp'] } });
   assert.equal(result.ok, true);
   assert.match(roleFile(result).content, /\nthinking-level: max\n/);
   const fields = JSON.parse(result.files.find((file) => file.path.endsWith('/roles.json')).content)
@@ -304,9 +304,9 @@ test('thinking-level maps every IR effort 1:1 and clamps an out-of-ladder level 
 // --- model ------------------------------------------------------------------
 
 test('a model tier without an alias is omitted and recorded once; an explicit literal is adapted', () => {
-  const irDigest = 'a'.repeat(64);
-  const ir = miniIr({ role: { model: 'strong' } });
-  const result = runProject({ ir, irDigest, raw: { targets: ['omp'] } });
+  const compiledWorkflowDigest = 'a'.repeat(64);
+  const compiledWorkflow = miniCompiledWorkflow({ role: { model: 'strong' } });
+  const result = runProject({ compiledWorkflow, compiledWorkflowDigest, raw: { targets: ['omp'] } });
   assert.equal(result.ok, true);
   assert.equal(roleFile(result).content.includes('model:'), false);
   const records = ompDegradations(result, '/roles/worker', 'model');
@@ -319,7 +319,7 @@ test('a model tier without an alias is omitted and recorded once; an explicit li
     targets: TARGETS,
     roleModels: { omp: { strong: 'openai/gpt-5.4' } },
   };
-  const rendered = renderRole({ ...miniIr({ role: { model: 'strong' } }).roles.worker, id: 'worker' }, 'omp', ctx);
+  const rendered = renderRole({ ...miniCompiledWorkflow({ role: { model: 'strong' } }).roles.worker, id: 'worker' }, 'omp', ctx);
   assert.match(rendered.content, /\nmodel: openai\/gpt-5\.4\n/);
   assert.equal(rendered.fields.model.state, 'adapted');
 });
@@ -327,8 +327,8 @@ test('a model tier without an alias is omitted and recorded once; an explicit li
 // --- exposure ---------------------------------------------------------------
 
 test('omp has no primary-session agent: primary is skipped, any degrades', () => {
-  const irDigest = 'a'.repeat(64);
-  const primary = runProject({ ir: miniIr({ role: { mode: 'primary' } }), irDigest, raw: { targets: ['omp'] } });
+  const compiledWorkflowDigest = 'a'.repeat(64);
+  const primary = runProject({ compiledWorkflow: miniCompiledWorkflow({ role: { mode: 'primary' } }), compiledWorkflowDigest, raw: { targets: ['omp'] } });
   assert.equal(primary.ok, true);
   assert.equal(roleFile(primary), undefined);
   assert.deepEqual(primary.warnings.map((warning) => warning.code), ['ROLE_EXPOSURE_SKIPPED']);
@@ -338,7 +338,7 @@ test('omp has no primary-session agent: primary is skipped, any degrades', () =>
   assert.equal(skipped.artifact, null);
   assert.equal(skipped.fields.mode.state, 'unavailable');
 
-  const any = runProject({ ir: miniIr({ role: { mode: 'any' } }), irDigest, raw: { targets: ['omp'] } });
+  const any = runProject({ compiledWorkflow: miniCompiledWorkflow({ role: { mode: 'any' } }), compiledWorkflowDigest, raw: { targets: ['omp'] } });
   assert.equal(any.ok, true);
   const section = JSON.parse(any.files.find((file) => file.path.endsWith('/roles.json')).content).targets.omp;
   assert.equal(section.roles[0].exposure, 'both');
@@ -349,21 +349,21 @@ test('omp has no primary-session agent: primary is skipped, any degrades', () =>
 // --- roles.json + capability report ----------------------------------------
 
 test('roles.json gains an omp section consistent with idMap and one record per field loss', () => {
-  const { ir, result } = ompSample();
+  const { compiledWorkflow, result } = ompSample();
   const file = result.files.find((item) => item.path.endsWith('/roles.json'));
   assert.equal(file.kind, 'metadata');
   assert.deepEqual(file.targets, ['omp']);
   assert.equal(result.installPlan.steps.filter((step) => step.path === file.path).length, 1);
   const roles = JSON.parse(file.content);
-  assert.equal(roles.schema, 'r2c.projection.roles/v1');
+  assert.equal(roles.schema, 'hm2b.projection.roles/v1');
   assert.deepEqual(Object.keys(roles.targets), ['omp']);
-  assert.equal(roles.ir.sha256, result.ir.digest);
+  assert.equal(roles.compiledWorkflow.sha256, result.compiledWorkflow.digest);
   const section = roles.targets.omp;
   assert.equal(section.namespace, 'rtosv3-drvport');
-  assert.deepEqual(section.roles.map((role) => role.id), Object.keys(ir.roles).sort());
+  assert.deepEqual(section.roles.map((role) => role.id), Object.keys(compiledWorkflow.roles).sort());
   for (const role of section.roles) {
     assert.equal(role.name, result.metadata.idMap.omp.roles[role.id]);
-    assert.equal(role.placeholder, ir.roles[role.id].placeholder);
+    assert.equal(role.placeholder, compiledWorkflow.roles[role.id].placeholder);
     assert.equal(role.artifact.path, `.omp/agents/${role.name}.md`);
     assert.equal(role.artifact.format, 'md');
     assert.equal(role.artifact.sha256, sha256(result.files.find((item) => item.path === role.artifact.path).content));
@@ -415,7 +415,7 @@ test('the omp capability matrix is fixed: preload/subagents native, skills adapt
   assert.deepEqual(result.metadata.runtime.skillsRoots, { omp: '.agents/skills' });
   const roleFiles = result.files.filter((file) => file.kind === 'agent');
   assert.equal(roleFiles.length, 4);
-  for (const file of roleFiles) assert.match(file.content, /r2c:placeholder role=/);
+  for (const file of roleFiles) assert.match(file.content, /hm2b:placeholder role=/);
 });
 
 test('the constitution block and {{submit}} receipt are identical to the Claude placement', () => {
@@ -424,9 +424,9 @@ test('the constitution block and {{submit}} receipt are identical to the Claude 
   assert.match(stage.content, /^---\n[\s\S]*?\n---\n\n<!-- constitution:begin scope=global placeholder=true -->\n/);
   assert.ok(stage.content.indexOf('<!-- constitution:begin') < stage.content.indexOf('# 阶段'));
   assert.match(stage.content, /> \*\*占位（placeholder）\*\*/);
-  assert.match(stage.content, /^# r2c-submit: step=analysis-design$/m);
+  assert.match(stage.content, /^# hm2b-submit: step=analysis-design$/m);
   assert.doesNotMatch(stage.content, /\{\{submit\}\}/);
-  assert.doesNotMatch(stage.content, /node \.r2c\/bin\/r2c\.js/);
+  assert.doesNotMatch(stage.content, /node \.hm2b\/bin\/hm2b\.js/);
   const entry = result.files.find((file) => file.kind === 'workflow');
   assert.doesNotMatch(entry.content, /constitution:begin/);
 });
@@ -435,7 +435,7 @@ test('the constitution block and {{submit}} receipt are identical to the Claude 
 
 test('the same input twice yields byte-identical omp results', () => {
   const first = ompSample().result;
-  const second = runProject({ ...sampleIr(), raw: { targets: ['omp'] } });
+  const second = runProject({ ...sampleCompiledWorkflow(), raw: { targets: ['omp'] } });
   assert.equal(JSON.stringify(second), JSON.stringify(first));
 });
 

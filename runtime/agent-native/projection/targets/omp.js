@@ -11,9 +11,9 @@
  *   `tools`, `model`, `thinking-level`, `autoloadSkills`, `spawns`;
  * - no primary-agent concept: `mode: primary` has no entry and is skipped;
  * - `autoloadSkills` injects skills of the parent session by name; unknown
- *   names are ignored (hence rendered names, never bare IR ids);
+ *   names are ignored (hence rendered names, never bare compiled workflow ids);
  * - supported effort levels are `minimal|low|medium|high|xhigh|max`, a
- *   superset of the IR ladder `low..max`, so every valid IR effort maps 1:1.
+ *   superset of the compiled workflow ladder `low..max`, so every valid compiled workflow effort maps 1:1.
  */
 import { perRoleRoleFiles } from '../role-files.js';
 import { layoutSmoke, hostProfile } from './host.js';
@@ -50,7 +50,7 @@ const CAPABILITY_NOTES = Object.freeze({
   gates: '命令原文 + 超时写入阶段技能；执行者运行并自证，机器不强制',
   outputs: 'glob 原样列出自检清单；回执逐项写存在/缺失，机器不检查',
   subagents: '角色定义落在 .omp/agents；omp 自动发现并按名派发',
-  skills: '技能安装到 .agents/skills；名字加 bundle 前缀，语义不变',
+  skills: '技能安装到 .agents/skills；显示名不加 bundle 前缀；目录名仅用于避免多 bundle 冲突',
   preload: 'omp autoloadSkills 整份注入',
   'stage-invocation': '阶段技能可单独加载',
   'skill-invocation': '技能副本可单独加载；/skill:<name> 需开启 skills.enableSkillCommands',
@@ -65,10 +65,10 @@ function ompToolList(tokens) {
 }
 
 /**
- * Map an IR effort onto omp's `thinking-level` ladder.
+ * Map a compiled workflow effort onto omp's `thinking-level` ladder.
  *
- * The omp ladder is wider than the IR ladder, so `low..max` are identities.
- * A level from outside the ladder (a forward IR version) clamps down to the
+ * The omp ladder is wider than the compiled workflow ladder, so `low..max` are identities.
+ * A level from outside the ladder (a forward compiled workflow version) clamps down to the
  * nearest supported level — the top one — and the caller records the loss.
  */
 export function clampEffort(effort) {
@@ -93,8 +93,8 @@ export const ompTarget = Object.freeze({
     detect: {"commands":[["omp","--version"]],"paths":["~/.omp/agent"]},
     assets: [
     Object.freeze({ path: 'runtime/agent-native/targets/omp/assets/mcp.json', sha256: 'd8e397af03b5b032f21d0aa967086f0c78b33c87b76f2e9898ae0a144df7de02' }),
-    Object.freeze({ path: 'runtime/agent-native/targets/omp/assets/hooks/pre/r2c-guard.ts', sha256: '608bcc531c35f30e2388ceecd2acdbf0d61afea01fa0cdb192508320ae7f15bb' }),
-    Object.freeze({ path: 'runtime/agent-native/targets/omp/assets/hooks/post/r2c-stop.ts', sha256: '50b2dd7659a334865b97d204d303f731a45ea4aa5fc4189cee3d251bcbfec181' }),
+    Object.freeze({ path: 'runtime/agent-native/targets/omp/assets/hooks/pre/hm2b-guard.ts', sha256: '2035bba12db8cdf1d8832753ed3cfeaaa4f2616bfaab4f3c43f342d621bcf075' }),
+    Object.freeze({ path: 'runtime/agent-native/targets/omp/assets/hooks/post/hm2b-stop.ts', sha256: '87efd26f032f9287e4703325f3d8be81a2d745a73221f1a2e4b9cba4867e6918' }),
     ],
     smoke: (namespace) => layoutSmoke(namespace, { skillsRoot: '.agents/skills', agentsRoot: '.omp/agents', agentFormat: 'md' }),
   }),

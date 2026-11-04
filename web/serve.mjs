@@ -7,14 +7,14 @@
  *
  * The server binds loopback only (there is deliberately no `--host`), serves a
  * fixed whitelist of source directories, and exposes exactly one authoritative
- * operation: upload one zip, receive the shared `Report` plus the compiled IR.
+ * operation: upload one zip, receive the shared `Report` plus the compiled workflow.
  * Uploads are handled entirely in memory; the only filesystem writes are the
  * 0700 session directory under `os.tmpdir()`.
  *
  * This file is the wiring only. HTTP hardening lives in `http.js`, upload /
  * build orchestration in `build.js`, and publish orchestration in `publish.js`.
  * Everything under `web/` except the server modules is browser-loadable ESM
- * and runs the same shared modules (`core/`, `ir/`, `assembler/`) as the CLI.
+ * and runs the same shared modules (`core/`, `compiled/`, `assembler/`) as the CLI.
  */
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { createServer } from 'node:http';
@@ -89,8 +89,21 @@ function isAlive(pid) {
 }
 
 function startupSecrets(env) {
-  return [env.GH_TOKEN, env.GITHUB_TOKEN]
+  const configured = [env.GH_TOKEN, env.GITHUB_TOKEN]
     .filter((value) => typeof value === 'string' && value !== '');
+  if (configured.length > 0) return configured;
+  if (env.HM2B_WEB_GH_AUTH === 'off') return [];
+  // Read the local gh session once at startup; the browser still never sees
+  // the token, and publish no longer requires a wrapper shell.
+  const result = spawnSync('gh', ['auth', 'token'], {
+    encoding: 'utf8',
+    timeout: 5000,
+    windowsHide: true,
+  });
+  if (result.status === 0 && typeof result.stdout === 'string' && result.stdout.trim() !== '') {
+    return [result.stdout.trim()];
+  }
+  return [];
 }
 
 async function sweepStaleSessions(ownTempRoot) {
@@ -101,7 +114,7 @@ async function sweepStaleSessions(ownTempRoot) {
     return;
   }
   for (const entry of entries) {
-    if (!entry.isDirectory() || !entry.name.startsWith('r2c-web-')) continue;
+    if (!entry.isDirectory() || !entry.name.startsWith('hm2b-web-')) continue;
     const candidate = resolve(tmpdir(), entry.name);
     if (candidate === ownTempRoot) continue;
     let marker;
@@ -163,10 +176,10 @@ async function main() {
 
   const version = (await readVersion(resolve(ROOT, 'package.json'))) ?? '0.0.0';
   // The framework and the runtime engine ship independently (spec §13): the
-  // session/projection environment reports `runtime/r2c/engine/package.json`.
-  const engineVersion = await readVersion(resolve(ROOT, 'runtime', 'r2c', 'engine', 'package.json'));
+  // session/projection environment reports `runtime/runner/engine/package.json`.
+  const engineVersion = await readVersion(resolve(ROOT, 'runtime', 'runner', 'engine', 'package.json'));
 
-  const tempRoot = await mkdtemp(resolve(tmpdir(), `r2c-web-${process.pid}-`));
+  const tempRoot = await mkdtemp(resolve(tmpdir(), `hm2b-web-${process.pid}-`));
   await chmod(tempRoot, 0o700);
   await writeFile(
     resolve(tempRoot, 'session.json'),
@@ -180,16 +193,16 @@ async function main() {
   const csrf = randomBytes(32).toString('hex');
   const rate = createRateLimiter({ limit: rateLimitFromEnv(), windowMs: 60 * 1000 });
   const secrets = startupSecrets(process.env);
-  const buildTimeoutMs = envInteger('R2C_WEB_BUILD_TIMEOUT_MS', 120 * 1000);
-  const publishTimeoutMs = envInteger('R2C_WEB_PUBLISH_TIMEOUT_MS', PUBLISH_TIMEOUT_MS);
-  const releaseScript = process.env.R2C_WEB_RELEASE_SCRIPT === undefined
+  const buildTimeoutMs = envInteger('HM2B_WEB_BUILD_TIMEOUT_MS', 120 * 1000);
+  const publishTimeoutMs = envInteger('HM2B_WEB_PUBLISH_TIMEOUT_MS', PUBLISH_TIMEOUT_MS);
+  const releaseScript = process.env.HM2B_WEB_RELEASE_SCRIPT === undefined
     ? RELEASE_SCRIPT
-    : resolve(process.env.R2C_WEB_RELEASE_SCRIPT);
+    : resolve(process.env.HM2B_WEB_RELEASE_SCRIPT);
   // Operator-only override for the publish child (child-isolation tests and
   // wrappers); the browser can never choose a script.
-  const publishScript = process.env.R2C_WEB_PUBLISH_SCRIPT === undefined
+  const publishScript = process.env.HM2B_WEB_PUBLISH_SCRIPT === undefined
     ? releaseScript
-    : resolve(process.env.R2C_WEB_PUBLISH_SCRIPT);
+    : resolve(process.env.HM2B_WEB_PUBLISH_SCRIPT);
 
   const { guardRequest, locateStatic } = createHttpGuards({
     createHash,
@@ -212,6 +225,13 @@ async function main() {
     resolve,
   };
 
+  const publishes = createPublishService({
+    root: ROOT,
+    secrets,
+    publishScript,
+    publishTimeoutMs,
+    node,
+  });
   const builds = createBuildService({
     root: ROOT,
     tempRoot,
@@ -219,13 +239,7 @@ async function main() {
     secrets,
     releaseScript,
     buildTimeoutMs,
-    node,
-  });
-  const publishes = createPublishService({
-    root: ROOT,
-    secrets,
-    publishScript,
-    publishTimeoutMs,
+    repo: publishes.config.repo,
     node,
   });
 
@@ -354,9 +368,21 @@ async function main() {
         return;
       }
       status = 200;
+      if (path === '/api/uploads') {
+        const requestedVersion = new URL(request.url, 'http://127.0.0.1').searchParams.get('version');
+        if (requestedVersion !== null && requestedVersion !== '') {
+          const rewritten = builds.rewriteVersion(bytes, requestedVersion);
+          if (rewritten === null) {
+            status = 400;
+            sendWebError(response, status, 'WEB_VERSION_INVALID', 'version must be a semver without build metadata');
+            return;
+          }
+          bytes = rewritten;
+        }
+      }
       const data = await runValidation(bytes);
       if (path === '/api/uploads') {
-        data.uploadId = data.ir === null ? null : await builds.persistUpload(bytes, data);
+        data.uploadId = data.compiledWorkflow === null ? null : await builds.persistUpload(bytes, data);
       }
       sendJson(response, status, { ok: data.report.ok, data });
       return;
@@ -556,9 +582,9 @@ async function main() {
         });
         return;
       }
-      if (body.irDigest !== undefined && body.irDigest !== build.summary.ir.digest) {
+      if (body.compiledWorkflowDigest !== undefined && body.compiledWorkflowDigest !== build.summary.compiledWorkflow.digest) {
         status = 409;
-        sendWebError(response, status, 'WEB_CLIENT_SERVER_MISMATCH', 'the browser and the server disagree about the IR digest');
+        sendWebError(response, status, 'WEB_CLIENT_SERVER_MISMATCH', 'the browser and the server disagree about the compiled workflow digest');
         return;
       }
       if (body.resultDigests !== null) {

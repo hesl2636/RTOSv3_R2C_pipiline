@@ -6,11 +6,11 @@
  *
  * - the **legacy channel** (`v<E>`) is frozen. This command still builds its
  *   engine asset `r2c-engine-<E>.tgz` with the P6 archive layout (root
- *   launcher + `runtime/r2c/engine/**` + `core/**` + vendored `yaml`), and
+ *   launcher + `runtime/runner/engine/**` + `core/**` + vendored `yaml`), and
  *   `--check` still gates the engine, the bootstrap and the generated
  *   compatibility document. It no longer builds or publishes a payload: main
- *   stopped shipping `r2c-payload-<E>.tgz` at the cutover, and old Releases
- *   remain installable with their frozen engines.
+ *   stopped shipping the legacy engine-version payload at the cutover, and old
+ *   Releases remain installable with their frozen engines.
  * - the **bundle channel** (`bundle-<id>-v<version>`) lives in
  *   `scripts/lib/bundle-release.mjs`: `--bundle <zip|dir> --out DIR`,
  *   `--bundle ... --check` and `--bundle ... --publish`.
@@ -26,13 +26,13 @@ import { fileURLToPath } from 'node:url';
 import { compareCodePoints } from '../core/code-point.js';
 import { sha256Hex as sha256 } from '../core/node/sha256.js';
 import { isValidVersion } from '../core/semver.js';
-import { IR_BUNDLE_SCHEMA, IR_SCHEMA } from '../ir/schema.js';
+import { COMPILED_WORKFLOW_BUNDLE_SCHEMA, COMPILED_WORKFLOW_SCHEMA } from '../compiled/schema.js';
 import { listProjections } from '../projection/registry.js';
 import { createReleaseTarGz, readReleaseTarGz } from '../installer/release-tar.js';
 import {
   ENGINE_ENTRY,
   collectEngine,
-  engineAssetName,
+  legacyEngineAssetName,
   engineEntryBytes,
 } from './lib/engine-archive.mjs';
 import {
@@ -44,7 +44,7 @@ import { GH_TOKEN_HINT, readGithubToken } from '../installer/release-auth.js';
 import { GITHUB_API_BASE, createGithubClient } from '../installer/release-client.js';
 import { publishBundle } from '../installer/release-publish.js';
 import { DEFAULT_RELEASE_REPO } from '../installer/release-source.js';
-import { IR_ASSET } from '../installer/release-tags.js';
+import { COMPILED_WORKFLOW_ASSET } from '../installer/release-tags.js';
 import { readBuiltRelease } from './lib/built-release.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -52,11 +52,11 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const BOOTSTRAP_SOURCE = 'scripts/install.mjs';
 const INSTALL_ASSET = 'install.mjs';
 const SUMS_ASSET = 'SHA256SUMS.txt';
-const ENGINE_PACKAGE = 'runtime/r2c/engine/package.json';
+const ENGINE_PACKAGE = 'runtime/runner/engine/package.json';
 
 /** The legacy asset names of one engine version, sorted. */
 function releaseAssets(version) {
-  return [INSTALL_ASSET, engineAssetName(version), SUMS_ASSET].sort();
+  return [INSTALL_ASSET, legacyEngineAssetName(version), SUMS_ASSET].sort();
 }
 
 /** The assets `SHA256SUMS.txt` covers: everything except the sums file itself. */
@@ -74,7 +74,7 @@ function usage(message) {
     + '       node scripts/release.mjs --publish --out <built-dir> [--tag TAG] [--commit SHA] [--json]\n'
     + '       --out must already hold a build; publishing never re-projects or re-packs.\n'
     + '       --publish reads GH_TOKEN/GITHUB_TOKEN from the launch environment; it never prompts.\n'
-    + '       GH_REPO and R2C_GITHUB_API are operator settings (default: ' + DEFAULT_RELEASE_REPO + ', '
+    + '       GH_REPO and HM2B_GITHUB_API are operator settings (default: ' + DEFAULT_RELEASE_REPO + ', '
     + GITHUB_API_BASE + ').\n',
   );
   process.exit(2);
@@ -186,11 +186,11 @@ function escapePipe(value) {
  */
 function generateCompat({ framework, enginePkg }) {
   const projections = listProjections();
-  const contracts = [IR_BUNDLE_SCHEMA, IR_SCHEMA, ...projections.map((projection) => projection.api.result)];
+  const contracts = [COMPILED_WORKFLOW_BUNDLE_SCHEMA, COMPILED_WORKFLOW_SCHEMA, ...projections.map((projection) => projection.api.result)];
   const lines = [
     '# Compatibility matrix',
     '',
-    'Generated from `package.json`, `runtime/r2c/engine/package.json` and the',
+    'Generated from `package.json`, `runtime/runner/engine/package.json` and the',
     'projection manifests by `node scripts/release.mjs --compat`. Do not edit by',
     'hand: `node scripts/release.mjs --check` fails when this file drifts.',
     '',
@@ -198,7 +198,7 @@ function generateCompat({ framework, enginePkg }) {
     '| --- | --- | --- |',
     `| Framework | \`${framework.name}\` | \`${framework.version}\` |`,
     `| Engine | \`${enginePkg.name}\` | \`${enginePkg.version}\` |`,
-    `| Contract | bundle / IR / projection | ${[...new Set(contracts)].map((id) => `\`${id}\``).join(', ')} |`,
+    `| Contract | bundle / compiled workflow / projection | ${[...new Set(contracts)].map((id) => `\`${id}\``).join(', ')} |`,
     ...projections.map(
       (projection) => `| Projection | \`${projection.id}\` | \`${projection.version}\` |`,
     ),
@@ -221,8 +221,8 @@ function checkEngine(ctx, failures) {
     ENGINE_ENTRY,
     'package.json',
     ENGINE_PACKAGE,
-    'runtime/r2c/engine/bin/r2c.js',
-    'runtime/r2c/contract/manifest.js',
+    'runtime/runner/engine/bin/hm2b.js',
+    'runtime/runner/contract/manifest.js',
     'LICENSE',
   ]) {
     if (!rels.has(required)) failures.push(`engine archive is missing ${required}`);
@@ -232,7 +232,7 @@ function checkEngine(ctx, failures) {
     failures.push('engine archive is missing the vendored node_modules/yaml');
   }
   for (const file of ctx.engine.files) {
-    if (/^(test|tests|docs|scripts|pack|adapters|plugins|dist|web|installer|projection|assembler|ir|examples|\.github)\//.test(file.rel)) {
+    if (/^(test|tests|docs|scripts|pack|adapters|plugins|dist|web|installer|projection|assembler|compiledWorkflow|examples|\.github)\//.test(file.rel)) {
       failures.push(`engine must not ship ${file.rel}`);
     }
   }
@@ -244,7 +244,7 @@ function checkEngine(ctx, failures) {
     }
   }
   const launcher = ctx.engine.files.find((file) => file.rel === ENGINE_ENTRY);
-  if (launcher !== undefined && !String(engineEntryBytes(launcher)).includes('runtime/r2c/engine/bin/r2c.js')) {
+  if (launcher !== undefined && !String(engineEntryBytes(launcher)).includes('runtime/runner/engine/bin/hm2b.js')) {
     failures.push(`${ENGINE_ENTRY} does not point at the extracted engine entry`);
   }
 }
@@ -257,7 +257,7 @@ function checkVersion(ctx, failures) {
   if (typeof enginePkg.version !== 'string' || !isValidVersion(enginePkg.version)) {
     failures.push(`${ENGINE_PACKAGE} version is not a valid version: ${enginePkg.version}`);
   }
-  if (framework.private !== true) failures.push('the root package must be private (r2c-framework is not published)');
+  if (framework.private !== true) failures.push('the root package must be private (hm2b-framework is not published)');
   if ('workspaces' in framework) failures.push('the root package must not declare npm workspaces');
   if (framework.engines?.node !== enginePkg.engines?.node) {
     failures.push('framework and engine must declare the same engines.node range');
@@ -406,31 +406,31 @@ function checkAssets(ctx, failures) {
     }
   }
 
-  const engineFile = join(outDir, engineAssetName(version));
+  const engineFile = join(outDir, legacyEngineAssetName(version));
   if (!existsSync(engineFile)) {
-    failures.push(`${engineAssetName(version)} is missing from its asset directory`);
+    failures.push(`${legacyEngineAssetName(version)} is missing from its asset directory`);
     return;
   }
   const { entries, problems } = readReleaseTarGz(readFileSync(engineFile));
-  for (const problem of problems) failures.push(`${engineAssetName(version)}: ${problem}`);
+  for (const problem of problems) failures.push(`${legacyEngineAssetName(version)}: ${problem}`);
   const members = entries.map((entry) => entry.path).sort();
   const memberDifference = setDifference(members, ctx.engine.files.map((file) => file.rel).sort());
   if (memberDifference !== null) {
-    failures.push(`${engineAssetName(version)} ships paths outside its contract (${memberDifference})`);
+    failures.push(`${legacyEngineAssetName(version)} ships paths outside its contract (${memberDifference})`);
   }
   const packageEntry = entries.find((entry) => entry.path === 'package.json');
   if (packageEntry === undefined) {
-    failures.push(`${engineAssetName(version)} has no package.json`);
+    failures.push(`${legacyEngineAssetName(version)} has no package.json`);
   } else {
     let parsed = null;
     try {
       parsed = JSON.parse(packageEntry.data.toString('utf8'));
     } catch (error) {
-      failures.push(`${engineAssetName(version)}: package.json is not valid JSON: ${error.message}`);
+      failures.push(`${legacyEngineAssetName(version)}: package.json is not valid JSON: ${error.message}`);
     }
     if (parsed !== null && parsed.version !== version) {
       failures.push(
-        `${engineAssetName(version)}: engine package.json version is ${parsed.version} but the engine package is ${version}`,
+        `${legacyEngineAssetName(version)}: engine package.json version is ${parsed.version} but the engine package is ${version}`,
       );
     }
   }
@@ -447,7 +447,7 @@ function check(ctx) {
   checkCounts(ctx, failures);
 
   if (failures.length > 0) {
-    process.stderr.write(`release --check failed for ${ctx.framework.name ?? 'r2c'} ${ctx.framework.version ?? '?'}:\n`);
+    process.stderr.write(`release --check failed for ${ctx.framework.name ?? 'hm2b'} ${ctx.framework.version ?? '?'}:\n`);
     for (const failure of failures) process.stderr.write(`- ${failure}\n`);
     process.exit(1);
   }
@@ -473,7 +473,7 @@ function build(ctx, outDir) {
   // One build, one version: every asset name carries the engine version E.
   const assets = [
     {
-      name: engineAssetName(version),
+      name: legacyEngineAssetName(version),
       data: createReleaseTarGz(
         ctx.engine.files.map((file) => ({ path: file.rel, data: engineEntryBytes(file), mode: 0o644 })),
       ),
@@ -606,12 +606,12 @@ function publishRepo() {
 }
 
 /**
- * API origin: `R2C_GITHUB_API` is an operator-only override for a local
+ * API origin: `HM2B_GITHUB_API` is an operator-only override for a local
  * fixture or a self-hosted mirror; otherwise the public GitHub API. The
  * browser can never set it, and the token is only sent to this origin.
  */
 function publishApiBase() {
-  const raw = process.env.R2C_GITHUB_API;
+  const raw = process.env.HM2B_GITHUB_API;
   if (raw === undefined || raw.trim() === '') return GITHUB_API_BASE;
   try {
     const url = new URL(raw.trim());
@@ -624,7 +624,7 @@ function publishApiBase() {
 
 /**
  * Read an already built asset directory. Publishing never rebuilds: the zip,
- * IR and payloads are exactly the bytes the build produced, and the manifest
+ * compiled workflow and payloads are exactly the bytes the build produced, and the manifest
  * (`SHA256SUMS.txt`) must cover every file and nothing else.
  */
 function publishFailureLines(failures) {
@@ -649,7 +649,7 @@ async function publishBundleCli(options) {
   }
   const base = publishApiBase();
   if (base === null) {
-    process.stderr.write('release: R2C_GITHUB_API must be an http(s) URL\n');
+    process.stderr.write('release: HM2B_GITHUB_API must be an http(s) URL\n');
     process.exit(2);
   }
 

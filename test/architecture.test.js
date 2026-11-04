@@ -17,17 +17,17 @@ import { collectFramework } from '../scripts/lib/bundle-release.mjs';
 import { minimalZip } from './helpers/minimal-bundle.js';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const BIN = join(ROOT, 'bin', 'r2c-assembler.js');
+const BIN = join(ROOT, 'bin', 'hm2b-assembler.js');
 
 const MODULES = [
   'core/node',
-  'runtime/r2c/engine',
-  'runtime/r2c/contract',
-  'runtime/r2c/projection',
+  'runtime/runner/engine',
+  'runtime/runner/contract',
+  'runtime/runner/projection',
   'runtime/agent-native',
   'runtime/shared',
   'core',
-  'ir',
+  'compiled',
   'assembler',
   'projection',
   'installer',
@@ -37,15 +37,33 @@ const MODULES = [
 const PURE_EXEMPT = new Set(['core/node']);
 const PURE_MODULES = [
   'core',
-  'ir',
+  'compiled',
   'assembler',
   'projection',
   'runtime/shared',
-  'runtime/r2c/contract',
-  'runtime/r2c/projection',
+  'runtime/runner/contract',
+  'runtime/runner/projection',
   'runtime/agent-native',
   'web',
 ];
+
+/**
+ * `r2c` is the retired product name. Only the installer's legacy channel may
+ * still spell it: the frozen `r2c.install/v1` receipts, the `.r2c/**` layout it
+ * installed into and the `v<E>` channel asset names. Every other module says
+ * `hm2b` / `runner`.
+ */
+const LEGACY_R2C_ALLOWLIST = new Set([
+  'installer/doctor.js',
+  'installer/index.js',
+  'installer/install.js',
+  'installer/legacy.js',
+  'installer/paths.js',
+  'installer/receipt.js',
+  'installer/release-source.js',
+  'installer/release-tags.js',
+  'installer/uninstall.js',
+]);
 
 /**
  * JSON Schema documents that live with the module owning the contract. They
@@ -54,7 +72,7 @@ const PURE_MODULES = [
 const SCHEMA_DOCUMENTS = [
   ['assembler/schema/bundle.schema.json', 'assembler/validate-bundle.js'],
   ['assembler/schema/stage.schema.json', 'assembler/checks/stages.js'],
-  ['ir/schema/ir.schema.json', 'assembler/validate-ir.js'],
+  ['compiled/schema/compiled-workflow.schema.json', 'assembler/validate-compiled.js'],
   ['projection/schema/options.schema.json', 'projection/options.js'],
   ['projection/schema/result.schema.json', 'projection/validate-result.js'],
   ['projection/schema/roles.schema.json', 'runtime/shared/render-role.js'],
@@ -229,8 +247,8 @@ test('pure modules have no node: and no third-party import', () => {
   }
 });
 
-test('the engine imports only core, the r2c contract, yaml and node:*', () => {
-  const files = walkModule('runtime/r2c/engine');
+test('the engine imports only core, the runner contract, yaml and node:*', () => {
+  const files = walkModule('runtime/runner/engine');
   assert.ok(files.length > 10, 'engine sources exist');
   for (const file of files) {
     const rel = relModule(file);
@@ -240,7 +258,7 @@ test('the engine imports only core, the r2c contract, yaml and node:*', () => {
         const target = relModule(resolveSpecifier(file, specifier));
         assert.match(
           target,
-          /^(core\/|runtime\/r2c\/contract\/|runtime\/r2c\/engine\/)/,
+          /^(core\/|runtime\/runner\/contract\/|runtime\/runner\/engine\/)/,
           `${rel} must not import ${specifier} (${target})`,
         );
         continue;
@@ -255,7 +273,7 @@ test('yaml is imported by the engine and the build tools only', () => {
     const rel = relModule(file);
     if (rel.startsWith('scripts/')) continue;
     for (const specifier of importsOf(file)) {
-      if (specifier === 'yaml') assert.match(rel, /^runtime\/r2c\/engine\//, `${rel} imports yaml`);
+      if (specifier === 'yaml') assert.match(rel, /^runtime\/runner\/engine\//, `${rel} imports yaml`);
     }
   }
 });
@@ -284,20 +302,20 @@ test('no module uses a computed dynamic import', () => {
 });
 
 test('the root bin holds only the framework CLI and the engine entry moved', () => {
-  assert.deepEqual(readdirSync(join(ROOT, 'bin')).sort(), ['assembler', 'r2c-assembler.js']);
-  assert.equal(existsSync(join(ROOT, 'bin', 'r2c.js')), false);
-  assert.equal(existsSync(join(ROOT, 'runtime', 'r2c', 'engine', 'bin', 'r2c.js')), true);
+  assert.deepEqual(readdirSync(join(ROOT, 'bin')).sort(), ['assembler', 'hm2b-assembler.js']);
+  assert.equal(existsSync(join(ROOT, 'bin', 'hm2b.js')), false);
+  assert.equal(existsSync(join(ROOT, 'runtime', 'runner', 'engine', 'bin', 'hm2b.js')), true);
   const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
-  assert.equal(pkg.name, 'r2c-framework');
+  assert.equal(pkg.name, 'hm2b-framework');
   assert.equal(pkg.private, true);
   assert.equal('workspaces' in pkg, false);
   assert.deepEqual(pkg.bin, {
-    r2c: 'runtime/r2c/engine/bin/r2c.js',
-    'r2c-assembler': 'bin/r2c-assembler.js',
+    hm2b: 'runtime/runner/engine/bin/hm2b.js',
+    'hm2b-assembler': 'bin/hm2b-assembler.js',
   });
-  const enginePkg = JSON.parse(readFileSync(join(ROOT, 'runtime', 'r2c', 'engine', 'package.json'), 'utf8'));
-  assert.equal(enginePkg.name, 'r2c-runner');
-  assert.deepEqual(enginePkg.bin, { r2c: 'bin/r2c.js' });
+  const enginePkg = JSON.parse(readFileSync(join(ROOT, 'runtime', 'runner', 'engine', 'package.json'), 'utf8'));
+  assert.equal(enginePkg.name, 'hm2b-runner');
+  assert.deepEqual(enginePkg.bin, { hm2b: 'bin/hm2b.js' });
 });
 
 test('the P6 retired paths are gone', () => {
@@ -312,24 +330,31 @@ test('the P6 retired paths are gone', () => {
   }
 });
 
+test('the retired r2c name survives only in the legacy installer channel', () => {
+  for (const file of [...walkModule('core'), ...walkModule('installer'), ...walkModule('bin'), ...walkModule('runtime')]) {
+    const rel = relModule(file);
+    assert.equal(/\br2c\b/i.test(readFileSync(file, 'utf8')), LEGACY_R2C_ALLOWLIST.has(rel), rel);
+  }
+});
+
 test('release source sets are disjoint and exclude retired trees', () => {
   const framework = collectFramework(ROOT);
   assert.deepEqual(framework.problems, []);
   const frameworkRels = new Set(framework.files.map((file) => file.rel));
-  for (const forbidden of ['test/', 'docs/', 'scripts/', 'examples/', 'runtime/r2c/engine/', 'runtime/r2c/schema/', 'bin/r2c.js', 'src/', 'adapters/', 'pack/', 'plugins/', 'shims/', 'schema/']) {
+  for (const forbidden of ['test/', 'docs/', 'scripts/', 'examples/', 'runtime/runner/engine/', 'runtime/runner/schema/', 'bin/hm2b.js', 'src/', 'adapters/', 'pack/', 'plugins/', 'shims/', 'schema/']) {
     assert.equal([...frameworkRels].some((rel) => rel === forbidden.slice(0, -1) || rel.startsWith(forbidden)), false, `framework ships ${forbidden}`);
   }
-  for (const required of ['package.json', 'bin/r2c-assembler.js', 'installer/index.js', 'runtime/r2c/projection/projection.json', 'runtime/r2c/assets/commands/r2c-run.md', 'runtime/r2c/assets/shims/hook.mjs']) {
+  for (const required of ['package.json', 'bin/hm2b-assembler.js', 'installer/index.js', 'runtime/runner/projection/projection.json', 'runtime/runner/assets/commands/hm2b-run.md', 'runtime/runner/assets/shims/hook.mjs']) {
     assert.ok(frameworkRels.has(required), `framework is missing ${required}`);
   }
 
   const engine = collectEngine(ROOT);
   assert.deepEqual(engine.problems, []);
   const engineRels = new Set(engine.files.map((file) => file.rel));
-  for (const forbidden of ['test/', 'docs/', 'scripts/', 'examples/', 'web/', 'installer/', 'projection/', 'assembler/', 'ir/', 'bin/r2c-assembler.js']) {
+  for (const forbidden of ['test/', 'docs/', 'scripts/', 'examples/', 'web/', 'installer/', 'projection/', 'assembler/', 'compiled/', 'bin/hm2b-assembler.js']) {
     assert.equal([...engineRels].some((rel) => rel.startsWith(forbidden) || rel === forbidden.slice(0, -1)), false, `engine ships ${forbidden}`);
   }
-  assert.equal(engine.version, JSON.parse(readFileSync(join(ROOT, 'runtime/r2c/engine/package.json'), 'utf8')).version);
+  assert.equal(engine.version, JSON.parse(readFileSync(join(ROOT, 'runtime/runner/engine/package.json'), 'utf8')).version);
 });
 
 test('schema documents live with their owner as canonical JSON', () => {
@@ -343,7 +368,7 @@ test('schema documents live with their owner as canonical JSON', () => {
     const text = readFileSync(absolute, 'utf8');
     const document = JSON.parse(text);
     assert.equal(document.$schema, 'https://json-schema.org/draft/2020-12/schema', `${rel}: draft 2020-12`);
-    assert.match(String(document.$id), /^https:\/\/r2c\.runner\/schema\//, `${rel}: $id family`);
+    assert.match(String(document.$id), /^https:\/\/hm2b\.runner\/schema\//, `${rel}: $id family`);
     assert.equal(typeof document.title, 'string', `${rel}: title`);
     assert.ok(document.title.length > 0, `${rel}: empty title`);
     ids.push(document.$id);
@@ -356,7 +381,7 @@ test('schema documents live with their owner as canonical JSON', () => {
 });
 
 test('the framework CLI --json output is exactly one envelope line', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'r2c-arch-'));
+  const dir = mkdtempSync(join(tmpdir(), 'hm2b-arch-'));
   try {
     const zipPath = join(dir, 'minimal.zip');
     writeFileSync(zipPath, minimalZip());

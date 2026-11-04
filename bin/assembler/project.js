@@ -1,13 +1,14 @@
-/** `r2c-assembler project <ir> --projection <id> [options] [--json]`. */
+/** `hm2b-assembler project <compiledWorkflow> --projection <id> [options] [--json]`. */
 import { chmodSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { canonicalJson } from '../../core/canonical-json.js';
 import { toEnvelope } from '../../core/diagnostics.js';
 import { isInside } from '../../core/paths.js';
 import { atomicWriteFile } from '../../core/node/atomic-write.js';
 import { sha256Hex } from '../../core/node/sha256.js';
-import { IR_SUMMARY_CODE, validateIr } from '../../assembler/validate-ir.js';
+import { COMPILED_WORKFLOW_SUMMARY_CODE, validateCompiledWorkflow } from '../../assembler/validate-compiled.js';
 import { normalizeOptions } from '../../projection/options.js';
-import { project } from '../../projection/project.js';
+import { failureRow, project } from '../../projection/project.js';
 import { getProjection } from '../../projection/registry.js';
 import { validateResult } from '../../projection/validate-result.js';
 import {
@@ -23,7 +24,7 @@ import {
 } from './common.js';
 
 const COMMAND = 'project';
-const USAGE = 'usage: project <workflow.ir.json> --projection <id> [--target <id> ...] [--stage-order a,b] [--skills a,b] [--out <dir>] [--json]';
+const USAGE = 'usage: project <workflow.compiled.json> --projection <id> [--target <id> ...] [--stage-order a,b] [--skills a,b] [--out <dir> | --result <dir>] [--json]';
 
 function list(value) {
   return value === undefined ? null : value.split(',');
@@ -33,7 +34,7 @@ function summary(result) {
   const bytes = result.files.reduce((sum, file) => sum + Buffer.byteLength(file.content, 'utf8'), 0);
   return {
     projection: result.projection,
-    ir: result.ir,
+    compiledWorkflow: result.compiledWorkflow,
     targets: result.targets,
     options: result.options,
     coverage: result.coverage,
@@ -60,7 +61,7 @@ function summary(result) {
 
 export function run(argv) {
   const parsed = parseArgs(argv, {
-    values: ['projection', 'stage-order', 'skills'],
+    values: ['projection', 'stage-order', 'skills', 'result'],
     lists: ['target'],
   });
   if (parsed.error !== undefined) {
@@ -70,6 +71,23 @@ export function run(argv) {
   if (options.help) {
     process.stdout.write(`${USAGE}\n`);
     return EXIT_CODES.OK;
+  }
+  const resultDir = options.values.result ?? null;
+  if (resultDir === '') {
+    return emitFailure({
+      json: options.json,
+      command: COMMAND,
+      code: EXIT_CODES.USAGE,
+      error: usageError('--result requires a directory'),
+    });
+  }
+  if (options.out !== null && resultDir !== null) {
+    return emitFailure({
+      json: options.json,
+      command: COMMAND,
+      code: EXIT_CODES.USAGE,
+      error: usageError('--out and --result are mutually exclusive'),
+    });
   }
   const projectionId = options.values.projection;
   if (options.positionals.length !== 1 || projectionId === undefined) {
@@ -91,28 +109,28 @@ export function run(argv) {
   }
 
   const input = readInput(options.positionals[0], {
-    notFound: 'IR_INPUT_NOT_FOUND',
-    unreadable: 'IR_INPUT_UNREADABLE',
+    notFound: 'COMPILED_WORKFLOW_INPUT_NOT_FOUND',
+    unreadable: 'COMPILED_WORKFLOW_INPUT_UNREADABLE',
   });
   if (!input.ok) {
     return emitFailure({ json: options.json, command: COMMAND, code: EXIT_CODES.USAGE, error: input.error });
   }
-  const report = validateIr(input.bytes, { sha256: sha256Hex });
+  const report = validateCompiledWorkflow(input.bytes, { sha256: sha256Hex });
   if (!report.ok) {
     return emitReport({
       json: options.json,
       command: COMMAND,
       report,
-      summaryCode: IR_SUMMARY_CODE,
+      summaryCode: COMPILED_WORKFLOW_SUMMARY_CODE,
     });
   }
 
-  const ir = JSON.parse(new TextDecoder().decode(input.bytes));
-  const irDigest = sha256Hex(input.bytes);
+  const compiledWorkflow = JSON.parse(new TextDecoder().decode(input.bytes));
+  const compiledWorkflowDigest = sha256Hex(input.bytes);
   const normalized = normalizeOptions({
     projectionId,
-    ir,
-    irDigest,
+    compiledWorkflow,
+    compiledWorkflowDigest,
     raw: {
       stageOrder: list(options.values['stage-order']),
       skills: list(options.values.skills),
@@ -121,20 +139,28 @@ export function run(argv) {
     manifest: descriptor,
   });
   if (!normalized.ok) {
-    const first = normalized.errors[0];
+    const errors = normalized.errors.map(failureRow);
+    const first = errors[0];
     return emitFailure({
       json: options.json,
       command: COMMAND,
       code: EXIT_CODES.USAGE,
-      error: { code: first.code, message: first.message, details: { errors: normalized.errors } },
-      data: options.json ? { options: normalized.options, errors: normalized.errors } : null,
+      error: {
+        severity: first.severity,
+        code: first.code,
+        path: first.path,
+        pointer: first.pointer,
+        message: first.message,
+        details: { errors },
+      },
+      data: options.json ? { options: normalized.options, errors } : null,
     });
   }
 
   const result = project({
     projectionId,
-    ir,
-    irDigest,
+    compiledWorkflow,
+    compiledWorkflowDigest,
     options: normalized.options,
     environment: {},
     assets: {},
@@ -145,14 +171,21 @@ export function run(argv) {
       json: options.json,
       command: COMMAND,
       code: EXIT_CODES.USAGE,
-      error: { code: first.code, message: first.message, details: { errors: result.errors } },
+      error: {
+        severity: first.severity,
+        code: first.code,
+        path: first.path,
+        pointer: first.pointer,
+        message: first.message,
+        details: { errors: result.errors },
+      },
       data: options.json ? result : null,
     });
   }
 
   const validation = validateResult(result, {
-    ir,
-    irDigest,
+    compiledWorkflow,
+    compiledWorkflowDigest,
     options: normalized.options,
     manifest: descriptor,
     environment: {},
@@ -172,11 +205,14 @@ export function run(argv) {
   }
 
   const data = summary(result);
-  if (options.out !== null) {
-    const root = resolve(options.out);
+  const destination = resultDir ?? options.out;
+  if (destination !== null) {
+    const root = resolve(destination);
+    const asResult = resultDir !== null;
+    const filesRoot = asResult ? join(root, 'files') : root;
     for (const file of result.files) {
-      const target = join(root, ...file.path.split('/'));
-      if (!isInside(root, target)) {
+      const target = join(filesRoot, ...file.path.split('/'));
+      if (!isInside(filesRoot, target)) {
         return emitFailure({
           json: options.json,
           command: COMMAND,
@@ -196,7 +232,22 @@ export function run(argv) {
         });
       }
     }
-    data.output = { files: result.files.length };
+    if (asResult) {
+      // The installer consumes exactly `projection-result.json` + `files/` +
+      // the compiled workflow it was projected from (`installer/cli.js --result`).
+      try {
+        atomicWriteFile(join(root, 'projection-result.json'), canonicalJson(result));
+        atomicWriteFile(join(root, 'workflow.compiled.json'), input.bytes);
+      } catch {
+        return emitFailure({
+          json: options.json,
+          command: COMMAND,
+          code: EXIT_CODES.USAGE,
+          error: { code: 'OUTPUT_UNWRITABLE', message: 'could not write the result metadata', details: null },
+        });
+      }
+    }
+    data.output = { kind: asResult ? 'result' : 'files', files: result.files.length };
   } else {
     data.output = null;
   }

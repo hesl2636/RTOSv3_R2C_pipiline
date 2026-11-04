@@ -1,5 +1,6 @@
 /**
- * ZIP container reader for `r2c.bundle/v1` (decision #65 §2, #67 §7.1/§10).
+ * ZIP container reader and deterministic in-memory writer for
+ * `hm2b.bundle/v2` (decision #65 §2, #67 §7.1/§10, ticket #92).
  *
  * Two explicit phases keep the contract "container checks before inflation"
  * true:
@@ -16,6 +17,7 @@
  * lets a host stop inflation early; hosts that ignore it are still bounded by
  * the post-inflation checks.
  */
+import { compareCodePoints } from '../core/code-point.js';
 import { makeDiagnostic, SEVERITY } from '../core/diagnostics.js';
 import { foldCase, MAX_PATH_BYTES, utf8Length } from '../core/paths.js';
 import { LIMITS, entryLimitFor } from './limits.js';
@@ -595,4 +597,110 @@ function checkLocalHeader(bytes, record) {
     return { ok: false, reason: 'local-header', message: 'entry data is out of bounds' };
   }
   return { ok: true, dataStart };
+}
+
+/* --------------------------------------------------------------------------
+ * In-memory writer
+ * ------------------------------------------------------------------------ */
+
+function writeU16(bytes, offset, value) {
+  bytes[offset] = value & 0xff;
+  bytes[offset + 1] = (value >>> 8) & 0xff;
+}
+
+function writeU32(bytes, offset, value) {
+  bytes[offset] = value & 0xff;
+  bytes[offset + 1] = (value >>> 8) & 0xff;
+  bytes[offset + 2] = (value >>> 16) & 0xff;
+  bytes[offset + 3] = (value >>> 24) & 0xff;
+}
+
+function asBytes(data) {
+  if (data instanceof Uint8Array) return data;
+  if (typeof data === 'string') return encoder.encode(data);
+  return new Uint8Array(data);
+}
+
+/**
+ * Build a store-only zip from `{path, data}` entries.
+ *
+ * Every byte the reader validates is produced here (local headers, central
+ * directory, EOCD) so a directory can be compiled through exactly the same
+ * container checks as an archive (#92). Entries are sorted by code point and
+ * carry no timestamps, which keeps the output deterministic.
+ */
+export function writeZip(entries) {
+  const files = [...entries]
+    .map((entry) => ({ name: entry.path, data: asBytes(entry.data) }))
+    .sort((left, right) => compareCodePoints(left.name, right.name));
+
+  const locals = [];
+  let offset = 0;
+  for (const file of files) {
+    const name = encoder.encode(file.name);
+    const crc = crc32(file.data);
+    const local = new Uint8Array(30 + name.length);
+    writeU32(local, 0, SIG_LOCAL);
+    writeU16(local, 4, 20);
+    writeU16(local, 6, FLAG_UTF8);
+    writeU16(local, 8, 0);
+    writeU16(local, 10, 0);
+    writeU16(local, 12, 0x0021);
+    writeU32(local, 14, crc);
+    writeU32(local, 18, file.data.length);
+    writeU32(local, 22, file.data.length);
+    writeU16(local, 26, name.length);
+    writeU16(local, 28, 0);
+    local.set(name, 30);
+    locals.push({ name, local, data: file.data, crc, offset });
+    offset += local.length + file.data.length;
+  }
+
+  const centralSize = locals.reduce((sum, file) => sum + 46 + file.name.length, 0);
+  const central = new Uint8Array(centralSize);
+  let cursor = 0;
+  for (const file of locals) {
+    writeU32(central, cursor, SIG_CENTRAL);
+    writeU16(central, cursor + 4, 20);
+    writeU16(central, cursor + 6, 20);
+    writeU16(central, cursor + 8, FLAG_UTF8);
+    writeU16(central, cursor + 10, 0);
+    writeU16(central, cursor + 12, 0);
+    writeU16(central, cursor + 14, 0x0021);
+    writeU32(central, cursor + 16, file.crc);
+    writeU32(central, cursor + 20, file.data.length);
+    writeU32(central, cursor + 24, file.data.length);
+    writeU16(central, cursor + 28, file.name.length);
+    writeU16(central, cursor + 30, 0);
+    writeU16(central, cursor + 32, 0);
+    writeU16(central, cursor + 34, 0);
+    writeU16(central, cursor + 36, 0);
+    writeU32(central, cursor + 38, 0);
+    writeU32(central, cursor + 42, file.offset);
+    central.set(file.name, cursor + 46);
+    cursor += 46 + file.name.length;
+  }
+
+  const eocd = new Uint8Array(22);
+  writeU32(eocd, 0, SIG_EOCD);
+  writeU16(eocd, 4, 0);
+  writeU16(eocd, 6, 0);
+  writeU16(eocd, 8, locals.length);
+  writeU16(eocd, 10, locals.length);
+  writeU32(eocd, 12, central.length);
+  writeU32(eocd, 16, offset);
+  writeU16(eocd, 20, 0);
+
+  const output = new Uint8Array(offset + central.length + eocd.length);
+  let position = 0;
+  for (const file of locals) {
+    output.set(file.local, position);
+    position += file.local.length;
+    output.set(file.data, position);
+    position += file.data.length;
+  }
+  output.set(central, position);
+  position += central.length;
+  output.set(eocd, position);
+  return output;
 }

@@ -1,7 +1,7 @@
 /**
  * #86: `submit` from the stable entry point, without a session id.
  *
- * With no `--session-id` / `R2C_SESSION_ID`, submit resolves the single
+ * With no `--session-id` / `HM2B_SESSION_ID`, submit resolves the single
  * running run. Exactly one is usable; zero or many is exit 2 with a stable
  * code and no writes (no state, no events, no gate command).
  */
@@ -22,9 +22,9 @@ import { fileURLToPath } from 'node:url';
 import { writeTwoStepProject } from './helpers/two-step.js';
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const BIN = join(REPO, 'runtime', 'r2c', 'engine', 'bin', 'r2c.js');
+const BIN = join(REPO, 'runtime', 'runner', 'engine', 'bin', 'hm2b.js');
 
-const GATED_TWO_STEP_YAML = `schema: r2c.workflow/v1
+const GATED_TWO_STEP_YAML = `schema: hm2b.workflow/v1
 id: workflow-two-step
 name: two-step
 version: 0.1.0
@@ -51,8 +51,8 @@ stages:
 `;
 
 function tempProject(t, { yaml } = {}) {
-  const root = mkdtempSync(join(tmpdir(), 'r2c-sessionless-project-'));
-  const outside = mkdtempSync(join(tmpdir(), 'r2c-sessionless-outside-'));
+  const root = mkdtempSync(join(tmpdir(), 'hm2b-sessionless-project-'));
+  const outside = mkdtempSync(join(tmpdir(), 'hm2b-sessionless-outside-'));
   t.after(() => {
     rmSync(root, { recursive: true, force: true });
     rmSync(outside, { recursive: true, force: true });
@@ -63,8 +63,8 @@ function tempProject(t, { yaml } = {}) {
 
 function cleanEnv() {
   const env = { ...process.env };
-  delete env.R2C_SESSION_ID;
-  delete env.R2C_PROJECT_ROOT;
+  delete env.HM2B_SESSION_ID;
+  delete env.HM2B_PROJECT_ROOT;
   delete env.DSH_SESSION_ID;
   return env;
 }
@@ -99,11 +99,11 @@ function startRun(t, project, extra = []) {
 }
 
 /**
- * Byte + path snapshot of `.r2c` (null when the directory does not exist).
+ * Byte + path snapshot of `.hm2b` (null when the directory does not exist).
  * Directory mtimes are ignored: lock files are created and removed by design.
  */
-function snapshotR2c(root) {
-  const base = join(root, '.r2c');
+function snapshotHm2b(root) {
+  const base = join(root, '.hm2b');
   if (!existsSync(base)) return null;
   const files = new Map();
   const walk = (dir) => {
@@ -122,7 +122,7 @@ function snapshotR2c(root) {
 
 function assertSnapshotEqual(before, after, label) {
   if (before === null) {
-    assert.equal(after, null, `${label}: .r2c/ must not be created`);
+    assert.equal(after, null, `${label}: .hm2b/ must not be created`);
     return;
   }
   assert.deepEqual(
@@ -150,7 +150,7 @@ test('session-less submit resolves the only running run and advances to the next
   assert.equal(submitted.envelope.step.id, 'step-b');
   assert.equal(submitted.envelope.step.status, 'active');
 
-  const state = readJson(join(project.root, '.r2c', 'runs', started.runId, 'state.json'));
+  const state = readJson(join(project.root, '.hm2b', 'runs', started.runId, 'state.json'));
   assert.equal(state.current_step_id, 'step-b');
   assert.equal(state.steps.find((step) => step.id === 'step-a').status, 'completed');
   assert.equal(state.steps.find((step) => step.id === 'step-b').status, 'active');
@@ -168,7 +168,7 @@ test('session-less submit without --step advances the current step', (t) => {
 
 test('session-less submit with no running run exits 2 and writes nothing', (t) => {
   const project = tempProject(t);
-  const before = snapshotR2c(project.root);
+  const before = snapshotHm2b(project.root);
   assert.equal(before, null);
 
   const submitted = cliJson(
@@ -178,7 +178,7 @@ test('session-less submit with no running run exits 2 and writes nothing', (t) =
   assert.equal(submitted.result.status, 2, submitted.result.stderr);
   assert.equal(submitted.envelope.ok, false);
   assert.equal(submitted.envelope.error.code, 'NO_ACTIVE_RUN');
-  assertSnapshotEqual(before, snapshotR2c(project.root), 'no running run');
+  assertSnapshotEqual(before, snapshotHm2b(project.root), 'no running run');
 });
 
 test('session-less submit with two running runs exits 2, lists candidates and writes nothing', (t) => {
@@ -193,7 +193,7 @@ test('session-less submit with two running runs exits 2, lists candidates and wr
   const second = startRun(t, project, ['--session-id', 'session-beta']);
   assert.notEqual(first.runId, second.runId);
 
-  const before = snapshotR2c(project.root);
+  const before = snapshotHm2b(project.root);
   const submitted = cliJson(
     ['submit', '--project-root', project.root, '--step', 'step-a'],
     { cwd: project.root },
@@ -205,7 +205,7 @@ test('session-less submit with two running runs exits 2, lists candidates and wr
     [first.runId, second.runId].sort(),
   );
   assert.equal(existsSync(join(project.root, 'gate.log')), false, 'no gate command may run');
-  assertSnapshotEqual(before, snapshotR2c(project.root), 'two running runs');
+  assertSnapshotEqual(before, snapshotHm2b(project.root), 'two running runs');
 });
 
 test('explicit --session-id keeps NO_ACTIVE_RUN and STEP_NOT_ACTIVE behaviour', (t) => {
@@ -219,7 +219,7 @@ test('explicit --session-id keeps NO_ACTIVE_RUN and STEP_NOT_ACTIVE behaviour', 
   assert.equal(noRun.envelope.error.code, 'NO_ACTIVE_RUN');
 
   const started = startRun(t, project, ['--session-id', 'session-x']);
-  const before = snapshotR2c(project.root);
+  const before = snapshotHm2b(project.root);
 
   const wrongStep = cliJson(
     ['submit', '--project-root', project.root, '--session-id', 'session-x', '--step', 'step-b'],
@@ -227,7 +227,7 @@ test('explicit --session-id keeps NO_ACTIVE_RUN and STEP_NOT_ACTIVE behaviour', 
   );
   assert.equal(wrongStep.result.status, 2);
   assert.equal(wrongStep.envelope.error.code, 'STEP_NOT_ACTIVE');
-  assertSnapshotEqual(before, snapshotR2c(project.root), 'STEP_NOT_ACTIVE');
+  assertSnapshotEqual(before, snapshotHm2b(project.root), 'STEP_NOT_ACTIVE');
 
   const submitted = cliJson(
     ['submit', '--project-root', project.root, '--session-id', 'session-x', '--step', 'step-a'],

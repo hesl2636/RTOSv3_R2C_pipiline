@@ -31,8 +31,8 @@ test('package.json exposes test/bundle/release scripts and stays private', () =>
   assert.equal(pkg.private, true);
   assert.equal('files' in pkg, false, 'npm files whitelist must stay removed');
   assert.deepEqual(pkg.bin, {
-    r2c: 'runtime/r2c/engine/bin/r2c.js',
-    'r2c-assembler': 'bin/r2c-assembler.js',
+    hm2b: 'runtime/runner/engine/bin/hm2b.js',
+    'hm2b-assembler': 'bin/hm2b-assembler.js',
   });
 });
 
@@ -59,7 +59,7 @@ test('ci runs the node matrix, tests, bundle check and release gate', () => {
   assert.match(ci, /node scripts\/build-bundle\.mjs examples\/rtosv3\/bundle --check/);
   assert.match(ci, /node scripts\/release\.mjs --check/);
   assert.match(ci, /git ls-files 'examples\/\*\/dist\/\*\.zip'/);
-  assert.doesNotMatch(ci, /pack\/|adapters\/|bin\/r2c\.js|acceptance/);
+  assert.doesNotMatch(ci, /pack\/|adapters\/|(?:^|\s)bin\/r2c\.js|(?:^|\s)bin\/hm2b\.js|acceptance/);
 });
 
 test('release publishes bundle tags only, through the bundle channel', () => {

@@ -17,8 +17,8 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const SAMPLE = join(ROOT, 'examples', 'rtosv3', 'dist', 'bundle-rtosv3-drvport-v1.0.0.zip');
-const SAMPLE_SHA256 = 'c22064539aa189b4d9345b1d39b148967a450584badd2593dcf47c0c5b75a13e';
-const IR_DIGEST = '8a2a57593939f91117d57f9ca34c56b2fc631f6837168ef74032daa95202d395';
+const SAMPLE_SHA256 = 'ff1f3004c618be9d5ee6b090e0d635f6a6c7cb49a8c22e188cc11206bbe37cd4';
+const COMPILED_WORKFLOW_DIGEST = '518643ab9c92d270a66bd4545cba660d0511243070c3479234edec3225b6d23c';
 
 const delay = (ms) => new Promise((resolveDelay) => setTimeout(resolveDelay, ms));
 
@@ -123,7 +123,7 @@ function postHeaders(server, csrf, extra = {}) {
   return {
     Origin: server.base,
     'Sec-Fetch-Site': 'same-origin',
-    'X-R2C-CSRF': csrf,
+    'X-HM2B-CSRF': csrf,
     ...extra,
   };
 }
@@ -135,7 +135,7 @@ function cliJson(args) {
   return JSON.parse(lines[lines.length - 1]);
 }
 
-test('upload returns the CLI report field-by-field and the frozen IR', async (t) => {
+test('upload returns the CLI report field-by-field and the frozen compiled workflow', async (t) => {
   const server = await startServer(t);
   const { csrf } = await session(server);
   const zip = readFileSync(SAMPLE);
@@ -154,13 +154,14 @@ test('upload returns the CLI report field-by-field and the frozen IR', async (t)
   assert.equal(response.json.ok, true);
   const report = response.json.data.report;
 
-  const work = mkdtempSync(join(tmpdir(), 'r2c-web-test-'));
+  const work = mkdtempSync(join(tmpdir(), 'hm2b-web-test-'));
   t.after(() => rmSync(work, { recursive: true, force: true }));
   const zipPath = join(work, 'bundle.zip');
   copyFileSync(SAMPLE, zipPath);
 
-  const cliReport = cliJson(['bin/r2c-assembler.js', 'bundle', 'validate', zipPath, '--json']).data;
+  const cliReport = cliJson(['bin/hm2b-assembler.js', 'bundle', 'validate', zipPath, '--json']).data;
   assert.deepEqual(report, cliReport);
+  assert.equal(report.schema, 'hm2b.bundle/v2');
   assert.equal(report.artifact.sha256, SAMPLE_SHA256);
   assert.equal(report.counts.stages, 4);
   assert.equal(report.counts.skills, 35);
@@ -169,11 +170,13 @@ test('upload returns the CLI report field-by-field and the frozen IR', async (t)
 
   const outDir = join(work, 'out');
   mkdirSync(outDir);
-  const cliCompile = cliJson(['bin/r2c-assembler.js', 'compile', zipPath, '--out', outDir, '--json']).data;
-  assert.equal(response.json.data.ir.digest, cliCompile.ir.sha256);
-  assert.equal(response.json.data.ir.digest, IR_DIGEST);
-  assert.equal(response.json.data.ir.bytes, 58827);
-  assert.ok(readFileSync(join(outDir, 'workflow.ir.json')).equals(Buffer.from(response.json.data.ir.data, 'base64')));
+  const cliCompile = cliJson(['bin/hm2b-assembler.js', 'compile', zipPath, '--out', outDir, '--json']).data;
+  assert.equal(cliCompile.schema, 'hm2b.bundle/v2');
+  assert.equal(response.json.data.compiledWorkflow.schema, 'hm2b.compiled-workflow/v2');
+  assert.equal(response.json.data.compiledWorkflow.digest, cliCompile.compiledWorkflow.sha256);
+  assert.equal(response.json.data.compiledWorkflow.digest, COMPILED_WORKFLOW_DIGEST);
+  assert.equal(response.json.data.compiledWorkflow.bytes, 58919);
+  assert.ok(readFileSync(join(outDir, 'workflow.compiled.json')).equals(Buffer.from(response.json.data.compiledWorkflow.data, 'base64')));
 });
 
 test('transport limits: 411 without Content-Length, 413 above the upload cap', async (t) => {
@@ -185,7 +188,7 @@ test('transport limits: 411 without Content-Length, 413 above the upload cap', a
     `Host: 127.0.0.1:${server.port}`,
     `Origin: ${server.base}`,
     'Sec-Fetch-Site: same-origin',
-    `X-R2C-CSRF: ${csrf}`,
+    `X-HM2B-CSRF: ${csrf}`,
     'Content-Type: application/zip',
     'Connection: close',
     '',
@@ -199,7 +202,7 @@ test('transport limits: 411 without Content-Length, 413 above the upload cap', a
     `Host: 127.0.0.1:${server.port}`,
     `Origin: ${server.base}`,
     'Sec-Fetch-Site: same-origin',
-    `X-R2C-CSRF: ${csrf}`,
+    `X-HM2B-CSRF: ${csrf}`,
     'Content-Type: application/zip',
     `Content-Length: ${8 * 1024 * 1024 + 8 * 1024}`,
     'Connection: close',
@@ -284,7 +287,7 @@ test('request security envelope rejects bad Host, Origin, fetch site, CSRF and O
     port: server.port,
     method: 'POST',
     path: '/api/validate',
-    headers: { ...body, 'X-R2C-CSRF': 'wrong-token' },
+    headers: { ...body, 'X-HM2B-CSRF': 'wrong-token' },
     body: zip,
   });
   assert.equal(noCsrf.status, 403);
@@ -348,7 +351,7 @@ test('static whitelist denies traversal, source trees and serve.mjs', async (t) 
     '/web/%252e%252e/package.json',
     '/web/%2Fetc',
     '/web//app.js',
-    '/runtime/r2c/engine/index.js',
+    '/runtime/runner/engine/bin/hm2b.js',
     '/api/unknown',
   ];
   for (const path of denied) {
@@ -358,7 +361,7 @@ test('static whitelist denies traversal, source trees and serve.mjs', async (t) 
 });
 
 test('global rate limit returns 429 with Retry-After (env override)', async (t) => {
-  const server = await startServer(t, { R2C_WEB_RATE_LIMIT: '3' });
+  const server = await startServer(t, { HM2B_WEB_RATE_LIMIT: '3' });
   const statuses = [];
   let last = null;
   for (let index = 0; index < 4; index += 1) {
@@ -371,7 +374,7 @@ test('global rate limit returns 429 with Retry-After (env override)', async (t) 
 });
 
 test('temp root is created 0700 and removed on shutdown; stale sessions are swept', async (t) => {
-  const stale = join(tmpdir(), `r2c-web-99999999-${Date.now()}`);
+  const stale = join(tmpdir(), `hm2b-web-99999999-${Date.now()}`);
   mkdirSync(stale, { recursive: true });
   writeFileSync(join(stale, 'session.json'), `${JSON.stringify({ pid: 99999999, startedAt: Date.now() })}\n`);
   t.after(() => rmSync(stale, { recursive: true, force: true }));
@@ -380,7 +383,7 @@ test('temp root is created 0700 and removed on shutdown; stale sessions are swep
   await delay(200);
   assert.equal(existsSync(stale), false, 'stale marked session directory should be swept');
 
-  const own = readdirSync(tmpdir()).filter((name) => name.startsWith(`r2c-web-${server.child.pid}-`));
+  const own = readdirSync(tmpdir()).filter((name) => name.startsWith(`hm2b-web-${server.child.pid}-`));
   assert.equal(own.length, 1);
   const ownPath = join(tmpdir(), own[0]);
 

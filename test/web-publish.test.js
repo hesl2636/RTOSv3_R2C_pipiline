@@ -50,12 +50,12 @@ const BUNDLE = 'rtosv3-drvport';
 const VERSION = '1.0.0';
 const TAG = 'bundle-rtosv3-drvport-v1.0.0';
 const TOKEN = 'ghp_web_publish_secret_110a';
-const SAMPLE_SHA256 = 'c22064539aa189b4d9345b1d39b148967a450584badd2593dcf47c0c5b75a13e';
-const IR_DIGEST = '8a2a57593939f91117d57f9ca34c56b2fc631f6837168ef74032daa95202d395';
-const R2C_FILES = 45;
+const SAMPLE_SHA256 = 'ff1f3004c618be9d5ee6b090e0d635f6a6c7cb49a8c22e188cc11206bbe37cd4';
+const COMPILED_WORKFLOW_DIGEST = '518643ab9c92d270a66bd4545cba660d0511243070c3479234edec3225b6d23c';
+const RUNNER_FILES = 45;
 
 function tempDir(t, prefix) {
-  const dir = mkdtempSync(join(tmpdir(), `r2c-web-publish-${prefix}-`));
+  const dir = mkdtempSync(join(tmpdir(), `hm2b-web-publish-${prefix}-`));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   return dir;
 }
@@ -64,9 +64,11 @@ function compiled() {
   const bytes = readFileSync(SAMPLE);
   const result = compileBundle(new Uint8Array(bytes), { inflateRaw, sha256: sha256Hex }, { path: 'bundle.zip' });
   assert.equal(result.ok, true, JSON.stringify(result.report?.errors));
+  const compiledWorkflow = JSON.parse(Buffer.from(result.compiledWorkflowBytes).toString('utf8'));
+  assert.equal(compiledWorkflow.schema, 'hm2b.compiled-workflow/v2');
   return {
-    ir: JSON.parse(Buffer.from(result.irBytes).toString('utf8')),
-    irBytes: Buffer.from(result.irBytes),
+    compiledWorkflow,
+    compiledWorkflowBytes: Buffer.from(result.compiledWorkflowBytes),
     digest: result.digest,
   };
 }
@@ -121,7 +123,7 @@ const PUBLISH_ENV = (fixture, extra = {}) => ({
   GH_TOKEN: TOKEN,
   GITHUB_TOKEN: '',
   GH_REPO: REPO,
-  R2C_GITHUB_API: fixture.origin,
+  HM2B_GITHUB_API: fixture.origin,
   ...extra,
 });
 
@@ -130,7 +132,7 @@ const PUBLISH_ENV = (fixture, extra = {}) => ({
 /* -------------------------------------------------------------------------- */
 
 test('no token: the session says why, the API answers 403 and the button stays disabled', async (t) => {
-  const server = await startWebServer(t, { GH_TOKEN: '', GITHUB_TOKEN: '', GH_REPO: REPO });
+  const server = await startWebServer(t, { GH_TOKEN: '', GITHUB_TOKEN: '', GH_REPO: REPO, HM2B_WEB_GH_AUTH: 'off' });
   const session = await sessionOf(server);
   assert.deepEqual(session.publish, { enabled: false, reason: 'no-token', repo: REPO });
   assert.equal(JSON.stringify(session).includes('ghp_'), false);
@@ -164,7 +166,7 @@ test('no repository: publishing is disabled with its own reason before any child
     GH_TOKEN: TOKEN,
     GITHUB_TOKEN: '',
     GH_REPO: 'not a repo',
-    R2C_GITHUB_API: 'http://127.0.0.1:9',
+    HM2B_GITHUB_API: 'http://127.0.0.1:9',
   });
   const session = await sessionOf(server);
   assert.deepEqual(session.publish, { enabled: false, reason: 'no-repo', repo: null });
@@ -188,22 +190,22 @@ test('a client/server digest mismatch disables publishing without spawning the c
     GH_TOKEN: TOKEN,
     GITHUB_TOKEN: '',
     GH_REPO: REPO,
-    R2C_GITHUB_API: 'http://127.0.0.1:9',
-    R2C_WEB_PUBLISH_SCRIPT: stub,
+    HM2B_GITHUB_API: 'http://127.0.0.1:9',
+    HM2B_WEB_PUBLISH_SCRIPT: stub,
   });
   const session = await sessionOf(server);
   const buildData = await canonicalBuild(server, session.csrf);
 
-  const wrongIr = await publishRequest(server, session.csrf, buildData.buildId, {
+  const wrongCompiledWorkflow = await publishRequest(server, session.csrf, buildData.buildId, {
     confirmTag: TAG,
-    irDigest: 'f'.repeat(64),
+    compiledWorkflowDigest: 'f'.repeat(64),
   });
-  assert.equal(wrongIr.status, 409);
-  assert.equal(wrongIr.json.error.code, 'WEB_CLIENT_SERVER_MISMATCH');
+  assert.equal(wrongCompiledWorkflow.status, 409);
+  assert.equal(wrongCompiledWorkflow.json.error.code, 'WEB_CLIENT_SERVER_MISMATCH');
 
   const wrongResult = await publishRequest(server, session.csrf, buildData.buildId, {
     confirmTag: TAG,
-    resultDigests: { r2c: 'e'.repeat(64) },
+    resultDigests: { runner: 'e'.repeat(64) },
   });
   assert.equal(wrongResult.status, 409);
   assert.equal(wrongResult.json.error.code, 'WEB_CLIENT_SERVER_MISMATCH');
@@ -213,7 +215,7 @@ test('a client/server digest mismatch disables publishing without spawning the c
   assert.equal(wrongTag.json.error.code, 'WEB_TAG_MISMATCH');
 
   const badCsrf = await jsonRequest(server, session.csrf, `/api/builds/${buildData.buildId}/publish`, { confirmTag: TAG }, {
-    'X-R2C-CSRF': 'wrong',
+    'X-HM2B-CSRF': 'wrong',
   });
   assert.equal(badCsrf.status, 403);
   assert.equal(badCsrf.json.error.code, 'WEB_CSRF_INVALID');
@@ -222,11 +224,11 @@ test('a client/server digest mismatch disables publishing without spawning the c
   assert.equal(unknownBuild.status, 404);
   assert.equal(unknownBuild.json.error.code, 'WEB_BUILD_UNKNOWN');
 
-  const { ir } = compiled();
+  const { compiledWorkflow } = compiled();
   const customUpload = await upload(server, session.csrf);
   const custom = await build(server, session.csrf, {
     uploadId: customUpload.uploadId,
-    options: { r2c: { stageOrder: ir.stages.map((stage) => stage.id).reverse() } },
+    options: { runner: { stageOrder: compiledWorkflow.stages.map((stage) => stage.id).reverse() } },
   });
   assert.equal(custom.status, 200, JSON.stringify(custom.json));
   assert.equal(custom.json.data.publishable, false);
@@ -287,8 +289,8 @@ test('the publish child keeps the token in env only, gets --out inside the sessi
     GH_TOKEN: TOKEN,
     GITHUB_TOKEN: '',
     GH_REPO: REPO,
-    R2C_GITHUB_API: 'http://127.0.0.1:9',
-    R2C_WEB_PUBLISH_SCRIPT: stub,
+    HM2B_GITHUB_API: 'http://127.0.0.1:9',
+    HM2B_WEB_PUBLISH_SCRIPT: stub,
   });
   const session = await sessionOf(server);
   const buildData = await canonicalBuild(server, session.csrf);
@@ -308,7 +310,7 @@ test('the publish child keeps the token in env only, gets --out inside the sessi
   const outIndex = child.argv.indexOf('--out');
   assert.ok(outIndex > 0, 'the child must be given --out');
   const out = resolve(child.argv[outIndex + 1]);
-  assert.ok(out.includes(`${sep}r2c-web-`) || /r2c-web-[^\\/]+/.test(out), `--out must be in the session temp root: ${out}`);
+  assert.ok(out.includes(`${sep}hm2b-web-`) || /hm2b-web-[^\\/]+/.test(out), `--out must be in the session temp root: ${out}`);
   assert.equal(child.argv.join(' ').includes(TOKEN), false, 'the token must never cross argv');
   assert.equal(JSON.stringify(job).includes(TOKEN), false, 'the job payload must not leak the token');
   assert.equal(`${server.stdout()}\n${server.stderr()}`.includes(TOKEN), false, 'the server log must not leak the token');
@@ -327,8 +329,8 @@ test('the publish child keeps the token in env only, gets --out inside the sessi
     GH_TOKEN: TOKEN,
     GITHUB_TOKEN: '',
     GH_REPO: REPO,
-    R2C_GITHUB_API: 'http://127.0.0.1:9',
-    R2C_WEB_PUBLISH_SCRIPT: failing,
+    HM2B_GITHUB_API: 'http://127.0.0.1:9',
+    HM2B_WEB_PUBLISH_SCRIPT: failing,
   });
   const secondSession = await sessionOf(second);
   const secondBuild = await canonicalBuild(second, secondSession.csrf);
@@ -352,9 +354,9 @@ test('a hung publish child is killed after its budget and maps to WEB_CHILD_TIME
     GH_TOKEN: TOKEN,
     GITHUB_TOKEN: '',
     GH_REPO: REPO,
-    R2C_GITHUB_API: 'http://127.0.0.1:9',
-    R2C_WEB_PUBLISH_SCRIPT: stub,
-    R2C_WEB_PUBLISH_TIMEOUT_MS: '400',
+    HM2B_GITHUB_API: 'http://127.0.0.1:9',
+    HM2B_WEB_PUBLISH_SCRIPT: stub,
+    HM2B_WEB_PUBLISH_TIMEOUT_MS: '400',
   });
   const session = await sessionOf(server);
   const buildData = await canonicalBuild(server, session.csrf);
@@ -376,9 +378,9 @@ test('publish is serialised (concurrency 1) and limited to 10 per hour with Retr
     GH_TOKEN: TOKEN,
     GITHUB_TOKEN: '',
     GH_REPO: REPO,
-    R2C_GITHUB_API: 'http://127.0.0.1:9',
-    R2C_WEB_PUBLISH_SCRIPT: stub,
-    R2C_WEB_PUBLISH_TIMEOUT_MS: '600',
+    HM2B_GITHUB_API: 'http://127.0.0.1:9',
+    HM2B_WEB_PUBLISH_SCRIPT: stub,
+    HM2B_WEB_PUBLISH_TIMEOUT_MS: '600',
   });
   const session = await sessionOf(server);
   const buildData = await canonicalBuild(server, session.csrf);
@@ -426,7 +428,7 @@ test('publish walks draft → upload → verify → publish against the fixture 
 
   const accepted = await publishRequest(server, session.csrf, buildData.buildId, {
     confirmTag: TAG,
-    irDigest: buildData.ir.digest,
+    compiledWorkflowDigest: buildData.compiledWorkflow.digest,
     resultDigests: Object.fromEntries(buildData.projections.map((projection) => [projection.id, projection.digest])),
   });
   assert.equal(accepted.status, 202, JSON.stringify(accepted.json));
@@ -461,10 +463,10 @@ test('publish walks draft → upload → verify → publish against the fixture 
 
   // The generated commands are the frozen install shape (§13/§75 §9).
   const commands = job.result.install.commands;
-  const r2cCommand = commands.find((item) => item.projection === 'r2c');
+  const runnerCommand = commands.find((item) => item.projection === 'runner');
   assert.equal(
-    r2cCommand.command,
-    `node .r2c/bootstrap/install.mjs --bundle ${BUNDLE} --version ${VERSION} --projection r2c --project .`,
+    runnerCommand.command,
+    `node .hm2b/release/${TAG}/install.mjs --bundle ${BUNDLE} --version ${VERSION} --projection runner --release-base .hm2b/release --project .`,
   );
   assert.ok(commands.some((item) => item.projection === 'agent-native' && item.target === 'claude-code'));
 
@@ -609,19 +611,19 @@ test('end-to-end: publish once, take the generated command and install the Relea
   assert.equal(job.state, 'PUBLISHED', JSON.stringify(job));
 
   // 1. The generated command is the release form and names this release.
-  const command = job.result.install.commands.find((item) => item.projection === 'r2c').command;
+  const command = job.result.install.commands.find((item) => item.projection === 'runner').command;
   const tokens = command.split(' ');
   assert.equal(tokens[0], 'node');
-  assert.equal(tokens[1], '.r2c/bootstrap/install.mjs');
+  assert.equal(tokens[1], `.hm2b/release/${TAG}/install.mjs`);
   const flag = (name) => tokens[tokens.indexOf(name) + 1];
   assert.equal(flag('--bundle'), BUNDLE);
   assert.equal(flag('--version'), VERSION);
-  assert.equal(flag('--projection'), 'r2c');
+  assert.equal(flag('--projection'), 'runner');
   assert.equal(flag('--project'), '.');
-  assert.equal(tokens.includes('--release-base'), false, 'a published release needs no local mirror');
+  assert.equal(tokens.includes('--release-base'), true, 'the one-click command uses the local gh mirror');
 
   // 2. Every published byte is verified against the Release manifest.
-  const payloadName = `r2c-payload-${BUNDLE}-v${VERSION}.tgz`;
+  const payloadName = `hm2b-payload-${BUNDLE}-v${VERSION}.tgz`;
   const downloaded = new Map();
   for (const asset of buildData.artifacts) {
     const response = await downloadFixtureAsset(fixture, asset.name);
@@ -636,30 +638,30 @@ test('end-to-end: publish once, take the generated command and install the Relea
   }
 
   // 3. The payload archive matches its manifest and the projection result.
-  const { ir, digest } = compiled();
-  assert.equal(digest, IR_DIGEST);
-  const manifest = getProjection('r2c');
-  const normalized = normalizeOptions({ projectionId: 'r2c', ir, irDigest: digest, raw: null, manifest });
+  const { compiledWorkflow, digest } = compiled();
+  assert.equal(digest, COMPILED_WORKFLOW_DIGEST);
+  const manifest = getProjection('runner');
+  const normalized = normalizeOptions({ projectionId: 'runner', compiledWorkflow, compiledWorkflowDigest: digest, raw: null, manifest });
   assert.equal(normalized.ok, true, JSON.stringify(normalized.errors));
   const result = project({
-    projectionId: 'r2c',
-    ir,
-    irDigest: digest,
+    projectionId: 'runner',
+    compiledWorkflow,
+    compiledWorkflowDigest: digest,
     options: normalized.options,
     environment: { engineVersion: buildData.engineVersion },
     assets: {},
   });
   assert.equal(result.ok, true, JSON.stringify(result.errors));
   const checked = validateResult(result, {
-    ir,
-    irDigest: digest,
+    compiledWorkflow,
+    compiledWorkflowDigest: digest,
     manifest,
     options: normalized.options,
     environment: { engineVersion: buildData.engineVersion },
     assets: {},
   });
   assert.equal(checked.ok, true, JSON.stringify(checked.diagnostics));
-  assert.equal(result.files.length, R2C_FILES);
+  assert.equal(result.files.length, RUNNER_FILES);
 
   const payload = readReleaseTarGz(downloaded.get(payloadName));
   assert.deepEqual(payload.problems, []);
@@ -667,7 +669,7 @@ test('end-to-end: publish once, take the generated command and install the Relea
   assert.ok(payloadManifestEntry, 'the payload has a manifest');
   const payloadManifest = JSON.parse(Buffer.from(payloadManifestEntry.data).toString('utf8'));
   assert.deepEqual(payloadManifest.bundle, { id: BUNDLE, version: VERSION });
-  assert.equal(payloadManifest.ir.digest, digest);
+  assert.equal(payloadManifest.compiledWorkflow.digest, digest);
   assert.equal(payloadManifest.files.length, result.files.length);
   for (const file of result.files) {
     const entry = payload.entries.find((candidate) => candidate.path === `files/${file.path}`);
@@ -680,24 +682,26 @@ test('end-to-end: publish once, take the generated command and install the Relea
   }
 
   // 4. Take the generated command, fetch the frozen bootstrap exactly as the
-  //    curl step would, and run it from the target project root. `--release-base`
-  //    is the loopback mirror of GitHub (decision #75 §9.3); everything else is
-  //    verbatim from the published command.
+  //    gh step would, and run it from the target project root. The local mirror
+  //    is repointed at the loopback GitHub fixture; everything else is verbatim.
   const projectRoot = tempDir(t, 'project');
-  const bootstrap = join(projectRoot, '.r2c', 'bootstrap', 'install.mjs');
+  const bootstrap = join(projectRoot, ...tokens[1].split('/'));
   mkdirSync(dirname(bootstrap), { recursive: true });
   writeFileSync(bootstrap, downloaded.get('install.mjs'));
 
-  const installArgs = tokens.slice(2).concat(['--release-base', `${fixture.origin}/download`]);
+  const installArgs = tokens.slice(2);
+  installArgs[installArgs.indexOf('--release-base') + 1] = `${fixture.origin}/download`;
   const env = { ...process.env };
   for (const key of [
+    'HM2B_SESSION_ID', 'HM2B_PROJECT_ROOT', 'HM2B_RELEASE_BASE', 'HM2B_HOME', 'HM2B_GITHUB_API',
+    // Frozen legacy names still read by the bootstrap/engine fallbacks.
     'R2C_SESSION_ID', 'R2C_PROJECT_ROOT', 'R2C_PLUGIN_SOURCE', 'R2C_RELEASE_BASE', 'R2C_ENGINE_HOME',
-    'R2C_HOME', 'GH_TOKEN', 'GITHUB_TOKEN', 'DSH_SESSION_ID', 'DSH_HOME', 'R2C_GITHUB_API',
+    'R2C_HOME', 'GH_TOKEN', 'GITHUB_TOKEN', 'DSH_SESSION_ID', 'DSH_HOME',
   ]) {
     delete env[key];
   }
   const installed = await new Promise((resolveInstall, rejectInstall) => {
-    const child = spawn(process.execPath, [join('.r2c', 'bootstrap', 'install.mjs'), ...installArgs], {
+    const child = spawn(process.execPath, [tokens[1], ...installArgs], {
       cwd: projectRoot,
       env,
       windowsHide: true,
@@ -712,12 +716,12 @@ test('end-to-end: publish once, take the generated command and install the Relea
   assert.equal(installed.status, 0, `${installed.stdout}\n${installed.stderr}`);
 
   // 5. Every receipt hash recomputes, and the installed bytes equal the payload.
-  const stored = readReceipt(projectRoot, 'r2c', BUNDLE);
+  const stored = readReceipt(projectRoot, 'runner', BUNDLE);
   assert.ok(stored, 'the installer wrote a receipt');
   const receipt = stored.receipt;
   assert.equal(receipt.bundle.id, BUNDLE);
   assert.equal(receipt.bundle.version, VERSION);
-  assert.equal(receipt.ir.digest, digest);
+  assert.equal(receipt.compiledWorkflow.digest, digest);
   const payloadByPath = new Map(payloadManifest.files.map((file) => [file.path, file]));
   for (const file of receipt.files) {
     const absolute = join(projectRoot, ...file.path.split('/'));
@@ -739,7 +743,7 @@ test('end-to-end: publish once, take the generated command and install the Relea
 
   // The runtime came from the same Release and the installer wrote only under
   // the project root.
-  assert.ok(existsSync(join(projectRoot, '.r2c', 'bin', 'r2c.js')), 'the release engine and launcher were installed');
+  assert.ok(existsSync(join(projectRoot, '.hm2b', 'bin', 'hm2b.js')), 'the release engine and launcher were installed');
   const entries = readdirSync(projectRoot).sort();
-  assert.ok(entries.includes('.r2c'), 'the installer wrote its own state under the project root');
+  assert.ok(entries.includes('.hm2b'), 'the installer wrote its own state under the project root');
 });

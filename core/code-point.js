@@ -2,7 +2,7 @@
  * Unicode code-point helpers.
  *
  * JSON Schema `maxLength` counts code points, while `String#length` counts
- * UTF-16 code units. Every length limit in the bundle/IR contracts is defined
+ * UTF-16 code units. Every length limit in the bundle/compiled workflow contracts is defined
  * in code points, so all validators must use these helpers; otherwise CJK
  * extension characters and emoji would validate differently in Node and in
  * the browser.

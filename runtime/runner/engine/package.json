@@ -1,0 +1,16 @@
+{
+  "name": "hm2b-runner",
+  "version": "0.1.0",
+  "description": "Declarative workflow runner for the hm2B driver port pipeline",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "hm2b": "bin/hm2b.js"
+  },
+  "engines": {
+    "node": ">=22.19.0 <23 || >=24.0.0"
+  },
+  "dependencies": {
+    "yaml": "^2.4.0"
+  }
+}

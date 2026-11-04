@@ -9,11 +9,10 @@
 import { existsSync, rmSync, statSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { canonicalJson } from '../core/canonical-json.js';
-import { comparePaths } from '../core/paths.js';
 import { getProjection } from '../projection/registry.js';
 import { validateResult } from '../projection/validate-result.js';
 import { checkConflicts } from './conflict.js';
-import { checkR2cRoot, duplicateBackendWarnings } from './coexist.js';
+import { checkRunnerRoot, duplicateBackendWarnings } from './coexist.js';
 import {
   applyLegacyDeletions,
   detectLegacyInstall,
@@ -24,9 +23,10 @@ import {
 } from './legacy.js';
 import {
   ancestorDirs,
-  irPath as irRelPath,
+  compiledWorkflowPath as compiledWorkflowRelPath,
   isInstallPath,
   projectPath,
+  pruneCandidates,
   receiptPath as receiptRelPath,
 } from './paths.js';
 import {
@@ -47,19 +47,18 @@ import {
 } from './transaction.js';
 import { diffFileSets, previousRecord } from './upgrade.js';
 import {
+  computeCreatedDirs,
   ensureProjectDirs,
   lstatOrNull,
   pruneEmptyDir,
   sha256File,
   sha256Hex,
   symlinkComponent,
+  timestampSlug,
   unlinkIfExists,
   writeAbsoluteAtomic,
   writeFileAtomic,
 } from './util.js';
-
-
-const TIMESTAMP_SAFE = /[:.]/g;
 
 function failure(code, message, details = {}) {
   return { ok: false, code, message, ...details };
@@ -67,10 +66,6 @@ function failure(code, message, details = {}) {
 
 function iso(clock) {
   return clock().toISOString();
-}
-
-function timestampSlug(clock) {
-  return iso(clock).replace(TIMESTAMP_SAFE, '-');
 }
 
 function optionsDigest(options) {
@@ -87,7 +82,7 @@ export function receiptOptions(result) {
     digest: optionsDigest({
       schema: echo.schema,
       projection: echo.projection,
-      ir: echo.ir,
+      compiledWorkflow: echo.compiledWorkflow,
       stageOrder: echo.stageOrder ?? null,
       skills: echo.skills ?? null,
       targets: echo.targets ?? null,
@@ -124,13 +119,13 @@ function incomingFiles(result, owned = null) {
   return files;
 }
 
-function sameIdentity(receipt, { projection, bundleId, version, irDigest: digest, irPath }) {
+function sameIdentity(receipt, { projection, bundleId, version, compiledWorkflowDigest: digest, compiledWorkflowPath }) {
   return receipt.projection?.id === projection
     && receipt.projection?.version === version.projection
     && receipt.bundle?.id === bundleId
     && receipt.bundle?.version === version.bundle
-    && receipt.ir?.digest === digest
-    && receipt.ir?.path === irPath;
+    && receipt.compiledWorkflow?.digest === digest
+    && receipt.compiledWorkflow?.path === compiledWorkflowPath;
 }
 
 function sameOptions(receipt, options) {
@@ -182,6 +177,37 @@ function loadReceipts(projectRoot, ownRel) {
   return { own, others: receipts.filter((item) => item.path !== ownRel) };
 }
 
+/**
+ * The compiled workflow copy the replaced receipt still owns. It is removable only when it is
+ * the exact installer path for the replaced version, is a project-relative
+ * plain file, differs from the compiled workflow this run writes, and no other receipt still
+ * points at it.
+ */
+function supersededCompiledWorkflow(projectRoot, { previous, others, compiledWorkflowRel, bundleId }) {
+  const previousCompiledWorkflow = previous?.receipt?.compiledWorkflow?.path;
+  const previousVersion = previous?.receipt?.bundle?.version;
+  if (typeof previousCompiledWorkflow !== 'string' || typeof previousVersion !== 'string') return null;
+  if (previousCompiledWorkflow !== compiledWorkflowRelPath(bundleId, previousVersion)) return null;
+  if (previousCompiledWorkflow === compiledWorkflowRel) return null;
+  if (!isInstallPath(previousCompiledWorkflow) || projectPath(projectRoot, previousCompiledWorkflow) === null) return null;
+  if (others.some((item) => item.receipt?.compiledWorkflow?.path === previousCompiledWorkflow)) return null;
+  if (symlinkComponent(projectRoot, previousCompiledWorkflow) !== null) return null;
+  return previousCompiledWorkflow;
+}
+
+/** Prune the bundle/version directories a removed compiled workflow copy left empty. */
+function pruneIrDirs(projectRoot, compiledWorkflowRel) {
+  const pruned = [];
+  for (const dir of pruneCandidates([compiledWorkflowRel])) {
+    try {
+      if (pruneEmptyDir(projectRoot, dir)) pruned.push(dir);
+    } catch {
+      // best effort: an occupied or unreadable directory simply stays
+    }
+  }
+  return pruned;
+}
+
 /** The `migrated_from` block a receipt records (#76 §5.2). */
 function migrationSummary(migration) {
   return {
@@ -189,19 +215,6 @@ function migrationSummary(migration) {
     retired: migration.receipts.map((item) => item.to),
     manual_leftovers: migration.manualLeftovers,
   };
-}
-
-function computeCreatedDirs(projectRoot, paths) {
-  const created = new Set();
-  for (const path of paths) {
-    for (const dir of ancestorDirs(path)) {
-      const absolute = projectPath(projectRoot, dir);
-      if (absolute === null) continue;
-      const info = lstatOrNull(absolute);
-      if (info === null) created.add(dir);
-    }
-  }
-  return [...created].sort(comparePaths);
 }
 
 /** Post-commit legacy cleanup: empty dirs the old install created, then payload home. */
@@ -231,7 +244,7 @@ function pruneLegacyDirs(projectRoot, migration) {
 /**
  * Install one projection result.
  *
- * Input: `{result, irBytes, projectRoot, force, dryRun, clock, options, assets,
+ * Input: `{result, compiledWorkflowBytes, projectRoot, force, dryRun, clock, options, assets,
  * migrateLegacy, userHome}`. Returns `{ok, code, action, ...}`; expected
  * failures are values, not throws.
  */
@@ -263,7 +276,7 @@ export function installProjection(input = {}) {
   let migration = null;
   if (!migrateLegacy) {
     if (legacyState.project.length > 0) {
-      return failure('LEGACY_INSTALL_PRESENT', 'a r2c.install/v1 receipt exists; the new channel refuses to mix with it', {
+      return failure('LEGACY_INSTALL_PRESENT', 'a legacy r2c.install/v1 receipt exists; the new channel refuses to mix with it', {
         legacy: legacyState.project,
         hint: 'rerun with --migrate-legacy to verify, back up, retire the old receipts and take over',
       });
@@ -296,28 +309,28 @@ export function installProjection(input = {}) {
     return failure('PROJECTION_NOT_REGISTERED', `projection ${String(projectionId)} is not registered`);
   }
 
-  const irBytes = input.irBytes;
-  if (irBytes === undefined || irBytes === null) {
-    return failure('IR_INPUT_REQUIRED', 'V1–V12 bind the result to its IR; pass the validated IR bytes');
+  const compiledWorkflowBytes = input.compiledWorkflowBytes;
+  if (compiledWorkflowBytes === undefined || compiledWorkflowBytes === null) {
+    return failure('COMPILED_WORKFLOW_INPUT_REQUIRED', 'V1–V12 bind the result to its compiled workflow; pass the validated compiled workflow bytes');
   }
-  const irText = typeof irBytes === 'string' ? irBytes : Buffer.from(irBytes).toString('utf8');
-  const irDigest = sha256Hex(irText);
-  if (input.irDigest !== undefined && input.irDigest !== irDigest) {
-    return failure('IR_DIGEST_MISMATCH', 'IR bytes do not hash to the supplied digest', {
-      expected: input.irDigest,
-      actual: irDigest,
+  const compiledWorkflowText = typeof compiledWorkflowBytes === 'string' ? compiledWorkflowBytes : Buffer.from(compiledWorkflowBytes).toString('utf8');
+  const compiledWorkflowDigest = sha256Hex(compiledWorkflowText);
+  if (input.compiledWorkflowDigest !== undefined && input.compiledWorkflowDigest !== compiledWorkflowDigest) {
+    return failure('COMPILED_WORKFLOW_DIGEST_MISMATCH', 'compiled workflow bytes do not hash to the supplied digest', {
+      expected: input.compiledWorkflowDigest,
+      actual: compiledWorkflowDigest,
     });
   }
-  let ir;
+  let compiledWorkflow;
   try {
-    ir = JSON.parse(irText);
+    compiledWorkflow = JSON.parse(compiledWorkflowText);
   } catch {
-    return failure('IR_INPUT_INVALID', 'IR bytes are not JSON');
+    return failure('COMPILED_WORKFLOW_INPUT_INVALID', 'compiled workflow bytes are not JSON');
   }
 
   const validation = validateResult(result, {
-    ir,
-    irDigest,
+    compiledWorkflow,
+    compiledWorkflowDigest,
     manifest: descriptor,
     options: input.options ?? result.options,
     environment: result.environment ?? {},
@@ -329,10 +342,10 @@ export function installProjection(input = {}) {
     });
   }
 
-  const bundleId = ir.id;
-  const version = ir.version;
-  const irRel = irRelPath(bundleId, version);
-  const irAbsolute = projectPath(projectRoot, irRel);
+  const bundleId = compiledWorkflow.id;
+  const version = compiledWorkflow.version;
+  const compiledWorkflowRel = compiledWorkflowRelPath(bundleId, version);
+  const compiledWorkflowAbsolute = projectPath(projectRoot, compiledWorkflowRel);
   const ownRel = receiptRelPath(projectionId, bundleId);
   const ownAbsolute = projectPath(projectRoot, ownRel);
   const owned = input.installerOwned ?? null;
@@ -361,7 +374,7 @@ export function installProjection(input = {}) {
   }
   const { own, others } = loaded;
 
-  const bookkeepingLink = [irRel, ownRel]
+  const bookkeepingLink = [compiledWorkflowRel, ownRel]
     .map((rel) => ({ rel, link: symlinkComponent(projectRoot, rel) }))
     .find((entry) => entry.link !== null);
   if (bookkeepingLink !== undefined) {
@@ -378,7 +391,7 @@ export function installProjection(input = {}) {
     };
   }
 
-  const occupied = checkR2cRoot({
+  const occupied = checkRunnerRoot({
     projectRoot,
     projectionId,
     bundleId,
@@ -418,15 +431,15 @@ export function installProjection(input = {}) {
     };
   }
 
-  const irDiskSha = lstatOrNull(irAbsolute)?.isFile() ? sha256File(irAbsolute) : null;
+  const compiledWorkflowDiskSha = lstatOrNull(compiledWorkflowAbsolute)?.isFile() ? sha256File(compiledWorkflowAbsolute) : null;
   const hostTargets = [...(owned?.hostTargets ?? result.targets ?? [])].sort();
   const unchanged = own !== null
     && sameIdentity(own.receipt, {
       projection: projectionId,
       bundleId,
       version: { projection: result.projection.version, bundle: version },
-      irDigest,
-      irPath: irRel,
+      compiledWorkflowDigest,
+      compiledWorkflowPath: compiledWorkflowRel,
     })
     && sameOptions(own.receipt, options)
     && JSON.stringify(own.receipt.projection?.targets) === JSON.stringify([...result.targets].sort())
@@ -434,7 +447,7 @@ export function installProjection(input = {}) {
     && sameFileSet(own.receipt.files, incoming)
     && check.decisions.every((decision) => decision.action === 'keep')
     && check.stale.length === 0
-    && irDiskSha === irDigest
+    && compiledWorkflowDiskSha === compiledWorkflowDigest
     && check.warnings.length === 0;
 
   if (unchanged) {
@@ -462,6 +475,7 @@ export function installProjection(input = {}) {
       dryRun,
       decisions: check.decisions,
       stale: check.stale,
+      supersededCompiledWorkflow: supersededCompiledWorkflow(projectRoot, { previous: own, others, compiledWorkflowRel, bundleId }),
       warnings: [...(owned?.warnings ?? []), ...check.warnings, ...coexistWarnings],
       files: incoming.length,
       mode: own === null ? (migration?.receipts.length ? 'migrated' : 'fresh') : 'upgrade',
@@ -483,10 +497,14 @@ export function installProjection(input = {}) {
     const stamp = timestampSlug(clock);
     // TOCTOU: receipts and disk may have changed between check and lock.
     const fresh = loadReceipts(projectRoot, ownRel);
-    // TOCTOU: the r2c singleton decision is only valid under the lock. Two
+    // The replaced receipt may own a compiled workflow copy at another version (A → B). It
+    // is only removable when no other receipt points at it; the new compiled workflow is
+    // never a candidate because `supersededCompiledWorkflow` refuses `compiledWorkflowRel`.
+    const staleCompiledWorkflow = supersededCompiledWorkflow(projectRoot, { previous: fresh.own, others: fresh.others, compiledWorkflowRel, bundleId });
+    // TOCTOU: the runner singleton decision is only valid under the lock. Two
     // bundles that passed the pre-lock check with disjoint paths would both
-    // claim one r2c root; the loser must be refused here, before any write.
-    const occupiedNow = checkR2cRoot({
+    // claim one runner root; the loser must be refused here, before any write.
+    const occupiedNow = checkRunnerRoot({
       projectRoot,
       projectionId,
       bundleId,
@@ -526,7 +544,7 @@ export function installProjection(input = {}) {
 
     const targetPaths = [
       ...incoming.map((entry) => entry.path),
-      irRel,
+      compiledWorkflowRel,
       ownRel,
       ...(migration?.receipts.map((item) => item.to) ?? []),
     ];
@@ -548,6 +566,7 @@ export function installProjection(input = {}) {
     }
     const receiptExisted = lstatOrNull(ownAbsolute) !== null;
     operations.push({ op: receiptExisted ? 'replace' : 'create', path: ownRel, backup: receiptExisted });
+    if (staleCompiledWorkflow !== null) operations.push({ op: 'delete', path: staleCompiledWorkflow, backup: true });
 
     const journal = prepareJournal({
       projectRoot,
@@ -588,10 +607,10 @@ export function installProjection(input = {}) {
         const absolute = projectPath(projectRoot, entry.path);
         unlinkIfExists(absolute);
       }
-      // IR copy: installer-owned, outside `files[]` (#76 §3.3).
-      const irDirs = ancestorDirs(irRel);
-      ensureProjectDirs(projectRoot, irDirs[irDirs.length - 1]);
-      writeAbsoluteAtomic(irAbsolute, irText);
+      // compiled workflow copy: installer-owned, outside `files[]` (#76 §3.3).
+      const compiledWorkflowDirs = ancestorDirs(compiledWorkflowRel);
+      ensureProjectDirs(projectRoot, compiledWorkflowDirs[compiledWorkflowDirs.length - 1]);
+      writeAbsoluteAtomic(compiledWorkflowAbsolute, compiledWorkflowText);
 
       const mismatched = hashEvery(projectRoot, incoming);
       if (mismatched.length > 0) {
@@ -600,10 +619,28 @@ export function installProjection(input = {}) {
         error.details = mismatched;
         throw error;
       }
-      if (sha256File(irAbsolute) !== irDigest) {
-        const error = new Error('post-write IR hash verification failed');
+      if (sha256File(compiledWorkflowAbsolute) !== compiledWorkflowDigest) {
+        const error = new Error('post-write compiled workflow hash verification failed');
         error.code = 'HASH_MISMATCH';
         throw error;
+      }
+      // Superseded compiled workflow copy (A → B): once this receipt lands, no receipt points
+      // at the old version any more, so the copy and its now-empty bundle
+      // directories leave the project. Journaled above, so a rollback restores
+      // it together with the replaced receipt.
+      const staleWarnings = [];
+      const compiledWorkflowPruned = [];
+      if (staleCompiledWorkflow !== null) {
+        try {
+          unlinkIfExists(projectPath(projectRoot, staleCompiledWorkflow));
+          compiledWorkflowPruned.push(...pruneIrDirs(projectRoot, staleCompiledWorkflow));
+        } catch {
+          staleWarnings.push({
+            code: 'COMPILED_WORKFLOW_STALE_KEPT',
+            path: staleCompiledWorkflow,
+            message: `${staleCompiledWorkflow} is no longer referenced by any receipt but could not be deleted; remove it by hand`,
+          });
+        }
       }
 
       const receiptFiles = receiptEntries(projectRoot, incoming);
@@ -612,6 +649,7 @@ export function installProjection(input = {}) {
         ...(owned?.warnings ?? []),
         ...recheck.warnings,
         ...coexistWarnings,
+        ...staleWarnings,
       ];
       const installDegradations = [
         ...(result.degradations ?? []),
@@ -629,11 +667,11 @@ export function installProjection(input = {}) {
       const receipt = buildReceipt({
         projection: { id: projectionId, version: result.projection.version, targets: result.targets },
         bundle: { id: bundleId, version },
-        ir: { path: irRel, digest: irDigest, contentSha256: result.ir?.contentSha256 ?? null },
+        compiledWorkflow: { path: compiledWorkflowRel, digest: compiledWorkflowDigest, contentSha256: result.compiledWorkflow?.contentSha256 ?? null },
         mode: migrated ? 'migrated' : fresh.own === null ? 'fresh' : 'upgrade',
         hostTargets,
         options,
-        requiresEngine: ir.requires?.engine ?? null,
+        requiresEngine: compiledWorkflow.requires?.engine ?? null,
         files: receiptFiles,
         metadata: result.metadata,
         capabilityReport: result.capabilityReport,
@@ -652,7 +690,7 @@ export function installProjection(input = {}) {
       journal.receipts_written = [ownRel];
       writeJournal(projectRoot, journal);
       removeJournal(projectRoot);
-      const pruned = pruneLegacyDirs(projectRoot, migration);
+      const pruned = [...compiledWorkflowPruned, ...pruneLegacyDirs(projectRoot, migration)];
       return {
         ok: true,
         code: 'OK',
@@ -667,12 +705,13 @@ export function installProjection(input = {}) {
         decisions: recheck.decisions,
         createdDirs,
         backups,
+        supersededCompiledWorkflow: staleCompiledWorkflow,
         warnings: installWarnings,
         manualSteps,
         migration: migrated ? migrationSummary(migration) : null,
         pruned,
         diff: appliedDiff,
-        ignoreSuggestions: ['.r2c/bin/', '.r2c/bundles/', '.r2c/projection/'],
+        ignoreSuggestions: ['.hm2b/bin/', '.hm2b/bundles/', '.hm2b/projection/'],
       };
     } catch (error) {
       const outcome = rollbackJournal(projectRoot, journal);
@@ -680,7 +719,7 @@ export function installProjection(input = {}) {
         writeJournal(projectRoot, { ...journal, state: 'rollback-failed' });
         return failure('ROLLBACK_FAILED', 'install failed and the rollback could not restore every path', {
           failures: outcome.failures,
-          journal: '.r2c/install/pending.json',
+          journal: '.hm2b/install/pending.json',
           cause: error?.message ?? String(error),
         });
       }

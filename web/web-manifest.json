@@ -1,6 +1,6 @@
 {
-  "schema": "r2c.web-manifest/v1",
-  "name": "r2c local build surface",
+  "schema": "hm2b.web-manifest/v1",
+  "name": "hm2b local build surface",
   "assets": [
     "web/index.html",
     "web/app.js",
@@ -12,7 +12,7 @@
   ],
   "imports": [
     "core/",
-    "ir/",
+    "compiled/",
     "assembler/",
     "projection/",
     "runtime/shared/"

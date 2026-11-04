@@ -10,8 +10,8 @@ import { inflateRaw } from '../core/node/inflate.js';
 import { sha256Hex } from '../core/node/sha256.js';
 import { compileBundle } from '../assembler/compile.js';
 import { validateBundle } from '../assembler/validate-bundle.js';
-import { validateIr } from '../assembler/validate-ir.js';
-import { IR_FILENAME, irCollectionPath } from '../ir/schema.js';
+import { validateCompiledWorkflow } from '../assembler/validate-compiled.js';
+import { COMPILED_WORKFLOW_FILENAME } from '../compiled/schema.js';
 import {
   MINIMAL_MANIFEST,
   MINIMAL_TASK,
@@ -19,10 +19,10 @@ import {
 } from './helpers/minimal-bundle.js';
 
 const PRIMITIVES = { inflateRaw, sha256: sha256Hex };
-const BIN = fileURLToPath(new URL('../bin/r2c-assembler.js', import.meta.url));
+const BIN = fileURLToPath(new URL('../bin/hm2b-assembler.js', import.meta.url));
 
 function withTempDir(fn) {
-  const dir = mkdtempSync(join(tmpdir(), 'r2c-assembler-'));
+  const dir = mkdtempSync(join(tmpdir(), 'hm2b-assembler-'));
   try {
     return fn(dir);
   } finally {
@@ -47,7 +47,7 @@ test('minimal compliant bundle validates with a complete report', () => {
   assert.deepEqual(report.errors, []);
   assert.deepEqual(report.warnings, []);
   assert.equal(report.target, 'bundle');
-  assert.equal(report.schema, 'r2c.bundle/v1');
+  assert.equal(report.schema, 'hm2b.bundle/v2');
   assert.equal(report.artifact.path, 'minimal.zip');
   assert.equal(report.artifact.bytes, zip.length);
   assert.match(report.artifact.sha256, /^[0-9a-f]{64}$/);
@@ -65,36 +65,40 @@ test('minimal compliant bundle validates with a complete report', () => {
   });
 });
 
-test('compile produces canonical, self-proving IR that ir validate accepts', () => {
+test('compile produces canonical, self-proving compiled workflow that compiled-workflow validate accepts', () => {
   const zip = minimalZip();
   const first = compileBundle(zip, PRIMITIVES);
   assert.equal(first.ok, true, JSON.stringify(first.report.errors));
-  assert.notEqual(first.irBytes, null);
+  assert.notEqual(first.compiledWorkflowBytes, null);
   assert.match(first.digest, /^[0-9a-f]{64}$/);
-  const text = new TextDecoder().decode(first.irBytes);
+  const text = new TextDecoder().decode(first.compiledWorkflowBytes);
   assert.equal(canonicalJson(JSON.parse(text)), text);
-  assert.equal(sha256Hex(first.irBytes), first.digest);
+  assert.equal(sha256Hex(first.compiledWorkflowBytes), first.digest);
 
-  const ir = JSON.parse(text);
-  assert.equal(ir.schema, 'r2c.ir/v1');
-  assert.equal(ir.id, 'minimal-demo');
-  assert.equal(ir.version, '1.0.0');
-  assert.equal(ir.source.bundle.contentSha256.length, 64);
-  assert.equal(ir.source.manifest.sha256, sha256Hex(canonicalJson(MINIMAL_MANIFEST)));
-  assert.deepEqual(Object.keys(ir.roles), ['worker']);
-  assert.deepEqual(Object.keys(ir.tasks), ['do-it']);
-  assert.deepEqual(Object.keys(ir.skills), ['helper']);
-  assert.deepEqual(ir.constitution, []);
-  assert.deepEqual(ir.stages[0].steps[0].skills, ['helper']);
-  assert.deepEqual(ir.stages[0].steps[0].outputs, ['out/*.md']);
-  assert.deepEqual(ir.stages[0].steps[0].gates, [{ command: 'true', timeout: 30 }]);
+  const compiledWorkflow = JSON.parse(text);
+  assert.equal(compiledWorkflow.schema, 'hm2b.compiled-workflow/v2');
+  assert.equal(compiledWorkflow.id, 'minimal-demo');
+  assert.equal(compiledWorkflow.version, '1.0.0');
+  assert.equal(compiledWorkflow.source.bundle.contentSha256.length, 64);
+  assert.equal(compiledWorkflow.source.manifest.sha256, sha256Hex(canonicalJson(MINIMAL_MANIFEST)));
+  assert.deepEqual(Object.keys(compiledWorkflow.roles), ['worker']);
+  assert.deepEqual(Object.keys(compiledWorkflow.tasks), ['do-it']);
+  assert.deepEqual(Object.keys(compiledWorkflow.skills), ['helper']);
+  assert.deepEqual(compiledWorkflow.knowledgeBase, []);
+  assert.deepEqual(compiledWorkflow.checklists, []);
+  assert.equal(compiledWorkflow.hooks, null);
+  assert.equal(compiledWorkflow.mcp, null);
+  assert.deepEqual(compiledWorkflow.constitution, []);
+  assert.deepEqual(compiledWorkflow.stages[0].steps[0].skills, ['helper']);
+  assert.deepEqual(compiledWorkflow.stages[0].steps[0].outputs, ['out/*.md']);
+  assert.deepEqual(compiledWorkflow.stages[0].steps[0].gates, [{ command: 'true', timeout: 30 }]);
 
-  const irReport = validateIr(first.irBytes, { sha256: sha256Hex });
-  assert.equal(irReport.ok, true, JSON.stringify(irReport.errors));
-  assert.equal(irReport.target, 'ir');
-  assert.equal(irReport.schema, 'r2c.ir/v1');
-  assert.equal(irReport.artifact.path, IR_FILENAME);
-  assert.equal(irReport.artifact.sha256, first.digest);
+  const compiledWorkflowReport = validateCompiledWorkflow(first.compiledWorkflowBytes, { sha256: sha256Hex });
+  assert.equal(compiledWorkflowReport.ok, true, JSON.stringify(compiledWorkflowReport.errors));
+  assert.equal(compiledWorkflowReport.target, 'compiled-workflow');
+  assert.equal(compiledWorkflowReport.schema, 'hm2b.compiled-workflow/v2');
+  assert.equal(compiledWorkflowReport.artifact.path, COMPILED_WORKFLOW_FILENAME);
+  assert.equal(compiledWorkflowReport.artifact.sha256, first.digest);
 });
 
 test('compilation is byte-identical across repeats, compression methods and descriptors', () => {
@@ -104,7 +108,7 @@ test('compilation is byte-identical across repeats, compression methods and desc
   const descriptor = compileBundle(minimalZip({ dataDescriptor: true }), PRIMITIVES);
   for (const result of [again, deflate, descriptor]) {
     assert.equal(result.ok, true, JSON.stringify(result.report.errors));
-    assert.equal(Buffer.compare(Buffer.from(store.irBytes), Buffer.from(result.irBytes)), 0);
+    assert.equal(Buffer.compare(Buffer.from(store.compiledWorkflowBytes), Buffer.from(result.compiledWorkflowBytes)), 0);
   }
   assert.equal(again.digest, store.digest);
 });
@@ -116,10 +120,10 @@ test('reports are byte-identical on repeat', () => {
   assert.equal(first, second);
 });
 
-test('a warning does not change ok, IR bytes or the exit code', () => {
+test('a warning does not change ok, compiled workflow bytes or the exit code', () => {
   const leaky = minimalZip({
     overrides: {
-      'tasks/do-it.md': MINIMAL_TASK.replace('完成唯一一步。', '先跑 r2c-status 看状态。'),
+      'tasks/do-it.md': MINIMAL_TASK.replace('完成唯一一步。', '先跑 hm2b-status 看状态。'),
     },
   });
   const report = validateBundle(leaky, PRIMITIVES);
@@ -130,7 +134,7 @@ test('a warning does not change ok, IR bytes or the exit code', () => {
   const warned = compileBundle(leaky, PRIMITIVES);
   const warnedAgain = compileBundle(leaky, PRIMITIVES);
   assert.equal(warned.ok, true);
-  assert.equal(Buffer.compare(Buffer.from(warned.irBytes), Buffer.from(warnedAgain.irBytes)), 0);
+  assert.equal(Buffer.compare(Buffer.from(warned.compiledWorkflowBytes), Buffer.from(warnedAgain.compiledWorkflowBytes)), 0);
 
   withTempDir((dir) => {
     const zipPath = join(dir, 'leaky.zip');
@@ -143,11 +147,11 @@ test('a warning does not change ok, IR bytes or the exit code', () => {
     const compiled = cli(['compile', zipPath, '--out', out, '--json']);
     assert.equal(compiled.status, 0);
     assert.equal(compiled.envelope.ok, true);
-    assert.equal(existsSync(join(out, IR_FILENAME)), true);
+    assert.equal(existsSync(join(out, COMPILED_WORKFLOW_FILENAME)), true);
   });
 });
 
-test('an error yields no IR bytes and exit 2 without writing a file', () => {
+test('an error yields no compiled workflow bytes and exit 2 without writing a file', () => {
   const brokenTask = MINIMAL_TASK.replace('\n## 约束条件\n\n- 不要跳过任何一步。\n', '\n');
   const zip = minimalZip({ overrides: { 'tasks/do-it.md': brokenTask } });
   const report = validateBundle(zip, PRIMITIVES);
@@ -155,7 +159,7 @@ test('an error yields no IR bytes and exit 2 without writing a file', () => {
   assert.equal(report.errors[0].code, 'BUNDLE_TASK_SECTION_MISSING');
   const compiled = compileBundle(zip, PRIMITIVES);
   assert.equal(compiled.ok, false);
-  assert.equal(compiled.irBytes, null);
+  assert.equal(compiled.compiledWorkflowBytes, null);
 
   withTempDir((dir) => {
     const zipPath = join(dir, 'broken.zip');
@@ -167,12 +171,12 @@ test('an error yields no IR bytes and exit 2 without writing a file', () => {
     assert.equal(result.envelope.code, 2);
     assert.equal(result.envelope.error.code, 'BUNDLE_TASK_SECTION_MISSING');
     assert.equal(result.envelope.data.ok, false);
-    assert.equal(existsSync(join(out, IR_FILENAME)), false);
+    assert.equal(existsSync(join(out, COMPILED_WORKFLOW_FILENAME)), false);
     assert.equal(result.stdout.trim().split('\n').length, 1);
   });
 });
 
-test('the CLI --json envelope is one line for bundle and ir validate', () => {
+test('the CLI --json envelope is one line for bundle and compiled-workflow validate', () => {
   withTempDir((dir) => {
     const zipPath = join(dir, 'minimal.zip');
     writeFileSync(zipPath, minimalZip());
@@ -185,18 +189,18 @@ test('the CLI --json envelope is one line for bundle and ir validate', () => {
     const out = join(dir, 'out');
     const compileResult = cli(['compile', zipPath, '--out', out, '--json']);
     assert.equal(compileResult.status, 0);
-    // The report is the `data` object itself (like bundle/ir validate), with
+    // The report is the `data` object itself (like bundle/compiled-workflow validate), with
     // the written artifact appended; there is no `data.report` wrapper.
     assert.equal(compileResult.envelope.data.ok, true);
     assert.equal(compileResult.envelope.data.target, 'bundle');
     assert.equal(compileResult.envelope.data.report, undefined);
-    assert.equal(compileResult.envelope.data.ir.path, irCollectionPath(compileResult.envelope.data.id, compileResult.envelope.data.version));
-    const irPath = join(out, IR_FILENAME);
-    const irResult = cli(['ir', 'validate', irPath, '--json']);
-    assert.equal(irResult.status, 0);
-    assert.equal(irResult.stdout.trim().split('\n').length, 1);
-    assert.equal(irResult.envelope.command, 'ir.validate');
-    assert.equal(irResult.envelope.data.ok, true);
-    assert.equal(irResult.envelope.error, null);
+    assert.equal(compileResult.envelope.data.compiledWorkflow.path, 'workflow.compiled.json');
+    const compiledWorkflowPath = join(out, COMPILED_WORKFLOW_FILENAME);
+    const compiledWorkflowResult = cli(['compiled-workflow', 'validate', compiledWorkflowPath, '--json']);
+    assert.equal(compiledWorkflowResult.status, 0);
+    assert.equal(compiledWorkflowResult.stdout.trim().split('\n').length, 1);
+    assert.equal(compiledWorkflowResult.envelope.command, 'compiled-workflow.validate');
+    assert.equal(compiledWorkflowResult.envelope.data.ok, true);
+    assert.equal(compiledWorkflowResult.envelope.error, null);
   });
 });

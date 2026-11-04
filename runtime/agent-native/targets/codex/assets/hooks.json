@@ -7,7 +7,7 @@
           {
             "type": "command",
             "command": "node '${PAYLOAD_HOME}/shims/hook.mjs' --agent codex --event stop --format json --project-root '${PROJECT_ROOT}' --runner-cmd '${RUNNER_CMD}'",
-            "commandWindows": "${PROJECT_ROOT}\\.codex\\r2c-hook-stop.cmd",
+            "commandWindows": "${PROJECT_ROOT}\\.codex\\hm2b-hook-stop.cmd",
             "timeout": 600
           }
         ]
@@ -20,7 +20,7 @@
           {
             "type": "command",
             "command": "node '${PAYLOAD_HOME}/shims/hook.mjs' --agent codex --event pre-tool-use --format json --project-root '${PROJECT_ROOT}' --runner-cmd '${RUNNER_CMD}'",
-            "commandWindows": "${PROJECT_ROOT}\\.codex\\r2c-hook-pre-tool-use.cmd",
+            "commandWindows": "${PROJECT_ROOT}\\.codex\\hm2b-hook-pre-tool-use.cmd",
             "timeout": 600
           }
         ]

@@ -22,8 +22,8 @@ const MANIFEST = {
   ],
 };
 
-const IR = {
-  schema: 'r2c.ir/v1',
+const compiledWorkflow = {
+  schema: 'hm2b.compiled-workflow/v2',
   id: 'demo',
   version: '1.0.0',
   stages: [
@@ -40,8 +40,8 @@ const IR = {
 function normalize(raw) {
   return normalizeOptions({
     projectionId: 'agent-native',
-    ir: IR,
-    irDigest: DIGEST,
+    compiledWorkflow,
+    compiledWorkflowDigest: DIGEST,
     raw,
     manifest: MANIFEST,
   });
@@ -51,13 +51,13 @@ function codes(outcome) {
   return outcome.errors.map((error) => error.code);
 }
 
-test('null inputs resolve to the IR order, sorted skills and manifest targets', () => {
+test('null inputs resolve to the compiled workflow order, sorted skills and manifest targets', () => {
   const outcome = normalize(null);
   assert.equal(outcome.ok, true);
   assert.deepEqual(outcome.options, {
-    schema: 'r2c.projection-options/v1',
+    schema: 'hm2b.projection-options/v1',
     projection: 'agent-native',
-    ir: { digest: DIGEST, id: 'demo', version: '1.0.0' },
+    compiledWorkflow: { digest: DIGEST, id: 'demo', version: '1.0.0' },
     stageOrder: ['analysis', 'implementation'],
     skills: ['alpha-skill', 'zeta-skill'],
     targets: ['claude-code', 'codex', 'dsh', 'omp', 'opencode'],
@@ -77,11 +77,11 @@ test('explicit options are resolved: user stage order, sorted skills, manifest t
   assert.deepEqual(outcome.options.targets, ['claude-code', 'omp']);
 });
 
-test('the IR binding is recomputed and a stale digest is rejected with the shared code', () => {
-  const outcome = normalize({ ir: { digest: 'c'.repeat(64), id: 'demo', version: '1.0.0' } });
+test('the compiled workflow binding is recomputed and a stale digest is rejected with the shared code', () => {
+  const outcome = normalize({ compiledWorkflow: { digest: 'c'.repeat(64), id: 'demo', version: '1.0.0' } });
   assert.equal(outcome.ok, false);
-  assert.deepEqual(codes(outcome), ['PROJECTION_OPTIONS_IR_MISMATCH']);
-  assert.equal(outcome.options.ir.digest, DIGEST);
+  assert.deepEqual(codes(outcome), ['PROJECTION_OPTIONS_COMPILED_WORKFLOW_MISMATCH']);
+  assert.equal(outcome.options.compiledWorkflow.digest, DIGEST);
 });
 
 test('invalid stage order, skills, targets and extra are rejected', () => {
@@ -94,8 +94,8 @@ test('invalid stage order, skills, targets and extra are rejected', () => {
   assert.equal(unknown.ok, false);
   assert.deepEqual(codes(unknown), ['PROJECTION_TARGET_UNKNOWN']);
   assert.deepEqual(codes(normalize({ extra: { roleModels: {} } })), ['PROJECTION_OPTIONS_INVALID']);
-  assert.deepEqual(codes(normalize({ schema: 'r2c.projection-options/v2' })), ['PROJECTION_OPTIONS_INVALID']);
-  assert.deepEqual(codes(normalize({ projection: 'r2c' })), ['PROJECTION_OPTIONS_INVALID']);
+  assert.deepEqual(codes(normalize({ schema: 'hm2b.projection-options/v2' })), ['PROJECTION_OPTIONS_INVALID']);
+  assert.deepEqual(codes(normalize({ projection: 'runner' })), ['PROJECTION_OPTIONS_INVALID']);
 });
 
 test('extra follows the declared closed schema and is echoed verbatim', () => {
@@ -116,8 +116,8 @@ test('extra follows the declared closed schema and is echoed verbatim', () => {
   };
   const run = (raw) => normalizeOptions({
     projectionId: 'agent-native',
-    ir: IR,
-    irDigest: DIGEST,
+    compiledWorkflow,
+    compiledWorkflowDigest: DIGEST,
     raw,
     manifest: schemaManifest,
   });
@@ -145,15 +145,15 @@ test('extra follows the declared closed schema and is echoed verbatim', () => {
 });
 
 test('both real manifests declare the closed empty extra schema', () => {
-  for (const id of ['agent-native', 'r2c']) {
+  for (const id of ['agent-native', 'runner']) {
     const manifest = getProjection(id);
     assert.equal(manifest.optionsSchema.type, 'object');
     assert.equal(manifest.optionsSchema.additionalProperties, false);
     assert.deepEqual(manifest.optionsSchema.properties, {});
     const outcome = normalizeOptions({
       projectionId: id,
-      ir: IR,
-      irDigest: DIGEST,
+      compiledWorkflow,
+      compiledWorkflowDigest: DIGEST,
       raw: { extra: { nope: true } },
       manifest,
     });

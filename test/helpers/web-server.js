@@ -115,7 +115,7 @@ export function postHeaders(server, csrf, extra = {}) {
   return {
     Origin: server.base,
     'Sec-Fetch-Site': 'same-origin',
-    'X-R2C-CSRF': csrf,
+    'X-HM2B-CSRF': csrf,
     ...extra,
   };
 }

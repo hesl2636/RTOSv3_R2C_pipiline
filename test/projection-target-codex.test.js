@@ -34,27 +34,27 @@ const CAPABILITIES = [
 ];
 
 let sample;
-function sampleIr() {
+function sampleCompiledWorkflow() {
   if (sample !== undefined) return sample;
   const compiled = compileBundle(new Uint8Array(readFileSync(ZIP)), { inflateRaw, sha256: sha256Hex });
   assert.equal(compiled.ok, true);
-  sample = { ir: JSON.parse(new TextDecoder().decode(compiled.irBytes)), irDigest: compiled.digest };
+  sample = { compiledWorkflow: JSON.parse(new TextDecoder().decode(compiled.compiledWorkflowBytes)), compiledWorkflowDigest: compiled.digest };
   return sample;
 }
 
-function runProject({ ir, irDigest, raw }) {
+function runProject({ compiledWorkflow, compiledWorkflowDigest, raw }) {
   const normalized = normalizeOptions({
     projectionId: 'agent-native',
-    ir,
-    irDigest,
+    compiledWorkflow,
+    compiledWorkflowDigest,
     raw,
     manifest: MANIFEST,
   });
   assert.equal(normalized.ok, true, JSON.stringify(normalized.errors));
   return project({
     projectionId: 'agent-native',
-    ir,
-    irDigest,
+    compiledWorkflow,
+    compiledWorkflowDigest,
     options: normalized.options,
     environment: {},
     assets: {},
@@ -62,13 +62,13 @@ function runProject({ ir, irDigest, raw }) {
 }
 
 function codexSample() {
-  const { ir, irDigest } = sampleIr();
-  return { ir, irDigest, result: runProject({ ir, irDigest, raw: { targets: ['codex'] } }) };
+  const { compiledWorkflow, compiledWorkflowDigest } = sampleCompiledWorkflow();
+  return { compiledWorkflow, compiledWorkflowDigest, result: runProject({ compiledWorkflow, compiledWorkflowDigest, raw: { targets: ['codex'] } }) };
 }
 
 function claudeSample() {
-  const { ir, irDigest } = sampleIr();
-  return runProject({ ir, irDigest, raw: { targets: ['claude-code'] } });
+  const { compiledWorkflow, compiledWorkflowDigest } = sampleCompiledWorkflow();
+  return runProject({ compiledWorkflow, compiledWorkflowDigest, raw: { targets: ['claude-code'] } });
 }
 
 function source(path, fill) {
@@ -86,15 +86,15 @@ function role(id, extra = {}) {
   };
 }
 
-function miniIr({ roles, skills = {} } = {}) {
+function miniCompiledWorkflow({ roles, skills = {} } = {}) {
   return {
-    schema: 'r2c.ir/v1',
+    schema: 'hm2b.compiled-workflow/v2',
     id: 'mini',
     name: 'Mini workflow',
     version: '1.0.0',
     description: 'A miniature workflow used by projection tests.',
     source: {
-      bundle: { schema: 'r2c.bundle/v1', id: 'mini', version: '1.0.0', contentSha256: 'b'.repeat(64) },
+      bundle: { schema: 'hm2b.bundle/v1', id: 'mini', version: '1.0.0', contentSha256: 'b'.repeat(64) },
       manifest: { path: 'bundle.json', sha256: 'c'.repeat(64) },
     },
     stages: [{
@@ -151,7 +151,7 @@ function recordsOf(result) {
 // --- frozen baseline ------------------------------------------------------
 
 test('codex-only baseline: 45 files, 8 capability rows, 9 degradations, V1–V12 pass', () => {
-  const { ir, irDigest, result } = codexSample();
+  const { compiledWorkflow, compiledWorkflowDigest, result } = codexSample();
   assert.equal(result.ok, true);
   assert.deepEqual(result.targets, ['codex']);
   assert.deepEqual(result.options.targets, ['codex']);
@@ -161,7 +161,7 @@ test('codex-only baseline: 45 files, 8 capability rows, 9 degradations, V1–V12
   assert.deepEqual(result.warnings, []);
   assert.equal(result.metadata.placeholders.constitution, 'placeholder');
 
-  const validation = validateResult(result, { ir, irDigest, options: result.options, manifest: MANIFEST });
+  const validation = validateResult(result, { compiledWorkflow, compiledWorkflowDigest, options: result.options, manifest: MANIFEST });
   assert.equal(validation.ok, true, JSON.stringify(validation.diagnostics, null, 2));
 });
 
@@ -196,23 +196,23 @@ test('role TOMLs match the prototype oracle byte for byte', () => {
   const { result } = codexSample();
   const byPath = new Map(result.files.map((file) => [file.path, file.content]));
   const hashes = {
-    '.codex/agents/rtosv3-drvport-bys-architect.toml': 'd84039e24030a27f3fb71a96d55fe062a0f3565442717824a6ab61a88673f4ce',
-    '.codex/agents/rtosv3-drvport-bys-designer.toml': 'a55da710880f58fcf3ede83c35a4dab7dfab7979bac7a90eda207abdc76b6a71',
-    '.codex/agents/rtosv3-drvport-bys-impl-lead.toml': '245b219a0569dac592ed51aabbe5a830bc5c5cdb94302d5cb403ace922005219',
-    '.codex/agents/rtosv3-drvport-bys-release-lead.toml': 'f6facebb21c0dbca17337de94c0dfea0fa9dca0a5b2ce3edf79fc6d2b2105c52',
+    '.codex/agents/bys-architect.toml': 'ca7831924123b85810bd5557c1df444e7318892b9a5709ffeeeb0b97f537c20b',
+    '.codex/agents/bys-designer.toml': '1770f037ad30d6f4a2cef1de3c0cf2c553cdd3ca77d24780c17fc12698fa3aaf',
+    '.codex/agents/bys-impl-lead.toml': '699bdfbefba0d9d7b991d8268964e662a35bb0234d2f00aa1d110b94154f0b58',
+    '.codex/agents/bys-release-lead.toml': 'c79bd1e98f67806e3e3d4587925da755819ab32dd10d6bd1b93311c7cc1247ba',
   };
   for (const [path, hash] of Object.entries(hashes)) {
     assert.equal(sha256(byPath.get(path)), hash, path);
   }
-  assert.equal(byPath.get('.codex/agents/rtosv3-drvport-bys-architect.toml'), [
-    'name = "rtosv3-drvport-bys-architect"',
+  assert.equal(byPath.get('.codex/agents/bys-architect.toml'), [
+    'name = "bys-architect"',
     'description = "占位：分析设计阶段主控角色，正文待补；委派时机见分析设计任务书。"',
     'developer_instructions = """',
     '> **占位（placeholder）** 本角色由规范包声明为占位：未提供角色正文。',
     '',
     '按当前步骤的任务书执行；不要臆测本角色未声明的专有职责。',
     '',
-    '<!-- r2c:placeholder role=bys-architect -->',
+    '<!-- hm2b:placeholder role=bys-architect -->',
     '"""',
     '',
   ].join('\n'));
@@ -289,8 +289,8 @@ test('shared skills are the Claude bytes at the shared root', () => {
 test('the role body is identical to Claude; only the shell differs', () => {
   const codex = codexSample().result;
   const claude = claudeSample();
-  const toml = codex.files.find((file) => file.path === '.codex/agents/rtosv3-drvport-bys-architect.toml').content;
-  const md = claude.files.find((file) => file.path === '.claude/agents/rtosv3-drvport-bys-architect.md').content;
+  const toml = codex.files.find((file) => file.path === '.codex/agents/bys-architect.toml').content;
+  const md = claude.files.find((file) => file.path === '.claude/agents/bys-architect.md').content;
   const mdBody = md.slice(md.indexOf('\n---\n') + 5);
   const start = toml.indexOf('"""') + 3;
   const tomlBody = toml.slice(start, toml.lastIndexOf('"""'));
@@ -302,24 +302,24 @@ test('submit receipts and constitution placement are identical to Claude', () =>
   const codex = codexSample().result;
   const claude = claudeSample();
   const pick = (result, path) => result.files.find((file) => file.path === path).content;
-  const relative = 'rtosv3-drvport-stage-analysis-design/SKILL.md';
+  const relative = 'stage-analysis-design/SKILL.md';
   const codexStage = pick(codex, `.agents/skills/${relative}`);
   const claudeStage = pick(claude, `.claude/skills/${relative}`);
   assert.equal(codexStage, claudeStage);
   assert.match(codexStage, /^---\n[\s\S]*?\n---\n\n<!-- constitution:begin scope=global placeholder=true -->\n/);
   assert.ok(codexStage.indexOf('<!-- constitution:begin') < codexStage.indexOf('# 阶段'));
-  assert.match(codexStage, /^# r2c-submit: step=analysis-design$/m);
+  assert.match(codexStage, /^# hm2b-submit: step=analysis-design$/m);
   assert.doesNotMatch(codexStage, /\{\{submit\}\}/);
-  assert.doesNotMatch(codexStage, /node \.r2c\/bin\/r2c\.js/);
-  const entry = pick(codex, '.agents/skills/rtosv3-drvport-workflow/SKILL.md');
-  assert.equal(entry, pick(claude, '.claude/skills/rtosv3-drvport-workflow/SKILL.md'));
+  assert.doesNotMatch(codexStage, /node \.hm2b\/bin\/hm2b\.js/);
+  const entry = pick(codex, '.agents/skills/workflow/SKILL.md');
+  assert.equal(entry, pick(claude, '.claude/skills/workflow/SKILL.md'));
   assert.doesNotMatch(entry, /constitution:begin/);
 });
 
 // --- field-level capability gaps -----------------------------------------
 
 test('a tool allow-list degrades by field and names the lost tokens', () => {
-  const ir = miniIr({
+  const compiledWorkflow = miniCompiledWorkflow({
     roles: {
       worker: role('worker', {
         tools: ['read', 'bash', 'task'],
@@ -327,7 +327,7 @@ test('a tool allow-list degrades by field and names the lost tokens', () => {
       }),
     },
   });
-  const result = runProject({ ir, irDigest: 'a'.repeat(64), raw: { targets: ['codex'] } });
+  const result = runProject({ compiledWorkflow, compiledWorkflowDigest: 'a'.repeat(64), raw: { targets: ['codex'] } });
   assert.equal(result.ok, true);
   const tools = result.degradations.find((record) => record.field === 'tools');
   const deny = result.degradations.find((record) => record.field === 'tools_deny');
@@ -341,29 +341,29 @@ test('a tool allow-list degrades by field and names the lost tokens', () => {
   assert.equal(deny.pointer, '/roles/worker');
   assert.match(deny.reason, /任务|task/);
   assert.match(deny.effect, /task（角色仍可再派子 agent）/);
-  const file = result.files.find((item) => item.path === '.codex/agents/mini-worker.toml');
+  const file = result.files.find((item) => item.path === '.codex/agents/worker.toml');
   assert.doesNotMatch(file.content, /features\.shell_tool/);
   assert.doesNotMatch(file.content, /^tools\s*=/m);
 });
 
 test('a bash-only deny is adapted to features.shell_tool = false', () => {
-  const ir = miniIr({ roles: { shell: role('shell', { tools_deny: ['bash'] }) } });
-  const result = runProject({ ir, irDigest: 'a'.repeat(64), raw: { targets: ['codex'] } });
+  const compiledWorkflow = miniCompiledWorkflow({ roles: { shell: role('shell', { tools_deny: ['bash'] }) } });
+  const result = runProject({ compiledWorkflow, compiledWorkflowDigest: 'a'.repeat(64), raw: { targets: ['codex'] } });
   assert.equal(result.ok, true);
   assert.equal(result.degradations.some((record) => record.field === 'tools_deny'), false);
-  const file = result.files.find((item) => item.path === '.codex/agents/mini-shell.toml');
+  const file = result.files.find((item) => item.path === '.codex/agents/shell.toml');
   assert.match(file.content, /^features\.shell_tool = false$/m);
   const roles = JSON.parse(result.files.find((item) => item.path === '.agents/agent-native/mini/roles.json').content);
   assert.equal(roles.targets.codex.roles[0].fields.tools_deny.state, 'adapted');
 });
 
 test('model tiers without an alias are omitted; high efforts clamp', () => {
-  const ir = miniIr({
+  const compiledWorkflow = miniCompiledWorkflow({
     roles: { worker: role('worker', { model: 'strong', effort: 'max' }) },
   });
-  const result = runProject({ ir, irDigest: 'a'.repeat(64), raw: { targets: ['codex'] } });
+  const result = runProject({ compiledWorkflow, compiledWorkflowDigest: 'a'.repeat(64), raw: { targets: ['codex'] } });
   assert.equal(result.ok, true);
-  const file = result.files.find((item) => item.path === '.codex/agents/mini-worker.toml');
+  const file = result.files.find((item) => item.path === '.codex/agents/worker.toml');
   assert.doesNotMatch(file.content, /^model\s*=/m);
   assert.match(file.content, /^model_reasoning_effort = "high"$/m);
   const model = result.degradations.find((record) => record.field === 'model');
@@ -376,8 +376,8 @@ test('model tiers without an alias are omitted; high efforts clamp', () => {
 
 test('preload has no seam: skills stay out of the TOML and degrade per use', () => {
   const skills = helperSkill();
-  const ir = miniIr({ skills, roles: { worker: role('worker', { skills: ['helper'] }) } });
-  const result = runProject({ ir, irDigest: 'a'.repeat(64), raw: { targets: ['codex'] } });
+  const compiledWorkflow = miniCompiledWorkflow({ skills, roles: { worker: role('worker', { skills: ['helper'] }) } });
+  const result = runProject({ compiledWorkflow, compiledWorkflowDigest: 'a'.repeat(64), raw: { targets: ['codex'] } });
   assert.equal(result.ok, true);
   const preload = result.degradations.filter((record) => record.capability === 'preload');
   assert.deepEqual(preload.map((record) => [record.code, record.level, record.pointer, record.field]), [
@@ -385,24 +385,24 @@ test('preload has no seam: skills stay out of the TOML and degrade per use', () 
   ]);
   assert.match(preload[0].reason, /没有按 agent 预载技能的接缝/);
   assert.equal(result.capabilityReport.find((row) => row.capability === 'preload').level, 'unavailable');
-  const file = result.files.find((item) => item.path === '.codex/agents/mini-worker.toml');
+  const file = result.files.find((item) => item.path === '.codex/agents/worker.toml');
   assert.doesNotMatch(file.content, /^skills\s*=/m);
   assert.doesNotMatch(file.content, /autoloadSkills/);
-  assert.equal(result.files.some((item) => item.path === '.agents/skills/mini-skill-helper/SKILL.md'), true);
+  assert.equal(result.files.some((item) => item.path === '.agents/skills/helper/SKILL.md'), true);
   const roles = JSON.parse(result.files.find((item) => item.path === '.agents/agent-native/mini/roles.json').content);
   assert.equal(roles.targets.codex.roles[0].fields.skills.state, 'unavailable');
 });
 
 test('mode=primary is skipped with a warning instead of faking an agent', () => {
-  const ir = miniIr({
+  const compiledWorkflow = miniCompiledWorkflow({
     roles: {
       worker: role('worker'),
       primary: role('primary', { mode: 'primary' }),
     },
   });
-  const result = runProject({ ir, irDigest: 'a'.repeat(64), raw: { targets: ['codex'] } });
+  const result = runProject({ compiledWorkflow, compiledWorkflowDigest: 'a'.repeat(64), raw: { targets: ['codex'] } });
   assert.equal(result.ok, true);
-  assert.equal(result.files.some((file) => file.path === '.codex/agents/mini-primary.toml'), false);
+  assert.equal(result.files.some((file) => file.path === '.codex/agents/primary.toml'), false);
   assert.deepEqual(result.warnings, [{
     code: 'ROLE_EXPOSURE_SKIPPED',
     target: 'codex',
@@ -419,17 +419,17 @@ test('mode=primary is skipped with a warning instead of faking an agent', () => 
 // --- roles.json -----------------------------------------------------------
 
 test('roles.json gains a codex section consistent with idMap and file hashes', () => {
-  const { ir, result } = codexSample();
+  const { compiledWorkflow, result } = codexSample();
   const file = result.files.find((item) => item.path === '.agents/agent-native/rtosv3-drvport/roles.json');
   assert.equal(file.kind, 'metadata');
   assert.deepEqual(file.targets, ['codex']);
   const roles = JSON.parse(file.content);
-  assert.equal(roles.schema, 'r2c.projection.roles/v1');
+  assert.equal(roles.schema, 'hm2b.projection.roles/v1');
   assert.deepEqual(Object.keys(roles.targets), ['codex']);
-  assert.equal(roles.ir.sha256, result.ir.digest);
+  assert.equal(roles.compiledWorkflow.sha256, result.compiledWorkflow.digest);
   const section = roles.targets.codex;
   assert.equal(section.namespace, 'rtosv3-drvport');
-  assert.deepEqual(section.roles.map((entry) => entry.id), Object.keys(ir.roles).sort());
+  assert.deepEqual(section.roles.map((entry) => entry.id), Object.keys(compiledWorkflow.roles).sort());
   assert.deepEqual(section.summary, { roles: 4, native: 8, adapted: 12, degraded: 4, unavailable: 4 });
   for (const entry of section.roles) {
     assert.equal(entry.name, result.metadata.idMap.codex.roles[entry.id]);

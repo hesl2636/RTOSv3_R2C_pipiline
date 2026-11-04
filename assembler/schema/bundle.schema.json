@@ -1,9 +1,9 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://r2c.runner/schema/bundle/v1",
-  "title": "r2c.bundle/v1",
+  "$id": "https://hm2b.runner/schema/bundle/v2",
+  "title": "hm2b.bundle/v2",
   "description": "Bundle manifest (bundle.json at the zip root). Documentation only: the hand-written validator in assembler/validate-bundle.js and assembler/checks/ is authoritative and adds no JSON Schema runtime dependency.",
-  "$comment": "Rules the validator enforces and this document does not express: the declared id sets and the archive directory contents must be equal in both directions; every step id is unique across the whole bundle; stages order and steps order are execution order; id must equal the id parsed from the release tag bundle-<id>-v<version>; requires.engine is a restricted semver range evaluated by core/semver.js; the manifest must be canonical JSON (two-space indent, trailing LF, UTF-8, no BOM, no CR).",
+  "$comment": "Rules the validator enforces and this document does not express: the declared id sets and the archive directory contents must be equal in both directions; declared knowledge-base, checklist, hooks and mcp files must exist and every other file under those areas is BUNDLE_UNEXPECTED_PATH; every step id is unique across the whole bundle; stages order and steps order are execution order; id must equal the id parsed from the release tag bundle-<id>-v<version>; requires.engine is a restricted semver range evaluated by core/semver.js; bundle paths are at most 100 UTF-8 bytes and four segments; hooks.json and mcp.json must be canonical JSON and mcp.json carries an object under mcpServers; the manifest must be canonical JSON (two-space indent, trailing LF, UTF-8, no BOM, no CR).",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -17,7 +17,7 @@
   ],
   "properties": {
     "schema": {
-      "const": "r2c.bundle/v1",
+      "const": "hm2b.bundle/v2",
       "description": "Manifest schema revision; any other value stops validation with BUNDLE_SCHEMA_UNSUPPORTED."
     },
     "id": {
@@ -71,6 +71,30 @@
         "$ref": "#/$defs/skillId"
       }
     },
+    "knowledgeBase": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/knowledgeBasePath"
+      },
+      "description": "Declared markdown knowledge files; omitting it or writing [] both mean no knowledge base."
+    },
+    "checklists": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/id"
+      },
+      "description": "Checklist ids; checklist <id> is the file checklists/<id>.md."
+    },
+    "hooks": {
+      "$ref": "#/$defs/hooksFile",
+      "description": "Declares hooks/hooks.json, a canonical JSON document."
+    },
+    "mcp": {
+      "$ref": "#/$defs/mcpFile",
+      "description": "Declares mcp.json, a canonical JSON document with an object under mcpServers."
+    },
     "constitution": {
       "type": "object",
       "additionalProperties": false,
@@ -99,12 +123,12 @@
       "maxLength": 64
     },
     "bundleId": {
-      "description": "The release namespace reserves the literal id r2c.",
+      "description": "The release namespace reserves the literal id hm2b.",
       "type": "string",
       "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
       "maxLength": 40,
       "not": {
-        "const": "r2c"
+        "const": "hm2b"
       }
     },
     "version": {
@@ -143,6 +167,36 @@
         }
       ]
     },
+    "knowledgeBasePath": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100,
+      "pattern": "^knowledge-base/(?:[A-Za-z0-9._-]+/){0,2}[A-Za-z0-9._-]+\\.md$"
+    },
+    "hooksFile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path"
+      ],
+      "properties": {
+        "path": {
+          "const": "hooks/hooks.json"
+        }
+      }
+    },
+    "mcpFile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path"
+      ],
+      "properties": {
+        "path": {
+          "const": "mcp.json"
+        }
+      }
+    },
     "requires": {
       "type": "object",
       "additionalProperties": false,
@@ -158,7 +212,7 @@
           "uniqueItems": true,
           "items": {
             "enum": [
-              "r2c",
+              "runner",
               "agent-native"
             ]
           }

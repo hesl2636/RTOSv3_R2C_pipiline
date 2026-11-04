@@ -1,7 +1,7 @@
 /**
  * Canonical JSON: `JSON.stringify(value, null, 2) + "\n"`.
  *
- * Every persisted contract (bundle.json, stage files, workflow.ir.json,
+ * Every persisted contract (bundle.json, stage files, workflow.compiled.json,
  * projection results, receipts) is written in this exact byte form, so
  * validation can be "parse -> re-serialize -> compare bytes".
  */

@@ -5,7 +5,7 @@
  * (role names, YAML/frontmatter, `{{submit}}`), so migration is delete-then-
  * install, never incremental: verify every recorded hash, back up every path
  * the transaction touches, revoke merged pointers one by one, delete the old
- * layout, retire the receipts under `.r2c/install/legacy/*.retired` and write
+ * layout, retire the receipts under `.hm2b/install/legacy/*.retired` and write
  * the new install in the same journal. Any failure rolls the whole thing back.
  *
  * User-scope receipts live outside the project and are reported as manual
@@ -17,7 +17,17 @@ import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:pat
 import { canonicalJson } from '../core/canonical-json.js';
 import { compareCodePoints } from '../core/code-point.js';
 import { comparePaths } from '../core/paths.js';
-import { LEGACY_DIR, LEGACY_RECEIPT_SCHEMA, isInstallPath, isInsideProject, projectPath, toPosix } from './paths.js';
+import {
+  LEGACY_DIR,
+  LEGACY_INSTALL_DIR,
+  LEGACY_PAYLOAD_DIR,
+  LEGACY_PROJECT_DIR,
+  LEGACY_RECEIPT_SCHEMA,
+  isInstallPath,
+  isInsideProject,
+  projectPath,
+  toPosix,
+} from './paths.js';
 import { scanLegacyInstallDir } from './receipt.js';
 import {
   ensureAbsoluteDir,
@@ -116,8 +126,8 @@ export function detectLegacyInstall({ projectRoot, userHome = homedir(), scanUse
   const project = scanLegacyInstallDir(projectRoot);
   const known = new Set(project.map((item) => item.path));
   const unsupported = [];
-  for (const name of legacyJsonFiles(join(projectRoot, ...'.r2c/install'.split('/')))) {
-    const rel = `.r2c/install/${name}`;
+  for (const name of legacyJsonFiles(join(projectRoot, ...LEGACY_INSTALL_DIR.split('/')))) {
+    const rel = `${LEGACY_INSTALL_DIR}/${name}`;
     if (known.has(rel)) continue;
     const read = readJsonFile(join(projectRoot, ...rel.split('/')));
     if (!read.ok || typeof read.value?.schema !== 'string') continue;
@@ -127,7 +137,7 @@ export function detectLegacyInstall({ projectRoot, userHome = homedir(), scanUse
   }
   const user = [];
   if (scanUser) {
-    const userDir = join(userHome, '.r2c', 'install');
+    const userDir = join(userHome, ...LEGACY_PROJECT_DIR.split('/'), ...LEGACY_INSTALL_DIR.split('/').slice(1));
     for (const name of legacyJsonFiles(userDir)) {
       const absolute = join(userDir, name);
       const read = readJsonFile(absolute);
@@ -252,7 +262,7 @@ export function planLegacyMigration({ projectRoot, legacy }) {
     }
 
     const payloadHome = normalizeRecordedPath(projectRoot, receipt.payload_home);
-    if (payloadHome !== null && payloadHome.startsWith('.r2c/payload/')) payloadHomes.add(payloadHome);
+    if (payloadHome !== null && payloadHome.startsWith(`${LEGACY_PAYLOAD_DIR}/`)) payloadHomes.add(payloadHome);
   }
 
   for (const step of manualStepsForUser({ project: legacy.project, user: legacy.user })) manual(step);
@@ -374,7 +384,7 @@ export function applyLegacyDeletions({ projectRoot, plan, skip = new Set() }) {
   return deleted;
 }
 
-/** Copy each receipt to `.r2c/install/legacy/<agent>.json.retired`, then remove the original. */
+/** Copy each receipt to `.hm2b/install/legacy/<agent>.json.retired`, then remove the original. */
 export function retireLegacyReceipts({ projectRoot, plan }) {
   const retired = [];
   for (const item of plan.receipts) {

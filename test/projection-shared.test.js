@@ -47,7 +47,7 @@ const FULL_ROLE = {
   tools_deny: ['bash'],
   skills: ['codebase-search'],
   placeholder: false,
-  instructions: '\n你是 R2C 工作流中的架构师角色。\n',
+  instructions: '\n你是 HM2B 工作流中的架构师角色。\n',
 };
 
 function ctx(skillNames = new Map()) {
@@ -108,7 +108,7 @@ test('placeholderInstructions is the one visible role placeholder text', () => {
     '',
     '按当前步骤的任务书执行；不要臆测本角色未声明的专有职责。',
     '',
-    '<!-- r2c:placeholder role=bys-architect -->',
+    '<!-- hm2b:placeholder role=bys-architect -->',
     '',
   ].join('\n'));
   assert.match(placeholderBanner('skill', 'ar-miner'), /占位（placeholder）/);
@@ -123,25 +123,25 @@ test('the receipt is exactly six shell comment lines with the step marker first'
   assert.equal(mode, 'receipt');
   const lines = text.split('\n');
   assert.equal(lines.length, 6);
-  assert.equal(lines[0], '# r2c-submit: step=analysis-design');
+  assert.equal(lines[0], '# hm2b-submit: step=analysis-design');
   assert.equal(lines[1], '# 无 runner：提交 = 在本步回复末尾输出回执，包含');
   for (const line of lines) assert.match(line, /^#/);
-  assert.doesNotMatch(text, /\.r2c\/bin\/r2c\.js|r2c-submit: step=\s*$/);
+  assert.doesNotMatch(text, /\.hm2b\/bin\/hm2b\.js|hm2b-submit: step=\s*$/);
   assert.throws(() => submitReplacement({ taskId: 't', stepIds: [], mode: 'receipt' }));
 });
 
-test('the r2c command form only gains --step when exactly one step references the task', () => {
+test('the hm2b command form only gains --step when exactly one step references the task', () => {
   assert.deepEqual(submitReplacement({ taskId: 't', stepIds: ['only-step'] }), {
     mode: 'command',
-    text: 'node .r2c/bin/r2c.js submit --step only-step',
+    text: 'node .hm2b/bin/hm2b.js submit --step only-step',
   });
   assert.deepEqual(submitReplacement({ taskId: 't', stepIds: [] }), {
     mode: 'command',
-    text: 'node .r2c/bin/r2c.js submit',
+    text: 'node .hm2b/bin/hm2b.js submit',
   });
   assert.deepEqual(submitReplacement({ taskId: 't', stepIds: ['a', 'b'] }), {
     mode: 'command',
-    text: 'node .r2c/bin/r2c.js submit',
+    text: 'node .hm2b/bin/hm2b.js submit',
   });
 });
 
@@ -161,11 +161,11 @@ test('the submit token is sliced literally, never through $ replacement semantic
 
 test('renderRole renders the baseline Claude role byte-for-byte', () => {
   const rendered = renderRole(SAMPLE_ROLE, 'claude-code', ctx(new Map()));
-  assert.equal(rendered.name, 'rtosv3-drvport-bys-architect');
-  assert.equal(rendered.basename, 'rtosv3-drvport-bys-architect.md');
+  assert.equal(rendered.name, 'bys-architect');
+  assert.equal(rendered.basename, 'bys-architect.md');
   assert.equal(rendered.format, 'md');
   assert.equal(rendered.exposure, 'subagent');
-  assert.equal(sha256(rendered.content), '2d2b1cf862d576c9cd8f431686343e06c64084ae9f137eb2a7f271f062d1d3cc');
+  assert.equal(sha256(rendered.content), 'e7d61157b65bc90831d9c1b3927bbe90f7567935c932498375afe6fffbf5837b');
   assert.deepEqual(Object.keys(rendered.fields), [
     'id', 'description', 'instructions', 'mode', 'model', 'title', 'placeholder',
   ]);
@@ -175,13 +175,13 @@ test('renderRole renders the baseline Claude role byte-for-byte', () => {
 });
 
 test('renderRole maps tools, denies and preload names for Claude', () => {
-  const skillNames = new Map([['codebase-search', 'rtosv3-drvport-skill-codebase-search']]);
+  const skillNames = new Map([['codebase-search', 'codebase-search']]);
   const rendered = renderRole(FULL_ROLE, 'claude-code', ctx(skillNames));
-  assert.match(rendered.content, /^---\nname: rtosv3-drvport-bys-architect\n/);
+  assert.match(rendered.content, /^---\nname: bys-architect\n/);
   assert.match(rendered.content, /\nmodel: opus\n/);
   assert.match(rendered.content, /\neffort: high\n/);
   assert.match(rendered.content, /\ntools:\n {2}- Read\n {2}- Write\n {2}- Edit\n {2}- Glob\n {2}- Grep\n/);
-  assert.match(rendered.content, /\nskills:\n {2}- rtosv3-drvport-skill-codebase-search\n/);
+  assert.match(rendered.content, /\nskills:\n {2}- codebase-search\n/);
   assert.equal(rendered.fields.tools.state, 'adapted');
   assert.equal(rendered.fields.tools_deny.state, 'adapted');
   assert.equal(rendered.fields.skills.state, 'native');
@@ -195,8 +195,8 @@ test('renderRole resolves the closed registry when ctx omits a target table', ()
     namespace: 'rtosv3-drvport',
     skillNames: new Map(),
   });
-  assert.equal(rendered.name, 'rtosv3-drvport-bys-architect');
-  assert.equal(sha256(rendered.content), '2d2b1cf862d576c9cd8f431686343e06c64084ae9f137eb2a7f271f062d1d3cc');
+  assert.equal(rendered.name, 'bys-architect');
+  assert.equal(sha256(rendered.content), 'e7d61157b65bc90831d9c1b3927bbe90f7567935c932498375afe6fffbf5837b');
   assert.throws(() => renderRole(SAMPLE_ROLE, 'claude-code', { namespace: 'rtosv3-drvport' }), /ctx\.skillNames/);
 });
 
@@ -223,7 +223,7 @@ test('the pure sha256 matches the Node primitive byte for byte', () => {
 // --- yaml -----------------------------------------------------------------
 test('dumpWorkflowYaml is deterministic: caller order, quoted scalars, 2-space sequences', () => {
   const doc = {
-    schema: 'r2c.workflow/v1',
+    schema: 'hm2b.workflow/v1',
     id: 'demo',
     stages: [
       {
@@ -237,7 +237,7 @@ test('dumpWorkflowYaml is deterministic: caller order, quoted scalars, 2-space s
     emptyList: [],
   };
   const expected = [
-    'schema: "r2c.workflow/v1"',
+    'schema: "hm2b.workflow/v1"',
     'id: "demo"',
     'stages:',
     '  - id: "one"',

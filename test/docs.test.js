@@ -16,7 +16,13 @@ import { fileURLToPath } from 'node:url';
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const DOCS = ['README.md', 'docs/install.md', 'docs/layout.md', 'docs/compat.md', 'GLOSSARY.md', 'CHANGELOG.md'];
-const HISTORICAL = new Set(['docs/legacy.md', 'docs/blue-zone/preflight.md', 'docs/agents/issue-tracker.md']);
+/** Historical records may name retired mechanisms; current docs may not. */
+const HISTORICAL = new Set([
+  'docs/legacy.md',
+  'docs/blue-zone/preflight.md',
+  'docs/agents/issue-tracker.md',
+  'notes/99-report.md',
+]);
 
 /** Retired vocabulary: the replacement is the bundle/projection/target world. */
 const RETIRED = [
@@ -30,8 +36,25 @@ const RETIRED = [
   ['shims tree', /(?<![/\w-])shims\//],
   ['top-level schema tree', /(?<![/\w-])schema\//],
   ['adapter command', /\br2c adapter\b/],
+  ['adapter field', /\badapter\s*:/i],
+  ['adapter id', /\badapter[- ]id\b/i],
+  ['plugin field', /\bplugin\s*:/i],
+  ['plugin id', /\bplugin[- ]id\b/i],
   ['acceptance command', /\br2c acceptance\b/],
   ['legacy payload asset', /r2c-payload-<E>|r2c-payload-\d/],
+  // The framework/engine/projection names moved to hm2b; current docs must
+  // not describe the new channel with the retired r2c names.
+  ['legacy framework name', /\br2c-framework\b/],
+  ['legacy engine name', /\br2c-runner\b/],
+  ['legacy engine asset', /\br2c-engine-/],
+  ['legacy bundle schema', /\br2c\.bundle\//],
+  ['legacy compiled workflow schema', /\br2c\.ir\//],
+  ['legacy bundle revision', /\bhm2b\.bundle\/v1\b/],
+  ['legacy compiled workflow revision', /\bhm2b\.ir\/v1\b/],
+  ['legacy workflow schema', /\br2c\.workflow\//],
+  ['legacy runtime receipt', /\br2c\.runtime\//],
+  ['legacy projection report', /\br2c\.projection/],
+  ['legacy projection id', /(?<![\w./`-])r2c(?![\w./`-])/],
 ];
 
 function read(rel) {
@@ -68,7 +91,7 @@ function helpOf(file, args = ['--help']) {
 }
 
 const FLAGS = new Set(['--help', '-h', '--json', '--version', '-v']);
-for (const file of ['runtime/r2c/engine/bin/r2c.js', 'bin/r2c-assembler.js', 'scripts/install.mjs', 'scripts/release.mjs', 'installer/cli.js']) {
+for (const file of ['runtime/runner/engine/bin/hm2b.js', 'bin/hm2b-assembler.js', 'scripts/install.mjs', 'scripts/release.mjs', 'installer/cli.js']) {
   const text = file.endsWith('release.mjs')
     ? spawnSync(process.execPath, [join(REPO, ...file.split('/')), '--help'], { encoding: 'utf8' }).stderr
     : helpOf(file);
@@ -94,8 +117,20 @@ test('retired mechanisms appear only in the historical notes', () => {
   assert.match(legacy, /retired|冻结|退役/i);
 });
 
+test('current docs name hosts as targets, not adapters or plugins', () => {
+  // GLOSSARY lists the retired words only as terms to avoid; CHANGELOG and
+  // docs/legacy.md are historical records.
+  const exempt = new Set(['GLOSSARY.md', 'CHANGELOG.md']);
+  for (const rel of DOCS.filter((doc) => !exempt.has(doc))) {
+    assert.doesNotMatch(read(rel), /\b(?:adapter|plugin)s?\b/i, `${rel} uses retired host vocabulary`);
+  }
+  const glossary = read('GLOSSARY.md');
+  assert.match(glossary, /_Avoid_: adapter/);
+  assert.match(glossary, /_Avoid_: 工作流包、pack、plugin/);
+});
+
 test('every relative markdown link resolves', () => {
-  for (const rel of [...DOCS, 'docs/legacy.md']) {
+  for (const rel of [...DOCS, ...HISTORICAL]) {
     const text = read(rel);
     const base = dirname(join(REPO, ...rel.split('/')));
     for (const match of text.matchAll(/\[[^\]]*\]\(([^)#]+)(?:#[^)]*)?\)/g)) {
@@ -109,7 +144,8 @@ test('every relative markdown link resolves', () => {
 test('documented commands use real paths and known flags', () => {
   for (const rel of [...DOCS, 'docs/legacy.md']) {
     for (const line of commandLines(read(rel))) {
-      const isCommand = line.startsWith('node ') || line.startsWith('r2c ') || line.startsWith('npm ') || line.startsWith('npx ');
+      const isCommand = line.startsWith('node ') || line.startsWith('r2c ') || line.startsWith('hm2b ')
+        || line.startsWith('npm ') || line.startsWith('npx ');
       if (!isCommand) continue;
       if (line.startsWith('node ')) {
         const path = line.split(/\s+/)[1].replace(/^"|"$/g, '');
@@ -117,7 +153,8 @@ test('documented commands use real paths and known flags', () => {
         if (!path.startsWith('<') && !path.startsWith('.')) {
           assert.ok(existsSync(join(REPO, ...path.split('/'))), `${rel}: node ${path} does not exist`);
         }
-      } else if (line.startsWith('r2c ') || line.startsWith('npx ') || line.startsWith('npm ')) {
+      } else if (line.startsWith('r2c ') || line.startsWith('hm2b ')
+        || line.startsWith('npx ') || line.startsWith('npm ')) {
         assert.fail(`${rel}: unexpected command ${line}`);
       }
       for (const match of line.matchAll(/--[a-z][a-z-]*/g)) {
@@ -136,26 +173,77 @@ test('install docs describe exactly the bundle channel and the frozen legacy cha
   assert.match(install, /--projection/);
   assert.match(install, /frozen|冻结|legacy/i);
   assert.doesNotMatch(install, /\bnpx\b|\bnpm\s+install\b|\byarn\b|\bpnpm\b/);
+  // The generated web command downloads the Release and installs offline.
+  assert.match(install, /\.hm2b\/release\/bundle-/);
+  assert.match(install, /--release-base \.hm2b\/release/);
+  // Payload members are checked against the archive's own manifest.
+  assert.match(install, /`manifest\.json`/);
+  assert.doesNotMatch(install, /payload\.manifest\.json/);
+  // Uninstall is receipt-only; there is no state purge and no runtime removal.
+  assert.doesNotMatch(install, /--purge-state/);
+  assert.doesNotMatch(install, /(explicit )?runtime uninstall/i);
+});
+
+test('the historical allowlist keeps legacy and blue-zone notes, plus the dsh evidence', () => {
+  for (const rel of ['docs/legacy.md', 'docs/blue-zone/preflight.md', 'notes/99-report.md']) {
+    assert.ok(HISTORICAL.has(rel), `${rel} must stay in the historical allowlist`);
+    assert.ok(existsSync(join(REPO, ...rel.split('/'))), `${rel} is missing`);
+  }
+});
+
+test('legacy docs separate new retirement from the old takeover path', () => {
+  const legacy = read('docs/legacy.md');
+  assert.match(legacy, /\.hm2b\/install\/legacy/);
+  assert.match(legacy, /\.r2c\/install/);
+  // Historical asset names stay exactly as the old channel published them.
+  assert.match(legacy, /r2c-engine-<E>\.tgz/);
+  assert.match(legacy, /r2c-payload-<E>\.tgz/);
+});
+
+test('the dsh report keeps the first-hand Cordis evidence', () => {
+  const report = read('notes/99-report.md');
+  assert.match(report, /- insert:/);
+  assert.match(report, /allowedAgentPresets/);
+  assert.match(report, /dsh-agent-preset/);
+  assert.match(report, /dsh-persona/);
+  assert.match(report, /config\.plugins/);
+});
+
+test('docs describe the v2 bundle and compiled workflow contract', () => {
+  for (const rel of ['README.md', 'GLOSSARY.md', 'docs/layout.md']) {
+    const text = read(rel);
+    assert.match(text, /hm2b\.bundle\/v2/, `${rel} does not name hm2b.bundle/v2`);
+    assert.match(text, /hm2b\.compiled-workflow\/v2/, `${rel} does not name hm2b.compiled-workflow/v2`);
+    for (const dir of ['knowledge-base/', 'checklists/', 'hooks/hooks.json', 'mcp.json']) {
+      assert.ok(text.includes(dir), `${rel} does not document ${dir}`);
+    }
+  }
+  assert.match(read('README.md'), /4 段/);
+  assert.match(read('docs/layout.md'), /4 segments/);
+  assert.match(read('README.md'), /\.agents\/agent-native\/<bundle-id>\//);
+  const help = helpOf('bin/hm2b-assembler.js');
+  assert.match(help, /hm2b\.bundle\/v2/);
+  assert.match(help, /hm2b\.compiled-workflow\/v2/);
 });
 
 test('the layout document lists every top-level module that exists', () => {
   const layout = read('docs/layout.md');
   const dirs = [
-    'assembler', 'bin', 'core', 'docs', 'examples', 'installer', 'ir', 'projection',
-    'runtime/agent-native', 'runtime/r2c/contract', 'runtime/r2c/engine', 'runtime/r2c/projection',
-    'runtime/r2c/schema', 'runtime/shared', 'scripts', 'test', 'web',
+    'assembler', 'bin', 'core', 'docs', 'examples', 'installer', 'compiled', 'projection',
+    'runtime/agent-native', 'runtime/runner/contract', 'runtime/runner/engine', 'runtime/runner/projection',
+    'runtime/runner/schema', 'runtime/shared', 'scripts', 'test', 'web',
   ];
   for (const dir of dirs) {
     assert.ok(layout.includes(dir), `docs/layout.md does not mention ${dir}`);
     assert.ok(existsSync(join(REPO, ...dir.split('/'))), `${dir} does not exist`);
   }
-  assert.ok(layout.includes('r2c-framework'));
-  assert.ok(layout.includes('r2c-runner'));
+  assert.ok(layout.includes('hm2b-framework'));
+  assert.ok(layout.includes('hm2b-runner'));
 });
 
 test('GLOSSARY carries the new vocabulary and marks the retired one', () => {
   const glossary = read('GLOSSARY.md');
-  for (const term of ['bundle', 'manifest', 'stage', 'step', 'task', 'role', 'skill', 'constitution', 'IR',
+  for (const term of ['bundle', 'manifest', 'stage', 'step', 'task', 'role', 'skill', 'constitution', 'compiled workflow',
     'projection', 'target', 'capability', 'obligation', 'degradation', 'receipt', 'runtime receipt',
     'pre-projected payload', 'canonical options', 'ownership', 'shared root', 'adopt', 'takeover']) {
     assert.match(glossary, new RegExp(`\\*\\*${term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\*\\*|^\\| \`?${term}`, 'im'), `GLOSSARY is missing ${term}`);
@@ -181,9 +269,9 @@ test('CHANGELOG records the P6 cutover', () => {
 
 test('the compatibility document is the generated framework/engine/projection matrix', () => {
   const compat = read('docs/compat.md');
-  assert.match(compat, /\| Framework \| `r2c-framework` \| `0\.1\.0` \|/);
-  assert.match(compat, /\| Engine \| `r2c-runner` \| `0\.1\.0` \|/);
+  assert.match(compat, /\| Framework \| `hm2b-framework` \| `0\.1\.0` \|/);
+  assert.match(compat, /\| Engine \| `hm2b-runner` \| `0\.1\.0` \|/);
   assert.match(compat, /\| Projection \| `agent-native` \|/);
-  assert.match(compat, /\| Projection \| `r2c` \|/);
+  assert.match(compat, /\| Projection \| `runner` \|/);
   assert.doesNotMatch(compat, /adapter/i);
 });

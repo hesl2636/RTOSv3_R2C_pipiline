@@ -9,7 +9,7 @@
  */
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
-import { cpSync, existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import test from 'node:test';
@@ -26,6 +26,7 @@ import { project } from '../projection/project.js';
 import { getProjection } from '../projection/registry.js';
 import { readReleaseTarGz } from '../installer/release-tar.js';
 import { PAYLOAD_MANIFEST_NAME } from '../scripts/lib/bundle-release.mjs';
+import { assetZip } from './helpers/minimal-bundle.js';
 import { buildZip } from './helpers/zip.js';
 import {
   ROOT,
@@ -40,50 +41,50 @@ import {
 } from './helpers/web-server.js';
 
 const SAMPLE = join(ROOT, 'examples', 'rtosv3', 'dist', 'bundle-rtosv3-drvport-v1.0.0.zip');
-const IR_FIXTURE = join(ROOT, 'test', 'fixtures', 'ir', 'workflow.ir.json');
-const SAMPLE_SHA256 = 'c22064539aa189b4d9345b1d39b148967a450584badd2593dcf47c0c5b75a13e';
-const IR_DIGEST = '8a2a57593939f91117d57f9ca34c56b2fc631f6837168ef74032daa95202d395';
+const COMPILED_WORKFLOW_FIXTURE = join(ROOT, 'test', 'fixtures', 'compiled', 'workflow.compiled.json');
+const SAMPLE_SHA256 = 'ff1f3004c618be9d5ee6b090e0d635f6a6c7cb49a8c22e188cc11206bbe37cd4';
+const COMPILED_WORKFLOW_DIGEST = '518643ab9c92d270a66bd4545cba660d0511243070c3479234edec3225b6d23c';
 const TAG = 'bundle-rtosv3-drvport-v1.0.0';
 const ASSETS = [
   'SHA256SUMS.txt',
   'agent-native-rtosv3-drvport-v1.0.0.tgz',
   'bundle-rtosv3-drvport-v1.0.0.zip',
+  'hm2b-engine-0.1.0.tgz',
+  'hm2b-framework-0.1.0.tgz',
+  'hm2b-payload-rtosv3-drvport-v1.0.0.tgz',
   'install.mjs',
-  'r2c-engine-0.1.0.tgz',
-  'r2c-framework-0.1.0.tgz',
-  'r2c-payload-rtosv3-drvport-v1.0.0.tgz',
-  'workflow.ir.json',
+  'workflow.compiled.json',
 ];
-const R2C_CANONICAL = { files: 45, bytes: 48840, degradations: 4, capabilities: 8, warnings: 0 };
-const AGENT_NATIVE_CANONICAL = { files: 98, bytes: 142620, degradations: 45, capabilities: 40, warnings: 1 };
+const RUNNER_CANONICAL = { files: 45, bytes: 48821, degradations: 4, capabilities: 8, warnings: 0 };
+const AGENT_NATIVE_CANONICAL = { files: 98, bytes: 138183, degradations: 45, capabilities: 40, warnings: 1 };
 
 function tempDir(t, prefix) {
-  const dir = mkdtempSync(join(tmpdir(), `r2c-web-build-${prefix}-`));
+  const dir = mkdtempSync(join(tmpdir(), `hm2b-web-build-${prefix}-`));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   return dir;
 }
 
-function compiledIr() {
-  const bytes = readFileSync(SAMPLE);
+function compiledCompiledWorkflow(bundle = SAMPLE) {
+  const bytes = typeof bundle === 'string' ? readFileSync(bundle) : bundle;
   const compiled = compileBundle(new Uint8Array(bytes), { inflateRaw, sha256: sha256Hex }, { path: 'bundle.zip' });
   assert.equal(compiled.ok, true);
   return {
-    ir: JSON.parse(Buffer.from(compiled.irBytes).toString('utf8')),
-    irDigest: compiled.digest,
-    irBytes: Buffer.from(compiled.irBytes),
+    compiledWorkflow: JSON.parse(Buffer.from(compiled.compiledWorkflowBytes).toString('utf8')),
+    compiledWorkflowDigest: compiled.digest,
+    compiledWorkflowBytes: Buffer.from(compiled.compiledWorkflowBytes),
   };
 }
 
 /** Project with the shared modules: the independent oracle for every number. */
-function expected({ projectionId, raw = null, engineVersion }) {
-  const { ir, irDigest } = compiledIr();
+function expected({ projectionId, raw = null, engineVersion, bundle = SAMPLE }) {
+  const { compiledWorkflow, compiledWorkflowDigest } = compiledCompiledWorkflow(bundle);
   const manifest = getProjection(projectionId);
-  const normalized = normalizeOptions({ projectionId, ir, irDigest, raw, manifest });
+  const normalized = normalizeOptions({ projectionId, compiledWorkflow, compiledWorkflowDigest, raw, manifest });
   assert.equal(normalized.ok, true, JSON.stringify(normalized.errors));
   const result = project({
     projectionId,
-    ir,
-    irDigest,
+    compiledWorkflow,
+    compiledWorkflowDigest,
     options: normalized.options,
     environment: { engineVersion },
     assets: {},
@@ -111,11 +112,11 @@ function expected({ projectionId, raw = null, engineVersion }) {
   };
 }
 
-async function uploadBytes(server, csrf, zip) {
+async function uploadBytes(server, csrf, zip, query = '') {
   const response = await httpRequest({
     port: server.port,
     method: 'POST',
-    path: '/api/uploads',
+    path: `/api/uploads${query}`,
     headers: postHeaders(server, csrf, {
       'Content-Type': 'application/zip',
       'Content-Length': String(zip.length),
@@ -133,6 +134,11 @@ async function upload(server, csrf) {
 
 async function build(server, csrf, payload) {
   return jsonRequest(server, csrf, '/api/builds', payload);
+}
+
+/** Run one generated shell chain in `cwd`; the chain is `project && install`. */
+function runChain(command, cwd) {
+  return spawnSync(command, { cwd, shell: true, encoding: 'utf8', timeout: 180_000, windowsHide: true });
 }
 
 function projectionOf(data, id) {
@@ -167,7 +173,9 @@ test('canonical build is publishable and matches the CLI projection numbers', as
   const { csrf, engineVersion } = await sessionOf(server);
   const uploaded = await upload(server, csrf);
   assert.equal(uploaded.report.ok, true);
-  assert.equal(uploaded.ir.digest, IR_DIGEST);
+  assert.equal(uploaded.report.schema, 'hm2b.bundle/v2');
+  assert.equal(uploaded.compiledWorkflow.schema, 'hm2b.compiled-workflow/v2');
+  assert.equal(uploaded.compiledWorkflow.digest, COMPILED_WORKFLOW_DIGEST);
   const report = uploaded.report;
 
   const response = await build(server, csrf, { uploadId: uploaded.uploadId, options: {} });
@@ -176,23 +184,24 @@ test('canonical build is publishable and matches the CLI projection numbers', as
 
   assert.match(data.buildId, /^[0-9a-f]{16}$/);
   assert.equal(data.tag, TAG);
+  assert.equal(data.compiledWorkflow.schema, 'hm2b.compiled-workflow/v2');
   assert.equal(data.canonical, true);
   assert.equal(data.publishable, true);
   assert.deepEqual(
-    { id: data.ir.id, version: data.ir.version, digest: data.ir.digest },
-    { id: report.id, version: report.version, digest: IR_DIGEST },
+    { id: data.compiledWorkflow.id, version: data.compiledWorkflow.version, digest: data.compiledWorkflow.digest },
+    { id: report.id, version: report.version, digest: COMPILED_WORKFLOW_DIGEST },
   );
-  assert.deepEqual(data.projections.map((item) => item.id), ['agent-native', 'r2c']);
+  assert.deepEqual(data.projections.map((item) => item.id), ['agent-native', 'runner']);
 
-  const r2c = projectionOf(data, 'r2c');
+  const runner = projectionOf(data, 'runner');
   const agentNative = projectionOf(data, 'agent-native');
-  const r2cOracle = expected({ projectionId: 'r2c', engineVersion });
+  const runnerOracle = expected({ projectionId: 'runner', engineVersion });
   const agentOracle = expected({ projectionId: 'agent-native', engineVersion });
-  assertMatchesExpected(r2c, r2cOracle);
+  assertMatchesExpected(runner, runnerOracle);
   assertMatchesExpected(agentNative, agentOracle);
   assert.deepEqual(
-    { files: r2c.counts.files, bytes: r2c.counts.bytes, degradations: r2c.counts.degradations, capabilities: r2c.counts.capabilities },
-    { files: R2C_CANONICAL.files, bytes: R2C_CANONICAL.bytes, degradations: R2C_CANONICAL.degradations, capabilities: R2C_CANONICAL.capabilities },
+    { files: runner.counts.files, bytes: runner.counts.bytes, degradations: runner.counts.degradations, capabilities: runner.counts.capabilities },
+    { files: RUNNER_CANONICAL.files, bytes: RUNNER_CANONICAL.bytes, degradations: RUNNER_CANONICAL.degradations, capabilities: RUNNER_CANONICAL.capabilities },
   );
   assert.deepEqual(
     {
@@ -209,13 +218,13 @@ test('canonical build is publishable and matches the CLI projection numbers', as
     },
   );
 
-  // The CLI prints the same contract numbers for the frozen IR.
-  const cli = cliJson(['bin/r2c-assembler.js', 'project', IR_FIXTURE, '--projection', 'r2c', '--json']).data;
-  assert.deepEqual(r2c.files, cli.files);
-  assert.deepEqual(r2c.capabilityReport, cli.capabilityReport);
-  assert.deepEqual(r2c.degradations, cli.degradations);
-  assert.deepEqual(r2c.warnings, cli.warnings);
-  assert.deepEqual(r2c.coverage, cli.coverage);
+  // The CLI prints the same contract numbers for the frozen compiled workflow.
+  const cli = cliJson(['bin/hm2b-assembler.js', 'project', COMPILED_WORKFLOW_FIXTURE, '--projection', 'runner', '--json']).data;
+  assert.deepEqual(runner.files, cli.files);
+  assert.deepEqual(runner.capabilityReport, cli.capabilityReport);
+  assert.deepEqual(runner.degradations, cli.degradations);
+  assert.deepEqual(runner.warnings, cli.warnings);
+  assert.deepEqual(runner.coverage, cli.coverage);
 
   // Assets are exactly the release table, verified byte for byte.
   assert.deepEqual(data.artifacts.map((asset) => asset.name), ASSETS);
@@ -244,17 +253,17 @@ test('canonical build is publishable and matches the CLI projection numbers', as
 
   // Payload archives record canonical inputs and exactly the projected files.
   for (const [id, oracle, name] of [
-    ['r2c', r2cOracle, 'r2c-payload-rtosv3-drvport-v1.0.0.tgz'],
+    ['runner', runnerOracle, 'hm2b-payload-rtosv3-drvport-v1.0.0.tgz'],
     ['agent-native', agentOracle, 'agent-native-rtosv3-drvport-v1.0.0.tgz'],
   ]) {
     const download = await httpRequest({ port: server.port, path: `/api/builds/${data.buildId}/artifacts/${name}` });
     const manifest = payloadManifest(download.raw);
     assert.equal(manifest.projection.id, id);
-    assert.equal(manifest.ir.digest, IR_DIGEST);
+    assert.equal(manifest.compiledWorkflow.digest, COMPILED_WORKFLOW_DIGEST);
     assert.deepEqual(manifest.options, {
       stageOrder: null,
       skills: null,
-      targets: id === 'r2c' ? ['r2c'] : agentOracle.result.targets,
+      targets: id === 'runner' ? ['runner'] : agentOracle.result.targets,
     });
     assert.deepEqual(
       manifest.files.map(({ path, mode, sha256, kind, targets }) => ({ path, mode, sha256, kind, targets })),
@@ -264,14 +273,27 @@ test('canonical build is publishable and matches the CLI projection numbers', as
 
   // Fixed-version install commands, never a project write.
   assert.equal(data.install.mode, 'release');
-  const commands = data.install.commands;
-  const r2cCommand = commands.find((item) => item.projection === 'r2c');
   assert.deepEqual(
-    { projection: r2cCommand.projection, target: r2cCommand.target, command: r2cCommand.command },
     {
-      projection: 'r2c',
+      asset: data.install.bootstrap.asset,
+      path: data.install.bootstrap.path,
+    },
+    { asset: 'install.mjs', path: '.hm2b/release/bundle-rtosv3-drvport-v1.0.0/install.mjs' },
+  );
+  assert.match(data.install.bootstrap.instruction, /install\.mjs/);
+  assert.match(data.install.bootstrap.instruction, /\.hm2b\/release\/bundle-rtosv3-drvport-v1\.0\.0/);
+  assert.equal(
+    data.install.bootstrap.command,
+    'gh release download bundle-rtosv3-drvport-v1.0.0 --repo hesl2636/hm2B_drvport_pipiline --dir .hm2b/release/bundle-rtosv3-drvport-v1.0.0 --clobber',
+  );
+  const commands = data.install.commands;
+  const runnerCommand = commands.find((item) => item.projection === 'runner');
+  assert.deepEqual(
+    { projection: runnerCommand.projection, target: runnerCommand.target, command: runnerCommand.command },
+    {
+      projection: 'runner',
       target: null,
-      command: 'node .r2c/bootstrap/install.mjs --bundle rtosv3-drvport --version 1.0.0 --projection r2c --project .',
+      command: 'node .hm2b/release/bundle-rtosv3-drvport-v1.0.0/install.mjs --bundle rtosv3-drvport --version 1.0.0 --projection runner --release-base .hm2b/release --project .',
     },
   );
   const agentCommands = commands.filter((item) => item.projection === 'agent-native');
@@ -285,9 +307,9 @@ test('canonical build is publishable and matches the CLI projection numbers', as
   for (const item of commands) {
     assert.match(
       item.command,
-      /^node \.r2c\/bootstrap\/install\.mjs --bundle [a-z0-9-]+ --version \d+\.\d+\.\d+ --projection (r2c|agent-native)( --target [a-z-]+)? --project \.$/,
+      /^node \.hm2b\/release\/bundle-[a-z0-9-]+-v\d+\.\d+\.\d+\/install\.mjs --bundle [a-z0-9-]+ --version \d+\.\d+\.\d+ --projection (runner|agent-native)( --target [a-z-]+)? --release-base \.hm2b\/release --project \.$/,
     );
-    assert.doesNotMatch(item.command, /--release-base/);
+    assert.equal(item.oneLiner, `${data.install.bootstrap.command}; ${item.command}`);
   }
 
   const list = await httpRequest({ port: server.port, path: '/api/builds' });
@@ -295,16 +317,65 @@ test('canonical build is publishable and matches the CLI projection numbers', as
   assert.deepEqual(list.json.data.builds.map((item) => item.buildId), [data.buildId]);
 });
 
+test('compiled workflow v2 asset groups are listed in every projection summary without extra web rules', async (t) => {
+  const server = await startWebServer(t);
+  const { csrf, engineVersion } = await sessionOf(server);
+  const zip = assetZip();
+  const uploaded = await uploadBytes(server, csrf, zip);
+  assert.equal(uploaded.report.ok, true, JSON.stringify(uploaded.report));
+  assert.equal(uploaded.compiledWorkflow.schema, 'hm2b.compiled-workflow/v2');
+
+  const response = await build(server, csrf, { uploadId: uploaded.uploadId, options: {} });
+  assert.equal(response.status, 200, JSON.stringify(response.json));
+  const data = response.json.data;
+  assert.equal(data.compiledWorkflow.schema, 'hm2b.compiled-workflow/v2');
+
+  for (const projectionId of ['runner', 'agent-native']) {
+    const projected = projectionOf(data, projectionId);
+    const oracle = expected({ projectionId, engineVersion, bundle: zip });
+    assertMatchesExpected(projected, oracle);
+
+    // The projection decides the kinds; the web surface only groups and lists them.
+    const assetFiles = projected.files.filter((file) => ['knowledge', 'checklist', 'hooks', 'mcp'].includes(file.kind));
+    assert.equal(assetFiles.length, 6, `${projectionId} lists every declared asset`);
+    assert.deepEqual(
+      [...new Set(assetFiles.map((file) => file.kind))].sort(),
+      ['checklist', 'hooks', 'knowledge', 'mcp'],
+      projectionId,
+    );
+  }
+});
+
+test('upload version override rewrites the bundle manifest and every release artifact name', async (t) => {
+  const server = await startWebServer(t);
+  const { csrf } = await sessionOf(server);
+  const uploaded = await uploadBytes(server, csrf, readFileSync(SAMPLE), '?version=1.0.1');
+  assert.equal(uploaded.compiledWorkflow.version, '1.0.1');
+
+  const response = await build(server, csrf, { uploadId: uploaded.uploadId, options: {} });
+  assert.equal(response.status, 200, JSON.stringify(response.json));
+  const data = response.json.data;
+  assert.equal(data.tag, 'bundle-rtosv3-drvport-v1.0.1');
+  assert.ok(data.artifacts.some((asset) => asset.name === 'bundle-rtosv3-drvport-v1.0.1.zip'));
+  for (const item of data.install.commands) assert.match(item.command, /--version 1\.0\.1\b/);
+
+  const native = projectionOf(data, 'agent-native');
+  const paths = native.files.map((file) => file.path);
+  assert.equal(paths.includes('.claude/skills/r2c-design/SKILL.md'), true);
+  assert.equal(paths.some((path) => /(?:^|\/)rtosv3-drvport-(?:skill|stage|workflow)-/.test(path)), false);
+  assert.equal(paths.includes('.claude/agents/bys-architect.md'), true);
+});
+
 test('custom options build locally, record the actual options and stay unpublishable', async (t) => {
   const server = await startWebServer(t);
   const { csrf, engineVersion } = await sessionOf(server);
   const uploaded = await upload(server, csrf);
-  const { ir } = compiledIr();
-  const skillIds = Object.keys(ir.skills).sort();
-  const stageIds = ir.stages.map((stage) => stage.id);
+  const { compiledWorkflow } = compiledCompiledWorkflow();
+  const skillIds = Object.keys(compiledWorkflow.skills).sort();
+  const stageIds = compiledWorkflow.stages.map((stage) => stage.id);
   const twelve = skillIds.slice(0, 12);
   const custom = {
-    r2c: { stageOrder: [...stageIds].reverse(), skills: twelve, targets: ['r2c'] },
+    runner: { stageOrder: [...stageIds].reverse(), skills: twelve, targets: ['runner'] },
     'agent-native': { skills: twelve, targets: ['claude-code', 'codex'] },
   };
 
@@ -314,24 +385,50 @@ test('custom options build locally, record the actual options and stay unpublish
   assert.equal(data.canonical, false);
   assert.equal(data.publishable, false);
   assert.equal(data.install.mode, 'local');
-
-  const r2c = projectionOf(data, 'r2c');
+  assert.equal(data.install.bootstrap, null);
+  const runnerCommand = data.install.commands.find((item) => item.projection === 'runner');
+  assert.equal(runnerCommand.target, null);
+  assert.ok(runnerCommand.command.startsWith('node bin/hm2b-assembler.js project workflow.compiled.json --projection runner '));
+  assert.ok(runnerCommand.command.includes(`--stage-order ${[...stageIds].reverse().join(',')} `));
+  assert.ok(runnerCommand.command.includes(`--skills ${twelve.join(',')} `));
+  assert.ok(runnerCommand.command.endsWith(
+    '--result .hm2b/build/runner && node installer/cli.js --result .hm2b/build/runner --compiled-workflow workflow.compiled.json --project .',
+  ));
+  const agentAll = data.install.commands.find((item) => item.projection === 'agent-native' && item.target === null);
+  assert.ok(agentAll.command.includes('--target claude-code --target codex'));
+  const agentTargets = data.install.commands.filter((item) => item.projection === 'agent-native' && item.target !== null);
+  for (const target of ['claude-code', 'codex']) {
+    const item = agentTargets.find((entry) => entry.target === target);
+    assert.ok(item, target);
+    assert.ok(item.command.includes(`--target ${target} `));
+    assert.ok(item.command.includes(`--result .hm2b/build/agent-native-${target} && `));
+    assert.ok(item.command.endsWith(`--result .hm2b/build/agent-native-${target} --compiled-workflow workflow.compiled.json --project .`));
+  }
+  for (const item of data.install.commands) {
+    assert.doesNotMatch(item.command, /--release-base/);
+    assert.doesNotMatch(item.command, /\.hm2b\/bootstrap\/install\.mjs/);
+    assert.match(
+      item.command,
+      /^node bin\/hm2b-assembler\.js project workflow\.compiled\.json --projection (runner|agent-native)(?: --target [a-z-]+)* --stage-order [a-z0-9,-]+ --skills [a-z0-9,-]+ --result \.hm2b\/build\/[a-z-]+ && node installer\/cli\.js --result \.hm2b\/build\/[a-z-]+ --compiled-workflow workflow\.compiled\.json --project \.$/,
+    );
+  }
+  const runner = projectionOf(data, 'runner');
   const agentNative = projectionOf(data, 'agent-native');
-  const r2cOracle = expected({ projectionId: 'r2c', raw: custom.r2c, engineVersion });
+  const runnerOracle = expected({ projectionId: 'runner', raw: custom.runner, engineVersion });
   const agentOracle = expected({ projectionId: 'agent-native', raw: custom['agent-native'], engineVersion });
-  assertMatchesExpected(r2c, r2cOracle);
+  assertMatchesExpected(runner, runnerOracle);
   assertMatchesExpected(agentNative, agentOracle);
   // The frozen K=12 anchor is agent-native with every target selected.
   const twelveSkills = expected({ projectionId: 'agent-native', raw: { skills: twelve }, engineVersion });
   assert.equal(twelveSkills.counts.files, 52, 'K=12 anchor');
-  assert.deepEqual(r2c.options.stageOrder, [...stageIds].reverse());
-  assert.deepEqual(r2c.options.skills, twelve);
+  assert.deepEqual(runner.options.stageOrder, [...stageIds].reverse());
+  assert.deepEqual(runner.options.skills, twelve);
   assert.deepEqual(agentNative.targets, ['claude-code', 'codex']);
 
   // The asset table is unchanged; only the recorded options differ.
   assert.deepEqual(data.artifacts.map((asset) => asset.name), ASSETS);
   for (const [name, oracle, projectionId] of [
-    ['r2c-payload-rtosv3-drvport-v1.0.0.tgz', r2cOracle, 'r2c'],
+    ['hm2b-payload-rtosv3-drvport-v1.0.0.tgz', runnerOracle, 'runner'],
     ['agent-native-rtosv3-drvport-v1.0.0.tgz', agentOracle, 'agent-native'],
   ]) {
     const download = await httpRequest({ port: server.port, path: `/api/builds/${data.buildId}/artifacts/${name}` });
@@ -347,24 +444,108 @@ test('custom options build locally, record the actual options and stay unpublish
     );
     assert.equal(manifest.projection.id, projectionId);
   }
+});
 
-  for (const item of data.install.commands) {
-    assert.match(item.command, / --release-base \.\/dist /);
-    assert.doesNotMatch(item.command, /--targets/);
+test('a custom build chain re-projects the downloaded compiled workflow and installs the result', async (t) => {
+  const server = await startWebServer(t);
+  const { csrf } = await sessionOf(server);
+  const uploaded = await upload(server, csrf);
+  const { compiledWorkflow } = compiledCompiledWorkflow();
+  const skillIds = Object.keys(compiledWorkflow.skills).sort();
+  const stageIds = compiledWorkflow.stages.map((stage) => stage.id);
+  const twelve = skillIds.slice(0, 12);
+  const custom = {
+    runner: { stageOrder: [...stageIds].reverse(), skills: twelve, targets: ['runner'] },
+    'agent-native': { skills: twelve, targets: ['claude-code'] },
+  };
+
+  const response = await build(server, csrf, { uploadId: uploaded.uploadId, options: custom });
+  assert.equal(response.status, 200, JSON.stringify(response.json));
+  const data = response.json.data;
+  assert.equal(data.install.mode, 'local');
+
+  // The chain runs from the framework source, against the downloaded compiled workflow.
+  const root = copyFramework(t);
+  const compiledWorkflowAsset = data.artifacts.find((asset) => asset.name === 'workflow.compiled.json');
+  const download = await httpRequest({ port: server.port, path: compiledWorkflowAsset.url });
+  assert.equal(download.status, 200);
+  writeFileSync(join(root, 'workflow.compiled.json'), download.raw);
+
+  for (const [projectionId, target] of [['runner', null], ['agent-native', 'claude-code']]) {
+    const item = data.install.commands.find((entry) => entry.projection === projectionId && entry.target === target);
+    assert.ok(item, `${projectionId}/${String(target)}`);
+    const chainRoot = join(root, projectionId);
+    mkdirSync(chainRoot, { recursive: true });
+    writeFileSync(join(chainRoot, 'workflow.compiled.json'), download.raw);
+    const command = item.command.replace(/ --project \.$/, ` --project ${chainRoot}`);
+    const run = runChain(command, root);
+    assert.equal(run.status, 0, `${item.command}\n${run.stdout}\n${run.stderr}`);
+
+    const resultDir = join(root, '.hm2b', 'build', target === null ? projectionId : `${projectionId}-${target}`);
+    const written = JSON.parse(readFileSync(join(resultDir, 'projection-result.json'), 'utf8'));
+    assert.equal(written.schema, 'hm2b.projection-result/v1');
+    assert.equal(written.projection.id, projectionId);
+    assert.deepEqual(written.options.skills, twelve);
+    assert.deepEqual(written.targets, target === null ? ['runner'] : [target]);
+    assert.equal(existsSync(join(resultDir, 'workflow.compiled.json')), true);
+    assert.equal(
+      readFileSync(join(resultDir, 'workflow.compiled.json')).equals(Buffer.from(download.raw)),
+      true,
+      'the result directory carries the downloaded compiled workflow bytes',
+    );
+
+    const receiptPath = join(chainRoot, '.hm2b', 'install', 'receipts', projectionId, 'rtosv3-drvport.json');
+    assert.equal(existsSync(receiptPath), true, `missing receipt ${receiptPath}`);
+    const receipt = JSON.parse(readFileSync(receiptPath, 'utf8'));
+    assert.equal(receipt.bundle.id, 'rtosv3-drvport');
+    assert.equal(receipt.projection.id, projectionId);
+    if (target === null) {
+      assert.deepEqual(receipt.projection.targets, written.targets);
+    } else {
+      assert.deepEqual(receipt.projection.targets, [target]);
+    }
   }
+});
+
+test('the build concurrency slot is reserved before the first await', async (t) => {
+  const dir = tempDir(t, 'busy');
+  const hang = join(dir, 'hang.mjs');
+  writeFileSync(hang, 'setInterval(() => {}, 1000);\n');
+  const server = await startWebServer(t, {
+    HM2B_WEB_RELEASE_SCRIPT: hang,
+    HM2B_WEB_BUILD_TIMEOUT_MS: '800',
+  });
+  const { csrf } = await sessionOf(server);
+  const uploaded = await upload(server, csrf);
+  const payload = { uploadId: uploaded.uploadId, options: {} };
+
+  const responses = await Promise.all([
+    build(server, csrf, payload),
+    build(server, csrf, payload),
+    build(server, csrf, payload),
+  ]);
+  const statuses = responses.map((item) => item.status).sort((left, right) => left - right);
+  assert.deepEqual(statuses, [409, 504, 504]);
+  const busy = responses.find((item) => item.status === 409);
+  assert.equal(busy.json.error.code, 'WEB_BUILD_BUSY');
+
+  // The two losers time out; the slot must be free again afterwards.
+  const after = await build(server, csrf, payload);
+  assert.equal(after.status, 504, JSON.stringify(after.json));
+  assert.equal(after.json.error.code, 'WEB_CHILD_TIMEOUT');
 });
 
 test('stale digests are 409 and unknown stage/skill/target are 400 without a build', async (t) => {
   const server = await startWebServer(t);
   const { csrf } = await sessionOf(server);
   const uploaded = await upload(server, csrf);
-  const { ir } = compiledIr();
+  const { compiledWorkflow } = compiledCompiledWorkflow();
 
   const stale = await build(server, csrf, {
     uploadId: uploaded.uploadId,
     options: {
-      r2c: {
-        ir: { digest: '0'.repeat(64), id: ir.id, version: ir.version },
+      runner: {
+        compiledWorkflow: { digest: '0'.repeat(64), id: compiledWorkflow.id, version: compiledWorkflow.version },
         stageOrder: null,
         skills: null,
         targets: null,
@@ -372,15 +553,15 @@ test('stale digests are 409 and unknown stage/skill/target are 400 without a bui
     },
   });
   assert.equal(stale.status, 409);
-  assert.equal(stale.json.error.code, 'PROJECTION_OPTIONS_IR_MISMATCH');
+  assert.equal(stale.json.error.code, 'PROJECTION_OPTIONS_COMPILED_WORKFLOW_MISMATCH');
 
-  const staleTopLevel = await build(server, csrf, { uploadId: uploaded.uploadId, irDigest: '0'.repeat(64) });
+  const staleTopLevel = await build(server, csrf, { uploadId: uploaded.uploadId, compiledWorkflowDigest: '0'.repeat(64) });
   assert.equal(staleTopLevel.status, 409);
-  assert.equal(staleTopLevel.json.error.code, 'PROJECTION_OPTIONS_IR_MISMATCH');
+  assert.equal(staleTopLevel.json.error.code, 'PROJECTION_OPTIONS_COMPILED_WORKFLOW_MISMATCH');
 
   const badStage = await build(server, csrf, {
     uploadId: uploaded.uploadId,
-    options: { r2c: { stageOrder: ['nope', ...ir.stages.slice(1).map((stage) => stage.id)] } },
+    options: { runner: { stageOrder: ['nope', ...compiledWorkflow.stages.slice(1).map((stage) => stage.id)] } },
   });
   assert.equal(badStage.status, 400);
   assert.equal(badStage.json.error.code, 'PROJECTION_OPTIONS_INVALID');
@@ -388,7 +569,7 @@ test('stale digests are 409 and unknown stage/skill/target are 400 without a bui
 
   const badSkill = await build(server, csrf, {
     uploadId: uploaded.uploadId,
-    options: { r2c: { skills: ['nope'] } },
+    options: { runner: { skills: ['nope'] } },
   });
   assert.equal(badSkill.status, 400);
   assert.equal(badSkill.json.error.code, 'PROJECTION_OPTIONS_INVALID');
@@ -487,8 +668,8 @@ test('a crashed, hung or non-JSON child maps to WEB_CHILD_FAILED/TIMEOUT and the
     [hang, {}, 'WEB_CHILD_TIMEOUT', 504],
   ]) {
     const server = await startWebServer(t, {
-      R2C_WEB_RELEASE_SCRIPT: script,
-      R2C_WEB_BUILD_TIMEOUT_MS: '400',
+      HM2B_WEB_RELEASE_SCRIPT: script,
+      HM2B_WEB_BUILD_TIMEOUT_MS: '400',
       ...extraEnv,
     });
     const { csrf } = await sessionOf(server);
@@ -517,7 +698,7 @@ test('build endpoints keep the Host/Origin/fetch-site/CSRF/CSP envelope and JSON
   const uploaded = await upload(server, csrf);
   const body = { uploadId: uploaded.uploadId, options: {} };
 
-  const noCsrf = await jsonRequest(server, csrf, '/api/builds', body, { 'X-R2C-CSRF': 'wrong' });
+  const noCsrf = await jsonRequest(server, csrf, '/api/builds', body, { 'X-HM2B-CSRF': 'wrong' });
   assert.equal(noCsrf.status, 403);
   assert.equal(noCsrf.json.error.code, 'WEB_CSRF_INVALID');
 
@@ -539,7 +720,7 @@ test('build endpoints keep the Host/Origin/fetch-site/CSRF/CSP envelope and JSON
     `Host: 127.0.0.1:${server.port}`,
     `Origin: ${server.base}`,
     'Sec-Fetch-Site: same-origin',
-    `X-R2C-CSRF: ${csrf}`,
+    `X-HM2B-CSRF: ${csrf}`,
     'Content-Type: application/json',
     'Connection: close',
     '',
@@ -576,26 +757,26 @@ test('a new upload resets the client binding and the server refuses an old diges
   const first = await upload(server, csrf);
   const second = await upload(server, csrf);
   assert.notEqual(first.uploadId, second.uploadId);
-  assert.equal(first.ir.digest, second.ir.digest);
+  assert.equal(first.compiledWorkflow.digest, second.compiledWorkflow.digest);
 
   const built = await build(server, csrf, {
     uploadId: second.uploadId,
     options: {
-      r2c: {
-        ir: { digest: first.ir.digest, id: first.ir.id, version: first.ir.version },
+      runner: {
+        compiledWorkflow: { digest: first.compiledWorkflow.digest, id: first.compiledWorkflow.id, version: first.compiledWorkflow.version },
         stageOrder: null,
         skills: null,
         targets: null,
       },
     },
   });
-  assert.equal(built.status, 200, 'same IR bytes keep the binding valid');
+  assert.equal(built.status, 200, 'same compiled workflow bytes keep the binding valid');
 
   const before = await upload(server, csrf);
-  const different = { ...before.ir, digest: 'a'.repeat(64) };
+  const different = { ...before.compiledWorkflow, digest: 'a'.repeat(64) };
   const stale = await build(server, csrf, {
     uploadId: before.uploadId,
-    options: { r2c: { ir: { digest: different.digest, id: different.id, version: different.version } } },
+    options: { runner: { compiledWorkflow: { digest: different.digest, id: different.id, version: different.version } } },
   });
   assert.equal(stale.status, 409);
 
@@ -613,7 +794,7 @@ test('a new upload resets the client binding and the server refuses an old diges
 
 /** Copy the framework tree (including the linked yaml dependency) so versions can differ. */
 function copyFramework(t) {
-  const dir = mkdtempSync(join(tmpdir(), 'r2c-web-engine-'));
+  const dir = mkdtempSync(join(tmpdir(), 'hm2b-web-engine-'));
   t.after(async () => {
     // Windows keeps the directory busy for a moment after the server exits.
     for (let attempt = 0; attempt < 20; attempt += 1) {
@@ -708,7 +889,7 @@ function bundleWithEngineRange(range) {
 
 test('requires.engine is checked against the engine version, never the framework version', async (t) => {
   const root = copyFramework(t);
-  const engineVersion = JSON.parse(readFileSync(join(root, 'runtime', 'r2c', 'engine', 'package.json'), 'utf8')).version;
+  const engineVersion = JSON.parse(readFileSync(join(root, 'runtime', 'runner', 'engine', 'package.json'), 'utf8')).version;
   assert.equal(engineVersion, '0.1.0');
   assert.notEqual(engineVersion, '9.9.9');
 

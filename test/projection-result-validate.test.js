@@ -28,31 +28,31 @@ function baseline() {
   if (cached !== undefined) return cached;
   const compiled = compileBundle(new Uint8Array(readFileSync(ZIP)), { inflateRaw, sha256: sha256Hex });
   assert.equal(compiled.ok, true);
-  const ir = JSON.parse(new TextDecoder().decode(compiled.irBytes));
-  const irDigest = compiled.digest;
+  const compiledWorkflow = JSON.parse(new TextDecoder().decode(compiled.compiledWorkflowBytes));
+  const compiledWorkflowDigest = compiled.digest;
   const { options } = normalizeOptions({
     projectionId: 'agent-native',
-    ir,
-    irDigest,
+    compiledWorkflow,
+    compiledWorkflowDigest,
     raw: { targets: ['claude-code'] },
     manifest: MANIFEST,
   });
   const result = project({
     projectionId: 'agent-native',
-    ir,
-    irDigest,
+    compiledWorkflow,
+    compiledWorkflowDigest,
     options,
     environment: {},
     assets: {},
   });
-  cached = { ir, irDigest, options, result };
+  cached = { compiledWorkflow, compiledWorkflowDigest, options, result };
   return cached;
 }
 
 function validate(result, base = baseline()) {
   return validateResult(result, {
-    ir: base.ir,
-    irDigest: base.irDigest,
+    compiledWorkflow: base.compiledWorkflow,
+    compiledWorkflowDigest: base.compiledWorkflowDigest,
     options: base.options,
     manifest: MANIFEST,
   });
@@ -75,8 +75,8 @@ test('the baseline result passes every check', () => {
   assert.deepEqual(outcome.diagnostics, []);
 });
 
-test('V1 rejects a projection/IR reference mismatch', () => {
-  const outcome = mutate((result) => { result.ir.digest = '0'.repeat(64); });
+test('V1 rejects a projection/compiled workflow reference mismatch', () => {
+  const outcome = mutate((result) => { result.compiledWorkflow.digest = '0'.repeat(64); });
   assert.equal(outcome.ok, false);
   assert.ok(checksOf(outcome).includes('V1'));
 });
@@ -103,6 +103,36 @@ test('V5 rejects escaped, duplicated and out-of-root paths', () => {
   assert.ok(checksOf(mutate((result) => {
     result.files[1].path = result.files[0].path;
   })).includes('V5'));
+});
+
+test('V5 allows bundle asset roots only in the projection that declares them', () => {
+  const base = baseline();
+  const result = structuredClone(base.result);
+  const original = result.files[0].path;
+  result.files[0].path = 'knowledge-base/demo.md';
+  for (const step of result.installPlan.steps) {
+    if (step.path === original) step.path = result.files[0].path;
+  }
+  // agent-native writes assets under .agents/agent-native/<ns>/, never the root.
+  const outside = (outcome) => outcome.diagnostics.some((item) => item.details.check === 'V5'
+    && item.message.includes(`${result.files[0].path}: outside writeRoots`));
+  assert.equal(outside(validate(result, base)), true);
+
+  // runner declares knowledge-base/ at the project root, so that path is legal.
+  const runner = getProjection('runner');
+  const runnerOutcome = validateResult(result, {
+    compiledWorkflow: base.compiledWorkflow,
+    compiledWorkflowDigest: base.compiledWorkflowDigest,
+    options: base.options,
+    manifest: runner,
+  });
+  assert.equal(outside(runnerOutcome), false);
+});
+
+test('the result schema documents the bundle asset file kinds', () => {
+  const document = JSON.parse(readFileSync(join(ROOT, 'projection/schema/result.schema.json'), 'utf8'));
+  const kinds = document.$defs.file.properties.kind.enum;
+  for (const kind of ['knowledge', 'checklist', 'hooks', 'mcp']) assert.ok(kinds.includes(kind), kind);
 });
 
 test('V6 rejects CR, missing trailing LF and bad modes', () => {
@@ -139,7 +169,7 @@ test('V9 rejects a semantic use point without its degradation record', () => {
     result.degradations = result.degradations.filter((record) => record.capability !== 'state');
   });
   assert.ok(checksOf(outcome).includes('V9'));
-  // Degradation pointers must resolve in the IR.
+  // Degradation pointers must resolve in the compiled workflow.
   assert.ok(checksOf(mutate((result) => {
     result.degradations[0].pointer = '/stages/99';
   })).includes('V9'));
@@ -171,7 +201,7 @@ test('V12 rejects non-canonical top-level order', () => {
 });
 
 test('diagnostics use the stable PROJECTION_RESULT_INVALID code', () => {
-  const outcome = mutate((result) => { result.schema = 'r2c.projection-result/v2'; });
+  const outcome = mutate((result) => { result.schema = 'hm2b.projection-result/v2'; });
   assert.equal(outcome.ok, false);
   for (const diagnostic of outcome.diagnostics) {
     assert.equal(diagnostic.code, 'PROJECTION_RESULT_INVALID');
@@ -189,18 +219,18 @@ test('the result field order has one source for the validator and the payload', 
 
 test('V8 accepts a worse level only when option exclusion explains the worst use', () => {
   const base = baseline();
-  const selected = Object.keys(base.ir.skills).slice(0, 1);
+  const selected = Object.keys(base.compiledWorkflow.skills).slice(0, 1);
   const { options } = normalizeOptions({
     projectionId: 'agent-native',
-    ir: base.ir,
-    irDigest: base.irDigest,
+    compiledWorkflow: base.compiledWorkflow,
+    compiledWorkflowDigest: base.compiledWorkflowDigest,
     raw: { targets: ['claude-code'], skills: selected },
     manifest: MANIFEST,
   });
   const projected = project({
     projectionId: 'agent-native',
-    ir: base.ir,
-    irDigest: base.irDigest,
+    compiledWorkflow: base.compiledWorkflow,
+    compiledWorkflowDigest: base.compiledWorkflowDigest,
     options,
     environment: {},
     assets: {},
@@ -212,8 +242,8 @@ test('V8 accepts a worse level only when option exclusion explains the worst use
     && record.capability === 'skills' && record.level === row.level));
 
   const outcome = validateResult(projected, {
-    ir: base.ir,
-    irDigest: base.irDigest,
+    compiledWorkflow: base.compiledWorkflow,
+    compiledWorkflowDigest: base.compiledWorkflowDigest,
     options,
     manifest: MANIFEST,
   });
@@ -223,9 +253,9 @@ test('V8 accepts a worse level only when option exclusion explains the worst use
 test('the capability vocabulary and level ranks have one source', async () => {
   const { CAPABILITIES, LEVEL_RANK, SEMANTIC_CAPABILITIES } = await import('../projection/contract.js');
   const { CAPABILITIES: producerCapabilities, LEVEL_RANK: producerRanks } = await import('../runtime/agent-native/projection/project.js');
-  const { R2C_CAPABILITIES } = await import('../runtime/r2c/projection/manifest.js');
+  const { RUNNER_CAPABILITIES } = await import('../runtime/runner/projection/manifest.js');
   assert.deepEqual(producerCapabilities, CAPABILITIES);
-  assert.deepEqual(R2C_CAPABILITIES, CAPABILITIES);
+  assert.deepEqual(RUNNER_CAPABILITIES, CAPABILITIES);
   assert.equal(producerRanks, LEVEL_RANK);
   assert.deepEqual(SEMANTIC_CAPABILITIES, ['state', 'gates', 'outputs', 'subagents', 'skills', 'preload']);
   // The validator consumes the same list, so report order cannot drift.

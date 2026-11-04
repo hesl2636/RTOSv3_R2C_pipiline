@@ -111,7 +111,7 @@ test('non-canonical bundle.json forms each yield exactly one diagnostic', () => 
 test('nested manifest objects keep schema key order', () => {
   const report = reportFor({
     'bundle.json': manifestText((value) => {
-      value.requires = { projections: ['r2c'], engine: '>=1.0.0' };
+      value.requires = { projections: ['runner'], engine: '>=1.0.0' };
     }),
   });
   expectSingle(report, {
@@ -190,9 +190,9 @@ test('missing required keys and wrong schemas are structural errors', () => {
   });
 
   const cases = [
-    { schema: 'r2c.bundle/v2', reason: 'newer' },
+    { schema: 'hm2b.bundle/v3', reason: 'newer' },
     { schema: 'not-a-schema', reason: 'malformed' },
-    { schema: 'r2c.ir/v1', reason: 'unknown' },
+    { schema: 'hm2b.compiled-workflow/v1', reason: 'unknown' },
     { schema: null, reason: 'malformed' },
   ];
   for (const item of cases) {
@@ -217,12 +217,12 @@ test('bundle id grammar, length and reserved name', () => {
     const report = reportFor({ 'bundle.json': manifestText((value) => { value.id = id; }) });
     expectSingle(report, { code: 'BUNDLE_ID_INVALID', path: MANIFEST_PATH, pointer: '/id' });
   }
-  const reserved = reportFor({ 'bundle.json': manifestText((value) => { value.id = 'r2c'; }) });
+  const reserved = reportFor({ 'bundle.json': manifestText((value) => { value.id = 'hm2b'; }) });
   expectSingle(reserved, {
     code: 'BUNDLE_ID_RESERVED',
     path: MANIFEST_PATH,
     pointer: '/id',
-    details: { value: 'r2c' },
+    details: { value: 'hm2b' },
   });
 
   for (const id of ['a', 'a'.repeat(40)]) {
@@ -428,9 +428,9 @@ test('requires validates syntax, the closed projection set and non-emptiness', (
     { requires: { engine: 'definitely not a range' }, reason: 'range' },
     { requires: { engine: 3 }, reason: 'range' },
     { requires: { projections: [] }, reason: 'projections' },
-    { requires: { projections: ['r2c', 'other'] }, reason: 'projections' },
-    { requires: { projections: ['r2c', 'r2c'] }, reason: 'projections' },
-    { requires: { projections: 'r2c' }, reason: 'projections' },
+    { requires: { projections: ['runner', 'other'] }, reason: 'projections' },
+    { requires: { projections: ['runner', 'runner'] }, reason: 'projections' },
+    { requires: { projections: 'runner' }, reason: 'projections' },
     { requires: { extra: true }, reason: 'unknown-key' },
   ];
   for (const item of invalid) {
@@ -445,7 +445,7 @@ test('requires validates syntax, the closed projection set and non-emptiness', (
 
   const valid = reportFor({
     'bundle.json': manifestText((value) => {
-      value.requires = { engine: '>=1.0.0 <2.0.0', projections: ['r2c', 'agent-native'] };
+      value.requires = { engine: '>=1.0.0 <2.0.0', projections: ['runner', 'agent-native'] };
     }),
   });
   assert.equal(valid.ok, true, JSON.stringify(valid.errors));
@@ -583,9 +583,9 @@ test('stage declaration order is execution order, never sorted', () => {
   const zip = buildZip(minimalFiles(overrides));
   const compiled = compileBundle(zip, PRIMITIVES);
   assert.equal(compiled.ok, true, JSON.stringify(compiled.report.errors));
-  const ir = JSON.parse(new TextDecoder().decode(compiled.irBytes));
-  assert.deepEqual(ir.stages.map((stage) => stage.id), order);
-  assert.deepEqual(ir.stages.flatMap((stage) => stage.steps.map((step) => step.id)), ['step-0', 'step-1', 'step-2']);
+  const compiledWorkflow = JSON.parse(new TextDecoder().decode(compiled.compiledWorkflowBytes));
+  assert.deepEqual(compiledWorkflow.stages.map((stage) => stage.id), order);
+  assert.deepEqual(compiledWorkflow.stages.flatMap((stage) => stage.steps.map((step) => step.id)), ['step-0', 'step-1', 'step-2']);
 });
 
 test('reports are byte-identical on repeat for an invalid manifest', () => {

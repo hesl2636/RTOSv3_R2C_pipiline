@@ -63,7 +63,7 @@ const CAPABILITY_NOTES = Object.freeze({
   gates: '命令原文 + 超时写入阶段技能；执行者运行并自证，机器不强制',
   outputs: 'glob 原样列出自检清单；回执逐项写存在/缺失，机器不检查',
   subagents: '角色定义落在 .opencode/agents，opencode 按文件名自动发现；Task 工具按名派发',
-  skills: '技能安装到 .agents/skills；名字加 bundle 前缀，语义不变',
+  skills: '技能安装到 .agents/skills；显示名不加 bundle 前缀；目录名仅用于避免多 bundle 冲突',
   preload: 'opencode agent md 无按角色预载字段，预载正文没有落点',
   'stage-invocation': '阶段技能可经 skill 工具单独加载',
   'skill-invocation': '技能副本可经 skill 工具单独加载',
@@ -146,7 +146,7 @@ export const opencodeTarget = Object.freeze({
     detect: {"commands":[["opencode","--version"]],"paths":["~/.config/opencode"]},
     assets: [
     Object.freeze({ path: 'runtime/agent-native/targets/opencode/assets/mcp.json', sha256: '70cadc8acdced125361a637eac5816a7f3d77912020c00d5a63f34b106292858' }),
-    Object.freeze({ path: 'runtime/agent-native/targets/opencode/assets/plugins/r2c.ts', sha256: '3d028aedd877bb51593e4cb2faf0f184037d6822cb72c1a598ab3fa3e4b73941' }),
+    Object.freeze({ path: 'runtime/agent-native/targets/opencode/assets/plugins/hm2b.ts', sha256: '2f44986204d473e16fc5e6965791d865c9b167047fbef2f9a4a2654770a1a20d' }),
     ],
     smoke: (namespace) => layoutSmoke(namespace, { skillsRoot: '.agents/skills', agentsRoot: '.opencode/agents', agentFormat: 'md' }),
   }),
@@ -171,7 +171,7 @@ export const opencodeTarget = Object.freeze({
         states.title = { state: 'unavailable', reason: 'opencode 无展示名槽', effect: '展示名丢弃，只保留 description' };
       }
       if (role.mode !== undefined) {
-        states.mode = { state: 'native', reason: 'mode: subagent/primary/all 与 IR 三值精确对应' };
+        states.mode = { state: 'native', reason: 'mode: subagent/primary/all 与 compiled workflow 三值精确对应' };
       }
       if (role.model !== undefined) {
         states.model = {

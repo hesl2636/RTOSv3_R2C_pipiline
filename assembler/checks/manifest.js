@@ -1,7 +1,7 @@
 /**
  * Manifest checks (`bundle.json`, decision #67 §7.2).
  *
- * A manifest that cannot be parsed or does not carry `r2c.bundle/v1` stops the
+ * A manifest that cannot be parsed or does not carry `hm2b.bundle/v2` stops the
  * content phases (S0/S1): declarations are unknown, so "declared vs present"
  * cannot be judged and must not cascade into dozens of follow-up errors.
  */
@@ -16,9 +16,10 @@ import {
   isValidId,
 } from '../ids.js';
 import { isPlainObject } from '../util.js';
+import { HOOKS_PATH, MCP_PATH, isKnowledgeBasePath } from './assets.js';
 import { readJsonDocument, findKeyOrderViolation } from './json.js';
 
-export const BUNDLE_SCHEMA = 'r2c.bundle/v1';
+export const BUNDLE_SCHEMA = 'hm2b.bundle/v2';
 export const CONSTITUTION_PATH = 'constitution/CONSTITUTION.md';
 
 const MANIFEST_KEYS = [
@@ -31,12 +32,18 @@ const MANIFEST_KEYS = [
   'roles',
   'tasks',
   'skills',
+  'knowledgeBase',
+  'checklists',
+  'hooks',
+  'mcp',
   'constitution',
   'requires',
 ];
 
 const CONSTITUTION_KEYS = ['path', 'placeholder'];
+const ASSET_FILE_KEYS = ['path'];
 const REQUIRES_KEYS = ['engine', 'projections'];
+const SCHEMA_REVISION = parseSchemaId(BUNDLE_SCHEMA).revision;
 
 function manifestKeyOrder(value) {
   if (!isPlainObject(value)) return null;
@@ -133,6 +140,61 @@ function readIdArray(context, path, manifest, key, options) {
   return valid;
 }
 
+/** `knowledgeBase` is a unique list of POSIX `*.md` paths, not an id list. */
+function readKnowledgeBase(context, path, manifest) {
+  const key = 'knowledgeBase';
+  const value = manifest[key];
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value)) {
+    schemaInvalid(context, path, `/${key}`, 'type', `'${key}' must be an array`);
+    context.declaredValid.knowledgeBase = false;
+    return [];
+  }
+  const seen = new Set();
+  const valid = [];
+  value.forEach((item, index) => {
+    const pointer = `/${key}/${index}`;
+    if (typeof item !== 'string') {
+      schemaInvalid(context, path, pointer, 'type', `'${key}[${index}]' must be a path`);
+      context.declaredValid.knowledgeBase = false;
+      return;
+    }
+    if (seen.has(item)) {
+      schemaInvalid(context, path, pointer, 'uniqueItems', `duplicate '${key}' entry: ${item}`);
+      context.declaredValid.knowledgeBase = false;
+      return;
+    }
+    seen.add(item);
+    if (!isKnowledgeBasePath(item)) {
+      schemaInvalid(context, path, pointer, 'pattern', `'${key}[${index}]' is not a knowledge-base markdown path`);
+      context.declaredValid.knowledgeBase = false;
+      return;
+    }
+    valid.push(item);
+  });
+  return valid;
+}
+
+/** `hooks` / `mcp` declarations carry the one fixed path as a constant. */
+function readAssetFileDeclaration(context, path, manifest, key, expected) {
+  const value = manifest[key];
+  if (value === undefined) return { declared: false, valid: true };
+  if (!isPlainObject(value)) {
+    schemaInvalid(context, path, `/${key}`, 'type', `'${key}' must be an object`);
+    return { declared: true, valid: false };
+  }
+  checkUnknownKeys(context, path, value, ASSET_FILE_KEYS, `/${key}`);
+  if (value.path === undefined) {
+    schemaInvalid(context, path, `/${key}/path`, 'required', `'${key}' is missing 'path'`);
+    return { declared: true, valid: false };
+  }
+  if (value.path !== expected) {
+    schemaInvalid(context, path, `/${key}/path`, 'const', `'${key}.path' must be ${expected}`);
+    return { declared: true, valid: false };
+  }
+  return { declared: true, valid: true };
+}
+
 export function check(context) {
   if (context.skipped.manifest) return;
   const path = 'bundle.json';
@@ -165,7 +227,7 @@ export function check(context) {
   if (manifest.schema !== BUNDLE_SCHEMA) {
     let reason = 'unknown';
     if (typeof manifest.schema !== 'string' || parsedSchema === null) reason = 'malformed';
-    else if (parsedSchema.family === 'bundle' && parsedSchema.revision > 1) reason = 'newer';
+    else if (parsedSchema.family === 'bundle' && parsedSchema.revision > SCHEMA_REVISION) reason = 'newer';
     context.fail(path, 'BUNDLE_SCHEMA_UNSUPPORTED', 'bundle schema is not supported', {
       pointer: '/schema',
       details: { reason },
@@ -194,8 +256,8 @@ export function check(context) {
         pointer: '/id',
         details: { value: manifest.id, reason: 'pattern-or-length' },
       });
-    } else if (manifest.id === 'r2c') {
-      context.fail(path, 'BUNDLE_ID_RESERVED', 'bundle id "r2c" is reserved', {
+    } else if (manifest.id === 'hm2b') {
+      context.fail(path, 'BUNDLE_ID_RESERVED', 'bundle id "hm2b" is reserved', {
         pointer: '/id',
         details: { value: manifest.id },
       });
@@ -266,6 +328,17 @@ export function check(context) {
   context.declared.roles = declaredRoles ?? [];
   context.declared.tasks = declaredTasks ?? [];
   context.declared.skills = declaredSkills ?? [];
+  context.declared.knowledgeBase = readKnowledgeBase(context, path, manifest);
+  context.declared.checklists = readIdArray(context, path, manifest, 'checklists', {
+    required: false,
+    kind: 'checklist',
+    max: ID_MAX,
+    invalidCode: 'BUNDLE_CHECKLIST_ID_INVALID',
+  }) ?? [];
+  context.assetDeclaration = {
+    hooks: readAssetFileDeclaration(context, path, manifest, 'hooks', HOOKS_PATH),
+    mcp: readAssetFileDeclaration(context, path, manifest, 'mcp', MCP_PATH),
+  };
   if (declaredStages === null || context.declaredValid.stages === false) context.skip('stages');
 
   context.constitutionDeclaration = { declared: false, placeholder: false, valid: true };

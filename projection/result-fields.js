@@ -10,7 +10,7 @@ export const RESULT_FIELDS = Object.freeze([
   'schema',
   'ok',
   'projection',
-  'ir',
+  'compiledWorkflow',
   'options',
   'environment',
   'targets',

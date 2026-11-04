@@ -1,7 +1,7 @@
 /**
- * Native DeepSeek Harness (dsh) plugin for r2c.
+ * Native DeepSeek Harness (dsh) plugin for hm2b.
  *
- * This is the A-档 carrier: it registers the human `/r2c-*` commands, continues
+ * This is the A-档 carrier: it registers the human `/hm2b-*` commands, continues
  * a finished turn from `agent/turn-stopping`, and guards tool calls from
  * `tools/pre-execute`. Every seam delegates to the generic payload shim
  * (`shims/hook.mjs`), which already owns the 8-stop cap and the dsh deny
@@ -10,7 +10,7 @@
  * throwing listener can end a user's turn.
  *
  * The module has no imports outside Node core so it resolves from the payload
- * (`~/.r2c/payload/<V>/adapters/dsh`) without a profile install step.
+ * (`~/.hm2b/payload/<V>/adapters/dsh`) without a profile install step.
  */
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
@@ -18,14 +18,14 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-export const name = 'r2c-adapter-dsh';
+export const name = 'hm2b-adapter-dsh';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const DEFAULT_PAYLOAD_HOME = resolve(HERE, '..', '..');
 
 function warn(message) {
   try {
-    console.warn(`[r2c] ${message}`);
+    console.warn(`[hm2b] ${message}`);
   } catch {
     // A broken console must not take the session down.
   }
@@ -42,7 +42,7 @@ function settingsOf(config = {}) {
   return {
     runnerCmd: typeof config.runnerCmd === 'string' && config.runnerCmd !== ''
       ? config.runnerCmd
-      : (process.env.R2C_RUNNER_CMD ?? 'r2c'),
+      : (process.env.HM2B_RUNNER_CMD ?? 'hm2b'),
     projectRoot,
     payloadHome,
     shim: typeof config.shim === 'string' && config.shim !== ''
@@ -77,17 +77,45 @@ function parseJson(text) {
   }
 }
 
-function quote(value) {
-  return `"${String(value).split('"').join('\\"')}"`;
+/** Strip one matching pair of surrounding quotes; never any other parsing. */
+function barePath(value) {
+  const text = String(value).trim();
+  if (text.length < 2) return text;
+  const first = text[0];
+  const last = text[text.length - 1];
+  return (first === '"' || first === "'") && last === first ? text.slice(1, -1) : text;
 }
 
-/** Run a command line through the shell, decoding stdout/stderr as UTF-8 buffers. */
-function runShell(commandLine, args, { input, cwd } = {}) {
+/**
+ * Resolve a runner command without a shell. Only `node <script>` and a single
+ * `*.js`/`*.mjs`/`*.cjs` path are interpreted (both under process.execPath);
+ * anything else is one executable path verbatim. Arguments are always passed
+ * as separate argv entries, so invocation input never becomes shell syntax.
+ */
+function runnerInvocation(commandLine) {
+  const text = commandLine.trim();
+  const node = /^node(?:\.exe)?\s+([\s\S]+)$/i.exec(text);
+  if (node !== null) {
+    const script = barePath(node[1]);
+    if (script !== '') return { file: process.execPath, prefix: [script] };
+  }
+  const single = barePath(text);
+  if (/\.(?:c|m)?js$/i.test(single)) return { file: process.execPath, prefix: [single] };
+  return { file: single, prefix: [] };
+}
+
+/** Run the runner directly, decoding stdout/stderr as UTF-8 buffers. */
+function runCommand(commandLine, args, { input, cwd } = {}) {
   return new Promise((resolvePromise) => {
-    const line = [commandLine, ...args.map(quote)].join(' ');
+    const invocation = runnerInvocation(commandLine);
     let child;
     try {
-      child = spawn(line, { shell: true, cwd, env: process.env, windowsHide: true });
+      child = spawn(invocation.file, [...invocation.prefix, ...args], {
+        shell: false,
+        cwd,
+        env: process.env,
+        windowsHide: true,
+      });
     } catch (error) {
       resolvePromise({ code: 1, stdout: '', stderr: error.message });
       return;
@@ -147,7 +175,7 @@ function shimArgs(settings, event, sessionId) {
     '--format', 'json',
     `--runner-cmd=${settings.runnerCmd}`,
     '--project-root', settings.projectRoot,
-    '--plugin-data', join(settings.projectRoot, '.r2c', 'runs', '.hooks'),
+    '--plugin-data', join(settings.projectRoot, '.hm2b', 'runs', '.hooks'),
     '--cap', String(settings.cap),
   ];
   if (sessionId !== null) args.push('--session-id', sessionId);
@@ -165,7 +193,7 @@ function commandSpecs(payloadHome) {
   const dir = join(payloadHome, 'commands');
   if (!existsSync(dir)) return [];
   return readdirSync(dir)
-    .filter((file) => /^r2c-[a-z0-9_-]+\.md$/i.test(file))
+    .filter((file) => /^hm2b-[a-z0-9_-]+\.md$/i.test(file))
     .sort()
     .map((file) => {
       let description = null;
@@ -176,13 +204,13 @@ function commandSpecs(payloadHome) {
       }
       return {
         name: basename(file).replace(/\.md$/, ''),
-        description: description ?? `r2c ${basename(file).replace(/\.md$/, '')}`,
+        description: description ?? `hm2b ${basename(file).replace(/\.md$/, '')}`,
       };
     });
 }
 
 function runnerArgsFor(command, rawInput) {
-  const subcommand = command.replace(/^r2c-/, '');
+  const subcommand = command.replace(/^hm2b-/, '');
   if (subcommand === 'run') {
     const input = rawInput.trim();
     return input === '' ? ['run'] : ['run', '--input', input];
@@ -208,7 +236,7 @@ function registerCommands(ctx, settings) {
     registry = undefined;
   }
   if (registry === undefined || registry === null || typeof registry.register !== 'function') {
-    warn('commands service is unavailable; /r2c-* commands were not registered');
+    warn('commands service is unavailable; /hm2b-* commands were not registered');
     return;
   }
   for (const spec of commandSpecs(settings.payloadHome)) {
@@ -222,15 +250,15 @@ function registerCommands(ctx, settings) {
             args.push('--project-root', settings.projectRoot);
             const sessionId = sessionIdOf(invocation?.agent);
             if (sessionId !== null) args.push('--session-id', sessionId);
-            const result = await runShell(settings.runnerCmd, args, { cwd: settings.projectRoot });
+            const result = await runCommand(settings.runnerCmd, args, { cwd: settings.projectRoot });
             const text = `${result.stdout}${result.stderr}`.trim();
             return {
               kind: result.code === 0 ? 'success' : 'error',
-              text: text === '' ? `r2c ${spec.name} exited ${result.code}` : text,
+              text: text === '' ? `hm2b ${spec.name} exited ${result.code}` : text,
             };
           } catch (error) {
             warn(`/${spec.name} failed: ${error?.message ?? error}`);
-            return { kind: 'error', text: `r2c command failed: ${error?.message ?? error}` };
+            return { kind: 'error', text: `hm2b command failed: ${error?.message ?? error}` };
           }
         },
       });
@@ -269,10 +297,10 @@ function denyFromShim(result) {
   if (hook?.permissionDecision === 'deny') {
     return typeof hook.permissionDecisionReason === 'string' && hook.permissionDecisionReason !== ''
       ? hook.permissionDecisionReason
-      : 'denied by r2c guard';
+      : 'denied by hm2b guard';
   }
   if (payload.permissionDecision === 'deny' && result.code === 2) {
-    return typeof payload.reason === 'string' && payload.reason !== '' ? payload.reason : 'denied by r2c guard';
+    return typeof payload.reason === 'string' && payload.reason !== '' ? payload.reason : 'denied by hm2b guard';
   }
   return null;
 }

@@ -66,7 +66,17 @@ test('index.html has no inline scripts, styles or style attributes', () => {
   assert.match(html, /<script\s+src="\/web\/boot-check\.js"><\/script>/);
   assert.match(html, /<script\s+type="module"\s+src="\/web\/app\.js"><\/script>/);
   assert.match(html, /<noscript>/);
-  assert.match(html, /r2c-assembler\.js bundle validate/);
+  assert.match(html, /hm2b-assembler\.js bundle validate/);
+});
+
+test('the compiled workflow preview surfaces every hm2b.compiled-workflow/v2 asset group and web/ carries no v1 compiled workflow literal', () => {
+  const html = readFileSync(join(WEB, 'index.html'), 'utf8');
+  for (const id of ['compiled-workflow-knowledge-base', 'compiled-workflow-checklists', 'compiled-workflow-hooks', 'compiled-workflow-mcp']) {
+    assert.match(html, new RegExp(`id="${id}"`), id);
+  }
+  for (const file of webFiles()) {
+    assert.doesNotMatch(readFileSync(file, 'utf8'), /hm2b\.compiled-workflow\/v1/, relative(file));
+  }
 });
 
 test('primitives-browser.js implements SHA-256, raw inflate and the floor probe with Web APIs', async () => {
@@ -114,7 +124,7 @@ test('app.js is import-safe in Node and uses the shared validator', async () => 
   assert.equal(typeof app.bootstrap, 'function');
   assert.equal(typeof app.upload, 'function');
   assert.equal(app.state.mismatch, false);
-  assert.equal(app.state.irBytes, null);
+  assert.equal(app.state.compiledWorkflowBytes, null);
 });
 
 test('browser primitives produce a byte-identical report to Node primitives (store and deflate)', async () => {
