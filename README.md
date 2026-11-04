@@ -52,30 +52,34 @@ node web/serve.mjs
 - 自定义投影选项（**05**）产生的构建是 `publishable=false`，只能本地使用，不能发布。
 - 发布成功后，**06 构建产物** 会给出每个目标可直接复制的安装命令。
 
-### 1.3 一条命令本地安装
+### 1.3 一条命令安装
 
-在**目标项目根目录**执行。命令先用 `gh` 把整个 Release 下载到 `.hm2b/release/$TAG`，再从本地目录离线安装；安装阶段不再访问网络，也不需要 token。在目标项目的 shell 中重新定义变量：
+安装器只需取一次：从 Release 页面下载 `install.mjs`，或
 
 ```powershell
 $REPO    = "hesl2636/hm2B_drvport_pipiline"
 $BUNDLE  = "rtosv3-drvport"
 $VERSION = "1.0.2"
 $TAG     = "bundle-$BUNDLE-v$VERSION"
+
+curl.exe -L -o install.mjs "https://github.com/$REPO/releases/download/$TAG/install.mjs"
 ```
 
-runner：
+在**目标项目根目录**执行安装。安装器直接读取该 Release 的资产、校验 `SHA256SUMS.txt` 后写入项目，不依赖 `gh`：
 
 ```powershell
-gh release download $TAG --repo $REPO --dir ".hm2b/release/$TAG" --clobber; node ".hm2b/release/$TAG/install.mjs" --bundle $BUNDLE --version $VERSION --projection runner --release-base .hm2b/release --project .
+node install.mjs --bundle $BUNDLE --version $VERSION --projection runner --project .
 ```
 
 agent-native（`--target` 取 `omp`、`claude-code`、`codex`、`dsh`、`opencode`；省略则安装全部目标）：
 
 ```powershell
-gh release download $TAG --repo $REPO --dir ".hm2b/release/$TAG" --clobber; node ".hm2b/release/$TAG/install.mjs" --bundle $BUNDLE --version $VERSION --projection agent-native --target omp --release-base .hm2b/release --project .
+node install.mjs --bundle $BUNDLE --version $VERSION --projection agent-native --target omp --project .
 ```
 
-agent-native 的共享资产（`knowledge-base/`、`checklists/`、`hooks/hooks.json`、`mcp.json`）写在 `.agents/agent-native/<bundle-id>/`，技能与角色写到各宿主自己的目录。
+- 仓库公开时无需凭据；私有仓库需要 `GH_TOKEN` / `GITHUB_TOKEN`，或可用的 github.com git 凭据。
+- 网络需要代理时，先设置 `$env:NODE_USE_ENV_PROXY="1"` 和 `$env:HTTPS_PROXY`，Node 的 `fetch` 才走代理。
+- agent-native 的共享资产（`knowledge-base/`、`checklists/`、`hooks/hooks.json`、`mcp.json`）写在 `.agents/agent-native/<bundle-id>/`，技能与角色写到各宿主自己的目录。
 
 安装后自检（仅 runner）：
 
