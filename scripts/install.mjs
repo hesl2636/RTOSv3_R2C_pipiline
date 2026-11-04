@@ -45,7 +45,8 @@ import { delimiter, dirname, extname, isAbsolute, join, relative, resolve } from
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { gunzipSync } from 'node:zlib';
 
-const RELEASE_REPO = 'hesl2636/hm2B_drvport_pipiline';
+const RELEASE_REPO = process.env.GH_REPO?.trim() || 'hesl2636/hm2B_drvport_pipiline';
+const RELEASE_REPO_RE = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 const DEFAULT_RELEASE_BASE = `https://github.com/${RELEASE_REPO}/releases/download`;
 const GITHUB_API = `https://api.github.com`;
 const SUMS_ASSET = 'SHA256SUMS.txt';
@@ -80,6 +81,19 @@ export function nodeSupported(version) {
 }
 const AUTH_HINT =
   'set GH_TOKEN, set GITHUB_TOKEN, or store a github.com credential for `git credential fill` (run `gh auth login` where it is installed)';
+/**
+ * One download budget for a whole asset body. GitHub can be slow on a throttled
+ * link, so the default is generous and the operator can raise it; the timeouts
+ * exist so a dead connection never hangs the install forever.
+ */
+const DOWNLOAD_TIMEOUT_MS = (() => {
+  const raw = Number.parseInt(process.env.HM2B_INSTALL_DOWNLOAD_TIMEOUT_MS ?? '', 10);
+  return Number.isInteger(raw) && raw > 0 ? raw : 300_000;
+})();
+/** Same advice the README gives: Node's `fetch` only reads proxy env with this switch. */
+const NETWORK_HINT =
+  'if the network needs a proxy, set NODE_USE_ENV_PROXY=1 and HTTPS_PROXY (Node fetch ignores the environment otherwise); '
+  + 'a mirror works too: --release-base <dir|url> (raise HM2B_INSTALL_DOWNLOAD_TIMEOUT_MS for a slow link)';
 
 /** Why an HTTP status means the credential is the problem (private repo = 404). */
 function credentialHint(status, credential) {
@@ -338,7 +352,7 @@ export function authCredential() {
     : { token: match[1], source: 'git-credential' };
 }
 
-async function request(url, timeout, headers) {
+async function request(url, timeout, headers, code = 'ENGINE_DOWNLOAD_FAILED') {
   try {
     return await fetch(url, {
       headers: { 'user-agent': 'hm2b-install', ...headers },
@@ -347,8 +361,8 @@ async function request(url, timeout, headers) {
     });
   } catch (error) {
     fail(
-      'ENGINE_DOWNLOAD_FAILED',
-      `cannot reach ${url}: ${error.message}\navailable ${AUTH_HINT}`,
+      code,
+      `cannot reach ${url}: ${error.message}\navailable ${AUTH_HINT}\n${NETWORK_HINT}`,
       1,
     );
   }
@@ -661,22 +675,26 @@ function releaseClient(source, credential) {
       if (token !== null) headers.authorization = `Bearer ${token}`;
       let response;
       try {
-        response = await fetch(url, { method, headers, redirect: 'follow', signal: AbortSignal.timeout(60_000) });
+        response = await fetch(url, { method, headers, redirect: 'follow', signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS) });
       } catch (error) {
-        fail('RELEASE_DOWNLOAD_FAILED', `cannot reach ${url}: ${error.message}`, 1);
+        fail('RELEASE_DOWNLOAD_FAILED', `cannot reach ${url}: ${error.message}\n${NETWORK_HINT}`, 1);
       }
       const responseHeaders = {};
       response.headers?.forEach?.((value, key) => {
         responseHeaders[key] = value;
       });
       let data = null;
-      if (options.parse === 'bytes') data = Buffer.from(await response.arrayBuffer());
-      else {
-        try {
-          data = await response.json();
-        } catch {
-          data = null;
+      try {
+        if (options.parse === 'bytes') data = Buffer.from(await response.arrayBuffer());
+        else data = await response.json();
+      } catch (error) {
+        if (error instanceof BootstrapError) throw error;
+        // A body read can outlive the headers; report it as a download
+        // failure instead of letting the raw abort surface as INTERNAL.
+        if (options.parse === 'bytes') {
+          fail('RELEASE_DOWNLOAD_FAILED', `cannot download ${url}: ${error.message}\n${NETWORK_HINT}`, 1);
         }
+        data = null;
       }
       return { ok: response.ok, status: response.status, headers: responseHeaders, data, url };
     },
@@ -738,12 +756,45 @@ async function fetchBundleAsset(source, tag, name, credential) {
     }
     throw releaseAssetUnavailable(name, tag, source.dir);
   }
+  if (source.github && credential?.token !== null && credential?.token !== undefined) {
+    const client = releaseClient(source, credential);
+    const releasePath = `/repos/${RELEASE_REPO}/releases/tags/${encodeURIComponent(tag)}`;
+    const release = await client.request('GET', releasePath);
+    if (!release.ok || release.data?.draft === true) {
+      throw releaseAssetUnavailable(name, tag, releasePath, { status: release.status, credential });
+    }
+    const asset = release.data?.assets?.find((item) => item.name === name);
+    if (!Number.isSafeInteger(asset?.id) || asset.id < 1) {
+      throw releaseAssetUnavailable(name, tag, releasePath, { credential });
+    }
+    const assetPath = `/repos/${RELEASE_REPO}/releases/assets/${asset.id}`;
+    const downloaded = await client.request('GET', assetPath, { accept: 'application/octet-stream', parse: 'bytes' });
+    if (!downloaded.ok) {
+      throw releaseAssetUnavailable(name, tag, assetPath, { status: downloaded.status, credential });
+    }
+    return downloaded.data;
+  }
   const url = `${source.base}/${encodeURIComponent(tag)}/${encodeURIComponent(name)}`;
-  const response = await request(url, 60_000, credential === null ? {} : bearer(credential.token));
+  const response = await request(
+    url,
+    DOWNLOAD_TIMEOUT_MS,
+    credential === null ? {} : bearer(credential.token),
+    'RELEASE_DOWNLOAD_FAILED',
+  );
   if (!response.ok) {
     throw releaseAssetUnavailable(name, tag, url, { status: response.status, credential });
   }
-  return Buffer.from(await response.arrayBuffer());
+  // The abort signal covers the body stream, so a slow transfer rejects here,
+  // after the headers arrived; without this catch it leaks out as INTERNAL.
+  try {
+    return Buffer.from(await response.arrayBuffer());
+  } catch (error) {
+    fail(
+      'RELEASE_DOWNLOAD_FAILED',
+      `cannot download ${name} from ${url}: ${error.message}\n${NETWORK_HINT}`,
+      1,
+    );
+  }
 }
 
 /** `SHA256SUMS.txt` → `Map<name, digest>`; malformed lines refuse. */
@@ -896,7 +947,7 @@ async function runBundle(options, projectDir) {
     // Version resolution is the framework's contract (release-source.js, #107).
     try {
       if (options.version === undefined) {
-        const resolved = await framework.releaseSource.resolveLatest({ client, bundleId });
+        const resolved = await framework.releaseSource.resolveLatest({ client, repo: RELEASE_REPO, bundleId });
         if (resolved.version !== version) {
           fail(
             'RELEASE_VERSION_UNRESOLVED',
@@ -907,6 +958,7 @@ async function runBundle(options, projectDir) {
       } else {
         await framework.releaseSource.resolveVersion({
           client,
+          repo: RELEASE_REPO,
           bundleId,
           version,
           downloadBase: source.kind === 'url' ? source.base : undefined,
@@ -1003,6 +1055,9 @@ async function main(argv) {
   if (options.help) {
     process.stdout.write(USAGE);
     return 0;
+  }
+  if (!RELEASE_REPO_RE.test(RELEASE_REPO)) {
+    fail('USAGE', 'GH_REPO must be owner/name', 2);
   }
   // The floor comes before every download: an unsupported Node cannot run the
   // engine, so failing here leaves the project and the release untouched.

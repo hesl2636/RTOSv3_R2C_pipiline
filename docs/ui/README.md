@@ -15,6 +15,7 @@
 | 手机首页：390 × 900 | [mobile.png](mobile.png) |
 | 深色主题 | [dark.png](dark.png) |
 | 示例 bundle 的编译产物及阶段 | [compiled.png](compiled.png) |
+| 构建完成后的一条命令安装 | [install.png](install.png) |
 
 ## 验证
 
@@ -27,10 +28,10 @@ node scripts/build-bundle.mjs examples/rtosv3/bundle --check
 node scripts/release.mjs --check
 ```
 
-- 完整测试：777 项通过，0 项失败。
+- UI 与一键安装组合后的完整测试：810 项通过，0 项失败。
 - 示例 bundle 字节可复现检查通过。
 - Release 契约检查通过。
-- 浏览器验收：34 项检查通过，未发现运行错误或控制台错误。
+- 浏览器验收：38 项检查通过，未发现运行错误或控制台错误。
 
 浏览器检查覆盖以下行为：
 
@@ -42,6 +43,15 @@ node scripts/release.mjs --check
 - 示例 `bundle-rtosv3-drvport-v1.0.0.zip` 校验得到 0 个错误、2 个警告；下载的编译产物包含 4 个阶段和 35 个技能。
 - 校验成功后等待状态收起，概览、投影选项和编译产物可用；点击导航及滚动到底部时，当前位置正确高亮。
 - 默认选项构建成功，生成可下载资产和安装命令。
+- 与一键安装改动组合验证：构建结果包含 `install` 资产，页面只展示一条固定 Release 的安装命令，并说明默认 runner 与 `--target omp` 的选择方式。
 - 无效 zip 显示诊断并恢复编译产物等待状态；超过 8 MiB 的文件显示大小限制说明。
 
 浏览器验收未执行真实 Release 发布；发布流程由现有测试中的本地 fixture 验证。
+
+## 一键安装组合验证
+
+`test/release-launcher.test.js` 包含 27 项启动器回归，覆盖投影选择、GitHub 凭据优先级、Git 凭据回退、镜像凭据隔离、私有资产 API 下载、仓库固定、Node 版本要求、超时、校验失败及临时目录清理。
+
+其中的真实子进程测试通过 stdin 执行 `node -`，从完整本地 Release 镜像安装到两个独立项目：默认 runner 生成运行器与回执，`--target omp` 生成 agent-native 回执及 OMP 文件。测试还确认安装临时目录已清空。
+
+自定义私有仓库使用本地 GitHub fixture 验证指定版本与最新版本的安装；已有构建发布时，仓库不匹配会在远程请求前被拒绝，同仓库发布保持构建字节不变。

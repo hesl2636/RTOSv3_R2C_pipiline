@@ -12,6 +12,7 @@
  *   hm2b-engine-<E>.tgz                 runner in requires.projections
  *   hm2b-framework-<F>.tgz              always (framework sources + installer/)
  *   install.mjs                         always, byte-identical to scripts/install.mjs
+ *   install                             always, the flag-free launcher for this tag
  *   SHA256SUMS.txt                      always, covers every other asset
  *
  * The payloads are pre-projected with canonical options, validated V1–V12,
@@ -33,6 +34,7 @@ import { foldCase, hasFileDirPrefixConflict } from '../../core/paths.js';
 import { isValidRange, isValidVersion, satisfiesRange } from '../../core/semver.js';
 import {
   INSTALL_ASSET,
+  LAUNCHER_ASSET,
   COMPILED_WORKFLOW_ASSET,
   SUMS_ASSET,
   bundleAssetNames,
@@ -42,6 +44,7 @@ import {
   legacyAssetNames,
   parseBundleTag,
 } from '../../installer/release-tags.js';
+import { DEFAULT_RELEASE_REPO } from '../../installer/release-source.js';
 import {
   PAYLOAD_FILE_KINDS,
   PAYLOAD_MANIFEST_NAME,
@@ -508,14 +511,202 @@ function failureResult(failures, notes = []) {
 }
 
 /**
+ * The extensionless launcher shipped with every bundle Release. It is the
+ * whole install surface: `curl -fsSL …/<tag>/install | node -` fetches the
+ * Release's own `install.mjs` and installs one projection. Runner and
+ * agent-native own overlapping host role paths, so a project installs one of
+ * them; `--target` selects agent-native for a single host.
+ */
+function launcherAsset({ id, version, allowed, repo, installerSha256 }) {
+  const tag = bundleTag(id, version);
+  const projections = CANONICAL_PROJECTIONS.filter((projection) => allowed.includes(projection));
+  const fallback = projections.includes('runner') ? 'runner' : projections[0];
+  return Buffer.from(`#!/usr/bin/env node
+// Generated for ${tag}: installs this Release online, no flags required.
+'use strict';
+const { spawnSync } = require('node:child_process');
+const { createHash } = require('node:crypto');
+const { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } = require('node:fs');
+const { tmpdir } = require('node:os');
+const { delimiter, extname, join } = require('node:path');
+
+const REPO = ${JSON.stringify(repo)};
+const TAG = ${JSON.stringify(tag)};
+const BUNDLE = ${JSON.stringify(id)};
+const VERSION = ${JSON.stringify(version)};
+const PROJECTIONS = ${JSON.stringify(projections)};
+const DEFAULT_PROJECTION = ${JSON.stringify(fallback)};
+const INSTALLER_SHA256 = ${JSON.stringify(installerSha256)};
+const DEFAULT_BASE = \`https://github.com/\${REPO}/releases/download\`;
+// A local fixture or mirror wins, the same seam install.mjs reads.
+const rawBase = (process.env.HM2B_RELEASE_BASE || DEFAULT_BASE).trim();
+const BASE = /^https?:\\/\\//i.test(rawBase) ? rawBase.replace(/\\/+$/, '') : rawBase;
+const rawTimeout = Number(process.env.HM2B_INSTALL_DOWNLOAD_TIMEOUT_MS);
+const DOWNLOAD_TIMEOUT_MS = Number.isInteger(rawTimeout) && rawTimeout > 0 && rawTimeout <= 4294967295 ? rawTimeout : 300_000;
+const NETWORK_HINT = 'For a proxy, set NODE_USE_ENV_PROXY=1 and HTTPS_PROXY; raise HM2B_INSTALL_DOWNLOAD_TIMEOUT_MS for a slow link.';
+
+function fail(code, message, exitCode = 1) {
+  const error = new Error(message);
+  error.code = code;
+  error.exitCode = exitCode;
+  throw error;
+}
+
+function usage(message) {
+  if (message !== undefined) process.stderr.write(\`install: \${message}\\n\`);
+  process.stderr.write(
+    'usage: curl -fsSL <release>/install | node - [--target <t>]... [--projection runner|agent-native] [--project <dir>] [--force]\\n',
+  );
+  const error = new Error(message || 'help requested');
+  error.silent = true;
+  error.exitCode = message === undefined ? 0 : 2;
+  throw error;
+}
+
+// Match install.mjs: never prompt, and only consult Git credentials for GitHub.
+function githubToken() {
+  for (const key of ['GH_TOKEN', 'GITHUB_TOKEN']) {
+    if (process.env[key]) return process.env[key];
+  }
+  const extensions = process.platform === 'win32'
+    ? ['', ...(process.env.PATHEXT || '.COM;.EXE;.BAT;.CMD').split(';').filter(Boolean).map((value) => value.toLowerCase())]
+    : [''];
+  for (const dir of (process.env.PATH || '').split(delimiter)) {
+    if (dir === '') continue;
+    for (const extension of extensions) {
+      const bin = join(dir, 'git' + extension);
+      try { if (!statSync(bin).isFile()) continue; } catch { continue; }
+      const needsShell = process.platform === 'win32' && ['.cmd', '.bat'].includes(extname(bin).toLowerCase());
+      const result = spawnSync(needsShell ? '"' + bin + '" credential fill' : bin, needsShell ? [] : ['credential', 'fill'], {
+        input: 'protocol=https\\nhost=github.com\\n\\n', encoding: 'utf8', timeout: 5000,
+        windowsHide: true, shell: needsShell, env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
+      });
+      const match = result.status === 0 && !result.error && typeof result.stdout === 'string'
+        ? /^password=(.+)$/m.exec(result.stdout) : null;
+      return match === null ? null : match[1];
+    }
+  }
+  return null;
+}
+
+async function download(url, token, asJson = false) {
+  const headers = { 'user-agent': 'hm2b-install', accept: asJson ? 'application/vnd.github+json' : 'application/octet-stream' };
+  if (token !== null) headers.authorization = \`Bearer \${token}\`;
+  try {
+    const response = await fetch(url, { headers, redirect: 'follow', signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS) });
+    if (!response.ok) {
+      fail('RELEASE_DOWNLOAD_FAILED', \`cannot read install.mjs for \${TAG}: HTTP \${response.status}; for private releases set GH_TOKEN/GITHUB_TOKEN or a git credential\`);
+    }
+    return asJson ? await response.json() : Buffer.from(await response.arrayBuffer());
+  } catch (error) {
+    if (error.code === 'RELEASE_DOWNLOAD_FAILED') throw error;
+    fail('RELEASE_DOWNLOAD_FAILED', \`cannot download install.mjs: \${error.message}\\n\${NETWORK_HINT}\`);
+  }
+}
+
+async function installerBytes() {
+  if (!/^https?:\\/\\//i.test(BASE)) {
+    for (const path of [join(BASE, TAG, 'install.mjs'), join(BASE, 'install.mjs')]) {
+      if (existsSync(path)) return readFileSync(path);
+    }
+    fail('RELEASE_DOWNLOAD_FAILED', \`install.mjs is missing from \${BASE}\`);
+  }
+  // Mirrors authenticate their own way: GitHub secrets never leave GitHub.
+  const token = BASE === DEFAULT_BASE ? githubToken() : null;
+  if (token === null) return download(\`\${BASE}/\${TAG}/install.mjs\`, null);
+  const release = await download(\`https://api.github.com/repos/\${REPO}/releases/tags/\${TAG}\`, token, true);
+  const asset = Array.isArray(release?.assets) ? release.assets.find((item) => item.name === 'install.mjs') : null;
+  if (!Number.isSafeInteger(asset?.id) || asset.id <= 0) fail('RELEASE_DOWNLOAD_FAILED', \`install.mjs is missing from \${TAG}\`);
+  return download(\`https://api.github.com/repos/\${REPO}/releases/assets/\${asset.id}\`, token);
+}
+
+function parseArgs(argv) {
+  const opts = { project: '.', targets: [], force: false, projection: null };
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
+    if (arg === '--target') {
+      const value = argv[index + 1];
+      if (value === undefined || value.startsWith('--')) usage('--target requires a host id');
+      opts.targets.push(value);
+      index += 1;
+    } else if (arg === '--projection') {
+      const value = argv[index + 1];
+      if (value === undefined || value.startsWith('--')) usage('--projection requires runner or agent-native');
+      opts.projection = value;
+      index += 1;
+    } else if (arg === '--project') {
+      const value = argv[index + 1];
+      if (value === undefined || value.startsWith('--')) usage('--project requires a directory');
+      opts.project = value;
+      index += 1;
+    } else if (arg === '--force') {
+      opts.force = true;
+    } else if (arg === '--help' || arg === '-h') {
+      usage();
+    } else {
+      usage(\`unknown argument: \${arg}\`);
+    }
+  }
+  return opts;
+}
+
+async function main() {
+  const opts = parseArgs(process.argv.slice(2));
+  const [major, minor] = process.versions.node.split('.').map(Number);
+  if (!(major === 22 && minor >= 19 || major >= 24)) {
+    fail('ENGINE_NODE_UNSUPPORTED', 'Node.js >=22.19.0 <23 || >=24.0.0 is required', 2);
+  }
+  // One projection per project: runner and agent-native share host role paths.
+  let projection = opts.projection;
+  if (projection === null) projection = opts.targets.length > 0 ? 'agent-native' : DEFAULT_PROJECTION;
+  if (!PROJECTIONS.includes(projection)) {
+    usage(\`projection \${projection} is not allowed by \${BUNDLE} v\${VERSION} (allowed: \${PROJECTIONS.join(', ')})\`);
+  }
+  if (opts.targets.length > 0 && projection !== 'agent-native') {
+    usage('--target needs --projection agent-native');
+  }
+  const dir = mkdtempSync(join(tmpdir(), 'hm2b-install-'));
+  try {
+    const bytes = await installerBytes();
+    if (createHash('sha256').update(bytes).digest('hex') !== INSTALLER_SHA256) {
+      fail('RELEASE_CHECKSUM_MISMATCH', 'install.mjs does not match this Release; nothing was executed', 2);
+    }
+    const installer = join(dir, 'install.mjs');
+    writeFileSync(installer, bytes);
+    const args = [installer, '--bundle', BUNDLE, '--version', VERSION, '--projection', projection, '--project', opts.project];
+    if (projection === 'agent-native') {
+      for (const target of opts.targets) args.push('--target', target);
+    }
+    if (opts.force) args.push('--force');
+    const run = spawnSync(process.execPath, args, { stdio: 'inherit', windowsHide: true, env: { ...process.env, GH_REPO: REPO } });
+    if (run.error !== undefined && run.error !== null) {
+      fail('INTERNAL', run.error.message);
+    }
+    process.exitCode = run.status === null ? 1 : run.status;
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+main().catch((error) => {
+  if (!error.silent) process.stderr.write(\`install: \${error.code || 'INTERNAL'}: \${error.message || String(error)}\\n\`);
+  process.exitCode = error.exitCode === undefined ? 1 : error.exitCode;
+});
+`);
+}
+
+/**
  * Assemble every asset of one bundle Release in memory.
  *
- * @param {{root: string, bundlePath: string, tag?: string|null, options?: object|null}} input
+ * @param {{root: string, bundlePath: string, tag?: string|null, options?: object|null, repo?: string}} input
  * @returns {{ok: boolean, failures: string[], notes: string[], assets: Array<{name: string, data: Buffer}>|null, plan: object|null}}
  */
-export function buildBundleRelease({ root, bundlePath, tag = null, options = null }) {
+export function buildBundleRelease({ root, bundlePath, tag = null, options = null, repo = DEFAULT_RELEASE_REPO }) {
   const failures = [];
   const notes = [];
+  if (typeof repo !== 'string' || !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo)) {
+    return failureResult(['RELEASE_SOURCE_SET_MISMATCH: repository must be owner/name'], notes);
+  }
   if (options !== null && (typeof options !== 'object' || Array.isArray(options))) {
     return failureResult(['RELEASE_PAYLOAD_INVALID: options must be an object keyed by projection id'], notes);
   }
@@ -652,6 +843,7 @@ export function buildBundleRelease({ root, bundlePath, tag = null, options = nul
   }
   assets.push({ name: `hm2b-framework-${frameworkVersion}.tgz`, data: frameworkArchive(framework) });
   assets.push({ name: INSTALL_ASSET, data: installBytes });
+  assets.push({ name: LAUNCHER_ASSET, data: launcherAsset({ id, version, allowed, repo, installerSha256: sha256Hex(installBytes) }) });
   assets.sort((left, right) => compareCodePoints(left.name, right.name));
   assets.push({ name: SUMS_ASSET, data: sumsBuffer(assets) });
   assets.sort((left, right) => compareCodePoints(left.name, right.name));
@@ -771,13 +963,13 @@ function checkOutDir({ outDir, built, failures }) {
  *
  * @returns {{ok: boolean, failures: string[], notes: string[], plan: object|null}}
  */
-export function checkBundleRelease({ root, bundlePath, tag = null, outDir = null }) {
-  const first = buildBundleRelease({ root, bundlePath, tag });
+export function checkBundleRelease({ root, bundlePath, tag = null, outDir = null, repo = DEFAULT_RELEASE_REPO }) {
+  const first = buildBundleRelease({ root, bundlePath, tag, repo });
   const failures = [...first.failures];
   const notes = [...first.notes];
   if (!first.ok) return { ok: false, failures, notes, plan: null };
 
-  const second = buildBundleRelease({ root, bundlePath, tag });
+  const second = buildBundleRelease({ root, bundlePath, tag, repo });
   if (!second.ok) {
     failures.push(...second.failures.map((failure) => `deterministic rebuild failed: ${failure}`));
   } else {

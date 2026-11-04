@@ -66,6 +66,7 @@ const SAMPLE_ASSETS = [
   'hm2b-engine-0.1.0.tgz',
   'hm2b-framework-0.1.0.tgz',
   'hm2b-payload-rtosv3-drvport-v1.0.0.tgz',
+  'install',
   'install.mjs',
   'workflow.compiled.json',
 ];
@@ -76,8 +77,8 @@ function tempDir(t, prefix) {
   return dir;
 }
 
-function runRelease(args) {
-  return spawnSync(process.execPath, [SCRIPT, ...args], { cwd: ROOT, encoding: 'utf8' });
+function runRelease(args, env = {}) {
+  return spawnSync(process.execPath, [SCRIPT, ...args], { cwd: ROOT, encoding: 'utf8', env: { ...process.env, ...env } });
 }
 
 function buildTo(t, prefix = 'out', extra = []) {
@@ -186,6 +187,7 @@ test('the asset matrix follows requires.projections and never emits legacy asset
     'hm2b-engine-0.2.0.tgz',
     'hm2b-framework-0.3.0.tgz',
     'hm2b-payload-x-v1.0.0.tgz',
+    'install',
     'install.mjs',
     'workflow.compiled.json',
   ]);
@@ -202,6 +204,7 @@ test('the asset matrix follows requires.projections and never emits legacy asset
     'agent-native-x-v1.0.0.tgz',
     'bundle-x-v1.0.0.zip',
     'hm2b-framework-0.3.0.tgz',
+    'install',
     'install.mjs',
     'workflow.compiled.json',
   ]);
@@ -213,7 +216,7 @@ test('the asset matrix follows requires.projections and never emits legacy asset
     engineVersion: '0.2.0',
     frameworkVersion: '0.3.0',
   });
-  assert.equal(both.length, 8);
+  assert.equal(both.length, 9);
   for (const name of [...runner, ...agent, ...both]) {
     assert.doesNotMatch(name, /^r2c-/, 'legacy channel name leaked');
     assert.notEqual(name, 'projection-result.json');
@@ -222,7 +225,7 @@ test('the asset matrix follows requires.projections and never emits legacy asset
   assert.equal(BUNDLE_MAKE_LATEST, false);
 });
 
-test('the sample bundle builds all eight assets with frozen zip and compiled workflow anchors', () => {
+test('the sample bundle builds all nine assets with frozen zip and compiled workflow anchors', () => {
   const built = buildBundleRelease({ root: ROOT, bundlePath: SAMPLE_ZIP, tag: TAG });
   assert.deepEqual(built.failures, []);
   assert.equal(built.ok, true);
@@ -433,7 +436,7 @@ test('the CLI writes byte-identical assets twice and --check verifies the direct
 
   const ok = runRelease(['--bundle', SAMPLE_ZIP, '--check', '--out', first, '--tag', TAG]);
   assert.equal(ok.status, 0, ok.stderr);
-  assert.match(ok.stdout, /bundle release --check ok: bundle-rtosv3-drvport-v1\.0\.0, 8 assets, make_latest=false/);
+  assert.match(ok.stdout, /bundle release --check ok: bundle-rtosv3-drvport-v1\.0\.0, 9 assets, make_latest=false/);
 
   // The bundle directory form rebuilds the zip and must match the committed one.
   const fromDir = tempDir(t, 'dir');
@@ -529,6 +532,7 @@ test('runner-only and agent-native-only bundles produce the conditional asset se
     'hm2b-engine-0.1.0.tgz',
     'hm2b-framework-0.1.0.tgz',
     'hm2b-payload-rtosv3-drvport-v1.0.0.tgz',
+    'install',
     'install.mjs',
     'workflow.compiled.json',
   ]);
@@ -546,6 +550,7 @@ test('runner-only and agent-native-only bundles produce the conditional asset se
     'agent-native-rtosv3-drvport-v1.0.0.tgz',
     'bundle-rtosv3-drvport-v1.0.0.zip',
     'hm2b-framework-0.1.0.tgz',
+    'install',
     'install.mjs',
     'workflow.compiled.json',
   ]);
@@ -617,4 +622,17 @@ test('--bundle requires an explicit --out', () => {
   const result = runRelease(['--bundle', SAMPLE_ZIP]);
   assert.equal(result.status, 2);
   assert.match(result.stderr, /--bundle requires --out/);
+});
+
+test('the bundle CLI builds and checks a launcher pinned to GH_REPO', (t) => {
+  const out = tempDir(t, 'custom-repo');
+  const env = { GH_REPO: 'another-owner/private-workflows' };
+  const built = runRelease(['--bundle', SAMPLE_ZIP, '--out', out], env);
+  assert.equal(built.status, 0, `${built.stdout}\n${built.stderr}`);
+  assert.match(readFileSync(join(out, 'install'), 'utf8'), /const REPO = "another-owner\/private-workflows";/);
+  const checked = runRelease(['--bundle', SAMPLE_ZIP, '--check', '--out', out], env);
+  assert.equal(checked.status, 0, `${checked.stdout}\n${checked.stderr}`);
+  const invalid = runRelease(['--bundle', SAMPLE_ZIP, '--out', tempDir(t, 'invalid-repo')], { GH_REPO: 'not-a-repository' });
+  assert.notEqual(invalid.status, 0);
+  assert.match(invalid.stderr, /GH_REPO must be owner\/name/);
 });

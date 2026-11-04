@@ -17,13 +17,13 @@ import { isValidVersion } from '../../core/semver.js';
 import { canonicalInputOptions } from '../../projection/options.js';
 import { getProjection } from '../../projection/registry.js';
 import { readPayloadArchive } from '../../installer/release-payload.js';
-import { COMPILED_WORKFLOW_ASSET, bundleTag, isValidBundleId } from '../../installer/release-tags.js';
+import { COMPILED_WORKFLOW_ASSET, LAUNCHER_ASSET, bundleTag, isValidBundleId } from '../../installer/release-tags.js';
 import { verifySums } from '../../installer/release-source.js';
 import { COMPILED_WORKFLOW_SCHEMA } from '../../compiled/schema.js';
 
 const SUMS_ASSET = 'SHA256SUMS.txt';
 
-export function readBuiltRelease(dir) {
+export function readBuiltRelease(dir, { repo = null } = {}) {
   const failures = [];
   const fail = (message) => {
     failures.push(message);
@@ -123,6 +123,26 @@ export function readBuiltRelease(dir) {
     const canonical = canonicalInputOptions(projectionId, getProjection(projectionId));
     if (JSON.stringify(payload.manifest.options) !== JSON.stringify(canonical)) {
       return fail(`WEB_PUBLISH_NOT_CANONICAL: ${asset.name} was built with custom projection options; only a canonical build can be published`);
+    }
+  }
+
+  // A launcher pins its download repository at build time. Publishing those
+  // frozen bytes elsewhere would install from the wrong Release. Read only
+  // the generated JSON string declaration; never execute a built asset.
+  if (repo !== null) {
+    const launcher = assets.find((asset) => asset.name === LAUNCHER_ASSET);
+    const declarations = [...(launcher?.data.toString('utf8') ?? '').matchAll(/^const REPO = ("[^\r\n]*");\r?$/gm)];
+    let pinnedRepo = null;
+    if (declarations.length === 1) {
+      try {
+        const parsed = JSON.parse(declarations[0][1]);
+        if (typeof parsed === 'string' && /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(parsed)) pinnedRepo = parsed;
+      } catch {
+        // An unrecognized declaration cannot establish the download target.
+      }
+    }
+    if (pinnedRepo === null || pinnedRepo.toLowerCase() !== repo.toLowerCase()) {
+      return fail(`RELEASE_REPOSITORY_MISMATCH: ${LAUNCHER_ASSET} ${pinnedRepo === null ? 'has no valid pinned repository' : `pins ${pinnedRepo}`}, but publishing targets ${repo}; rebuild the release with GH_REPO=${repo} before publishing`);
     }
   }
 

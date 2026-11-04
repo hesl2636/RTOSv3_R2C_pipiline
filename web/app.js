@@ -996,30 +996,31 @@ function publishNote(view) {
 }
 
 function installLabel(item) {
-  const projection = item.projection ?? 'install';
+  if (item.projection === null || item.projection === undefined) return '一条命令安装';
   return item.target === null || item.target === undefined
-    ? `${projection} · 全部目标`
-    : `${projection} · ${item.target}`;
+    ? `${item.projection} · 全部目标`
+    : `${item.projection} · ${item.target}`;
 }
 
 function appendInstallCommands(parent, commands) {
   if (!Array.isArray(commands) || commands.length === 0) return;
-  const raw = [];
   for (const item of commands) {
     const block = element('div', 'install-command');
     block.append(element('div', 'command-title', installLabel(item)));
-    block.append(copyable(item.oneLiner ?? item.command));
+    block.append(copyable(item.command));
     parent.append(block);
-    if (typeof item.oneLiner === 'string' && item.oneLiner !== item.command) raw.push(item);
   }
-  if (raw.length === 0) return;
-  const fold = element('details', 'fold');
-  fold.append(element('summary', null, `仅安装命令 · ${raw.length}（已下载 install.mjs）`));
-  for (const item of raw) {
-    fold.append(element('div', 'command-title', installLabel(item)));
-    fold.append(copyable(item.command));
-  }
-  parent.append(fold);
+}
+
+/** The one-time `install.mjs` fetch; every install command then runs online. */
+function appendInstallBootstrap(parent, bootstrap) {
+  if (bootstrap === null || bootstrap === undefined) return;
+  parent.append(element('p', 'hint', bootstrap.instruction));
+  if (typeof bootstrap.command !== 'string' || bootstrap.command === '') return;
+  const block = element('div', 'install-command');
+  block.append(element('div', 'command-title', `下载 ${bootstrap.asset} · ${bootstrap.path}`));
+  block.append(copyable(bootstrap.command));
+  parent.append(block);
 }
 
 /**
@@ -1075,10 +1076,8 @@ function renderPublishJob(job) {
   if (job.error !== null) body.append(element('p', 'status', publishFailureText(job.error)));
   if (job.result?.install?.commands !== undefined) {
     body.append(element('h3', null, '安装命令'));
-    const bootstrap = job.result.install.bootstrap;
-    if (bootstrap !== null && bootstrap !== undefined) {
-      body.append(element('p', 'hint', '以下每条命令会先用 gh 下载整个 Release 到 .hm2b/release，再离线安装；在目标项目根目录执行即可。'));
-    }
+    body.append(element('p', 'hint', `一条命令在线安装 ${job.tag}：默认 runner；追加 --target omp 安装该宿主的 agent-native 文件（runner 与 agent-native 同一项目只装一个）。`));
+    appendInstallBootstrap(body, job.result.install.bootstrap);
     appendInstallCommands(body, job.result.install.commands);
     const assetsFold = element('details', 'fold');
     assetsFold.append(element('summary', null, `已发布资产 · ${(job.result.assets ?? []).length}`));
@@ -1189,11 +1188,13 @@ function renderBuild(build) {
   const releaseMode = build.install.mode === 'release';
   body.append(element('h3', null, releaseMode ? '安装命令（固定版本）' : '安装命令（重投影后安装）'));
   if (releaseMode) {
-    const bootstrap = build.install.bootstrap;
-    if (bootstrap !== null && bootstrap !== undefined) {
-      body.append(element('p', 'hint', '以下每条命令会先用 gh 下载整个 Release 到 .hm2b/release，再离线安装；需要 Release 已发布且 gh 已登录，安装阶段不再需要 token。'));
-      body.append(element('p', 'hint', `命令安装的是 GitHub Release ${build.tag} 的资产；若该版本尚未发布，或已发布资产与本次构建不同，请先在 07 发布新版本。`));
-    }
+    appendInstallBootstrap(body, build.install.bootstrap);
+    body.append(element(
+      'p',
+      'hint',
+      `一条命令在线安装 GitHub Release ${build.tag}：自动取该 Release 的 install.mjs 和资产，并校验 SHA256SUMS.txt，不需要 gh；私有仓库用 GH_TOKEN/GITHUB_TOKEN。默认安装 runner；要装宿主技能时追加 --target omp（或 --projection agent-native 装全部宿主）。runner 与 agent-native 共用一批宿主角色文件，同一个项目只装其中一个。`,
+    ));
+    body.append(element('p', 'hint', '若该版本尚未发布，或已发布资产与本次构建不同，请先在 07 发布新版本。'));
   } else {
     body.append(element(
       'p',
