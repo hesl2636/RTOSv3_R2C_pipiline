@@ -1,0 +1,882 @@
+{
+  "schema": "hm2b.projection.roles/v1",
+  "compiledWorkflow": {
+    "id": "rtosv3-drvport",
+    "version": "1.0.0",
+    "sha256": "518643ab9c92d270a66bd4545cba660d0511243070c3479234edec3225b6d23c"
+  },
+  "targets": {
+    "claude-code": {
+      "namespace": "rtosv3-drvport",
+      "roles": [
+        {
+          "id": "bys-architect",
+          "name": "bys-architect",
+          "placeholder": true,
+          "exposure": "subagent",
+          "artifact": {
+            "path": ".claude/agents/bys-architect.md",
+            "format": "md",
+            "sha256": "e7d61157b65bc90831d9c1b3927bbe90f7567935c932498375afe6fffbf5837b"
+          },
+          "fields": {
+            "id": {
+              "state": "adapted",
+              "reason": "文件名 + frontmatter name 承载渲染名"
+            },
+            "description": {
+              "state": "native"
+            },
+            "instructions": {
+              "state": "native"
+            },
+            "mode": {
+              "state": "adapted",
+              "reason": "Claude 无 mode 字段；同一 md 既是子 agent 也可作会话人格"
+            },
+            "model": {
+              "state": "adapted",
+              "reason": "能力档 strong → opus"
+            },
+            "title": {
+              "state": "unavailable",
+              "reason": "Claude 无展示名槽",
+              "effect": "展示名丢弃，只保留 description"
+            },
+            "placeholder": {
+              "state": "adapted",
+              "reason": "标记随产物保留；true 时正文替换为固定占位块"
+            }
+          }
+        },
+        {
+          "id": "bys-designer",
+          "name": "bys-designer",
+          "placeholder": true,
+          "exposure": "subagent",
+          "artifact": {
+            "path": ".claude/agents/bys-designer.md",
+            "format": "md",
+            "sha256": "5e948bce384b4d7fb8a1b227aae63cfb9ab05638fbb47901ba502e7e2c1e1c8c"
+          },
+          "fields": {
+            "id": {
+              "state": "adapted",
+              "reason": "文件名 + frontmatter name 承载渲染名"
+            },
+            "description": {
+              "state": "native"
+            },
+            "instructions": {
+              "state": "native"
+            },
+            "mode": {
+              "state": "adapted",
+              "reason": "Claude 无 mode 字段；同一 md 既是子 agent 也可作会话人格"
+            },
+            "model": {
+              "state": "adapted",
+              "reason": "能力档 strong → opus"
+            },
+            "title": {
+              "state": "unavailable",
+              "reason": "Claude 无展示名槽",
+              "effect": "展示名丢弃，只保留 description"
+            },
+            "placeholder": {
+              "state": "adapted",
+              "reason": "标记随产物保留；true 时正文替换为固定占位块"
+            }
+          }
+        },
+        {
+          "id": "bys-impl-lead",
+          "name": "bys-impl-lead",
+          "placeholder": true,
+          "exposure": "subagent",
+          "artifact": {
+            "path": ".claude/agents/bys-impl-lead.md",
+            "format": "md",
+            "sha256": "a7b020c3899dec0b0c2c721a27477806e4fbecee4a613c6b18b0917a2767c20f"
+          },
+          "fields": {
+            "id": {
+              "state": "adapted",
+              "reason": "文件名 + frontmatter name 承载渲染名"
+            },
+            "description": {
+              "state": "native"
+            },
+            "instructions": {
+              "state": "native"
+            },
+            "mode": {
+              "state": "adapted",
+              "reason": "Claude 无 mode 字段；同一 md 既是子 agent 也可作会话人格"
+            },
+            "model": {
+              "state": "adapted",
+              "reason": "能力档 strong → opus"
+            },
+            "title": {
+              "state": "unavailable",
+              "reason": "Claude 无展示名槽",
+              "effect": "展示名丢弃，只保留 description"
+            },
+            "placeholder": {
+              "state": "adapted",
+              "reason": "标记随产物保留；true 时正文替换为固定占位块"
+            }
+          }
+        },
+        {
+          "id": "bys-release-lead",
+          "name": "bys-release-lead",
+          "placeholder": true,
+          "exposure": "subagent",
+          "artifact": {
+            "path": ".claude/agents/bys-release-lead.md",
+            "format": "md",
+            "sha256": "fc548b3965fd3a19eee4619113e7d8a31fba07111e46bbe26b16dadf0312fa14"
+          },
+          "fields": {
+            "id": {
+              "state": "adapted",
+              "reason": "文件名 + frontmatter name 承载渲染名"
+            },
+            "description": {
+              "state": "native"
+            },
+            "instructions": {
+              "state": "native"
+            },
+            "mode": {
+              "state": "adapted",
+              "reason": "Claude 无 mode 字段；同一 md 既是子 agent 也可作会话人格"
+            },
+            "model": {
+              "state": "adapted",
+              "reason": "能力档 strong → opus"
+            },
+            "title": {
+              "state": "unavailable",
+              "reason": "Claude 无展示名槽",
+              "effect": "展示名丢弃，只保留 description"
+            },
+            "placeholder": {
+              "state": "adapted",
+              "reason": "标记随产物保留；true 时正文替换为固定占位块"
+            }
+          }
+        }
+      ],
+      "summary": {
+        "roles": 4,
+        "native": 8,
+        "adapted": 16,
+        "degraded": 0,
+        "unavailable": 4
+      }
+    },
+    "codex": {
+      "namespace": "rtosv3-drvport",
+      "roles": [
+        {
+          "id": "bys-architect",
+          "name": "bys-architect",
+          "placeholder": true,
+          "exposure": "subagent",
+          "artifact": {
+            "path": ".codex/agents/bys-architect.toml",
+            "format": "toml",
+            "sha256": "ca7831924123b85810bd5557c1df444e7318892b9a5709ffeeeb0b97f537c20b"
+          },
+          "fields": {
+            "id": {
+              "state": "adapted",
+              "reason": "TOML name 承载渲染名"
+            },
+            "description": {
+              "state": "native"
+            },
+            "instructions": {
+              "state": "adapted",
+              "reason": "developer_instructions 多行基本字符串，反斜杠与引号转义"
+            },
+            "mode": {
+              "state": "native"
+            },
+            "model": {
+              "state": "degraded",
+              "reason": "codex 无能力档别名，槽位需要具体 model id",
+              "effect": "继承 default_subagent_model"
+            },
+            "title": {
+              "state": "unavailable",
+              "reason": "codex 无展示名槽",
+              "effect": "展示名丢弃"
+            },
+            "placeholder": {
+              "state": "adapted",
+              "reason": "标记随产物保留；true 时正文替换为固定占位块"
+            }
+          }
+        },
+        {
+          "id": "bys-designer",
+          "name": "bys-designer",
+          "placeholder": true,
+          "exposure": "subagent",
+          "artifact": {
+            "path": ".codex/agents/bys-designer.toml",
+            "format": "toml",
+            "sha256": "1770f037ad30d6f4a2cef1de3c0cf2c553cdd3ca77d24780c17fc12698fa3aaf"
+          },
+          "fields": {
+            "id": {
+              "state": "adapted",
+              "reason": "TOML name 承载渲染名"
+            },
+            "description": {
+              "state": "native"
+            },
+            "instructions": {
+              "state": "adapted",
+              "reason": "developer_instructions 多行基本字符串，反斜杠与引号转义"
+            },
+            "mode": {
+              "state": "native"
+            },
+            "model": {
+              "state": "degraded",
+              "reason": "codex 无能力档别名，槽位需要具体 model id",
+              "effect": "继承 default_subagent_model"
+            },
+            "title": {
+              "state": "unavailable",
+              "reason": "codex 无展示名槽",
+              "effect": "展示名丢弃"
+            },
+            "placeholder": {
+              "state": "adapted",
+              "reason": "标记随产物保留；true 时正文替换为固定占位块"
+            }
+          }
+        },
+        {
+          "id": "bys-impl-lead",
+          "name": "bys-impl-lead",
+          "placeholder": true,
+          "exposure": "subagent",
+          "artifact": {
+            "path": ".codex/agents/bys-impl-lead.toml",
+            "format": "toml",
+            "sha256": "699bdfbefba0d9d7b991d8268964e662a35bb0234d2f00aa1d110b94154f0b58"
+          },
+          "fields": {
+            "id": {
+              "state": "adapted",
+              "reason": "TOML name 承载渲染名"
+            },
+            "description": {
+              "state": "native"
+            },
+            "instructions": {
+              "state": "adapted",
+              "reason": "developer_instructions 多行基本字符串，反斜杠与引号转义"
+            },
+            "mode": {
+              "state": "native"
+            },
+            "model": {
+              "state": "degraded",
+              "reason": "codex 无能力档别名，槽位需要具体 model id",
+              "effect": "继承 default_subagent_model"
+            },
+            "title": {
+              "state": "unavailable",
+              "reason": "codex 无展示名槽",
+              "effect": "展示名丢弃"
+            },
+            "placeholder": {
+              "state": "adapted",
+              "reason": "标记随产物保留；true 时正文替换为固定占位块"
+            }
+          }
+        },
+        {
+          "id": "bys-release-lead",
+          "name": "bys-release-lead",
+          "placeholder": true,
+          "exposure": "subagent",
+          "artifact": {
+            "path": ".codex/agents/bys-release-lead.toml",
+            "format": "toml",
+            "sha256": "c79bd1e98f67806e3e3d4587925da755819ab32dd10d6bd1b93311c7cc1247ba"
+          },
+          "fields": {
+            "id": {
+              "state": "adapted",
+              "reason": "TOML name 承载渲染名"
+            },
+            "description": {
+              "state": "native"
+            },
+            "instructions": {
+              "state": "adapted",
+              "reason": "developer_instructions 多行基本字符串，反斜杠与引号转义"
+            },
+            "mode": {
+              "state": "native"
+            },
+            "model": {
+              "state": "degraded",
+              "reason": "codex 无能力档别名，槽位需要具体 model id",
+              "effect": "继承 default_subagent_model"
+            },
+            "title": {
+              "state": "unavailable",
+              "reason": "codex 无展示名槽",
+              "effect": "展示名丢弃"
+            },
+            "placeholder": {
+              "state": "adapted",
+              "reason": "标记随产物保留；true 时正文替换为固定占位块"
+            }
+          }
+        }
+      ],
+      "summary": {
+        "roles": 4,
+        "native": 8,
+        "adapted": 12,
+        "degraded": 4,
+        "unavailable": 4
+      }
+    },
+    "dsh": {
+      "namespace": "rtosv3-drvport",
+      "roles": [
+        {
+          "id": "bys-architect",
+          "name": "bys-architect",
+          "placeholder": true,
+          "exposure": "subagent",
+          "artifact": {
+            "path": ".dsh/agent-native/roles.md",
+            "format": "md",
+            "sha256": "11d6bc9ed0dc17fc7e6139d9429696cfdb6fc419e9a9126af74f4aa53ff3d8a8"
+          },
+          "fields": {
+            "id": {
+              "state": "adapted",
+              "reason": "角色段落标题承载渲染名"
+            },
+            "description": {
+              "state": "degraded",
+              "reason": "dsh 只在 profile 层按 preset id 枚举角色；v1 角色目录不进入运行时路由",
+              "effect": "模型只能按角色 id/段落选择角色，读不到描述"
+            },
+            "instructions": {
+              "state": "adapted",
+              "reason": "正文逐字节进角色段落；没有 persona 槽"
+            },
+            "mode": {
+              "state": "native"
+            },
+            "model": {
+              "state": "degraded",
+              "reason": "dsh agentOptions 是委派工具级、跨角色共享",
+              "effect": "全角色共享 agentOptions；开启 modelSelection 时由模型逐次选择"
+            },
+            "title": {
+              "state": "native"
+            },
+            "placeholder": {
+              "state": "adapted",
+              "reason": "标记随产物保留；true 时正文替换为固定占位块"
+            }
+          }
+        },
+        {
+          "id": "bys-designer",
+          "name": "bys-designer",
+          "placeholder": true,
+          "exposure": "subagent",
+          "artifact": {
+            "path": ".dsh/agent-native/roles.md",
+            "format": "md",
+            "sha256": "11d6bc9ed0dc17fc7e6139d9429696cfdb6fc419e9a9126af74f4aa53ff3d8a8"
+          },
+          "fields": {
+            "id": {
+              "state": "adapted",
+              "reason": "角色段落标题承载渲染名"
+            },
+            "description": {
+              "state": "degraded",
+              "reason": "dsh 只在 profile 层按 preset id 枚举角色；v1 角色目录不进入运行时路由",
+              "effect": "模型只能按角色 id/段落选择角色，读不到描述"
+            },
+            "instructions": {
+              "state": "adapted",
+              "reason": "正文逐字节进角色段落；没有 persona 槽"
+            },
+            "mode": {
+              "state": "native"
+            },
+            "model": {
+              "state": "degraded",
+              "reason": "dsh agentOptions 是委派工具级、跨角色共享",
+              "effect": "全角色共享 agentOptions；开启 modelSelection 时由模型逐次选择"
+            },
+            "title": {
+              "state": "native"
+            },
+            "placeholder": {
+              "state": "adapted",
+              "reason": "标记随产物保留；true 时正文替换为固定占位块"
+            }
+          }
+        },
+        {
+          "id": "bys-impl-lead",
+          "name": "bys-impl-lead",
+          "placeholder": true,
+          "exposure": "subagent",
+          "artifact": {
+            "path": ".dsh/agent-native/roles.md",
+            "format": "md",
+            "sha256": "11d6bc9ed0dc17fc7e6139d9429696cfdb6fc419e9a9126af74f4aa53ff3d8a8"
+          },
+          "fields": {
+            "id": {
+              "state": "adapted",
+              "reason": "角色段落标题承载渲染名"
+            },
+            "description": {
+              "state": "degraded",
+              "reason": "dsh 只在 profile 层按 preset id 枚举角色；v1 角色目录不进入运行时路由",
+              "effect": "模型只能按角色 id/段落选择角色，读不到描述"
+            },
+            "instructions": {
+              "state": "adapted",
+              "reason": "正文逐字节进角色段落；没有 persona 槽"
+            },
+            "mode": {
+              "state": "native"
+            },
+            "model": {
+              "state": "degraded",
+              "reason": "dsh agentOptions 是委派工具级、跨角色共享",
+              "effect": "全角色共享 agentOptions；开启 modelSelection 时由模型逐次选择"
+            },
+            "title": {
+              "state": "native"
+            },
+            "placeholder": {
+              "state": "adapted",
+              "reason": "标记随产物保留；true 时正文替换为固定占位块"
+            }
+          }
+        },
+        {
+          "id": "bys-release-lead",
+          "name": "bys-release-lead",
+          "placeholder": true,
+          "exposure": "subagent",
+          "artifact": {
+            "path": ".dsh/agent-native/roles.md",
+            "format": "md",
+            "sha256": "11d6bc9ed0dc17fc7e6139d9429696cfdb6fc419e9a9126af74f4aa53ff3d8a8"
+          },
+          "fields": {
+            "id": {
+              "state": "adapted",
+              "reason": "角色段落标题承载渲染名"
+            },
+            "description": {
+              "state": "degraded",
+              "reason": "dsh 只在 profile 层按 preset id 枚举角色；v1 角色目录不进入运行时路由",
+              "effect": "模型只能按角色 id/段落选择角色，读不到描述"
+            },
+            "instructions": {
+              "state": "adapted",
+              "reason": "正文逐字节进角色段落；没有 persona 槽"
+            },
+            "mode": {
+              "state": "native"
+            },
+            "model": {
+              "state": "degraded",
+              "reason": "dsh agentOptions 是委派工具级、跨角色共享",
+              "effect": "全角色共享 agentOptions；开启 modelSelection 时由模型逐次选择"
+            },
+            "title": {
+              "state": "native"
+            },
+            "placeholder": {
+              "state": "adapted",
+              "reason": "标记随产物保留；true 时正文替换为固定占位块"
+            }
+          }
+        }
+      ],
+      "summary": {
+        "roles": 4,
+        "native": 8,
+        "adapted": 12,
+        "degraded": 8,
+        "unavailable": 0
+      }
+    },
+    "omp": {
+      "namespace": "rtosv3-drvport",
+      "roles": [
+        {
+          "id": "bys-architect",
+          "name": "bys-architect",
+          "placeholder": true,
+          "exposure": "subagent",
+          "artifact": {
+            "path": ".omp/agents/bys-architect.md",
+            "format": "md",
+            "sha256": "7c3d5035a1d6b2ce31dc235378d21b62450161353725e7951fb452b3b45873c7"
+          },
+          "fields": {
+            "id": {
+              "state": "adapted",
+              "reason": "文件名 + frontmatter name 承载渲染名"
+            },
+            "description": {
+              "state": "native"
+            },
+            "instructions": {
+              "state": "native"
+            },
+            "mode": {
+              "state": "native"
+            },
+            "model": {
+              "state": "degraded",
+              "reason": "omp @tier 别名需要 modelRoles 条目，渲染期无法证明",
+              "effect": "继承 profile 默认模型"
+            },
+            "title": {
+              "state": "unavailable",
+              "reason": "omp 无展示名槽",
+              "effect": "展示名丢弃"
+            },
+            "placeholder": {
+              "state": "adapted",
+              "reason": "标记随产物保留；true 时正文替换为固定占位块"
+            }
+          }
+        },
+        {
+          "id": "bys-designer",
+          "name": "bys-designer",
+          "placeholder": true,
+          "exposure": "subagent",
+          "artifact": {
+            "path": ".omp/agents/bys-designer.md",
+            "format": "md",
+            "sha256": "d815d3a58ea2ab4f4062a463cf92bfcd533b8d3d81ba4b99315ab85b5600d7b1"
+          },
+          "fields": {
+            "id": {
+              "state": "adapted",
+              "reason": "文件名 + frontmatter name 承载渲染名"
+            },
+            "description": {
+              "state": "native"
+            },
+            "instructions": {
+              "state": "native"
+            },
+            "mode": {
+              "state": "native"
+            },
+            "model": {
+              "state": "degraded",
+              "reason": "omp @tier 别名需要 modelRoles 条目，渲染期无法证明",
+              "effect": "继承 profile 默认模型"
+            },
+            "title": {
+              "state": "unavailable",
+              "reason": "omp 无展示名槽",
+              "effect": "展示名丢弃"
+            },
+            "placeholder": {
+              "state": "adapted",
+              "reason": "标记随产物保留；true 时正文替换为固定占位块"
+            }
+          }
+        },
+        {
+          "id": "bys-impl-lead",
+          "name": "bys-impl-lead",
+          "placeholder": true,
+          "exposure": "subagent",
+          "artifact": {
+            "path": ".omp/agents/bys-impl-lead.md",
+            "format": "md",
+            "sha256": "fe7f2814ebab4833f3aabe4dcab01d132de647cd7bc34fe8a1f2a857aa5e598e"
+          },
+          "fields": {
+            "id": {
+              "state": "adapted",
+              "reason": "文件名 + frontmatter name 承载渲染名"
+            },
+            "description": {
+              "state": "native"
+            },
+            "instructions": {
+              "state": "native"
+            },
+            "mode": {
+              "state": "native"
+            },
+            "model": {
+              "state": "degraded",
+              "reason": "omp @tier 别名需要 modelRoles 条目，渲染期无法证明",
+              "effect": "继承 profile 默认模型"
+            },
+            "title": {
+              "state": "unavailable",
+              "reason": "omp 无展示名槽",
+              "effect": "展示名丢弃"
+            },
+            "placeholder": {
+              "state": "adapted",
+              "reason": "标记随产物保留；true 时正文替换为固定占位块"
+            }
+          }
+        },
+        {
+          "id": "bys-release-lead",
+          "name": "bys-release-lead",
+          "placeholder": true,
+          "exposure": "subagent",
+          "artifact": {
+            "path": ".omp/agents/bys-release-lead.md",
+            "format": "md",
+            "sha256": "89db87bd699b62699e25d961a609941e0153af9d08c5236daa6405111602d347"
+          },
+          "fields": {
+            "id": {
+              "state": "adapted",
+              "reason": "文件名 + frontmatter name 承载渲染名"
+            },
+            "description": {
+              "state": "native"
+            },
+            "instructions": {
+              "state": "native"
+            },
+            "mode": {
+              "state": "native"
+            },
+            "model": {
+              "state": "degraded",
+              "reason": "omp @tier 别名需要 modelRoles 条目，渲染期无法证明",
+              "effect": "继承 profile 默认模型"
+            },
+            "title": {
+              "state": "unavailable",
+              "reason": "omp 无展示名槽",
+              "effect": "展示名丢弃"
+            },
+            "placeholder": {
+              "state": "adapted",
+              "reason": "标记随产物保留；true 时正文替换为固定占位块"
+            }
+          }
+        }
+      ],
+      "summary": {
+        "roles": 4,
+        "native": 12,
+        "adapted": 8,
+        "degraded": 4,
+        "unavailable": 4
+      }
+    },
+    "opencode": {
+      "namespace": "rtosv3-drvport",
+      "roles": [
+        {
+          "id": "bys-architect",
+          "name": "bys-architect",
+          "placeholder": true,
+          "exposure": "subagent",
+          "artifact": {
+            "path": ".opencode/agents/bys-architect.md",
+            "format": "md",
+            "sha256": "caa5393db87cb14e97a12b5f26f34cad52cfb30d1b702de608eb660d15563bae"
+          },
+          "fields": {
+            "id": {
+              "state": "adapted",
+              "reason": "文件名即渲染名；opencode 无 name 字段"
+            },
+            "description": {
+              "state": "native"
+            },
+            "instructions": {
+              "state": "native"
+            },
+            "mode": {
+              "state": "native",
+              "reason": "mode: subagent/primary/all 与 compiled workflow 三值精确对应"
+            },
+            "model": {
+              "state": "degraded",
+              "reason": "opencode 的 model 需要 provider/model-id 字面量",
+              "effect": "省略 model，继承父会话模型"
+            },
+            "title": {
+              "state": "unavailable",
+              "reason": "opencode 无展示名槽",
+              "effect": "展示名丢弃，只保留 description"
+            },
+            "placeholder": {
+              "state": "adapted",
+              "reason": "标记随产物保留；true 时正文替换为固定占位块"
+            }
+          }
+        },
+        {
+          "id": "bys-designer",
+          "name": "bys-designer",
+          "placeholder": true,
+          "exposure": "subagent",
+          "artifact": {
+            "path": ".opencode/agents/bys-designer.md",
+            "format": "md",
+            "sha256": "e9545bb6aaaa4923a1c7cd6624cfeee1e4fe35c9c86f8763ba8e86882ba14dda"
+          },
+          "fields": {
+            "id": {
+              "state": "adapted",
+              "reason": "文件名即渲染名；opencode 无 name 字段"
+            },
+            "description": {
+              "state": "native"
+            },
+            "instructions": {
+              "state": "native"
+            },
+            "mode": {
+              "state": "native",
+              "reason": "mode: subagent/primary/all 与 compiled workflow 三值精确对应"
+            },
+            "model": {
+              "state": "degraded",
+              "reason": "opencode 的 model 需要 provider/model-id 字面量",
+              "effect": "省略 model，继承父会话模型"
+            },
+            "title": {
+              "state": "unavailable",
+              "reason": "opencode 无展示名槽",
+              "effect": "展示名丢弃，只保留 description"
+            },
+            "placeholder": {
+              "state": "adapted",
+              "reason": "标记随产物保留；true 时正文替换为固定占位块"
+            }
+          }
+        },
+        {
+          "id": "bys-impl-lead",
+          "name": "bys-impl-lead",
+          "placeholder": true,
+          "exposure": "subagent",
+          "artifact": {
+            "path": ".opencode/agents/bys-impl-lead.md",
+            "format": "md",
+            "sha256": "bb157589b52e23d94e11a8dfca29d86f4a1abdc05a79729d774e5a807307931d"
+          },
+          "fields": {
+            "id": {
+              "state": "adapted",
+              "reason": "文件名即渲染名；opencode 无 name 字段"
+            },
+            "description": {
+              "state": "native"
+            },
+            "instructions": {
+              "state": "native"
+            },
+            "mode": {
+              "state": "native",
+              "reason": "mode: subagent/primary/all 与 compiled workflow 三值精确对应"
+            },
+            "model": {
+              "state": "degraded",
+              "reason": "opencode 的 model 需要 provider/model-id 字面量",
+              "effect": "省略 model，继承父会话模型"
+            },
+            "title": {
+              "state": "unavailable",
+              "reason": "opencode 无展示名槽",
+              "effect": "展示名丢弃，只保留 description"
+            },
+            "placeholder": {
+              "state": "adapted",
+              "reason": "标记随产物保留；true 时正文替换为固定占位块"
+            }
+          }
+        },
+        {
+          "id": "bys-release-lead",
+          "name": "bys-release-lead",
+          "placeholder": true,
+          "exposure": "subagent",
+          "artifact": {
+            "path": ".opencode/agents/bys-release-lead.md",
+            "format": "md",
+            "sha256": "06178969e1a1496d4c36e6ca08c9dc3c6bb645f7afefbfd7505257dc6e6435ea"
+          },
+          "fields": {
+            "id": {
+              "state": "adapted",
+              "reason": "文件名即渲染名；opencode 无 name 字段"
+            },
+            "description": {
+              "state": "native"
+            },
+            "instructions": {
+              "state": "native"
+            },
+            "mode": {
+              "state": "native",
+              "reason": "mode: subagent/primary/all 与 compiled workflow 三值精确对应"
+            },
+            "model": {
+              "state": "degraded",
+              "reason": "opencode 的 model 需要 provider/model-id 字面量",
+              "effect": "省略 model，继承父会话模型"
+            },
+            "title": {
+              "state": "unavailable",
+              "reason": "opencode 无展示名槽",
+              "effect": "展示名丢弃，只保留 description"
+            },
+            "placeholder": {
+              "state": "adapted",
+              "reason": "标记随产物保留；true 时正文替换为固定占位块"
+            }
+          }
+        }
+      ],
+      "summary": {
+        "roles": 4,
+        "native": 12,
+        "adapted": 8,
+        "degraded": 4,
+        "unavailable": 4
+      }
+    }
+  }
+}

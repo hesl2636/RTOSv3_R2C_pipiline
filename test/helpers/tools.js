@@ -13,7 +13,7 @@ import { join } from 'node:path';
 const DEFAULT_TOOLS = Object.freeze(['npm', 'npx', 'gh', 'git']);
 
 export function toolSentinels(t, tools = DEFAULT_TOOLS) {
-  const dir = mkdtempSync(join(tmpdir(), 'r2c-path-shims-'));
+  const dir = mkdtempSync(join(tmpdir(), 'hm2b-path-shims-'));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const marker = join(dir, 'invoked.log');
   for (const name of tools) {

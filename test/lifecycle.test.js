@@ -16,12 +16,12 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { writeTwoStepProject } from './helpers/two-step.js';
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const BIN = join(REPO, 'bin', 'r2c.js');
+const BIN = join(REPO, 'runtime', 'runner', 'engine', 'bin', 'hm2b.js');
 const RUN_ID = /^R\d{8}T\d{6}Z-[0-9a-f]{6}$/;
 
 function tempProject(t) {
-  const root = mkdtempSync(join(tmpdir(), 'r2c-lifecycle-project-'));
-  const outside = mkdtempSync(join(tmpdir(), 'r2c-lifecycle-outside-'));
+  const root = mkdtempSync(join(tmpdir(), 'hm2b-lifecycle-project-'));
+  const outside = mkdtempSync(join(tmpdir(), 'hm2b-lifecycle-outside-'));
   t.after(() => {
     rmSync(root, { recursive: true, force: true });
     rmSync(outside, { recursive: true, force: true });
@@ -32,8 +32,8 @@ function tempProject(t) {
 
 function cleanEnv(extra = {}) {
   const env = { ...process.env, ...extra };
-  delete env.R2C_SESSION_ID;
-  delete env.R2C_PROJECT_ROOT;
+  delete env.HM2B_SESSION_ID;
+  delete env.HM2B_PROJECT_ROOT;
   return env;
 }
 
@@ -57,11 +57,11 @@ function readJson(file) {
 }
 
 function readState(root, runId) {
-  return readJson(join(root, '.r2c', 'runs', runId, 'state.json'));
+  return readJson(join(root, '.hm2b', 'runs', runId, 'state.json'));
 }
 
 function eventsFile(root, runId) {
-  return join(root, '.r2c', 'runs', runId, 'events.jsonl');
+  return join(root, '.hm2b', 'runs', runId, 'events.jsonl');
 }
 
 function readEvents(root, runId) {
@@ -238,7 +238,7 @@ test('resume --retry re-activates a failed current step; plain resume rejects it
   state.status = 'paused';
   state.steps.find((step) => step.id === 'step-a').status = 'failed';
   writeFileSync(
-    join(root, '.r2c', 'runs', runId, 'state.json'),
+    join(root, '.hm2b', 'runs', runId, 'state.json'),
     `${JSON.stringify(state, null, 2)}\n`,
   );
 
@@ -280,7 +280,7 @@ test('cancel is terminal and blocks every later write', (t) => {
   assert.equal(state.current_step_id, null);
   assert.ok(state.completed_at !== null);
 
-  const latest = readJson(join(root, '.r2c', 'latest.json'));
+  const latest = readJson(join(root, '.hm2b', 'latest.json'));
   assert.equal(latest.runs[sessionId].active_run_id, null);
   assert.equal(latest.runs[sessionId].latest_run_id, runId);
   assert.equal(latest.active_run_id, null);
@@ -317,7 +317,7 @@ test('cancel is terminal and blocks every later write', (t) => {
 
 test('write commands require a session id and never use the latest fallback', (t) => {
   const { root, runId } = startRun(t);
-  const before = readFileSync(join(root, '.r2c', 'runs', runId, 'state.json'), 'utf8');
+  const before = readFileSync(join(root, '.hm2b', 'runs', runId, 'state.json'), 'utf8');
 
   for (const command of ['pause', 'resume', 'cancel']) {
     const { result, envelope } = cliJson([command, '--project-root', root], { cwd: root });
@@ -325,15 +325,15 @@ test('write commands require a session id and never use the latest fallback', (t
     assert.equal(envelope.error.code, 'MISSING_SESSION');
   }
 
-  assert.equal(readFileSync(join(root, '.r2c', 'runs', runId, 'state.json'), 'utf8'), before);
+  assert.equal(readFileSync(join(root, '.hm2b', 'runs', runId, 'state.json'), 'utf8'), before);
 });
 
 test('token-usage takes the last cumulative snapshot per run/session and never sums', (t) => {
   const { root, runId, sessionId } = startRun(t);
-  mkdirSync(join(root, '.r2c', 'usage'), { recursive: true });
+  mkdirSync(join(root, '.hm2b', 'usage'), { recursive: true });
   const lines = [
     {
-      schema: 'r2c.usage/v1',
+      schema: 'hm2b.usage/v1',
       time: '2026-10-28T00:00:01.000Z',
       run_id: runId,
       session_id: sessionId,
@@ -345,7 +345,7 @@ test('token-usage takes the last cumulative snapshot per run/session and never s
       source: 'transcript',
     },
     {
-      schema: 'r2c.usage/v1',
+      schema: 'hm2b.usage/v1',
       time: '2026-10-28T00:00:02.000Z',
       run_id: runId,
       session_id: sessionId,
@@ -357,7 +357,7 @@ test('token-usage takes the last cumulative snapshot per run/session and never s
       source: 'transcript',
     },
     {
-      schema: 'r2c.usage/v1',
+      schema: 'hm2b.usage/v1',
       time: '2026-10-28T00:00:03.000Z',
       run_id: runId,
       session_id: 'other-session',
@@ -370,7 +370,7 @@ test('token-usage takes the last cumulative snapshot per run/session and never s
     },
   ];
   writeFileSync(
-    join(root, '.r2c', 'usage', `${runId}.jsonl`),
+    join(root, '.hm2b', 'usage', `${runId}.jsonl`),
     `${lines.map((line) => JSON.stringify(line)).join('\n')}\n`,
   );
 
@@ -424,7 +424,7 @@ test('token-usage returns zero and source none when the usage file is missing', 
 
 test('corrupted state is repaired from events without appending an event', (t) => {
   const { root, runId, sessionId } = startRun(t);
-  const statePath = join(root, '.r2c', 'runs', runId, 'state.json');
+  const statePath = join(root, '.hm2b', 'runs', runId, 'state.json');
   const eventsBefore = readFileSync(eventsFile(root, runId), 'utf8');
   const state = readState(root, runId);
   state.status = 'paused';
@@ -457,7 +457,7 @@ test('corrupted state is repaired from events without appending an event', (t) =
 
 test('a stale run lock (older than 60s) is taken over', (t) => {
   const { root, runId, sessionId } = startRun(t);
-  const lockPath = join(root, '.r2c', 'runs', runId, '.lock');
+  const lockPath = join(root, '.hm2b', 'runs', runId, '.lock');
   writeFileSync(lockPath, 'stale-owner');
   const old = new Date(Date.now() - 120_000);
   utimesSync(lockPath, old, old);
@@ -489,7 +489,7 @@ test('two concurrent writers: one succeeds, the other exits 5 with zero writes',
   const marker = join(outside, 'held.marker');
   const release = join(outside, 'release.marker');
   const holderScript = join(outside, 'holder.mjs');
-  const lockUrl = pathToFileURL(join(REPO, 'src', 'lock.js')).href;
+  const lockUrl = pathToFileURL(join(REPO, 'runtime', 'runner', 'engine', 'src', 'lock.js')).href;
   writeFileSync(
     holderScript,
     [
@@ -498,7 +498,7 @@ test('two concurrent writers: one succeeds, the other exits 5 with zero writes',
       "import { join } from 'node:path';",
       'const [root, runId, marker, release] = process.argv.slice(2);',
       'withRunLock(root, runId, () => {',
-      "  const file = join(root, '.r2c', 'runs', runId, 'state.json');",
+      "  const file = join(root, '.hm2b', 'runs', runId, 'state.json');",
       "  const text = readFileSync(file, 'utf8');",
       '  writeFileSync(file, text);',
       "  writeFileSync(marker, 'held');",
@@ -516,7 +516,7 @@ test('two concurrent writers: one succeeds, the other exits 5 with zero writes',
   });
   t.after(() => holder.kill());
 
-  const stateBefore = readFileSync(join(root, '.r2c', 'runs', runId, 'state.json'), 'utf8');
+  const stateBefore = readFileSync(join(root, '.hm2b', 'runs', runId, 'state.json'), 'utf8');
   const eventsBefore = readFileSync(eventsFile(root, runId), 'utf8');
   await waitForFile(marker);
 
@@ -527,7 +527,7 @@ test('two concurrent writers: one succeeds, the other exits 5 with zero writes',
   assert.equal(conflict.result.status, 5);
   assert.equal(conflict.envelope.ok, false);
   assert.equal(conflict.envelope.error.code, 'LOCK_CONFLICT');
-  assert.equal(readFileSync(join(root, '.r2c', 'runs', runId, 'state.json'), 'utf8'), stateBefore);
+  assert.equal(readFileSync(join(root, '.hm2b', 'runs', runId, 'state.json'), 'utf8'), stateBefore);
   assert.equal(readFileSync(eventsFile(root, runId), 'utf8'), eventsBefore);
 
   writeFileSync(release, 'go');

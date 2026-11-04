@@ -1,0 +1,296 @@
+{
+  "schema": "hm2b.projection/v1",
+  "id": "agent-native",
+  "name": "Agent-native 投影",
+  "version": "0.1.0",
+  "description": "把中立 compiled workflow 投影成原生 agent runtime 的技能与子 agent 定义；不生成 runner，不写用户自有配置文件。",
+  "api": {
+    "compiledWorkflow": "hm2b.compiled-workflow/v2",
+    "options": "hm2b.projection-options/v1",
+    "result": "hm2b.projection-result/v1"
+  },
+  "writeRoots": [
+    ".agents/agent-native",
+    ".agents/skills",
+    ".claude/agents",
+    ".claude/skills",
+    ".codex/agents",
+    ".dsh/agent-native",
+    ".omp/agents",
+    ".opencode/agents"
+  ],
+  "targets": [
+    {
+      "id": "claude-code",
+      "name": "Claude Code",
+      "default": true,
+      "capabilities": {
+        "state": {
+          "level": "unavailable",
+          "note": "无 runner：没有状态文件，进度与续跑由执行者维护"
+        },
+        "gates": {
+          "level": "degraded",
+          "note": "命令原文 + 超时写入阶段技能；执行者运行并自证，机器不强制"
+        },
+        "outputs": {
+          "level": "degraded",
+          "note": "glob 原样列出自检清单；回执逐项写存在/缺失，机器不检查"
+        },
+        "subagents": {
+          "level": "native",
+          "note": "角色定义落在 runtime 自动发现的项目目录"
+        },
+        "skills": {
+          "level": "adapted",
+          "note": "技能安装到 runtime 技能根；显示名不加 bundle 前缀；目录名仅用于避免多 bundle 冲突"
+        },
+        "preload": {
+          "level": "native",
+          "note": "Claude skills: 整份注入"
+        },
+        "stage-invocation": {
+          "level": "native",
+          "note": "阶段技能可单独加载"
+        },
+        "skill-invocation": {
+          "level": "native",
+          "note": "技能副本可单独加载"
+        }
+      }
+    },
+    {
+      "id": "codex",
+      "name": "Codex",
+      "default": true,
+      "capabilities": {
+        "state": {
+          "level": "unavailable",
+          "note": "无 runner：没有状态文件，进度与续跑由执行者维护"
+        },
+        "gates": {
+          "level": "degraded",
+          "note": "命令原文 + 超时写入阶段技能；执行者运行并自证，机器不强制"
+        },
+        "outputs": {
+          "level": "degraded",
+          "note": "glob 原样列出自检清单；回执逐项写存在/缺失，机器不检查"
+        },
+        "subagents": {
+          "level": "native",
+          "note": "角色 TOML 落在 .codex/agents，Codex 自动发现；无法表达的字段逐字段记降级"
+        },
+        "skills": {
+          "level": "adapted",
+          "note": "技能安装到 .agents/skills；显示名不加 bundle 前缀；目录名仅用于避免多 bundle 冲突"
+        },
+        "preload": {
+          "level": "unavailable",
+          "note": "Codex 自定义 agent 继承父会话技能，没有按 agent 预载接缝"
+        },
+        "stage-invocation": {
+          "level": "adapted",
+          "note": "阶段技能可由 Codex 技能选择器加载；无稳定命令行 token"
+        },
+        "skill-invocation": {
+          "level": "adapted",
+          "note": "技能副本可由技能选择器加载；无稳定命令行 token"
+        }
+      }
+    },
+    {
+      "id": "dsh",
+      "name": "DeepSeek Harness",
+      "default": true,
+      "capabilities": {
+        "state": {
+          "level": "unavailable",
+          "note": "无 runner：没有状态文件，进度与续跑由执行者维护"
+        },
+        "gates": {
+          "level": "degraded",
+          "note": "命令原文 + 超时写入阶段技能；执行者运行并自证，机器不强制"
+        },
+        "outputs": {
+          "level": "degraded",
+          "note": "glob 原样列出自检清单；回执逐项写存在/缺失，机器不检查"
+        },
+        "subagents": {
+          "level": "unavailable",
+          "note": "v1 不生成 dsh 原生 preset；角色正文进项目内角色目录，由主会话按同名段落执行"
+        },
+        "skills": {
+          "level": "adapted",
+          "note": "技能安装到 .agents/skills（dsh 项目级技能根）；显示名不加 bundle 前缀；目录名仅用于避免多 bundle 冲突"
+        },
+        "preload": {
+          "level": "unavailable",
+          "note": "dsh 无按角色预载技能的接缝；v1 也不按角色挂 skill provider"
+        },
+        "stage-invocation": {
+          "level": "native",
+          "note": "阶段技能可单独加载"
+        },
+        "skill-invocation": {
+          "level": "native",
+          "note": "技能工具可按需加载单个技能"
+        }
+      }
+    },
+    {
+      "id": "omp",
+      "name": "Oh My Pi (omp)",
+      "default": true,
+      "capabilities": {
+        "state": {
+          "level": "unavailable",
+          "note": "无 runner：没有状态文件，进度与续跑由执行者维护"
+        },
+        "gates": {
+          "level": "degraded",
+          "note": "命令原文 + 超时写入阶段技能；执行者运行并自证，机器不强制"
+        },
+        "outputs": {
+          "level": "degraded",
+          "note": "glob 原样列出自检清单；回执逐项写存在/缺失，机器不检查"
+        },
+        "subagents": {
+          "level": "native",
+          "note": "角色定义落在 .omp/agents；omp 自动发现并按名派发"
+        },
+        "skills": {
+          "level": "adapted",
+          "note": "技能安装到 .agents/skills；显示名不加 bundle 前缀；目录名仅用于避免多 bundle 冲突"
+        },
+        "preload": {
+          "level": "native",
+          "note": "omp autoloadSkills 整份注入"
+        },
+        "stage-invocation": {
+          "level": "native",
+          "note": "阶段技能可单独加载"
+        },
+        "skill-invocation": {
+          "level": "native",
+          "note": "技能副本可单独加载；/skill:<name> 需开启 skills.enableSkillCommands"
+        }
+      }
+    },
+    {
+      "id": "opencode",
+      "name": "opencode (V1)",
+      "default": true,
+      "capabilities": {
+        "state": {
+          "level": "unavailable",
+          "note": "无 runner：没有状态文件，进度与续跑由执行者维护"
+        },
+        "gates": {
+          "level": "degraded",
+          "note": "命令原文 + 超时写入阶段技能；执行者运行并自证，机器不强制"
+        },
+        "outputs": {
+          "level": "degraded",
+          "note": "glob 原样列出自检清单；回执逐项写存在/缺失，机器不检查"
+        },
+        "subagents": {
+          "level": "native",
+          "note": "角色定义落在 .opencode/agents，opencode 按文件名自动发现；Task 工具按名派发"
+        },
+        "skills": {
+          "level": "adapted",
+          "note": "技能安装到 .agents/skills；显示名不加 bundle 前缀；目录名仅用于避免多 bundle 冲突"
+        },
+        "preload": {
+          "level": "unavailable",
+          "note": "opencode agent md 无按角色预载字段，预载正文没有落点"
+        },
+        "stage-invocation": {
+          "level": "native",
+          "note": "阶段技能可经 skill 工具单独加载"
+        },
+        "skill-invocation": {
+          "level": "native",
+          "note": "技能副本可经 skill 工具单独加载"
+        }
+      }
+    }
+  ],
+  "assets": [
+    {
+      "id": "claude-code-hooks",
+      "path": "runtime/agent-native/targets/claude-code/assets/hooks.json",
+      "sha256": "8bce6f03c9b8903f74095f31a4ac1ef8e9711cf7d8bdf5224c59403d366651b3"
+    },
+    {
+      "id": "claude-code-mcp",
+      "path": "runtime/agent-native/targets/claude-code/assets/mcp.json",
+      "sha256": "d8e397af03b5b032f21d0aa967086f0c78b33c87b76f2e9898ae0a144df7de02"
+    },
+    {
+      "id": "codex-hm2b-hook-pre-tool-use",
+      "path": "runtime/agent-native/targets/codex/assets/hm2b-hook-pre-tool-use.cmd",
+      "sha256": "5edea3f6a09166456fa4108bc04363e81ef467a0d2a795e4f24e1e765d21e527"
+    },
+    {
+      "id": "codex-hm2b-hook-stop",
+      "path": "runtime/agent-native/targets/codex/assets/hm2b-hook-stop.cmd",
+      "sha256": "a68c7adde225b60d8220b5d699468f5c50b5233e1726a1013a46fece25f2a756"
+    },
+    {
+      "id": "codex-hooks",
+      "path": "runtime/agent-native/targets/codex/assets/hooks.json",
+      "sha256": "cdf111fbb5931bb9310eac326df4eee62e04a45564841b6ec17920353da7105d"
+    },
+    {
+      "id": "dsh-dsh-patch",
+      "path": "runtime/agent-native/targets/dsh/assets/dsh.patch.yml",
+      "sha256": "13de8ce3d23d38fc86426fb6ff21279af7eec0b11fd47950513900472b2fa029"
+    },
+    {
+      "id": "dsh-hooks",
+      "path": "runtime/agent-native/targets/dsh/assets/hooks.json",
+      "sha256": "bf2247ed875939700b1f8014a19cbcd51b67bc40e88c6c452a6c295e995ceaed"
+    },
+    {
+      "id": "dsh-index",
+      "path": "runtime/agent-native/targets/dsh/assets/index.mjs",
+      "sha256": "485d979b63f439c69fc26bccea9ee2b9ec2673660ff3e1b81e425ea8c267faf7"
+    },
+    {
+      "id": "dsh-package",
+      "path": "runtime/agent-native/targets/dsh/assets/package.json",
+      "sha256": "2a3fd663c4034d73957def32f48ce2f44bf566d915d19c4543dc376c6472bf30"
+    },
+    {
+      "id": "omp-hooks-post-hm2b-stop",
+      "path": "runtime/agent-native/targets/omp/assets/hooks/post/hm2b-stop.ts",
+      "sha256": "87efd26f032f9287e4703325f3d8be81a2d745a73221f1a2e4b9cba4867e6918"
+    },
+    {
+      "id": "omp-hooks-pre-hm2b-guard",
+      "path": "runtime/agent-native/targets/omp/assets/hooks/pre/hm2b-guard.ts",
+      "sha256": "2035bba12db8cdf1d8832753ed3cfeaaa4f2616bfaab4f3c43f342d621bcf075"
+    },
+    {
+      "id": "omp-mcp",
+      "path": "runtime/agent-native/targets/omp/assets/mcp.json",
+      "sha256": "d8e397af03b5b032f21d0aa967086f0c78b33c87b76f2e9898ae0a144df7de02"
+    },
+    {
+      "id": "opencode-mcp",
+      "path": "runtime/agent-native/targets/opencode/assets/mcp.json",
+      "sha256": "70cadc8acdced125361a637eac5816a7f3d77912020c00d5a63f34b106292858"
+    },
+    {
+      "id": "opencode-plugins-hm2b",
+      "path": "runtime/agent-native/targets/opencode/assets/plugins/hm2b.ts",
+      "sha256": "2f44986204d473e16fc5e6965791d865c9b167047fbef2f9a4a2654770a1a20d"
+    }
+  ],
+  "optionsSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  }
+}

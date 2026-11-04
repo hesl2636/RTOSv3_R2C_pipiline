@@ -1,17 +1,22 @@
 {
-  "name": "r2c-runner",
+  "name": "hm2b-framework",
   "version": "0.1.0",
-  "description": "Declarative workflow runner for the hm2B driver port pipeline",
+  "private": true,
+  "description": "Bundle assembler, projections and installer for the hm2b workflow runtime",
   "license": "MIT",
   "type": "module",
   "bin": {
-    "r2c": "bin/r2c.js"
+    "hm2b": "runtime/runner/engine/bin/hm2b.js",
+    "hm2b-assembler": "bin/hm2b-assembler.js"
   },
   "engines": {
     "node": ">=22.19.0 <23 || >=24.0.0"
   },
   "scripts": {
     "test": "node --test --test-concurrency=8 test/*.test.js",
+    "web": "node web/serve.mjs",
+    "bundle:build": "node scripts/build-bundle.mjs examples/rtosv3/bundle",
+    "bundle:check": "node scripts/build-bundle.mjs examples/rtosv3/bundle --check",
     "release": "node scripts/release.mjs"
   },
   "dependencies": {

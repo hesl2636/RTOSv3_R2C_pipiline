@@ -12,14 +12,14 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { stringify } from 'yaml';
+
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const BIN = join(REPO, 'bin', 'r2c.js');
+const BIN = join(REPO, 'runtime', 'runner', 'engine', 'bin', 'hm2b.js');
 
 function manifest(stages) {
   return {
-    schema: 'r2c.workflow/v1',
+    schema: 'hm2b.workflow/v1',
     id: 'workflow-gate',
     name: 'gate-tests',
     version: '0.1.0',
@@ -36,15 +36,16 @@ function shellStep(id, name, shell, timeout = 10) {
 }
 
 function tempProject(t, data) {
-  const root = mkdtempSync(join(tmpdir(), 'r2c-gate-project-'));
-  const outside = mkdtempSync(join(tmpdir(), 'r2c-gate-outside-'));
+  const root = mkdtempSync(join(tmpdir(), 'hm2b-gate-project-'));
+  const outside = mkdtempSync(join(tmpdir(), 'hm2b-gate-outside-'));
   t.after(() => {
     rmSync(root, { recursive: true, force: true });
     rmSync(outside, { recursive: true, force: true });
   });
   mkdirSync(join(root, 'workflows'), { recursive: true });
   mkdirSync(join(root, 'scripts'), { recursive: true });
-  writeFileSync(join(root, 'workflows', 'gate.yaml'), stringify(data));
+  writeFileSync(join(root, 'workflows', 'gate.yaml'), `${JSON.stringify(data, null, 2)}
+`);
   return { root, outside };
 }
 
@@ -54,8 +55,8 @@ function script(project, name, body) {
 
 function cleanEnv() {
   const env = { ...process.env };
-  delete env.R2C_SESSION_ID;
-  delete env.R2C_PROJECT_ROOT;
+  delete env.HM2B_SESSION_ID;
+  delete env.HM2B_PROJECT_ROOT;
   return env;
 }
 
@@ -79,15 +80,15 @@ function readJson(file) {
 }
 
 function readState(root, runId) {
-  return readJson(join(root, '.r2c', 'runs', runId, 'state.json'));
+  return readJson(join(root, '.hm2b', 'runs', runId, 'state.json'));
 }
 
 function onlyRunId(root) {
-  return readJson(join(root, '.r2c', 'latest.json')).latest_run_id;
+  return readJson(join(root, '.hm2b', 'latest.json')).latest_run_id;
 }
 
 function readEvents(root, runId) {
-  return readFileSync(join(root, '.r2c', 'runs', runId, 'events.jsonl'), 'utf8')
+  return readFileSync(join(root, '.hm2b', 'runs', runId, 'events.jsonl'), 'utf8')
     .split(/\r?\n/)
     .filter(Boolean)
     .map((line) => JSON.parse(line));
@@ -424,7 +425,7 @@ test('run delivers the completed banner when the workflow has only shell steps',
     state.steps.map((step) => step.status),
     ['completed', 'completed'],
   );
-  const latest = readJson(join(root, '.r2c', 'latest.json'));
+  const latest = readJson(join(root, '.hm2b', 'latest.json'));
   assert.equal(latest.runs[envelope.session_id].active_run_id, null);
 });
 
@@ -570,7 +571,7 @@ test('a workflow ending on a successful shell step delivers the completed banner
     state.stages.map((stage) => stage.status),
     ['completed', 'completed'],
   );
-  const latest = readJson(join(root, '.r2c', 'latest.json'));
+  const latest = readJson(join(root, '.hm2b', 'latest.json'));
   assert.equal(latest.runs[sessionId].active_run_id, null);
 });
 
@@ -587,7 +588,7 @@ test('submit has no --force bypass', (t) => {
   );
   const { root } = project;
   const { runId, sessionId } = startRun(t, project);
-  const before = readFileSync(join(root, '.r2c', 'runs', runId, 'state.json'), 'utf8');
+  const before = readFileSync(join(root, '.hm2b', 'runs', runId, 'state.json'), 'utf8');
 
   const forced = submit(project, sessionId, 'step-a', ['--force']);
   assert.equal(forced.result.status, 2);
@@ -595,7 +596,7 @@ test('submit has no --force bypass', (t) => {
   assert.equal(forced.envelope.error.code, 'USAGE');
   assert.match(forced.envelope.error.message, /unknown option: --force/);
 
-  assert.equal(readFileSync(join(root, '.r2c', 'runs', runId, 'state.json'), 'utf8'), before);
+  assert.equal(readFileSync(join(root, '.hm2b', 'runs', runId, 'state.json'), 'utf8'), before);
   assert.equal(readEvents(root, runId).some((event) => event.kind === 'gate'), false);
 });
 

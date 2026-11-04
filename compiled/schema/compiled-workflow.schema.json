@@ -1,0 +1,662 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hm2b.runner/schema/compiled/v2",
+  "title": "hm2b.compiled-workflow/v2",
+  "description": "Neutral compiled workflow (workflow.compiled.json). Documentation only: assembler/validate-compiled.js is authoritative and reports COMPILED_WORKFLOW_SCHEMA_INVALID plus the cross-field COMPILED_WORKFLOW_* codes.",
+  "$comment": "Rules the validator enforces and this document does not express: top-level and member order is fixed by compiled/schema.js; dynamic map keys are sorted by code point; knowledgeBase is sorted by path and checklists by id; step skills and role tools/skills/projections are sorted; stages order and steps order are execution order; every embedded source hash must recompute and source.bundle.contentSha256 must match the asset manifest; hooks and mcp bodies are canonical JSON and mcp carries an object under mcpServers; step role/task/skills must exist in the maps; v2 allows at most one global constitution mount; knowledgeBase/checklists are empty arrays and hooks/mcp are null when the bundle declares no such asset; the file must be canonical JSON (two-space indent, trailing LF).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "id",
+    "name",
+    "version",
+    "description",
+    "source",
+    "stages",
+    "roles",
+    "tasks",
+    "skills",
+    "knowledgeBase",
+    "checklists",
+    "hooks",
+    "mcp",
+    "constitution"
+  ],
+  "properties": {
+    "schema": {
+      "const": "hm2b.compiled-workflow/v2"
+    },
+    "id": {
+      "$ref": "#/$defs/bundleId"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120
+    },
+    "version": {
+      "$ref": "#/$defs/version"
+    },
+    "description": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2000
+    },
+    "source": {
+      "$ref": "#/$defs/source"
+    },
+    "requires": {
+      "$ref": "#/$defs/requires",
+      "description": "Inherited verbatim from the bundle; the whole key is absent when the bundle has none."
+    },
+    "stages": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/stage"
+      }
+    },
+    "roles": {
+      "type": "object",
+      "propertyNames": {
+        "$ref": "#/$defs/roleId"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/role"
+      }
+    },
+    "tasks": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {
+        "$ref": "#/$defs/id"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/task"
+      }
+    },
+    "skills": {
+      "type": "object",
+      "propertyNames": {
+        "$ref": "#/$defs/skillId"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/skill"
+      }
+    },
+    "knowledgeBase": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/knowledgeBaseEntry"
+      },
+      "description": "Declared knowledge-base markdown files sorted by path; empty when the bundle declares none."
+    },
+    "checklists": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/checklistEntry"
+      },
+      "description": "Declared checklists sorted by id; empty when the bundle declares none."
+    },
+    "hooks": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/hooksEntry"
+        }
+      ],
+      "description": "hooks/hooks.json, or null when the bundle does not declare it."
+    },
+    "mcp": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/mcpEntry"
+        }
+      ],
+      "description": "mcp.json, or null when the bundle does not declare it."
+    },
+    "constitution": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/constitutionMount"
+      },
+      "description": "Empty when the bundle declares no constitution."
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+      "maxLength": 64
+    },
+    "bundleId": {
+      "description": "Equal to the bundle id, which never claims the reserved literal hm2b.",
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+      "maxLength": 40,
+      "not": {
+        "const": "hm2b"
+      }
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z][0-9A-Za-z.-]*)?$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "roleId": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/id"
+        },
+        {
+          "not": {
+            "enum": [
+              "main",
+              "sub"
+            ]
+          }
+        }
+      ]
+    },
+    "skillId": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/id"
+        },
+        {
+          "not": {
+            "enum": [
+              "synced",
+              "anthropic-skills"
+            ]
+          }
+        }
+      ]
+    },
+    "tool": {
+      "enum": [
+        "read",
+        "write",
+        "edit",
+        "glob",
+        "grep",
+        "bash",
+        "task",
+        "web"
+      ]
+    },
+    "sourcePath": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100,
+      "pattern": "^(?:stages/[a-z0-9]+(?:-[a-z0-9]+)*\\.json|roles/[a-z0-9]+(?:-[a-z0-9]+)*\\.md|tasks/[a-z0-9]+(?:-[a-z0-9]+)*\\.md|skills/[a-z0-9]+(?:-[a-z0-9]+)*/SKILL\\.md|knowledge-base/(?:[A-Za-z0-9._-]+/)*[A-Za-z0-9._-]+\\.md|checklists/[a-z0-9]+(?:-[a-z0-9]+)*\\.md|hooks/hooks\\.json|mcp\\.json|constitution/CONSTITUTION\\.md)$"
+    },
+    "sourceRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "sha256"
+      ],
+      "properties": {
+        "path": {
+          "$ref": "#/$defs/sourcePath"
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "bundle",
+        "manifest"
+      ],
+      "properties": {
+        "bundle": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "schema",
+            "id",
+            "version",
+            "contentSha256"
+          ],
+          "properties": {
+            "schema": {
+              "const": "hm2b.bundle/v2"
+            },
+            "id": {
+              "$ref": "#/$defs/bundleId"
+            },
+            "version": {
+              "$ref": "#/$defs/version"
+            },
+            "contentSha256": {
+              "$ref": "#/$defs/sha256"
+            }
+          }
+        },
+        "manifest": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "path",
+            "sha256"
+          ],
+          "properties": {
+            "path": {
+              "const": "bundle.json"
+            },
+            "sha256": {
+              "$ref": "#/$defs/sha256"
+            }
+          }
+        }
+      }
+    },
+    "requires": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "engine": {
+          "type": "string",
+          "minLength": 1
+        },
+        "projections": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "runner",
+              "agent-native"
+            ]
+          }
+        }
+      }
+    },
+    "stage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "steps",
+        "source"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "steps": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/step"
+          }
+        },
+        "source": {
+          "$ref": "#/$defs/sourceRef"
+        }
+      }
+    },
+    "step": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "task",
+        "skills",
+        "outputs",
+        "gates"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "role": {
+          "$ref": "#/$defs/roleId"
+        },
+        "task": {
+          "$ref": "#/$defs/id"
+        },
+        "skills": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/skillId"
+          }
+        },
+        "outputs": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          }
+        },
+        "gates": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/gate"
+          }
+        }
+      }
+    },
+    "gate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "command"
+      ],
+      "properties": {
+        "command": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "timeout": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 86400
+        }
+      }
+    },
+    "role": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "description",
+        "placeholder",
+        "instructions",
+        "source"
+      ],
+      "properties": {
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "mode": {
+          "enum": [
+            "subagent",
+            "primary",
+            "any"
+          ]
+        },
+        "model": {
+          "enum": [
+            "fast",
+            "standard",
+            "strong"
+          ]
+        },
+        "effort": {
+          "enum": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max"
+          ]
+        },
+        "tools": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/tool"
+          }
+        },
+        "tools_deny": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/tool"
+          }
+        },
+        "skills": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/skillId"
+          }
+        },
+        "placeholder": {
+          "type": "boolean"
+        },
+        "instructions": {
+          "type": "string"
+        },
+        "source": {
+          "$ref": "#/$defs/sourceRef"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "required": [
+              "placeholder"
+            ],
+            "properties": {
+              "placeholder": {
+                "const": false
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "instructions": {
+                "minLength": 1
+              }
+            }
+          }
+        }
+      ]
+    },
+    "task": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "body",
+        "source"
+      ],
+      "properties": {
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "body": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source": {
+          "$ref": "#/$defs/sourceRef"
+        }
+      }
+    },
+    "skill": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "description",
+        "placeholder",
+        "body",
+        "source"
+      ],
+      "properties": {
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "placeholder": {
+          "type": "boolean"
+        },
+        "body": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source": {
+          "$ref": "#/$defs/sourceRef"
+        }
+      }
+    },
+    "knowledgeBaseEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "body",
+        "source"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100,
+          "pattern": "^knowledge-base/(?:[A-Za-z0-9._-]+/){0,2}[A-Za-z0-9._-]+\\.md$"
+        },
+        "body": {
+          "type": "string"
+        },
+        "source": {
+          "$ref": "#/$defs/sourceRef"
+        }
+      }
+    },
+    "checklistEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "body",
+        "source"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "body": {
+          "type": "string"
+        },
+        "source": {
+          "$ref": "#/$defs/sourceRef"
+        }
+      }
+    },
+    "hooksEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "body",
+        "source"
+      ],
+      "properties": {
+        "path": {
+          "const": "hooks/hooks.json"
+        },
+        "body": {
+          "type": "string",
+          "description": "Canonical JSON text."
+        },
+        "source": {
+          "$ref": "#/$defs/sourceRef"
+        }
+      }
+    },
+    "mcpEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "body",
+        "source"
+      ],
+      "properties": {
+        "path": {
+          "const": "mcp.json"
+        },
+        "body": {
+          "type": "string",
+          "description": "Canonical JSON text with an object under mcpServers."
+        },
+        "source": {
+          "$ref": "#/$defs/sourceRef"
+        }
+      }
+    },
+    "constitutionMount": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scope",
+        "placeholder",
+        "body",
+        "source"
+      ],
+      "properties": {
+        "scope": {
+          "enum": [
+            "global",
+            "stage",
+            "step"
+          ]
+        },
+        "target": {
+          "$ref": "#/$defs/id"
+        },
+        "placeholder": {
+          "type": "boolean"
+        },
+        "body": {
+          "type": "string"
+        },
+        "source": {
+          "$ref": "#/$defs/sourceRef"
+        }
+      }
+    }
+  }
+}

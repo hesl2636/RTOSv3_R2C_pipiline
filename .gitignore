@@ -1,8 +1,17 @@
+.hm2b/runs/
 .r2c/runs/
+.hm2b/latest.json
 .r2c/latest.json
+.hm2b/usage/
 .r2c/usage/
+.hm2b/install/
 .r2c/install/
+.hm2b/payload/
 .r2c/payload/
+.hm2b/engine/
 .r2c/engine/
 node_modules/
 dist/
+# The sample bundle zip is a committed, byte-reproducible build product.
+!examples/rtosv3/dist/
+!examples/rtosv3/dist/*.zip

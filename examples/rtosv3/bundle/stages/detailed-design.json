@@ -1,0 +1,21 @@
+{
+  "id": "detailed-design",
+  "name": "详细设计",
+  "steps": [
+    {
+      "id": "detailed-design",
+      "name": "详细设计编排",
+      "role": "bys-designer",
+      "task": "detailed-design-orchestration",
+      "skills": [
+        "r2c-imdesign",
+        "codebase-search",
+        "design-gen",
+        "v3-query-symbol",
+        "writing-plans",
+        "workflow-core",
+        "using-workflow"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "schema": "hm2b.web-manifest/v1",
+  "name": "hm2b local build surface",
+  "assets": [
+    "web/index.html",
+    "web/app.js",
+    "web/style.css",
+    "web/primitives-browser.js",
+    "web/shared-imports.js",
+    "web/publish-state.js",
+    "web/boot-check.js"
+  ],
+  "imports": [
+    "core/",
+    "compiled/",
+    "assembler/",
+    "projection/",
+    "runtime/shared/"
+  ]
+}

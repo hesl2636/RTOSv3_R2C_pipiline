@@ -10,7 +10,7 @@
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-export const TWO_STEP_YAML = `schema: r2c.workflow/v1
+export const TWO_STEP_YAML = `schema: hm2b.workflow/v1
 id: workflow-two-step
 name: two-step
 version: 0.1.0

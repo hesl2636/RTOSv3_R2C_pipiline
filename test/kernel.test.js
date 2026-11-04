@@ -15,7 +15,7 @@ import { fileURLToPath } from 'node:url';
 import { writeTwoStepProject } from './helpers/two-step.js';
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const BIN = join(REPO, 'bin', 'r2c.js');
+const BIN = join(REPO, 'runtime', 'runner', 'engine', 'bin', 'hm2b.js');
 const VERSION = JSON.parse(readFileSync(join(REPO, 'package.json'), 'utf8')).version;
 const RUN_ID = /^R\d{8}T\d{6}Z-[0-9a-f]{6}$/;
 const STATE_FIELDS = [
@@ -38,8 +38,8 @@ const STATE_FIELDS = [
 ].sort();
 
 function tempProject(t) {
-  const root = mkdtempSync(join(tmpdir(), 'r2c-kernel-project-'));
-  const outside = mkdtempSync(join(tmpdir(), 'r2c-kernel-outside-'));
+  const root = mkdtempSync(join(tmpdir(), 'hm2b-kernel-project-'));
+  const outside = mkdtempSync(join(tmpdir(), 'hm2b-kernel-outside-'));
   t.after(() => {
     rmSync(root, { recursive: true, force: true });
     rmSync(outside, { recursive: true, force: true });
@@ -50,8 +50,8 @@ function tempProject(t) {
 
 function cleanEnv(extra = {}) {
   const env = { ...process.env, ...extra };
-  delete env.R2C_SESSION_ID;
-  delete env.R2C_PROJECT_ROOT;
+  delete env.HM2B_SESSION_ID;
+  delete env.HM2B_PROJECT_ROOT;
   return env;
 }
 
@@ -75,7 +75,7 @@ function readJson(file) {
 }
 
 function readEvents(root, runId) {
-  const file = join(root, '.r2c', 'runs', runId, 'events.jsonl');
+  const file = join(root, '.hm2b', 'runs', runId, 'events.jsonl');
   return readFileSync(file, 'utf8')
     .split(/\r?\n/)
     .filter(Boolean)
@@ -83,7 +83,7 @@ function readEvents(root, runId) {
 }
 
 function readState(root, runId) {
-  return readJson(join(root, '.r2c', 'runs', runId, 'state.json'));
+  return readJson(join(root, '.hm2b', 'runs', runId, 'state.json'));
 }
 
 function startRun(t, args = []) {
@@ -96,7 +96,7 @@ function startRun(t, args = []) {
   return { ...project, result, envelope, runId: envelope.run_id, sessionId: envelope.session_id };
 }
 
-test('run mints a cli session and writes only inside the project .r2c', (t) => {
+test('run mints a cli session and writes only inside the project .hm2b', (t) => {
   const project = tempProject(t);
   const { result, envelope } = cliJson(['run', '--project-root', project.root], {
     cwd: project.outside,
@@ -117,16 +117,16 @@ test('run mints a cli session and writes only inside the project .r2c', (t) => {
   });
 
   const runId = envelope.run_id;
-  const runDir = join(project.root, '.r2c', 'runs', runId);
+  const runDir = join(project.root, '.hm2b', 'runs', runId);
   for (const name of ['state.json', 'events.jsonl', 'workflow.yaml']) {
     assert.ok(existsSync(join(runDir, name)), `missing ${name}`);
   }
   assert.deepEqual(readdirSync(project.outside), [], 'cwd outside the project must stay untouched');
-  assert.equal(existsSync(join(project.outside, '.r2c')), false);
+  assert.equal(existsSync(join(project.outside, '.hm2b')), false);
 
   const state = readState(project.root, runId);
   assert.deepEqual(Object.keys(state).sort(), STATE_FIELDS);
-  assert.equal(state.schema, 'r2c.state/v1');
+  assert.equal(state.schema, 'hm2b.state/v1');
   assert.equal(state.run_id, runId);
   assert.equal(state.session_id, `cli-${runId}`);
   assert.equal(state.status, 'running');
@@ -140,9 +140,9 @@ test('run mints a cli session and writes only inside the project .r2c', (t) => {
   assert.equal(state.stages[0].trace_started_at, null);
   assert.equal(state.stages[0].trace_completed_at, null);
 
-  const latest = readJson(join(project.root, '.r2c', 'latest.json'));
+  const latest = readJson(join(project.root, '.hm2b', 'latest.json'));
   assert.deepEqual(latest, {
-    schema: 'r2c.latest/v1',
+    schema: 'hm2b.latest/v1',
     runs: {
       [`cli-${runId}`]: { active_run_id: runId, latest_run_id: runId },
     },
@@ -157,8 +157,8 @@ test('run mints a cli session and writes only inside the project .r2c', (t) => {
   );
   assert.deepEqual(events[1].step, { id: 'step-a', name: '第一步' });
 
-  const snapshot = readFileSync(join(project.root, '.r2c', 'runs', runId, 'workflow.yaml'), 'utf8');
-  assert.ok(snapshot.includes('schema: r2c.workflow/v1'));
+  const snapshot = readFileSync(join(project.root, '.hm2b', 'runs', runId, 'workflow.yaml'), 'utf8');
+  assert.ok(snapshot.includes('schema: hm2b.workflow/v1'));
 });
 
 test('run text output carries the prompt, whitelists and an executable submit line', (t) => {
@@ -170,7 +170,7 @@ test('run text output carries the prompt, whitelists and an executable submit li
   assert.match(result.stdout, /执行第一步，产出可以提交的结果。/);
   assert.match(result.stdout, /技能白名单：alpha、beta/);
   assert.match(result.stdout, /MCP 白名单：mcp-demo/);
-  assert.match(result.stdout, /提交命令（完成后执行；不要手改 \.r2c）：/);
+  assert.match(result.stdout, /提交命令（完成后执行；不要手改 \.hm2b）：/);
 
   const submitLine = result.stdout
     .trimEnd()
@@ -257,7 +257,7 @@ test('submit advances one step, delivers the next step and completes the last st
     ['run:started', 'step:started', 'step:submitted', 'step:started', 'step:submitted', 'run:completed'],
   );
 
-  const latest = readJson(join(root, '.r2c', 'latest.json'));
+  const latest = readJson(join(root, '.hm2b', 'latest.json'));
   assert.equal(latest.runs[sessionId].active_run_id, null);
   assert.equal(latest.runs[sessionId].latest_run_id, runId);
   assert.equal(latest.active_run_id, null);
@@ -268,18 +268,20 @@ test('submit advances one step, delivers the next step and completes the last st
   assert.equal(after.stdout, '');
 });
 
-test('write commands without a session exit 2 and leave state untouched', (t) => {
+test('session-required write commands without a session exit 2 and leave state untouched', (t) => {
   const { root, runId } = startRun(t);
-  const before = readFileSync(join(root, '.r2c', 'runs', runId, 'state.json'), 'utf8');
+  const before = readFileSync(join(root, '.hm2b', 'runs', runId, 'state.json'), 'utf8');
 
-  const { result, envelope } = cliJson(['submit', '--project-root', root, '--step', 'step-a'], {
-    cwd: root,
-  });
-  assert.equal(result.status, 2);
-  assert.equal(envelope.ok, false);
-  assert.equal(envelope.error.code, 'MISSING_SESSION');
+  // `submit` alone resolves a single running run when no session id is given
+  // (ticket #86); every other writer still requires one.
+  for (const command of ['pause', 'resume', 'cancel']) {
+    const { result, envelope } = cliJson([command, '--project-root', root], { cwd: root });
+    assert.equal(result.status, 2, command);
+    assert.equal(envelope.ok, false);
+    assert.equal(envelope.error.code, 'MISSING_SESSION');
+  }
   assert.equal(
-    readFileSync(join(root, '.r2c', 'runs', runId, 'state.json'), 'utf8'),
+    readFileSync(join(root, '.hm2b', 'runs', runId, 'state.json'), 'utf8'),
     before,
   );
 });
@@ -312,7 +314,7 @@ test('run ids keep lexicographic time order for runs in the same second', (t) =>
   assert.equal(second.result.status, 0, second.result.stderr);
   assert.ok(first.envelope.run_id < second.envelope.run_id);
 
-  const latest = readJson(join(project.root, '.r2c', 'latest.json'));
+  const latest = readJson(join(project.root, '.hm2b', 'latest.json'));
   assert.equal(latest.active_run_id, second.envelope.run_id);
   assert.equal(latest.latest_run_id, second.envelope.run_id);
   assert.equal(
@@ -323,8 +325,8 @@ test('run ids keep lexicographic time order for runs in the same second', (t) =>
 
 test('delivery requires a running run with an active current step', (t) => {
   const { root, runId, sessionId, envelope } = startRun(t);
-  const statePath = join(root, '.r2c', 'runs', runId, 'state.json');
-  const eventsPath = join(root, '.r2c', 'runs', runId, 'events.jsonl');
+  const statePath = join(root, '.hm2b', 'runs', runId, 'state.json');
+  const eventsPath = join(root, '.hm2b', 'runs', runId, 'events.jsonl');
 
   const state = readState(root, runId);
   state.status = 'paused';
@@ -347,8 +349,8 @@ test('delivery requires a running run with an active current step', (t) => {
 
 test('events are the repair source for inconsistent derived state', (t) => {
   const { root, runId, sessionId } = startRun(t);
-  const statePath = join(root, '.r2c', 'runs', runId, 'state.json');
-  const eventsBefore = readFileSync(join(root, '.r2c', 'runs', runId, 'events.jsonl'), 'utf8');
+  const statePath = join(root, '.hm2b', 'runs', runId, 'state.json');
+  const eventsBefore = readFileSync(join(root, '.hm2b', 'runs', runId, 'events.jsonl'), 'utf8');
 
   const state = readState(root, runId);
   state.status = 'paused';
@@ -364,7 +366,7 @@ test('events are the repair source for inconsistent derived state', (t) => {
   assert.equal(repaired.current_step_id, 'step-a');
   assert.equal(repaired.steps.find((step) => step.id === 'step-a').status, 'active');
   assert.equal(
-    readFileSync(join(root, '.r2c', 'runs', runId, 'events.jsonl'), 'utf8'),
+    readFileSync(join(root, '.hm2b', 'runs', runId, 'events.jsonl'), 'utf8'),
     eventsBefore,
     'repair must not append events',
   );
@@ -430,7 +432,7 @@ test('--runner-cmd is rendered verbatim into the submit line', (t) => {
 });
 
 test('explicit --manifest resolves task files relative to its manifest root', (t) => {
-  const root = mkdtempSync(join(tmpdir(), 'r2c-kernel-manifest-'));
+  const root = mkdtempSync(join(tmpdir(), 'hm2b-kernel-manifest-'));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   writeTwoStepProject(root);
 
@@ -461,7 +463,7 @@ test('--version prints exactly one line', () => {
 });
 
 test('an unsupported Node version exits 2 with NODE_UNSUPPORTED', (t) => {
-  const dir = mkdtempSync(join(tmpdir(), 'r2c-node-floor-'));
+  const dir = mkdtempSync(join(tmpdir(), 'hm2b-node-floor-'));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const preload = join(dir, 'node-floor.cjs');
   writeFileSync(
@@ -490,9 +492,9 @@ test('an unsupported Node version exits 2 with NODE_UNSUPPORTED', (t) => {
 
 test('state from a newer schema exits 2 STATE_SCHEMA_NEWER without writes', (t) => {
   const { root, runId, sessionId } = startRun(t);
-  const file = join(root, '.r2c', 'runs', runId, 'state.json');
+  const file = join(root, '.hm2b', 'runs', runId, 'state.json');
   const state = JSON.parse(readFileSync(file, 'utf8'));
-  state.schema = 'r2c.state/v2';
+  state.schema = 'hm2b.state/v2';
   writeFileSync(file, `${JSON.stringify(state, null, 2)}\n`);
   const before = readFileSync(file, 'utf8');
 
@@ -501,7 +503,7 @@ test('state from a newer schema exits 2 STATE_SCHEMA_NEWER without writes', (t) 
   });
   assert.equal(result.result.status, 2);
   assert.equal(result.envelope.error.code, 'STATE_SCHEMA_NEWER');
-  assert.equal(result.envelope.error.details.schema, 'r2c.state/v2');
+  assert.equal(result.envelope.error.details.schema, 'hm2b.state/v2');
   assert.equal(readFileSync(file, 'utf8'), before, 'state must not be repaired or downgraded');
 });
 

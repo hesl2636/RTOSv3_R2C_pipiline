@@ -1,8 +1,19 @@
 #!/usr/bin/env node
 /**
- * r2c bootstrap: one command from a release page to a working project.
+ * hm2b bootstrap: one command from a release page to a working project.
  *
- * Downloads `r2c-engine-<V>.tgz`, verifies it against the release's
+ * The per-bundle channel (#106, decision #74 §9) runs `--bundle <id>`: it
+ * downloads the bundle Release's assets, verifies the three-way
+ * asset/zip/compiled workflow/payload chain, unpacks the Release's framework archive to a
+ * temporary directory and hands the verified bytes to that framework's
+ * installer. It never compiles a bundle and never projects one. The bundle
+ * channel names everything `hm2b-*` (`hm2b-framework-<F>.tgz`,
+ * `hm2b-engine-<F>.tgz`, `hm2b-payload-<id>-v<ver>.tgz`) and the installed
+ * runtime lives under `<project>/.hm2b/` (`.hm2b/bin/hm2b.js`,
+ * `.hm2b/engine/<E>/`).
+ *
+ * The legacy `--agent` channel (frozen `v<E>` Releases) downloads
+ * `r2c-engine-<V>.tgz`, verifies it against the release's
  * `SHA256SUMS.txt`, extracts it to `<project>/.r2c/engine/<V>/` (or
  * `~/.r2c/engine/<V>/` with `--scope user`), then hands over to that engine's
  * own `adapter install` — the payload is resolved by the engine, never here.
@@ -11,14 +22,17 @@
  * agent config) removes the engine this run extracted.
  *
  * Self-contained by design: node built-ins only (plus the global `fetch`), no
- * imports from `src/`, so this file runs both from the repository and as the
- * `install.mjs` release asset.
+ * imports from the framework tree, so this file runs both from the repository and as the
+ * `install.mjs` release asset. The bundle path imports only the framework
+ * archive it just verified.
  */
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
+  chmodSync,
   existsSync,
   mkdirSync,
+  mkdtempSync,
   readFileSync,
   renameSync,
   rmdirSync,
@@ -26,28 +40,35 @@ import {
   statSync,
   writeFileSync,
 } from 'node:fs';
-import { homedir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { delimiter, dirname, extname, isAbsolute, join, relative, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { gunzipSync } from 'node:zlib';
 
 const RELEASE_REPO = 'hesl2636/hm2B_drvport_pipiline';
 const DEFAULT_RELEASE_BASE = `https://github.com/${RELEASE_REPO}/releases/download`;
 const GITHUB_API = `https://api.github.com`;
 const SUMS_ASSET = 'SHA256SUMS.txt';
-/** Mirrors `ENGINE_ENTRY` in `src/engine.js`; the bootstrap may not import `src/` (C5). */
-const ENGINE_ENTRY = 'bin/r2c.js';
+const COMPILED_WORKFLOW_ASSET = 'workflow.compiled.json';
+const INSTALL_ASSET = 'install.mjs';
+const PROJECTIONS = Object.freeze(['runner', 'agent-native']);
+const BUNDLE_ID_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const BUNDLE_ID_MAX = 40;
+const FRAMEWORK_ASSET_RE = /^hm2b-framework-(.+).tgz$/;
+const ENGINE_ASSET_RE = /^hm2b-engine-(.+).tgz$/;
+/** Legacy `v<E>` channel only: frozen engines keep `bin/r2c.js`; mirrors `engine-archive.mjs`, since the bootstrap may not import framework modules (C5). */
+const LEGACY_ENGINE_ENTRY = 'bin/r2c.js';
 const BLOCK = 512;
 const VERSION_RE = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z][0-9A-Za-z.-]*)?$/;
 const SCOPES = Object.freeze(['project', 'user']);
 /**
- * `engines.node` from package.json, mirrored from `src/cli.js` because the
- * bootstrap may not import `src/` (C5). Checked before anything is fetched:
+ * `engines.node` from the engine package, mirrored from the engine CLI because the
+ * bootstrap may not import the engine (C5). Checked before anything is fetched:
  * an unsupported Node would otherwise download and extract an engine it cannot
  * run, only to hand off into a child that refuses to start.
  */
 export const NODE_RANGE = '>=22.19.0 <23 || >=24.0.0';
-/** The archive path bound `plugin.js`/`engine.js` enforce for every asset. */
+/** The archive path bound `engine-archive.mjs` enforces for every asset. */
 const MAX_PATH_BYTES = 100;
 
 /** True when `version` (as reported by process.versions.node) is in NODE_RANGE. */
@@ -93,11 +114,28 @@ export function assetUnavailable(name, version, where, { status = null, credenti
 const USAGE = `Usage: node install.mjs --agent <id> [--version <V>] [--scope project|user]
                         [--project <dir>] [--release-base <dir|url>]
                         [--profile <name>] [--force]
+       node install.mjs --bundle <id> [--version <V>]
+                        --projection runner|agent-native [--target <t>]...
+                        [--project <dir>] [--release-base <dir|url>] [--force]
 
-Downloads r2c-engine-<V>.tgz, verifies it against the release's
-SHA256SUMS.txt, installs it under <project>/.r2c/engine/<V>/ (or
-~/.r2c/engine/<V>/ with --scope user), then runs
-"node <engine>/bin/r2c.js adapter install <id>".
+Downloads a bundle Release's assets, verifies them against its
+SHA256SUMS.txt, checks the zip / compiled workflow / payload manifest against each other,
+then installs the pre-projected payload — never compiling or projecting.
+The bundle channel writes the runtime under <project>/.hm2b/ (launcher
+.hm2b/bin/hm2b.js, engine .hm2b/engine/<E>/).
+
+  --bundle <id>         Bundle id of the Release (tag bundle-<id>-v<V>).
+  --projection <id>     runner or agent-native; required when the bundle allows
+                        both, otherwise the single allowed projection.
+  --target <t>          agent-native target to write (repeatable). The payload
+                        is not re-projected; roles.json is still installed.
+  --version <V>         Release version. Default: the latest published
+                        bundle-<id> tag (requires the GitHub API).
+
+The legacy --agent channel (frozen v<E> Releases) downloads
+r2c-engine-<V>.tgz, verifies it against the release's SHA256SUMS.txt, installs
+it under <project>/.r2c/engine/<V>/ (or ~/.r2c/engine/<V>/ with --scope user),
+then runs "node <engine>/bin/r2c.js adapter install <id>".
 
   --agent <id>          Agent adapter to install (claude-code, codex, dsh,
                         omp, opencode).
@@ -107,7 +145,7 @@ SHA256SUMS.txt, installs it under <project>/.r2c/engine/<V>/ (or
   --project <dir>       Project root (default: the current directory).
   --release-base <src>  A directory of flat release assets or an http(s)
                         mirror shaped <base>/v<V>/<asset> (also
-                        R2C_RELEASE_BASE).
+                        HM2B_RELEASE_BASE).
   --profile <name>      Agent profile forwarded to "adapter install" (dsh:
                         default "web"; other adapters ignore it).
   --force               Forward "adapter install --force": back up and replace
@@ -120,8 +158,19 @@ engine's own status (2 usage, 3 gate, 4 not detected/not installed, 5 lock
 conflict) instead of 1.
 `;
 
-const VALUE_FLAGS = new Set(['--agent', '--version', '--scope', '--project', '--release-base', '--profile']);
+const VALUE_FLAGS = new Set([
+  '--agent', '--version', '--scope', '--project', '--release-base', '--profile',
+  '--bundle', '--projection', '--target',
+]);
 const FLAG_FLAGS = new Set(['--force']);
+/**
+ * Projection options are Release inputs, not install options: a Release ships
+ * one already-projected payload. Refusing them here (with a pointer to the
+ * re-projection tools) is the install-time half of "never project" (#106).
+ */
+const PROJECTION_OPTION_FLAGS = new Set([
+  '--stage-order', '--stageOrder', '--skills', '--skill', '--targets', '--options', '--exclude-skills',
+]);
 
 class BootstrapError extends Error {
   constructor(code, message, exitCode) {
@@ -149,7 +198,16 @@ function parseArgs(argv) {
     }
     const equals = arg.startsWith('--') ? arg.indexOf('=') : -1;
     const name = equals === -1 ? arg : arg.slice(0, equals);
-    if (!VALUE_FLAGS.has(name)) fail('USAGE', `unknown argument: ${arg}\n${USAGE}`, 2);
+    if (!VALUE_FLAGS.has(name)) {
+      if (PROJECTION_OPTION_FLAGS.has(name)) {
+        fail(
+          'RELEASE_OPTION_CONFLICT',
+          `custom projection options are not accepted at install (${name}): the Release payload is already projected. Re-project the published compiled workflow with the framework CLI (bin/hm2b-assembler.js project) or the web front end, then install that result`,
+          2,
+        );
+      }
+      fail('USAGE', `unknown argument: ${arg}\n${USAGE}`, 2);
+    }
     let value = equals === -1 ? undefined : arg.slice(equals + 1);
     if (value === undefined) {
       value = argv[index + 1];
@@ -159,23 +217,55 @@ function parseArgs(argv) {
       index += 1;
     }
     if (value === '') fail('USAGE', `${name} requires a value\n${USAGE}`, 2);
+    if (name === '--target') {
+      options.targets = [...(options.targets ?? []), value];
+      continue;
+    }
     options[name.slice(2).replace(/-([a-z])/g, (_, letter) => letter.toUpperCase())] = value;
   }
 
   if (options.help) return options;
-  if (options.agent === undefined) fail('USAGE', `--agent <id> is required\n${USAGE}`, 2);
+  if (options.version !== undefined && !VERSION_RE.test(options.version)) {
+    fail('USAGE', `--version is not a semantic version: ${options.version}\n${USAGE}`, 2);
+  }
   if (options.scope !== undefined && !SCOPES.includes(options.scope)) {
     fail('USAGE', `--scope must be one of ${SCOPES.join(', ')}: ${options.scope}\n${USAGE}`, 2);
   }
-  if (options.version !== undefined && !VERSION_RE.test(options.version)) {
-    fail('USAGE', `--version is not a semantic version: ${options.version}\n${USAGE}`, 2);
+
+  if (options.bundle === undefined) {
+    if (options.agent === undefined) fail('USAGE', `--agent <id> is required\n${USAGE}`, 2);
+    if (options.projection !== undefined) {
+      fail('RELEASE_OPTION_CONFLICT', '--projection belongs to the --bundle channel, not to --agent', 2);
+    }
+    if (options.targets !== undefined) {
+      fail('RELEASE_OPTION_CONFLICT', '--target belongs to the --bundle channel, not to --agent', 2);
+    }
+    return options;
+  }
+
+  // Bundle channel: the two CLIs are mutually exclusive, and a bundle install
+  // root is always the project (decision #76 §2.1).
+  if (options.agent !== undefined) {
+    fail('RELEASE_OPTION_CONFLICT', '--bundle and --agent are mutually exclusive; pick one channel', 2);
+  }
+  if (!BUNDLE_ID_RE.test(options.bundle) || options.bundle.length > BUNDLE_ID_MAX) {
+    fail('USAGE', `--bundle must match ^[a-z0-9]+(?:-[a-z0-9]+)*$ (max ${BUNDLE_ID_MAX}): ${options.bundle}\n${USAGE}`, 2);
+  }
+  if (options.projection !== undefined && !PROJECTIONS.includes(options.projection)) {
+    fail('USAGE', `--projection must be one of ${PROJECTIONS.join(', ')}: ${options.projection}\n${USAGE}`, 2);
+  }
+  if (options.scope !== undefined && options.scope !== 'project') {
+    fail('RELEASE_OPTION_CONFLICT', '--scope user belongs to the legacy --agent channel; a bundle installs into --project', 2);
+  }
+  if (options.profile !== undefined) {
+    fail('RELEASE_OPTION_CONFLICT', '--profile belongs to "adapter install", not to a bundle Release', 2);
   }
   return options;
 }
 
-/** `R2C_HOME` first, exactly like the engine's own `userHome()`. */
+/** `HM2B_HOME` first, exactly like the engine's own `userHome()`; `R2C_HOME` is the legacy `--agent` fallback. */
 function userHome() {
-  return process.env.R2C_HOME || process.env.HOME || process.env.USERPROFILE || homedir();
+  return process.env.HM2B_HOME || process.env.R2C_HOME || process.env.HOME || process.env.USERPROFILE || homedir();
 }
 
 /** A directory of flat assets, or an http(s) mirror (`<base>/v<V>/<asset>`). */
@@ -251,7 +341,7 @@ export function authCredential() {
 async function request(url, timeout, headers) {
   try {
     return await fetch(url, {
-      headers: { 'user-agent': 'r2c-install', ...headers },
+      headers: { 'user-agent': 'hm2b-install', ...headers },
       redirect: 'follow',
       signal: AbortSignal.timeout(timeout),
     });
@@ -364,7 +454,7 @@ function tarString(header, start, length) {
 
 /**
  * The engine archive path contract, re-stated because the bootstrap may not
- * import `src/` (C5). It must not be laxer than `plugin.js`/`engine.js`:
+ * import the framework (C5). It must not be laxer than `engine-archive.mjs`:
  * non-empty, relative, POSIX, canonical and at most `MAX_PATH_BYTES` bytes.
  */
 export function archivePathProblem(path) {
@@ -486,6 +576,428 @@ function undoExtractedEngine(engineHome, createdDirs) {
   }
 }
 
+// --- per-bundle Release channel (#106, decision #74 §9) ---------------------
+
+function escapeRegExp(text) {
+  return String(text).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/** Semver precedence for the latest-release scan (prerelease rules included). */
+function compareVersions(left, right) {
+  const parse = (value) => {
+    const [core, ...rest] = String(value).split('-');
+    const [major, minor, patch] = core.split('.').map((part) => Number.parseInt(part, 10));
+    const prerelease = rest.length === 0 ? [] : rest.join('-').split('.');
+    return { major, minor, patch, prerelease };
+  };
+  const a = parse(left);
+  const b = parse(right);
+  for (const key of ['major', 'minor', 'patch']) {
+    if (a[key] !== b[key]) return a[key] < b[key] ? -1 : 1;
+  }
+  if (a.prerelease.length === 0 && b.prerelease.length === 0) return 0;
+  if (a.prerelease.length === 0) return 1;
+  if (b.prerelease.length === 0) return -1;
+  for (let index = 0; index < Math.max(a.prerelease.length, b.prerelease.length); index += 1) {
+    const one = a.prerelease[index];
+    const two = b.prerelease[index];
+    if (one === undefined) return -1;
+    if (two === undefined) return 1;
+    const numeric = /^\d+$/.test(one);
+    const otherNumeric = /^\d+$/.test(two);
+    if (numeric && otherNumeric) {
+      if (Number(one) !== Number(two)) return Number(one) < Number(two) ? -1 : 1;
+      continue;
+    }
+    if (numeric !== otherNumeric) return numeric ? -1 : 1;
+    if (one !== two) return one < two ? -1 : 1;
+  }
+  return 0;
+}
+
+function releaseMissingCode(name) {
+  if (name.startsWith('hm2b-engine-')) return 'RELEASE_ENGINE_MISSING';
+  if (name.startsWith('hm2b-framework-')) return 'RELEASE_FRAMEWORK_MISSING';
+  if (/^(hm2b-payload-|agent-native-)/.test(name)) return 'RELEASE_PAYLOAD_MISSING';
+  return 'RELEASE_NOT_FOUND';
+}
+
+function releaseAssetUnavailable(name, tag, where, { status = null, credential = null } = {}) {
+  const hint = credential === null ? '' : credentialHint(status, credential);
+  return new BootstrapError(
+    releaseMissingCode(name),
+    `release ${tag} does not carry ${name}: ${where}${hint}`,
+    2,
+  );
+}
+
+/** `HM2B_GITHUB_API` is a loopback/mirror seam; it never receives a token. */
+function apiBaseFor(source) {
+  const override = process.env.HM2B_GITHUB_API;
+  if (source.kind === 'url' && source.github === false
+    && typeof override === 'string' && override.trim() !== '') {
+    return override.trim().replace(/\/+$/, '');
+  }
+  return GITHUB_API;
+}
+
+/**
+ * The `release-source.js` client shape (`{base, token, request}`), built from
+ * the bootstrap's own fetch/credential chain. `token` stays null for a custom
+ * mirror: a mirror authenticates its own way (decision #74 §4).
+ */
+function releaseClient(source, credential) {
+  const base = apiBaseFor(source);
+  const token = credential?.token ?? null;
+  return {
+    base,
+    token,
+    async request(method, target, options = {}) {
+      const url = /^https?:\/\//i.test(target) ? target : `${base}${target}`;
+      const headers = {
+        accept: options.accept ?? 'application/vnd.github+json',
+        'user-agent': 'hm2b-install',
+      };
+      if (token !== null) headers.authorization = `Bearer ${token}`;
+      let response;
+      try {
+        response = await fetch(url, { method, headers, redirect: 'follow', signal: AbortSignal.timeout(60_000) });
+      } catch (error) {
+        fail('RELEASE_DOWNLOAD_FAILED', `cannot reach ${url}: ${error.message}`, 1);
+      }
+      const responseHeaders = {};
+      response.headers?.forEach?.((value, key) => {
+        responseHeaders[key] = value;
+      });
+      let data = null;
+      if (options.parse === 'bytes') data = Buffer.from(await response.arrayBuffer());
+      else {
+        try {
+          data = await response.json();
+        } catch {
+          data = null;
+        }
+      }
+      return { ok: response.ok, status: response.status, headers: responseHeaders, data, url };
+    },
+  };
+}
+
+/**
+ * Latest published `bundle-<id>-v<semver>` tag (mirrors `resolveLatest`):
+ * paginated `/releases`, drafts/prereleases filtered, max semver. This scan
+ * runs before the framework is available; after unpacking it, the framework's
+ * own `resolveLatest` re-confirms the choice.
+ */
+async function listBundleRelease(client, bundleId) {
+  const pattern = new RegExp(`^bundle-${escapeRegExp(bundleId)}-v(\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z][0-9A-Za-z.-]*)?)$`);
+  let best = null;
+  let scanned = 0;
+  const settle = (pages) => {
+    if (best !== null) return { ...best, pages, scanned };
+    fail(
+      'RELEASE_VERSION_UNRESOLVED',
+      `no published ${bundleId} release (scanned ${scanned} entries); pass --version <V>`,
+      2,
+    );
+  };
+  for (let page = 1; page <= 10; page += 1) {
+    const response = await client.request('GET', `/repos/${RELEASE_REPO}/releases?per_page=100&page=${page}`);
+    if (!response.ok) {
+      if (response.status === 401) fail('RELEASE_AUTH_REQUIRED', 'the release list needs GH_TOKEN with contents:read', 2);
+      if (response.status === 403 || response.status === 429) {
+        fail('RELEASE_RATE_LIMITED', 'the anonymous GitHub API limit was hit; pass --version <V> or set GH_TOKEN', 2);
+      }
+      fail('RELEASE_NOT_FOUND', `cannot list the releases of ${RELEASE_REPO}: HTTP ${response.status}`, 2);
+    }
+    const entries = Array.isArray(response.data) ? response.data : null;
+    if (entries === null) fail('RELEASE_VERSION_UNRESOLVED', 'the release list is not an array; pass --version <V>', 2);
+    scanned += entries.length;
+    for (const entry of entries) {
+      if (entry?.draft === true || entry?.prerelease === true) continue;
+      const match = pattern.exec(String(entry?.tag_name ?? ''));
+      if (match === null) continue;
+      if (best === null || compareVersions(match[1], best.version) > 0) {
+        best = { tag: entry.tag_name, version: match[1] };
+      }
+    }
+    if (entries.length < 100) return settle(page);
+  }
+  const overflow = await client.request('GET', `/repos/${RELEASE_REPO}/releases?per_page=100&page=11`);
+  if (overflow.ok && Array.isArray(overflow.data) && overflow.data.length > 0) {
+    fail('RELEASE_LIST_TRUNCATED', `the release list exceeds 1000 entries; pass --version <V>`, 2);
+  }
+  return settle(11);
+}
+
+/** `<base>/<tag>/<asset>` on a mirror, or a flat local release directory. */
+async function fetchBundleAsset(source, tag, name, credential) {
+  if (source.kind === 'dir') {
+    for (const candidate of [join(source.dir, tag, name), join(source.dir, name)]) {
+      if (existsSync(candidate)) return readFileSync(candidate);
+    }
+    throw releaseAssetUnavailable(name, tag, source.dir);
+  }
+  const url = `${source.base}/${encodeURIComponent(tag)}/${encodeURIComponent(name)}`;
+  const response = await request(url, 60_000, credential === null ? {} : bearer(credential.token));
+  if (!response.ok) {
+    throw releaseAssetUnavailable(name, tag, url, { status: response.status, credential });
+  }
+  return Buffer.from(await response.arrayBuffer());
+}
+
+/** `SHA256SUMS.txt` → `Map<name, digest>`; malformed lines refuse. */
+function readSumsNames(bytes) {
+  const names = new Map();
+  for (const raw of bytes.toString('utf8').split(/\r?\n/)) {
+    const line = raw.trim();
+    if (line === '') continue;
+    const match = /^([0-9a-f]{64})\s+\*?(.+)$/.exec(line);
+    if (match === null) fail('RELEASE_CHECKSUM_MISMATCH', `${SUMS_ASSET} has a malformed line: ${JSON.stringify(line)}`, 2);
+    const name = match[2].trim().replace(/^\.\//, '');
+    if (name === SUMS_ASSET) fail('RELEASE_CHECKSUM_MISMATCH', `${SUMS_ASSET} must not cover itself`, 2);
+    const existing = names.get(name);
+    if (existing !== undefined && existing !== match[1]) {
+      fail('RELEASE_CHECKSUM_MISMATCH', `${SUMS_ASSET} lists ${name} twice with different digests`, 2);
+    }
+    names.set(name, match[1]);
+  }
+  return names;
+}
+
+function verifyAssetDigest(name, bytes, sums) {
+  const expected = sums.get(name);
+  if (expected === undefined) {
+    fail(releaseMissingCode(name), `${SUMS_ASSET} lists no entry for ${name}`, 2);
+  }
+  const actual = createHash('sha256').update(bytes).digest('hex');
+  if (actual !== expected) {
+    fail('RELEASE_CHECKSUM_MISMATCH', `${name} sha256 mismatch: ${SUMS_ASSET} says ${expected}, the download is ${actual}; nothing was written`, 2);
+  }
+}
+
+/**
+ * Read the framework archive. The bootstrap cannot import `scripts/` or
+ * the engine tree, and framework paths reach 200 bytes, so this is a local ustar
+ * reader with the projection path budget instead of the engine one.
+ */
+function readFrameworkArchive(buffer) {
+  let tar;
+  try {
+    tar = gunzipSync(buffer);
+  } catch (error) {
+    fail('RELEASE_ASSET_SET_MISMATCH', `the framework archive is not a gzip stream: ${error.message}`, 2);
+  }
+  const entries = [];
+  const seen = new Set();
+  let offset = 0;
+  while (offset + BLOCK <= tar.length) {
+    const header = tar.subarray(offset, offset + BLOCK);
+    if (header.every((byte) => byte === 0)) break;
+    const name = tarString(header, 0, 100);
+    const prefix = tarString(header, 345, 155);
+    const path = prefix === '' ? name : `${prefix}/${name}`;
+    const size = Number.parseInt(tarString(header, 124, 12).trim() || '0', 8);
+    const type = header[156] === 0 ? '0' : String.fromCharCode(header[156]);
+    offset += BLOCK;
+    if (!Number.isFinite(size) || size < 0) {
+      fail('RELEASE_ASSET_SET_MISMATCH', `invalid framework entry size for ${path || '(unnamed)'}`, 2);
+    }
+    const data = tar.subarray(offset, offset + size);
+    offset += Math.ceil(size / BLOCK) * BLOCK;
+    if (type === '5') continue;
+    if (type !== '0') {
+      fail('RELEASE_ASSET_SET_MISMATCH', `unsupported framework entry type "${type}": ${path}`, 2);
+    }
+    const segments = path.split('/');
+    if (path === '' || path.startsWith('/') || path.includes('\\')
+      || segments.some((segment) => segment === '' || segment === '.' || segment === '..')) {
+      fail('RELEASE_ASSET_SET_MISMATCH', `framework path is not a canonical relative POSIX path: ${path}`, 2);
+    }
+    if (Buffer.byteLength(path, 'utf8') > 255) {
+      fail('RELEASE_ASSET_SET_MISMATCH', `framework path is longer than 255 bytes: ${path}`, 2);
+    }
+    if (seen.has(path)) fail('RELEASE_ASSET_SET_MISMATCH', `duplicate framework path: ${path}`, 2);
+    seen.add(path);
+    entries.push({ path, data });
+  }
+  if (entries.length === 0) fail('RELEASE_ASSET_SET_MISMATCH', 'the framework archive is empty', 2);
+  return entries;
+}
+
+/** Unpack the framework release into a fresh temporary directory. */
+function extractFramework(buffer) {
+  const entries = readFrameworkArchive(buffer);
+  const root = mkdtempSync(join(tmpdir(), 'hm2b-framework-'));
+  try {
+    for (const entry of entries) {
+      const target = join(root, ...entry.path.split('/'));
+      const rel = relative(root, target);
+      if (rel === '' || rel.startsWith('..') || isAbsolute(rel)) {
+        fail('RELEASE_ASSET_SET_MISMATCH', `framework path escapes its root: ${entry.path}`, 2);
+      }
+      mkdirSync(dirname(target), { recursive: true });
+      writeFileSync(target, entry.data);
+      chmodSync(target, 0o644);
+    }
+  } catch (error) {
+    rmSync(root, { recursive: true, force: true });
+    throw error;
+  }
+  return root;
+}
+
+/** Import the verified framework's release-source and installer modules. */
+async function loadFramework(root) {
+  try {
+    const releaseSource = await import(pathToFileURL(join(root, 'installer', 'release-source.js')).href);
+    const install = await import(pathToFileURL(join(root, 'installer', 'release-install.js')).href);
+    return { releaseSource, install };
+  } catch (error) {
+    fail('RELEASE_FRAMEWORK_MISSING', `the framework archive cannot be loaded: ${error.message}`, 2);
+  }
+}
+
+/** Download → three-way verify → install one bundle Release. */
+async function runBundle(options, projectDir) {
+  const explicitBase = options.releaseBase ?? process.env.HM2B_RELEASE_BASE ?? null;
+  const source = releaseSource(explicitBase === null ? DEFAULT_RELEASE_BASE : explicitBase);
+  const bundleId = options.bundle;
+  const credential = source.github ? authCredential() : null;
+  const client = releaseClient(source, credential);
+
+  let version = options.version;
+  let tag = version === undefined ? null : `bundle-${bundleId}-v${version}`;
+  if (version === undefined) {
+    if (source.kind === 'dir') {
+      fail('RELEASE_VERSION_REQUIRED', `--version <V> is required when --release-base is a directory (${source.dir}): a local mirror carries no release list`, 2);
+    }
+    if (!source.github && apiBaseFor(source) === GITHUB_API) {
+      fail('RELEASE_VERSION_REQUIRED', `--version <V> is required with --release-base ${source.base}: only the default GitHub release base resolves the latest bundle tag`, 2);
+    }
+    const listed = await listBundleRelease(client, bundleId);
+    version = listed.version;
+    tag = listed.tag;
+  }
+
+  const sumsBytes = await fetchBundleAsset(source, tag, SUMS_ASSET, credential);
+  const sums = readSumsNames(sumsBytes);
+  const frameworkName = [...sums.keys()].find((name) => FRAMEWORK_ASSET_RE.test(name));
+  if (frameworkName === undefined) {
+    fail('RELEASE_FRAMEWORK_MISSING', `${SUMS_ASSET} of ${tag} lists no hm2b-framework-<F>.tgz; nothing was written`, 2);
+  }
+  const frameworkBytes = await fetchBundleAsset(source, tag, frameworkName, credential);
+  verifyAssetDigest(frameworkName, frameworkBytes, sums);
+
+  const frameworkRoot = extractFramework(frameworkBytes);
+  try {
+    const framework = await loadFramework(frameworkRoot);
+
+    // Version resolution is the framework's contract (release-source.js, #107).
+    try {
+      if (options.version === undefined) {
+        const resolved = await framework.releaseSource.resolveLatest({ client, bundleId });
+        if (resolved.version !== version) {
+          fail(
+            'RELEASE_VERSION_UNRESOLVED',
+            `the latest ${bundleId} release changed while installing (${version} → ${resolved.version}); rerun or pass --version`,
+            2,
+          );
+        }
+      } else {
+        await framework.releaseSource.resolveVersion({
+          client,
+          bundleId,
+          version,
+          downloadBase: source.kind === 'url' ? source.base : undefined,
+        });
+      }
+    } catch (error) {
+      if (error?.name === 'ReleaseSourceError') {
+        fail(error.code, String(error.message).replace(/^[A-Z][A-Z0-9_]*: /, ''), 2);
+      }
+      throw error;
+    }
+
+    const compiledWorkflowBytes = await fetchBundleAsset(source, tag, COMPILED_WORKFLOW_ASSET, credential);
+    verifyAssetDigest(COMPILED_WORKFLOW_ASSET, compiledWorkflowBytes, sums);
+    let compiledWorkflow;
+    try {
+      compiledWorkflow = JSON.parse(compiledWorkflowBytes.toString('utf8'));
+    } catch (error) {
+      fail('RELEASE_COMPILED_WORKFLOW_MISMATCH', `${COMPILED_WORKFLOW_ASSET} is not JSON: ${error.message}`, 2);
+    }
+    const allowed = framework.install.allowedProjections(compiledWorkflow);
+    if (allowed === null) {
+      fail('RELEASE_PROJECTION_NOT_ALLOWED', 'requires.projections must be a non-empty array of projection ids', 2);
+    }
+    const selection = framework.install.selectProjection({ allowed, requested: options.projection });
+    if (selection.ok === false) {
+      fail(selection.code, selection.message.replace(/^[A-Z][A-Z0-9_]*: /, ''), selection.exitCode ?? 2);
+    }
+    const projection = selection.projection;
+
+    const assets = {
+      [INSTALL_ASSET]: readFileSync(fileURLToPath(import.meta.url)),
+      [COMPILED_WORKFLOW_ASSET]: compiledWorkflowBytes,
+      [frameworkName]: frameworkBytes,
+    };
+    const needed = [
+      `bundle-${bundleId}-v${version}.zip`,
+      projection === 'runner'
+        ? `hm2b-payload-${bundleId}-v${version}.tgz`
+        : `agent-native-${bundleId}-v${version}.tgz`,
+    ];
+    if (projection === 'runner') {
+      const engineName = [...sums.keys()].find((name) => ENGINE_ASSET_RE.test(name));
+      if (engineName === undefined) {
+        fail('RELEASE_ENGINE_MISSING', `${SUMS_ASSET} of ${tag} lists no hm2b-engine-<E>.tgz for the runner runtime`, 2);
+      }
+      needed.push(engineName);
+    }
+    for (const name of needed) {
+      if (!sums.has(name)) {
+        fail(releaseMissingCode(name), `${SUMS_ASSET} of ${tag} lists no ${name}; nothing was written`, 2);
+      }
+      const bytes = await fetchBundleAsset(source, tag, name, credential);
+      verifyAssetDigest(name, bytes, sums);
+      assets[name] = bytes;
+    }
+
+    const outcome = framework.install.installRelease({
+      projectRoot: projectDir,
+      bundleId,
+      version,
+      projection,
+      targets: options.targets ?? null,
+      sumsBytes,
+      assets,
+      force: options.force === true,
+    });
+    if (outcome.ok === false) {
+      fail(outcome.code, String(outcome.message).replace(/^[A-Z][A-Z0-9_]*: /, ''), outcome.exitCode ?? 2);
+    }
+
+    if (outcome.runtime !== null) {
+      process.stdout.write(`runtime/engine/${outcome.runtime.engine.version}: ${outcome.runtime.files} file(s) ${outcome.runtime.action}\n`);
+    }
+    process.stdout.write(
+      `install ${outcome.projection}/${outcome.bundleId}@${outcome.version}: ${outcome.files} file(s) ${outcome.action}\n`,
+    );
+    if (outcome.receiptPath !== undefined && outcome.receiptPath !== null) {
+      process.stdout.write(`receipt: ${outcome.receiptPath}\n`);
+    }
+    for (const warning of outcome.warnings ?? []) {
+      process.stdout.write(`warn: ${warning.code ?? 'WARNING'} ${warning.message ?? ''}`.trim() + '\n');
+    }
+    if (projection === 'runner') {
+      process.stdout.write('next: node .hm2b/bin/hm2b.js\n');
+    }
+  } finally {
+    rmSync(frameworkRoot, { recursive: true, force: true });
+  }
+}
+
 async function main(argv) {
   const options = parseArgs(argv);
   if (options.help) {
@@ -497,7 +1009,7 @@ async function main(argv) {
   if (!nodeSupported(process.versions.node)) {
     fail(
       'NODE_UNSUPPORTED',
-      `r2c requires node ${NODE_RANGE}; this is node ${process.versions.node}`,
+      `hm2b requires node ${NODE_RANGE}; this is node ${process.versions.node}`,
       2,
     );
   }
@@ -506,11 +1018,16 @@ async function main(argv) {
   if (!existsSync(projectDir) || !statSync(projectDir).isDirectory()) {
     fail('USAGE', `--project is not a directory: ${projectDir}`, 2);
   }
+  if (options.bundle !== undefined) {
+    await runBundle(options, projectDir);
+    return 0;
+  }
   const scope = options.scope ?? 'project';
 
-  const explicitBase = options.releaseBase ?? process.env.R2C_RELEASE_BASE ?? null;
+  const explicitBase = options.releaseBase ?? process.env.HM2B_RELEASE_BASE ?? null;
   const source = releaseSource(explicitBase === null ? DEFAULT_RELEASE_BASE : explicitBase);
   const version = options.version ?? (await latestVersion(source));
+  // Legacy layout: frozen engines still live in `.r2c/engine` and `.r2c/bin`.
   const engineHome = join(scope === 'user' ? userHome() : projectDir, '.r2c', 'engine', version);
   const engineRoot = dirname(engineHome);
   const stateRoot = dirname(engineRoot);
@@ -521,6 +1038,7 @@ async function main(argv) {
   if (engineReady(engineHome, version)) {
     process.stdout.write(`engine ${version} already at ${engineHome}\n`);
   } else {
+    // Legacy asset name: frozen `v<E>` releases publish `r2c-engine-<E>.tgz`.
     const assetName = `r2c-engine-${version}.tgz`;
     const sums = await fetchAsset(source, version, SUMS_ASSET);
     const expected = digestFor(sums.toString('utf8'), assetName);
@@ -541,9 +1059,10 @@ async function main(argv) {
     process.stdout.write(`engine ${version}: ${engineHome}\n`);
   }
 
-  const entry = join(engineHome, ENGINE_ENTRY);
+  const entry = join(engineHome, LEGACY_ENGINE_ENTRY);
   const env = { ...process.env };
   if (explicitBase !== null) {
+    // Legacy hand-off: the frozen engine reads `R2C_RELEASE_BASE`.
     env.R2C_RELEASE_BASE = source.kind === 'dir' ? source.dir : source.base;
   }
   const installArgs = [

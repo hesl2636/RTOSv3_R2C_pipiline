@@ -1,0 +1,16 @@
+# Rendered by the hm2b runtime installer.
+# A Cordis patch cannot see its own path, so every path below is substituted
+# with a project-relative one at install time.
+- id: skill-filesystem
+  config:
+    bundledSkillDir: '${PROJECT_ROOT}/skills'
+
+- insert:
+    - id: hm2b-dsh
+      name: '${PAYLOAD_HOME}/host/dsh/index.mjs'
+      config:
+        runnerCmd: '${RUNNER_CMD}'
+        projectRoot: '${PROJECT_ROOT}'
+        payloadHome: '${PAYLOAD_HOME}'
+        shim: '${PAYLOAD_HOME}/shims/hook.mjs'
+        cap: 8

@@ -1,90 +1,66 @@
 /**
- * Documentation contract (#17 §1, §7, §8; tickets #36, #45).
+ * Documentation contract after P6 (#111, spec §15).
  *
- * Four docs are user-facing contracts, so they are tested like code:
- * `docs/install.md` (install → upgrade → rollback → uninstall → offline),
- * `docs/compat.md` (generated from `adapter.json`, never hand-edited),
- * `docs/blue-zone/preflight.md` (exactly 47 rows, each with five fields) and
- * the install sections of `README.md` plus `adapters/<agent>/README.md`.
- *
- * Since #45 there is exactly one distribution channel — the GitHub Release
- * assets driven by `scripts/install.mjs` — so every documented command is
- * checked against the real CLI help and the npm-era entry points are forbidden.
+ * The docs describe one forward channel (per-bundle Releases) and the three
+ * layers (framework, engine, bundle). Retired mechanisms may only appear in
+ * the historical notes (`docs/legacy.md`, `docs/blue-zone/`, `docs/agents/`),
+ * every relative link resolves, and every command in a fenced block uses a
+ * path and flag the tools really have.
  */
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const ADAPTER_IDS = ['claude-code', 'codex', 'dsh', 'omp', 'opencode'];
-const PREFLIGHT_IDS = [
-  ...Array.from({ length: 14 }, (_, index) => `A${index + 1}`),
-  ...Array.from({ length: 12 }, (_, index) => `B${index + 1}`),
-  ...Array.from({ length: 15 }, (_, index) => `C${index + 1}`),
-  ...Array.from({ length: 6 }, (_, index) => `D${index + 1}`),
-];
-const VERDICTS = ['pass', 'fail', 'risk', 'HITL', 'unverified'];
+const DOCS = ['README.md', 'docs/install.md', 'docs/layout.md', 'docs/compat.md', 'GLOSSARY.md', 'CHANGELOG.md'];
+/** Historical records may name retired mechanisms; current docs may not. */
+const HISTORICAL = new Set([
+  'docs/legacy.md',
+  'docs/blue-zone/preflight.md',
+  'docs/agents/issue-tracker.md',
+  'notes/99-report.md',
+]);
 
-/** The four install sections and the next command each one must end with. */
-const INSTALL_SECTIONS = ['## Install', '## Upgrade', '## Rollback', '## Uninstall'];
-
-/**
- * Yellow-zone coordinates and non-public registry names must never reach a
- * blue-zone entry point. Each entry is [label, pattern] so a failure names the
- * literal instead of printing a whole file.
- */
-const FORBIDDEN = [
-  ['--plugin-root', /--plugin-root/],
-  ['--legacy-plugin-root', /--legacy-plugin-root/],
-  ['CodeAgent CLI', /codeagent/i],
-  ['CODEAGENT environment variables', /CODEAGENT/],
-  ['retired per-user state directory', /\.cac\b/],
-  ['LEGACY_NPM_REGISTRY_URL', /LEGACY_NPM_REGISTRY_URL/],
-  ['legacy tag', /legacy-yellow-zone/],
-  ['internal registry name', /\b(nexus|artifactory|verdaccio|npmmirror)\b/i],
-  ['plain-http URL', /http:\/\//],
-];
-
-/**
- * The npm era is over (#44): one install channel, and it is the release
- * bootstrap. Each entry is [label, pattern]; a doc that reinstates a package
- * manager, the retired runner spec or the manual layout copy fails here.
- */
-const SECOND_CHANNEL = [
-  ['npx', /\bnpx\b/],
-  ['npm install', /\bnpm\s+(?:install|i|add|exec|pack|publish|ci)\b/],
-  ['pnpm', /\bpnpm\b/],
-  ['yarn', /\byarn\b/],
-  ['retired runner spec', /\br2c-runner@/],
-  ['retired payload asset', /\br2c-plugin-(?:\d|<)/],
-  ['manual layout copy', /\bcp\s+-r\b[^\n]*payload/],
-  ['manual layout copy (zh)', /手动复制/],
+/** Retired vocabulary: the replacement is the bundle/projection/target world. */
+const RETIRED = [
+  ['top-level src/', /(^|[\s`(])(?:\.\/)?src\//m],
+  ['adapters tree', /(^|[\s`(])adapters\//],
+  ['adapter declaration', /adapter\.json/],
+  ['adapter map', /map\.json/],
+  ['derive-agent action', /\bderive-agent\b/],
+  ['pack tree', /(^|[\s`(])pack\//],
+  ['plugins tree', /(^|[\s`(])plugins\//],
+  ['shims tree', /(?<![/\w-])shims\//],
+  ['top-level schema tree', /(?<![/\w-])schema\//],
+  ['adapter command', /\br2c adapter\b/],
+  ['adapter field', /\badapter\s*:/i],
+  ['adapter id', /\badapter[- ]id\b/i],
+  ['plugin field', /\bplugin\s*:/i],
+  ['plugin id', /\bplugin[- ]id\b/i],
+  ['acceptance command', /\br2c acceptance\b/],
+  ['legacy payload asset', /r2c-payload-<E>|r2c-payload-\d/],
+  // The framework/engine/projection names moved to hm2b; current docs must
+  // not describe the new channel with the retired r2c names.
+  ['legacy framework name', /\br2c-framework\b/],
+  ['legacy engine name', /\br2c-runner\b/],
+  ['legacy engine asset', /\br2c-engine-/],
+  ['legacy bundle schema', /\br2c\.bundle\//],
+  ['legacy compiled workflow schema', /\br2c\.ir\//],
+  ['legacy bundle revision', /\bhm2b\.bundle\/v1\b/],
+  ['legacy compiled workflow revision', /\bhm2b\.ir\/v1\b/],
+  ['legacy workflow schema', /\br2c\.workflow\//],
+  ['legacy runtime receipt', /\br2c\.runtime\//],
+  ['legacy projection report', /\br2c\.projection/],
+  ['legacy projection id', /(?<![\w./`-])r2c(?![\w./`-])/],
 ];
 
 function read(rel) {
-  return readFileSync(join(REPO, rel), 'utf8');
+  return readFileSync(join(REPO, ...rel.split('/')), 'utf8');
 }
 
-function adapter(id) {
-  return JSON.parse(read(`adapters/${id}/adapter.json`));
-}
-
-function section(text, heading) {
-  const start = text.indexOf(`${heading}\n`);
-  assert.notEqual(start, -1, `missing section ${heading}`);
-  const next = text.indexOf('\n## ', start + heading.length);
-  return next === -1 ? text.slice(start) : text.slice(start, next);
-}
-
-function lastLine(text) {
-  const lines = text.split('\n').map((line) => line.trim()).filter((line) => line !== '');
-  return lines.at(-1);
-}
-
-/** Every fenced code block, with its language tag. */
 function fencedBlocks(text) {
   const blocks = [];
   const pattern = /```(\w*)\r?\n([\s\S]*?)```/g;
@@ -93,421 +69,209 @@ function fencedBlocks(text) {
   return blocks;
 }
 
-/** Command lines inside the blocks: [language, line]. */
 function commandLines(text) {
   const commands = [];
-  for (const { lang, body } of fencedBlocks(text)) {
+  for (const { body } of fencedBlocks(text)) {
     for (const raw of body.split('\n')) {
       const line = raw.trim();
-      if (line === '' || line.startsWith('#')) continue;
-      commands.push({ lang, line });
+      if (line === '' || line.startsWith('#') || line.startsWith('…')) continue;
+      commands.push(line);
     }
   }
   return commands;
 }
 
-function helpOutput(script, args = ['--help']) {
-  const result = spawnSync(process.execPath, [join(REPO, script), ...args], {
+function helpOf(file, args = ['--help']) {
+  const result = spawnSync(process.execPath, [join(REPO, ...file.split('/')), ...args], {
     encoding: 'utf8',
     timeout: 120_000,
   });
-  assert.equal(result.status, 0, `${script} --help exited ${result.status}: ${result.stderr}`);
+  assert.equal(result.status, 0, `${file} --help exited ${result.status}: ${result.stderr}`);
   return result.stdout;
 }
 
-/**
- * The flag vocabulary the documents may use: whatever `r2c --help` and
- * `install.mjs --help` really print today.
- */
-function documentedFlagSources() {
-  const cli = helpOutput('bin/r2c.js');
-  const bootstrap = helpOutput('scripts/install.mjs');
-  const flags = new Set();
-  for (const text of [cli, bootstrap]) {
-    for (const match of text.matchAll(/--[a-z][a-z-]*/g)) flags.add(match[0]);
+const FLAGS = new Set(['--help', '-h', '--json', '--version', '-v']);
+for (const file of ['runtime/runner/engine/bin/hm2b.js', 'bin/hm2b-assembler.js', 'scripts/install.mjs', 'scripts/release.mjs', 'installer/cli.js']) {
+  const text = file.endsWith('release.mjs')
+    ? spawnSync(process.execPath, [join(REPO, ...file.split('/')), '--help'], { encoding: 'utf8' }).stderr
+    : helpOf(file);
+  for (const match of text.matchAll(/--[a-z][a-z-]*/g)) FLAGS.add(match[0]);
+}
+
+test('the user-facing documents exist and are not empty', () => {
+  for (const rel of DOCS) {
+    assert.ok(existsSync(join(REPO, ...rel.split('/'))), `${rel} is missing`);
+    assert.ok(read(rel).trim().length > 200, `${rel} is empty`);
   }
-  flags.add('--help');
-  flags.add('-h');
-  const topLevel = sectionText(cli, 'Commands:', 'Global options:')
-    .split('\n')
-    .map((line) => line.trim())
-    .filter((line) => line !== '');
-  return { flags, topLevel, bootstrap };
-}
+});
 
-function sectionText(text, startMarker, endMarker) {
-  const start = text.indexOf(startMarker);
-  assert.notEqual(start, -1, `help output has no ${startMarker}`);
-  const end = text.indexOf(endMarker, start);
-  assert.notEqual(end, -1, `help output has no ${endMarker}`);
-  return text.slice(start + startMarker.length, end);
-}
-
-const HELP = documentedFlagSources();
-const ADAPTER_SUBCOMMANDS = ['install', 'uninstall', 'doctor', 'smoke', 'list', 'prune'];
-const GH_FLAGS = new Set(['-R', '--repo', '-p', '--pattern', '-D', '--dir']);
-
-/** The docs that describe how to install r2c. */
-function installDocs() {
-  return ['README.md', 'docs/install.md', ...ADAPTER_IDS.map((id) => `adapters/${id}/README.md`)];
-}
-
-// --- single channel -------------------------------------------------------
-
-test('no install doc offers a second channel or the retired npx runner', () => {
-  for (const rel of installDocs()) {
+test('retired mechanisms appear only in the historical notes', () => {
+  for (const rel of DOCS.filter((doc) => doc !== 'CHANGELOG.md')) {
     const text = read(rel);
-    for (const [label, pattern] of SECOND_CHANNEL) {
-      assert.doesNotMatch(text, pattern, `${rel} reinstates ${label}`);
+    for (const [label, pattern] of RETIRED) {
+      assert.doesNotMatch(text, pattern, `${rel} mentions retired ${label}`);
     }
   }
+  // The historical note may name them, but only with an explicit "retired".
+  const legacy = read('docs/legacy.md');
+  assert.match(legacy, /retired|冻结|退役/i);
 });
 
-test('every markdown doc except the dated preflight log avoids npx', () => {
-  const files = ['README.md', 'CHANGELOG.md'];
-  const walk = (dir) => {
-    for (const entry of readdirSync(join(REPO, dir), { withFileTypes: true })) {
-      const rel = `${dir}/${entry.name}`;
-      if (entry.isDirectory()) walk(rel);
-      else if (entry.name.endsWith('.md')) files.push(rel);
-    }
-  };
-  walk('docs');
-  walk('adapters');
-  for (const rel of files) {
-    if (rel === 'docs/blue-zone/preflight.md') continue;
-    assert.doesNotMatch(read(rel), /\bnpx\b/, `${rel} still names npx`);
+test('current docs name hosts as targets, not adapters or plugins', () => {
+  // GLOSSARY lists the retired words only as terms to avoid; CHANGELOG and
+  // docs/legacy.md are historical records.
+  const exempt = new Set(['GLOSSARY.md', 'CHANGELOG.md']);
+  for (const rel of DOCS.filter((doc) => !exempt.has(doc))) {
+    assert.doesNotMatch(read(rel), /\b(?:adapter|plugin)s?\b/i, `${rel} uses retired host vocabulary`);
   }
+  const glossary = read('GLOSSARY.md');
+  assert.match(glossary, /_Avoid_: adapter/);
+  assert.match(glossary, /_Avoid_: 工作流包、pack、plugin/);
 });
-
-test('the retired plugin asset name survives only in the dated preflight record', () => {
-  const files = ['README.md', 'CHANGELOG.md', 'GLOSSARY.md'];
-  const walk = (dir) => {
-    for (const entry of readdirSync(join(REPO, dir), { withFileTypes: true })) {
-      const rel = `${dir}/${entry.name}`;
-      if (entry.isDirectory()) walk(rel);
-      else if (entry.name.endsWith('.md')) files.push(rel);
-    }
-  };
-  walk('docs');
-  walk('adapters');
-  for (const rel of files) {
-    if (rel === 'docs/blue-zone/preflight.md') continue;
-    assert.doesNotMatch(
-      read(rel),
-      /r2c-plugin-\d|\.r2c\/plugin\//,
-      `${rel} names the retired plugin asset or install directory`,
-    );
-  }
-});
-
-test('install doc names the four release assets and the bootstrap, not a package', () => {
-  const install = read('docs/install.md');
-  for (const asset of [
-    'r2c-engine-<V>.tgz',
-    'r2c-payload-<V>.tgz',
-    'install.mjs',
-    'SHA256SUMS.txt',
-  ]) {
-    assert.ok(install.includes(asset), `install doc does not name ${asset}`);
-  }
-  assert.match(install, /There is no npm channel and no manual\s+payload copy/);
-});
-
-// --- install.md: the four sections ----------------------------------------
-
-test('install doc covers the bootstrap, detection, payload and doctor', () => {
-  const install = read('docs/install.md');
-  assert.match(install, /gh release download v0\.1\.0 -R hesl2636\/hm2B_drvport_pipiline -p install\.mjs/);
-  assert.match(install, /node \.r2c\/bootstrap\/install\.mjs --agent claude-code --version 0\.1\.0 --project \./);
-  assert.match(install, /node ".r2c\\bootstrap\\install\.mjs"/);
-  assert.match(install, /node scripts\/install\.mjs --agent claude-code --version 0\.1\.0/);
-  assert.match(install, /AGENT_NOT_DETECTED/);
-  assert.match(install, /## Doctor/);
-  for (const id of ADAPTER_IDS) {
-    assert.ok(install.includes(`\`${id}\``), `install doc is missing adapter ${id}`);
-  }
-});
-
-test('install, upgrade, rollback and uninstall each end with the next command', () => {
-  const install = read('docs/install.md');
-  for (const heading of INSTALL_SECTIONS) {
-    const body = section(install, heading);
-    const tail = lastLine(body);
-    assert.match(tail, new RegExp(`^Next: \`(?:node|git) .+\``), `${heading} does not end with a next command: ${tail}`);
-    assert.match(tail, /bin\/r2c\.js|git status/, `${heading} next command names no engine: ${tail}`);
-  }
-  const upgrade = section(install, '## Upgrade');
-  assert.match(upgrade, /--version <new-V>/);
-  assert.match(upgrade, /engine, payload and adapters move\s+together/);
-  assert.match(upgrade, /no-op|writes nothing/, 'upgrade must name the idempotent re-run');
-  const rollback = section(install, '## Rollback');
-  assert.match(rollback, /--version <old-V>/);
-  assert.match(rollback, /not pointing `PATH` at an older engine/);
-  assert.match(rollback, /--force/);
-  assert.match(rollback, /cache\/payload-<old-V>/);
-  const uninstall = section(install, '## Uninstall');
-  assert.match(uninstall, /adapter uninstall claude-code/);
-  assert.match(uninstall, /--purge-state/);
-  assert.match(uninstall, /is \*\*kept\*\* by default/);
-  assert.match(uninstall, /receipt/);
-});
-
-test('README gives one install command per adapter', () => {
-  const readme = read('README.md');
-  const install = section(readme, '## 安装');
-  for (const id of ADAPTER_IDS) {
-    assert.ok(install.includes(`--agent ${id}`), `README has no install command for ${id}`);
-  }
-  assert.match(install, /curl\.exe --create-dirs -fL -o \.r2c\/bootstrap\/install\.mjs/);
-  assert.match(install, /GH_TOKEN/);
-  assert.match(section(readme, '## 卸载'), /adapter uninstall opencode/);
-});
-
-// --- command contract -----------------------------------------------------
-
-test('every documented node command uses flags and subcommands the CLI prints', () => {
-  const docs = [...installDocs(), 'docs/plugins.md'];
-  const seen = { node: 0, gh: 0, engine: 0 };
-  for (const rel of docs) {
-    for (const { line } of commandLines(read(rel))) {
-      const [program, second, third] = line.split(/\s+/);
-      if (program === 'gh') {
-        seen.gh += 1;
-        for (const token of line.split(/\s+/).filter((part) => part.startsWith('-'))) {
-          assert.ok(GH_FLAGS.has(token), `${rel}: gh flag ${token} is not documented gh usage`);
-        }
-        continue;
-      }
-      if (program !== 'node') continue;
-      // A shim invocation (`shims/hook.mjs`) has its own flag vocabulary.
-      if (line.includes('hook.mjs')) continue;
-      seen.node += 1;
-      for (const flag of line.matchAll(/--[a-z][a-z-]*/g)) {
-        assert.ok(HELP.flags.has(flag[0]), `${rel}: ${flag[0]} is not in r2c --help or install.mjs --help`);
-      }
-      if (second === undefined) continue;
-      if (second.endsWith('install.mjs')) {
-        assert.match(line, /--agent [a-z-]+/, `${rel}: the bootstrap requires --agent`);
-        seen.engine += 1;
-        continue;
-      }
-      if (!second.endsWith('r2c.js')) continue;
-      seen.engine += 1;
-      if (third === undefined) continue;
-      if (third === 'adapter') {
-        const sub = line.split(/\s+/)[3];
-        assert.ok(
-          ADAPTER_SUBCOMMANDS.includes(sub),
-          `${rel}: adapter subcommand ${sub} is not one of ${ADAPTER_SUBCOMMANDS.join('/')}`,
-        );
-      } else if (third !== '--version') {
-        assert.ok(HELP.topLevel.includes(third), `${rel}: ${third} is not a top-level r2c command`);
-      }
-    }
-  }
-  assert.ok(seen.node >= 10, `expected the docs to carry the real commands, saw ${seen.node}`);
-  assert.ok(seen.gh >= 2, `expected gh download commands for both platforms, saw ${seen.gh}`);
-  assert.ok(seen.engine >= 6, `expected engine entry commands, saw ${seen.engine}`);
-});
-
-test('both platform variants are separately copy-pasteable and quoting is stated', () => {
-  for (const rel of ['docs/install.md']) {
-    const text = read(rel);
-    const blocks = fencedBlocks(text);
-    assert.ok(blocks.some((block) => block.lang === 'bash'), `${rel} has no POSIX block`);
-    assert.ok(blocks.some((block) => block.lang === 'bat'), `${rel} has no Windows block`);
-    const posix = blocks.filter((block) => block.lang === 'bash').map((block) => block.body).join('\n');
-    const windows = blocks.filter((block) => block.lang === 'bat').map((block) => block.body).join('\n');
-    assert.match(posix, /mkdir -p \.r2c\/bootstrap/, `${rel} POSIX block does not create the bootstrap dir`);
-    assert.match(windows, /mkdir \.r2c\\bootstrap/, `${rel} Windows block does not create the bootstrap dir`);
-    assert.match(windows, /node "\.r2c\\bootstrap\\install\.mjs"/, `${rel} Windows block is not quoted`);
-    assert.match(text, /quote|quoted|引号/i, `${rel} does not state the quoting rule`);
-    assert.match(text, /--scope/, `${rel} does not state the scope switch`);
-  }
-});
-
-test('scopes and landing paths still match every adapter declaration', () => {
-  const install = read('docs/install.md');
-  for (const id of ADAPTER_IDS) {
-    assert.ok(install.includes(`\`${id}\``), `install doc is missing adapter ${id}`);
-    const declaration = adapter(id);
-    const row = install.split('\n').find((line) => line.startsWith(`| \`${id}\``));
-    assert.ok(row, `install doc has no landing-path row for ${id}`);
-    for (const scope of declaration.scopes) {
-      assert.ok(
-        install.includes(scope === 'user' ? '`~/' : '`<P>/'),
-        `install doc has no ${scope} landing path`,
-      );
-    }
-  }
-  assert.match(install, /--scope user/);
-  assert.match(install, /\.r2c\/engine\/<V>\//);
-  assert.match(install, /~\/\.r2c\/engine\/<V>\//);
-  assert.match(install, /~\/\.claude\//);
-  assert.match(install, /~\/\.dsh\//);
-  assert.match(install, /~\/\.omp\//);
-  assert.match(install, /~\/\.config\/opencode\//);
-});
-
-// --- offline and private --------------------------------------------------
-
-test('offline section matches the credential chain, cache and bases', () => {
-  const install = read('docs/install.md');
-  const offline = section(install, '## Offline and private downloads');
-  const ghToken = offline.indexOf('GH_TOKEN');
-  const gitHubToken = offline.indexOf('GITHUB_TOKEN');
-  const gitFill = offline.indexOf('git credential fill');
-  assert.ok(ghToken !== -1 && gitHubToken !== -1 && gitFill !== -1, 'credential chain is incomplete');
-  assert.ok(ghToken < gitHubToken && gitHubToken < gitFill, 'credential order must be GH_TOKEN → GITHUB_TOKEN → git credential fill');
-  assert.match(offline, /gh auth login/);
-  assert.match(offline, /~\/\.r2c\/cache\/payload-<V>/);
-  assert.match(offline, /--from <dir\|tgz>/);
-  assert.match(offline, /R2C_RELEASE_BASE/);
-  assert.match(offline, /--release-base <dir>/);
-  assert.match(offline, /<base>\/v<V>\/<asset>/);
-  assert.match(offline, /nothing is fetched/);
-});
-
-test('install doc still defines the B and C limitation', () => {
-  const install = read('docs/install.md');
-  assert.match(install, /## B and C have no runtime guard/);
-  assert.match(install, /cannot intercept tool calls/);
-  assert.match(install, /`\/hooks` trust/);
-});
-
-// --- forbidden literals ---------------------------------------------------
-
-test('install docs contain no yellow-zone or internal-registry literals', () => {
-  for (const rel of installDocs()) {
-    const text = read(rel);
-    for (const [label, pattern] of FORBIDDEN) {
-      assert.doesNotMatch(text, pattern, `${rel} contains ${label}`);
-    }
-    const registryHosts = text.match(/registry\.[a-z0-9.-]+/gi) ?? [];
-    for (const host of registryHosts) {
-      assert.equal(host.toLowerCase(), 'registry.npmjs.org', `${rel} names a non-public registry: ${host}`);
-    }
-  }
-});
-
-// --- docs/compat.md -------------------------------------------------------
-
-test('compat matrix matches every adapter.json engine and agent range', () => {
-  const compat = read('docs/compat.md');
-  assert.match(compat, /^# Compatibility matrix\n/);
-  assert.match(compat, /node scripts\/release\.mjs --compat/);
-  const pkg = JSON.parse(read('package.json'));
-  assert.ok(
-    compat.includes(`| Version | \`r2c-runner\`, \`r2c-payload-${pkg.version}.tgz\`, adapters | \`${pkg.version}\` |`),
-    'compat matrix version row drifted from package.json',
-  );
-  for (const id of ADAPTER_IDS) {
-    const declaration = adapter(id);
-    const engineRow = compat
-      .split('\n')
-      .find((line) => line.startsWith(`| Engine ↔ adapter |`) && line.includes(`adapters/${id}/adapter.json`));
-    assert.ok(engineRow, `compat matrix has no engine row for ${id}`);
-    assert.ok(
-      engineRow.endsWith(`| \`${declaration.requires.engine}\` |`),
-      `compat matrix engine range for ${id} is not adapter.json's ${declaration.requires.engine}`,
-    );
-    const agentRow = compat.split('\n').find((line) => line.startsWith(`| Agent | \`${id}\` (`));
-    assert.ok(agentRow, `compat matrix has no agent row for ${id}`);
-    assert.ok(
-      agentRow.endsWith(`| \`${declaration.requires.agent}\` |`),
-      `compat matrix agent range for ${id} is not adapter.json's ${declaration.requires.agent}`,
-    );
-  }
-  const nodeRow = compat.split('\n').find((line) => line.startsWith('| Node | `r2c-runner` |'));
-  assert.ok(nodeRow, 'compat matrix has no Node row');
-  assert.ok(nodeRow.includes('>=22.19.0 <23 \\|\\| >=24.0.0'), 'compat Node row drifted from engines.node');
-});
-
-// --- docs/blue-zone/preflight.md -----------------------------------------
-
-function preflightRows() {
-  const text = read('docs/blue-zone/preflight.md');
-  const rows = [];
-  for (const line of text.split('\n')) {
-    const match = /^\|\s*([ABCD]\d+)\s*\|/.exec(line);
-    if (match === null) continue;
-    const cells = line.split(/(?<!\\)\|/).map((cell) => cell.trim());
-    // '' | ID | date | command | output | verdict | executor | ''
-    rows.push({ id: match[1], cells });
-  }
-  return rows;
-}
-
-test('preflight records exactly the 47 contract rows', () => {
-  const rows = preflightRows();
-  assert.equal(rows.length, 47, `expected 47 preflight rows, found ${rows.length}`);
-  assert.deepEqual(
-    rows.map((row) => row.id),
-    PREFLIGHT_IDS,
-    'preflight rows must be A1-A14, B1-B12, C1-C15, D1-D6 in order',
-  );
-  assert.equal(new Set(rows.map((row) => row.id)).size, 47, 'preflight ids must be unique');
-});
-
-test('every preflight row carries date, command, output, verdict and executor', () => {
-  const rows = preflightRows();
-  for (const { id, cells } of rows) {
-    assert.equal(cells.length, 8, `row ${id} must have exactly six columns (ID + five fields)`);
-    const [, , date, command, output, verdict, executor] = cells;
-    assert.match(date, /^\d{4}-\d{2}-\d{2}$/, `row ${id} has no ISO date`);
-    assert.ok(command.length > 0 && command !== '-', `row ${id} has no command text`);
-    assert.ok(output.length > 0 && output !== '-', `row ${id} has no recorded output`);
-    const token = verdict.split(/[\s(（]/)[0];
-    assert.ok(VERDICTS.includes(token), `row ${id} verdict "${verdict}" is not one of ${VERDICTS.join('/')}`);
-    assert.ok(executor.length > 0 && executor !== '-', `row ${id} has no executor`);
-  }
-});
-
-test('preflight names the HITL blockers in a summary block', () => {
-  const text = read('docs/blue-zone/preflight.md');
-  assert.match(text, /## HITL blockers/);
-  const summary = text.slice(text.indexOf('## HITL blockers'));
-  for (const id of ['A1', 'A2', 'A3', 'A11', 'A12', 'A13', 'A14', 'B2', 'B8', 'B9', 'C6']) {
-    assert.ok(summary.includes(id), `HITL summary does not list ${id}`);
-  }
-});
-
-// --- links ----------------------------------------------------------------
-
-function markdownLinkTargets(rel) {
-  const text = read(rel);
-  const base = dirname(join(REPO, rel));
-  const targets = [];
-  const pattern = /\]\((?!https?:|mailto:|#)([^)\s]+)\)/g;
-  let match;
-  while ((match = pattern.exec(text)) !== null) {
-    const target = match[1].split('#')[0];
-    if (target === '') continue;
-    targets.push({ target, absolute: resolve(base, target) });
-  }
-  return targets;
-}
-
-function markdownFiles() {
-  const files = ['README.md'];
-  const walk = (dir) => {
-    for (const entry of readdirSync(join(REPO, dir), { withFileTypes: true })) {
-      const rel = `${dir}/${entry.name}`;
-      if (entry.isDirectory()) walk(rel);
-      else if (entry.name.endsWith('.md')) files.push(rel);
-    }
-  };
-  walk('docs');
-  walk('adapters');
-  return files;
-}
 
 test('every relative markdown link resolves', () => {
-  for (const rel of markdownFiles()) {
-    assert.ok(existsSync(join(REPO, rel)), `${rel} is missing`);
-    for (const { target, absolute } of markdownLinkTargets(rel)) {
-      assert.ok(existsSync(absolute), `${rel} links to missing ${target}`);
+  for (const rel of [...DOCS, ...HISTORICAL]) {
+    const text = read(rel);
+    const base = dirname(join(REPO, ...rel.split('/')));
+    for (const match of text.matchAll(/\[[^\]]*\]\(([^)#]+)(?:#[^)]*)?\)/g)) {
+      const target = match[1].trim();
+      if (/^[a-z]+:/i.test(target)) continue;
+      assert.ok(existsSync(resolve(base, target)), `${rel}: broken link ${target}`);
     }
   }
+});
+
+test('documented commands use real paths and known flags', () => {
+  for (const rel of [...DOCS, 'docs/legacy.md']) {
+    for (const line of commandLines(read(rel))) {
+      const isCommand = line.startsWith('node ') || line.startsWith('r2c ') || line.startsWith('hm2b ')
+        || line.startsWith('npm ') || line.startsWith('npx ');
+      if (!isCommand) continue;
+      if (line.startsWith('node ')) {
+        const path = line.split(/\s+/)[1].replace(/^"|"$/g, '');
+        if (path === 'install.mjs' || path.startsWith('-')) continue;
+        if (!path.startsWith('<') && !path.startsWith('.')) {
+          assert.ok(existsSync(join(REPO, ...path.split('/'))), `${rel}: node ${path} does not exist`);
+        }
+      } else if (line.startsWith('r2c ') || line.startsWith('hm2b ')
+        || line.startsWith('npx ') || line.startsWith('npm ')) {
+        assert.fail(`${rel}: unexpected command ${line}`);
+      }
+      for (const match of line.matchAll(/--[a-z][a-z-]*/g)) {
+        assert.ok(FLAGS.has(match[0]), `${rel}: unknown flag ${match[0]} in "${line}"`);
+      }
+    }
+  }
+});
+
+test('install docs describe exactly the bundle channel and the frozen legacy channel', () => {
+  const install = read('docs/install.md');
+  for (const heading of ['## Install', '## Upgrade', '## Rollback', '## Uninstall', '## Offline and private downloads']) {
+    assert.ok(install.includes(heading), `docs/install.md is missing ${heading}`);
+  }
+  assert.match(install, /--bundle/);
+  assert.match(install, /--projection/);
+  assert.match(install, /frozen|冻结|legacy/i);
+  assert.doesNotMatch(install, /\bnpx\b|\bnpm\s+install\b|\byarn\b|\bpnpm\b/);
+  // The generated web command downloads the Release and installs offline.
+  assert.match(install, /\.hm2b\/release\/bundle-/);
+  assert.match(install, /--release-base \.hm2b\/release/);
+  // Payload members are checked against the archive's own manifest.
+  assert.match(install, /`manifest\.json`/);
+  assert.doesNotMatch(install, /payload\.manifest\.json/);
+  // Uninstall is receipt-only; there is no state purge and no runtime removal.
+  assert.doesNotMatch(install, /--purge-state/);
+  assert.doesNotMatch(install, /(explicit )?runtime uninstall/i);
+});
+
+test('the historical allowlist keeps legacy and blue-zone notes, plus the dsh evidence', () => {
+  for (const rel of ['docs/legacy.md', 'docs/blue-zone/preflight.md', 'notes/99-report.md']) {
+    assert.ok(HISTORICAL.has(rel), `${rel} must stay in the historical allowlist`);
+    assert.ok(existsSync(join(REPO, ...rel.split('/'))), `${rel} is missing`);
+  }
+});
+
+test('legacy docs separate new retirement from the old takeover path', () => {
+  const legacy = read('docs/legacy.md');
+  assert.match(legacy, /\.hm2b\/install\/legacy/);
+  assert.match(legacy, /\.r2c\/install/);
+  // Historical asset names stay exactly as the old channel published them.
+  assert.match(legacy, /r2c-engine-<E>\.tgz/);
+  assert.match(legacy, /r2c-payload-<E>\.tgz/);
+});
+
+test('the dsh report keeps the first-hand Cordis evidence', () => {
+  const report = read('notes/99-report.md');
+  assert.match(report, /- insert:/);
+  assert.match(report, /allowedAgentPresets/);
+  assert.match(report, /dsh-agent-preset/);
+  assert.match(report, /dsh-persona/);
+  assert.match(report, /config\.plugins/);
+});
+
+test('docs describe the v2 bundle and compiled workflow contract', () => {
+  for (const rel of ['README.md', 'GLOSSARY.md', 'docs/layout.md']) {
+    const text = read(rel);
+    assert.match(text, /hm2b\.bundle\/v2/, `${rel} does not name hm2b.bundle/v2`);
+    assert.match(text, /hm2b\.compiled-workflow\/v2/, `${rel} does not name hm2b.compiled-workflow/v2`);
+    for (const dir of ['knowledge-base/', 'checklists/', 'hooks/hooks.json', 'mcp.json']) {
+      assert.ok(text.includes(dir), `${rel} does not document ${dir}`);
+    }
+  }
+  assert.match(read('README.md'), /4 段/);
+  assert.match(read('docs/layout.md'), /4 segments/);
+  assert.match(read('README.md'), /\.agents\/agent-native\/<bundle-id>\//);
+  const help = helpOf('bin/hm2b-assembler.js');
+  assert.match(help, /hm2b\.bundle\/v2/);
+  assert.match(help, /hm2b\.compiled-workflow\/v2/);
+});
+
+test('the layout document lists every top-level module that exists', () => {
+  const layout = read('docs/layout.md');
+  const dirs = [
+    'assembler', 'bin', 'core', 'docs', 'examples', 'installer', 'compiled', 'projection',
+    'runtime/agent-native', 'runtime/runner/contract', 'runtime/runner/engine', 'runtime/runner/projection',
+    'runtime/runner/schema', 'runtime/shared', 'scripts', 'test', 'web',
+  ];
+  for (const dir of dirs) {
+    assert.ok(layout.includes(dir), `docs/layout.md does not mention ${dir}`);
+    assert.ok(existsSync(join(REPO, ...dir.split('/'))), `${dir} does not exist`);
+  }
+  assert.ok(layout.includes('hm2b-framework'));
+  assert.ok(layout.includes('hm2b-runner'));
+});
+
+test('GLOSSARY carries the new vocabulary and marks the retired one', () => {
+  const glossary = read('GLOSSARY.md');
+  for (const term of ['bundle', 'manifest', 'stage', 'step', 'task', 'role', 'skill', 'constitution', 'compiled workflow',
+    'projection', 'target', 'capability', 'obligation', 'degradation', 'receipt', 'runtime receipt',
+    'pre-projected payload', 'canonical options', 'ownership', 'shared root', 'adopt', 'takeover']) {
+    assert.match(glossary, new RegExp(`\\*\\*${term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\*\\*|^\\| \`?${term}`, 'im'), `GLOSSARY is missing ${term}`);
+  }
+  assert.match(glossary, /retired|退役/i);
+});
+
+test('GLOSSARY defines the placeholder and install vocabulary', () => {
+  const glossary = read('GLOSSARY.md');
+  for (const term of ['placeholder', 'projection options', 'install root', 'install identity']) {
+    const pattern = new RegExp(`^\\*\\*${term}\\*\\*:`, 'm');
+    assert.match(glossary, pattern, `GLOSSARY is missing ${term}`);
+  }
+  assert.match(glossary, /^## 领域$/m);
+  assert.match(glossary, /^## 退役词汇$/m);
+});
+
+test('CHANGELOG records the P6 cutover', () => {
+  const changelog = read('CHANGELOG.md');
+  assert.match(changelog, /## \[0\.1\.0\]/);
+  assert.match(changelog, /P6|cutover/i);
+});
+
+test('the compatibility document is the generated framework/engine/projection matrix', () => {
+  const compat = read('docs/compat.md');
+  assert.match(compat, /\| Framework \| `hm2b-framework` \| `0\.1\.0` \|/);
+  assert.match(compat, /\| Engine \| `hm2b-runner` \| `0\.1\.0` \|/);
+  assert.match(compat, /\| Projection \| `agent-native` \|/);
+  assert.match(compat, /\| Projection \| `runner` \|/);
+  assert.doesNotMatch(compat, /adapter/i);
 });

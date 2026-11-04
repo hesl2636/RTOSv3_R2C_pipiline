@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hm2b.runner/schema/latest.schema.json",
+  "title": "hm2b.latest/v1",
+  "description": "Session routing index (`.hm2b/latest.json`). Route data only: status lives in each run's state.json. A missing or unknown schema is treated as an empty index.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "runs", "active_run_id", "latest_run_id"],
+  "properties": {
+    "schema": { "const": "hm2b.latest/v1" },
+    "runs": {
+      "type": "object",
+      "description": "Keyed by session id (real, or synthetic cli-<runId> until claimed).",
+      "additionalProperties": { "$ref": "#/$defs/route" }
+    },
+    "active_run_id": {
+      "type": ["string", "null"],
+      "description": "Most recent run with an active route, for read-only commands without a session id."
+    },
+    "latest_run_id": {
+      "type": ["string", "null"],
+      "description": "Most recent run regardless of activity."
+    }
+  },
+  "$defs": {
+    "route": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["active_run_id", "latest_run_id"],
+      "properties": {
+        "active_run_id": { "type": ["string", "null"] },
+        "latest_run_id": { "type": ["string", "null"] }
+      }
+    }
+  }
+}

@@ -1,0 +1,457 @@
+/**
+ * agent-native dsh target (#99, spec §11 row 7, decisions #71 §3.2/#10.1 as
+ * amended by #82, #72 §5).
+ *
+ * v1 fallback: dsh gets the shared `.agents/skills` tree plus one aggregate
+ * role catalogue at `.dsh/agent-native/<ns>.roles.md`; no preset lines, no
+ * `insert:` keys, no `allowedAgentPresets`, `subagents = unavailable`.
+ */
+import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join, resolve } from 'node:path';
+import { test } from 'node:test';
+import { fileURLToPath } from 'node:url';
+import { compileBundle } from '../assembler/compile.js';
+import { canonicalJson } from '../core/canonical-json.js';
+import { inflateRaw } from '../core/node/inflate.js';
+import { sha256Hex } from '../core/node/sha256.js';
+import { normalizeOptions } from '../projection/options.js';
+import { project } from '../projection/project.js';
+import { getProjection } from '../projection/registry.js';
+import { validateResult } from '../projection/validate-result.js';
+import { AGENT_NATIVE_MANIFEST } from '../runtime/agent-native/projection/manifest.js';
+import { TARGETS } from '../runtime/agent-native/projection/targets/index.js';
+import { apply as applyDshPlugin } from '../runtime/agent-native/targets/dsh/assets/index.mjs';
+import { placeholderInstructions } from '../runtime/shared/placeholder.js';
+
+const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const ZIP = join(ROOT, 'examples/rtosv3/dist/bundle-rtosv3-drvport-v1.0.0.zip');
+const MANIFEST = getProjection('agent-native');
+const sha256 = (text) => createHash('sha256').update(Buffer.from(text, 'utf8')).digest('hex');
+
+const CAPABILITIES = [
+  'state', 'gates', 'outputs', 'subagents', 'skills', 'preload',
+  'stage-invocation', 'skill-invocation',
+];
+const NS = 'rtosv3-drvport';
+const CATALOGUE = '.dsh/agent-native/roles.md';
+const BANNER = [
+  `# agent-native · ${NS} · dsh 角色目录`,
+  '',
+  '> **说明（v1 回退）** dsh 没有文件形态的角色定义，本目录不是 dsh 原生 agent preset，也不会自动生效：投影不猜 Cordis patch 的行键名与插件 id。',
+  `> **用法** dsh 主会话按角色段落执行：派发任务时把该段落正文当作系统提示；角色正文与 \`.agents/agent-native/${NS}/roles.json\` 的对应记录一致。`,
+].join('\n');
+
+let sample;
+function sampleCompiledWorkflow() {
+  if (sample !== undefined) return sample;
+  const compiled = compileBundle(new Uint8Array(readFileSync(ZIP)), { inflateRaw, sha256: sha256Hex });
+  assert.equal(compiled.ok, true);
+  sample = { compiledWorkflow: JSON.parse(new TextDecoder().decode(compiled.compiledWorkflowBytes)), compiledWorkflowDigest: compiled.digest };
+  return sample;
+}
+
+function runProject({ compiledWorkflow, compiledWorkflowDigest, raw }) {
+  const normalized = normalizeOptions({ projectionId: 'agent-native', compiledWorkflow, compiledWorkflowDigest, raw, manifest: MANIFEST });
+  assert.equal(normalized.ok, true, JSON.stringify(normalized.errors));
+  return project({
+    projectionId: 'agent-native',
+    compiledWorkflow,
+    compiledWorkflowDigest,
+    options: normalized.options,
+    environment: {},
+    assets: {},
+  });
+}
+
+function dshSample() {
+  const { compiledWorkflow, compiledWorkflowDigest } = sampleCompiledWorkflow();
+  return { compiledWorkflow, compiledWorkflowDigest, result: runProject({ compiledWorkflow, compiledWorkflowDigest, raw: { targets: ['dsh'] } }) };
+}
+
+const source = (path, fill) => ({ path, sha256: fill.repeat(64) });
+
+function miniCompiledWorkflow({ roles, stages, skills = {} } = {}) {
+  const roleRecord = roles ?? {
+    worker: {
+      description: 'Runs the miniature step.',
+      mode: 'subagent',
+      placeholder: false,
+      instructions: '\nDo the work.\n',
+      source: source('roles/worker.md', 'd'),
+    },
+  };
+  return {
+    schema: 'hm2b.compiled-workflow/v2',
+    id: 'mini',
+    name: 'Mini workflow',
+    version: '1.0.0',
+    description: 'A miniature workflow used by dsh projection tests.',
+    source: {
+      bundle: { schema: 'hm2b.bundle/v1', id: 'mini', version: '1.0.0', contentSha256: 'b'.repeat(64) },
+      manifest: { path: 'bundle.json', sha256: 'c'.repeat(64) },
+    },
+    stages: stages ?? [{
+      id: 'one',
+      name: 'One',
+      steps: [{
+        id: 'one',
+        name: 'Step one',
+        role: Object.keys(roleRecord)[0],
+        task: 'one-task',
+        skills: [],
+        outputs: [],
+        gates: [],
+      }],
+    }],
+    roles: roleRecord,
+    tasks: {
+      'one-task': {
+        body: [
+          '## Agent 角色设定', '', '你是执行者。', '',
+          '## 任务', '', '执行一步。', '',
+          '## 约束条件', '', '- 只做一步', '',
+          '## 提交', '', '```', '{{submit}}', '```', '',
+        ].join('\n'),
+        source: source('tasks/one-task.md', 'e'),
+      },
+    },
+    skills,
+    constitution: [],
+  };
+}
+
+// --- the file set ---------------------------------------------------------
+
+test('dsh-only baseline: 42 files = 40 shared skills + role catalogue + roles.json', () => {
+  const { result } = dshSample();
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.targets, ['dsh']);
+  assert.equal(result.files.length, 42);
+  assert.equal(result.installPlan.steps.length, 42);
+
+  const paths = result.files.map((file) => file.path);
+  assert.equal(new Set(paths).size, paths.length);
+  assert.equal(paths.filter((path) => path.startsWith('.agents/skills/')).length, 40);
+  assert.equal(paths.filter((path) => path === CATALOGUE).length, 1);
+  assert.deepEqual(paths.filter((path) => path.startsWith('.agents/agent-native/')), [
+    `.agents/agent-native/${NS}/roles.json`,
+  ]);
+  for (const path of paths) {
+    assert.match(path, /^\.(?:agents|dsh)\//);
+    assert.doesNotMatch(path, /(?:^|\/)(?:CLAUDE\.md|AGENTS\.md|RULES\.md|opencode\.json|commands)(?:\/|$)/);
+    assert.doesNotMatch(path, /^\.hm2b\//);
+  }
+
+  const kinds = new Map();
+  for (const file of result.files) kinds.set(file.kind, (kinds.get(file.kind) ?? 0) + 1);
+  assert.deepEqual(Object.fromEntries(kinds), { metadata: 1, role: 1, skill: 35, stage: 4, workflow: 1 });
+});
+
+test('shared skills are byte-identical to the claude-code copies', () => {
+  const { compiledWorkflow, compiledWorkflowDigest } = sampleCompiledWorkflow();
+  const claude = runProject({ compiledWorkflow, compiledWorkflowDigest, raw: { targets: ['claude-code'] } });
+  const shared = runProject({ compiledWorkflow, compiledWorkflowDigest, raw: { targets: ['dsh'] } });
+  const byPath = new Map(claude.files.map((file) => [file.path, file.content]));
+  let compared = 0;
+  for (const file of shared.files.filter((item) => item.path.startsWith('.agents/skills/'))) {
+    const twin = file.path.replace(/^\.agents\/skills\//, '.claude/skills/');
+    assert.equal(file.content, byPath.get(twin), file.path);
+    compared += 1;
+  }
+  assert.equal(compared, 40);
+  for (const file of shared.files.filter((item) => item.path.startsWith('.agents/skills/'))) {
+    assert.deepEqual(file.targets, ['dsh']);
+  }
+});
+
+// --- the catalogue --------------------------------------------------------
+
+test('the catalogue has the fixed banner and one section per role in role-id order', () => {
+  const { compiledWorkflow, result } = dshSample();
+  const file = result.files.find((item) => item.path === CATALOGUE);
+  assert.equal(file.kind, 'role');
+  assert.deepEqual(file.targets, ['dsh']);
+  assert.equal(file.mode, 0o644);
+  assert.equal(file.origin, 'generated');
+
+  assert.ok(file.content.startsWith(`${BANNER}\n\n`), 'fixed banner');
+  const roleIds = Object.keys(compiledWorkflow.roles).sort();
+  const headings = roleIds.map((id) => `## ${id}\n`);
+  let cursor = file.content.indexOf(BANNER) + BANNER.length;
+  for (const [index, roleId] of roleIds.entries()) {
+    const role = compiledWorkflow.roles[roleId];
+    const heading = file.content.indexOf(headings[index], cursor);
+    assert.ok(heading > cursor, `heading order at ${roleId}`);
+    const instructions = role.placeholder === true ? placeholderInstructions(roleId) : role.instructions;
+    const body = file.content.indexOf(instructions, heading);
+    assert.ok(body > heading, `body of ${roleId}`);
+    assert.ok(file.content.includes(`- 角色 id：\`${roleId}\``), `id line of ${roleId}`);
+    assert.ok(file.content.includes(`- 描述：${role.description}`), `description of ${roleId}`);
+    assert.ok(file.content.includes(`- 展示名：${role.title}`), `title of ${roleId}`);
+    assert.ok(file.content.includes('- 模式：subagent'), 'mode line');
+    cursor = body + instructions.length;
+  }
+});
+
+test('the catalogue is not a dsh preset: no patch rows, plugin ids or preset allowlists', () => {
+  const { result } = dshSample();
+  const content = result.files.find((item) => item.path === CATALOGUE).content;
+  assert.doesNotMatch(content, /^\s*-?\s*insert:/m);
+  assert.doesNotMatch(content, /allowedAgentPresets/);
+  assert.doesNotMatch(content, /dsh-agent-preset|dsh-persona|dsh-tool-subagent|agent-preset/);
+  assert.doesNotMatch(content, /^\s*plugin:/m);
+  assert.doesNotMatch(content, /^\s*- id:/m);
+  assert.equal(result.files.some((file) => file.path.endsWith('.cordis.patch.yml')), false);
+});
+
+test('role bodies stay byte-verbatim (awkward whitespace, placeholders)', () => {
+  const roles = {
+    gamma: {
+      description: 'Third alphabetically.',
+      mode: 'subagent',
+      placeholder: false,
+      instructions: '\nline one  \n\n\tkeep the tab\nlast line without a final newline',
+      source: source('roles/gamma.md', '1'),
+    },
+    alpha: {
+      description: 'First alphabetically.',
+      mode: 'any',
+      placeholder: false,
+      instructions: 'Second body\n\n\nwith blank lines\n',
+      source: source('roles/alpha.md', '2'),
+    },
+    beta: {
+      description: 'A placeholder role.',
+      mode: 'subagent',
+      placeholder: true,
+      instructions: 'ignored draft body',
+      source: source('roles/beta.md', '3'),
+    },
+  };
+  const compiledWorkflow = miniCompiledWorkflow({ roles });
+  const result = runProject({ compiledWorkflow, compiledWorkflowDigest: 'f'.repeat(64), raw: { targets: ['dsh'] } });
+  assert.equal(result.ok, true);
+  const content = result.files.find((file) => file.path === '.dsh/agent-native/roles.md').content;
+  const sections = content.split('\n## ').slice(1);
+  assert.deepEqual(sections.map((section) => section.split('\n')[0]), [
+    'alpha', 'beta', 'gamma',
+  ]);
+  assert.ok(content.includes(roles.alpha.instructions));
+  assert.ok(content.includes(placeholderInstructions('beta')));
+  assert.ok(content.includes(roles.gamma.instructions));
+  assert.equal(content.includes(roles.beta.instructions), false, 'the draft placeholder body is replaced');
+  for (const record of Object.entries(result.metadata.idMap?.dsh?.roles ?? {})) {
+    assert.equal(record[1], record[0]);
+  }
+});
+
+test('R = 0 produces no catalogue but still emits roles.json', () => {
+  const compiledWorkflow = miniCompiledWorkflow({ roles: {} });
+  const result = runProject({ compiledWorkflow, compiledWorkflowDigest: 'f'.repeat(64), raw: { targets: ['dsh'] } });
+  assert.equal(result.ok, true);
+  assert.equal(result.files.some((file) => file.path.endsWith('.roles.md')), false);
+  assert.equal(result.files.some((file) => file.path === '.dsh/agent-native/roles.md'), false);
+  assert.deepEqual(result.files.map((file) => file.path).filter((path) => path.startsWith('.dsh/')), []);
+  const rolesJson = result.files.find((file) => file.path === '.agents/agent-native/mini/roles.json');
+  assert.ok(rolesJson);
+  assert.deepEqual(JSON.parse(rolesJson.content).targets.dsh.roles, []);
+});
+
+// --- roles.json and the capability surface --------------------------------
+
+test('roles.json has a complete dsh section that points at the catalogue', () => {
+  const { compiledWorkflow, result } = dshSample();
+  const file = result.files.find((item) => item.path === `.agents/agent-native/${NS}/roles.json`);
+  const roles = JSON.parse(file.content);
+  assert.deepEqual(Object.keys(roles.targets), ['dsh']);
+  const section = roles.targets.dsh;
+  assert.equal(section.namespace, NS);
+  const roleIds = Object.keys(compiledWorkflow.roles).sort();
+  assert.deepEqual(section.roles.map((role) => role.id), roleIds);
+  const catalogue = result.files.find((item) => item.path === CATALOGUE).content;
+  for (const role of section.roles) {
+    assert.equal(role.name, result.metadata.idMap.dsh.roles[role.id]);
+    assert.equal(role.placeholder, compiledWorkflow.roles[role.id].placeholder);
+    assert.deepEqual(role.artifact, {
+      path: CATALOGUE,
+      format: 'md',
+      sha256: sha256(catalogue),
+    });
+    for (const [field, state] of Object.entries(role.fields)) {
+      if (state.state !== 'degraded' && state.state !== 'unavailable') continue;
+      const record = result.degradations.find((item) => item.target === 'dsh'
+        && item.pointer === `/roles/${role.id}`
+        && item.field === field
+        && item.level === state.state);
+      assert.ok(record, `${role.id}/${field}`);
+    }
+  }
+  const summary = { roles: section.roles.length, native: 0, adapted: 0, degraded: 0, unavailable: 0 };
+  for (const role of section.roles) for (const state of Object.values(role.fields)) summary[state.state] += 1;
+  assert.deepEqual(section.summary, summary);
+});
+
+test('dsh capability report: subagents unavailable, every use point carries a degradation', () => {
+  const { compiledWorkflow, result } = dshSample();
+  assert.deepEqual(result.capabilityReport.map((row) => row.capability), CAPABILITIES);
+  const levels = Object.fromEntries(result.capabilityReport.map((row) => [row.capability, row.level]));
+  assert.deepEqual(levels, {
+    state: 'unavailable',
+    gates: 'degraded',
+    outputs: 'degraded',
+    subagents: 'unavailable',
+    skills: 'adapted',
+    preload: 'unavailable',
+    'stage-invocation': 'native',
+    'skill-invocation': 'native',
+  });
+
+  const subagents = result.capabilityReport.find((row) => row.capability === 'subagents');
+  const expectedUses = compiledWorkflow.stages.flatMap((stage, stageIndex) => stage.steps.flatMap((step, stepIndex) => (
+    step.role === undefined ? [] : [`/stages/${stageIndex}/steps/${stepIndex}/role`]
+  )));
+  assert.deepEqual(subagents.uses, expectedUses);
+  for (const use of subagents.uses) {
+    const record = result.degradations.find((item) => item.target === 'dsh'
+      && item.capability === 'subagents'
+      && item.pointer === use
+      && item.level === 'unavailable');
+    assert.ok(record, use);
+    assert.equal(record.code, 'CAP_SUBAGENTS_UNAVAILABLE');
+  }
+
+  const preload = result.degradations.filter((item) => item.capability === 'preload');
+  assert.deepEqual(preload, [], 'the sample roles preload no skills');
+
+  const withPreload = miniCompiledWorkflow({
+    roles: {
+      worker: {
+        description: 'Preloads one skill.',
+        mode: 'subagent',
+        placeholder: false,
+        instructions: '\nDo the work.\n',
+        skills: ['helper'],
+        source: source('roles/worker.md', 'd'),
+      },
+    },
+    skills: {
+      helper: {
+        description: 'Helps.',
+        placeholder: false,
+        body: '\n# Helper\n',
+        source: source('skills/helper/SKILL.md', 'a'),
+      },
+    },
+  });
+  const preloaded = runProject({ compiledWorkflow: withPreload, compiledWorkflowDigest: 'f'.repeat(64), raw: { targets: ['dsh'] } });
+  const records = preloaded.degradations.filter((item) => item.capability === 'preload');
+  assert.equal(records.length, 1);
+  assert.equal(records[0].code, 'CAP_PRELOAD_UNAVAILABLE');
+  assert.equal(records[0].level, 'unavailable');
+  assert.equal(records[0].pointer, '/roles/worker/skills/0');
+  assert.equal(records[0].field, 'skills');
+});
+
+// --- contract checks ------------------------------------------------------
+
+test('deterministic: the same input twice is byte-identical', () => {
+  const first = dshSample().result;
+  const second = runProject({ ...sampleCompiledWorkflow(), raw: { targets: ['dsh'] } });
+  assert.equal(JSON.stringify(second), JSON.stringify(first));
+});
+
+test('V1–V12 pass and the manifest declares the dsh target', () => {
+  const { compiledWorkflow, compiledWorkflowDigest, result } = dshSample();
+  const validation = validateResult(result, { compiledWorkflow, compiledWorkflowDigest, options: result.options, manifest: MANIFEST });
+  assert.equal(validation.ok, true, JSON.stringify(validation.diagnostics, null, 2));
+
+  const onDisk = readFileSync(join(ROOT, 'runtime/agent-native/projection/projection.json'), 'utf8');
+  assert.equal(onDisk, canonicalJson(AGENT_NATIVE_MANIFEST));
+  const dsh = MANIFEST.targets.find((target) => target.id === 'dsh');
+  assert.ok(dsh);
+  assert.equal(dsh.name, 'DeepSeek Harness');
+  assert.equal(dsh.capabilities.subagents.level, 'unavailable');
+  assert.equal(dsh.capabilities.preload.level, 'unavailable');
+  assert.ok(MANIFEST.writeRoots.includes('.dsh/agent-native'));
+  assert.equal(MANIFEST.writeRoots.some((root) => /\.cordis\.patch\.yml$/.test(root)), false);
+
+  assert.equal(TARGETS.dsh.capabilities.subagents, 'unavailable');
+  assert.equal(TARGETS.dsh.layout.skillsRoot, '.agents/skills');
+});
+
+// --- the native plugin ----------------------------------------------------
+
+test('dsh /hm2b-run passes rawInput as one literal argv element, never shell syntax', async (t) => {
+  const base = mkdtempSync(join(tmpdir(), 'hm2b-dsh-plugin-'));
+  t.after(() => rmSync(base, { recursive: true, force: true }));
+  const projectRoot = join(base, 'project with spaces');
+  const payloadHome = join(base, 'payload with spaces');
+  const runnerDir = join(base, 'runner dir');
+  mkdirSync(join(payloadHome, 'commands'), { recursive: true });
+  mkdirSync(projectRoot, { recursive: true });
+  mkdirSync(runnerDir, { recursive: true });
+  writeFileSync(
+    join(payloadHome, 'commands', 'hm2b-run.md'),
+    '---\ndescription: Start a run\n---\n',
+  );
+  const recorder = join(runnerDir, 'record runner.mjs');
+  const argvFile = join(base, 'argv.jsonl');
+  writeFileSync(
+    recorder,
+    [
+      "import { appendFileSync } from 'node:fs';",
+      "process.stdin.on('data', () => {});",
+      "process.stdin.on('end', () => {",
+      "  appendFileSync(process.env.HM2B_ARGV_OUT, `${JSON.stringify({ argv: process.argv.slice(2), cwd: process.cwd() })}\\n`);",
+      '});',
+      '',
+    ].join('\n'),
+  );
+  process.env.HM2B_ARGV_OUT = argvFile;
+  t.after(() => { delete process.env.HM2B_ARGV_OUT; });
+
+  const registered = [];
+  applyDshPlugin(
+    {
+      get: (service) => (service === 'commands'
+        ? { register: (spec) => registered.push(spec) }
+        : undefined),
+      on: () => {},
+    },
+    { runnerCmd: `node "${recorder}"`, projectRoot, payloadHome },
+  );
+
+  const command = registered.find((spec) => spec.name === 'hm2b-run');
+  assert.ok(command, 'hm2b-run must register');
+  const rawInput = '$(touch PWNED) `touch PWNED2` & echo "x y"';
+  const sessionId = 'sid with spaces $(echo nope)';
+  const result = await command.handler({
+    rawInput,
+    agent: { session: { id: sessionId } },
+  });
+
+  assert.equal(result.kind, 'success', result.text);
+  const records = readFileSync(argvFile, 'utf8')
+    .split(/\r?\n/)
+    .filter((line) => line.trim() !== '')
+    .map((line) => JSON.parse(line));
+  assert.equal(records.length, 1);
+  assert.deepEqual(records[0].argv, [
+    'run', '--input', rawInput, '--project-root', projectRoot, '--session-id', sessionId,
+  ]);
+  assert.equal(records[0].cwd, projectRoot);
+  for (const name of ['PWNED', 'PWNED2']) {
+    assert.equal(existsSync(join(projectRoot, name)), false, `${name} must never be created`);
+    assert.equal(existsSync(join(base, name)), false, `${name} must never be created`);
+  }
+});

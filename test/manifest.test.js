@@ -15,11 +15,11 @@ import { fileURLToPath } from 'node:url';
 import { writeTwoStepProject } from './helpers/two-step.js';
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const BIN = join(REPO, 'bin', 'r2c.js');
+const BIN = join(REPO, 'runtime', 'runner', 'engine', 'bin', 'hm2b.js');
 
 function tempProject(t) {
-  const root = mkdtempSync(join(tmpdir(), 'r2c-manifest-project-'));
-  const outside = mkdtempSync(join(tmpdir(), 'r2c-manifest-outside-'));
+  const root = mkdtempSync(join(tmpdir(), 'hm2b-manifest-project-'));
+  const outside = mkdtempSync(join(tmpdir(), 'hm2b-manifest-outside-'));
   t.after(() => {
     rmSync(root, { recursive: true, force: true });
     rmSync(outside, { recursive: true, force: true });
@@ -31,8 +31,8 @@ function tempProject(t) {
 
 function cleanEnv(extra = {}) {
   const env = { ...process.env, ...extra };
-  delete env.R2C_SESSION_ID;
-  delete env.R2C_PROJECT_ROOT;
+  delete env.HM2B_SESSION_ID;
+  delete env.HM2B_PROJECT_ROOT;
   return env;
 }
 
@@ -63,7 +63,7 @@ function writeTask(root, name, text) {
   return file;
 }
 
-const BROKEN = `schema: r2c.workflow/v1
+const BROKEN = `schema: hm2b.workflow/v1
 id: broken
 name: broken
 unexpected: true
@@ -91,7 +91,7 @@ stages:
           - command: ''
 `;
 
-const VALID_TWO_STEP = `schema: r2c.workflow/v1
+const VALID_TWO_STEP = `schema: hm2b.workflow/v1
 id: workflow-manifest-test
 name: manifest-test
 version: 0.1.0
@@ -176,7 +176,7 @@ test('validate reports five-plus distinct error classes in one pass', (t) => {
   assert.equal(text.stdout, '');
   assert.match(text.stderr, /^error: unexpected: unknown key: unexpected \[UNKNOWN_KEY\]$/m);
   assert.match(text.stderr, /^error: stages\[0\]\.steps\[0\]\.taskFile: /m);
-  assert.match(text.stderr, /^r2c: manifest invalid: /m);
+  assert.match(text.stderr, /^hm2b: manifest invalid: /m);
 });
 
 test('two discovered manifests make run exit 2 and list candidates', (t) => {
@@ -199,7 +199,7 @@ test('two discovered manifests make run exit 2 and list candidates', (t) => {
   assert.deepEqual(envelope.error.details.candidates, ['a.yaml', 'b.yaml']);
   assert.match(envelope.error.message, /a\.yaml/);
   assert.match(envelope.error.message, /b\.yaml/);
-  assert.equal(existsSync(join(project.root, '.r2c')), false);
+  assert.equal(existsSync(join(project.root, '.hm2b')), false);
 });
 
 test('missing taskFile is rejected by validate and by run before writes', (t) => {
@@ -227,7 +227,7 @@ test('missing taskFile is rejected by validate and by run before writes', (t) =>
     run.envelope.data.errors.some((error) => error.code === 'TASKFILE_MISSING'),
     JSON.stringify(run.envelope.data),
   );
-  assert.equal(existsSync(join(project.root, '.r2c')), false);
+  assert.equal(existsSync(join(project.root, '.hm2b')), false);
 });
 
 test('missing skill warns but validates and still starts a run', (t) => {
@@ -260,7 +260,7 @@ test('expect.outputs targeting skills/** or SKILL.md is rejected', (t) => {
   writeManifest(
     project.root,
     'one.yaml',
-    `schema: r2c.workflow/v1
+    `schema: hm2b.workflow/v1
 id: outputs
 name: outputs
 stages:
@@ -296,7 +296,7 @@ test('empty stages and empty step lists are reported', (t) => {
   writeManifest(
     project.root,
     'empty-stages.yaml',
-    `schema: r2c.workflow/v1
+    `schema: hm2b.workflow/v1
 id: empty
 name: empty
 stages: []
@@ -312,7 +312,7 @@ stages: []
   writeManifest(
     project.root,
     'empty-steps.yaml',
-    `schema: r2c.workflow/v1
+    `schema: hm2b.workflow/v1
 id: empty-steps
 name: empty-steps
 stages:
@@ -335,7 +335,7 @@ test('prompt and shell payloads are mutually exclusive and shell needs timeout',
   writeManifest(
     project.root,
     'payloads.yaml',
-    `schema: r2c.workflow/v1
+    `schema: hm2b.workflow/v1
 id: payloads
 name: payloads
 stages:
@@ -375,8 +375,8 @@ stages:
 });
 
 test('--manifest derives the manifest root from the manifest path', (t) => {
-  const base = mkdtempSync(join(tmpdir(), 'r2c-manifest-root-'));
-  const projectRoot = mkdtempSync(join(tmpdir(), 'r2c-manifest-state-'));
+  const base = mkdtempSync(join(tmpdir(), 'hm2b-manifest-root-'));
+  const projectRoot = mkdtempSync(join(tmpdir(), 'hm2b-manifest-state-'));
   t.after(() => {
     rmSync(base, { recursive: true, force: true });
     rmSync(projectRoot, { recursive: true, force: true });
@@ -387,7 +387,7 @@ test('--manifest derives the manifest root from the manifest path', (t) => {
   const manifest = join(base, 'pack', 'workflows', 'explicit.yaml');
   writeFileSync(
     manifest,
-    `schema: r2c.workflow/v1
+    `schema: hm2b.workflow/v1
 id: explicit-root
 name: explicit-root
 stages:
@@ -415,8 +415,8 @@ stages:
   );
   assert.equal(run.result.status, 0, run.result.stderr);
   assert.match(run.envelope.data.text, /根目录推导检查。/);
-  assert.equal(existsSync(join(projectRoot, '.r2c', 'latest.json')), true);
-  assert.equal(existsSync(join(base, 'pack', '.r2c')), false);
+  assert.equal(existsSync(join(projectRoot, '.hm2b', 'latest.json')), true);
+  assert.equal(existsSync(join(base, 'pack', '.hm2b')), false);
 });
 
 test('default discovery rooted at --project-root resolves task files there', (t) => {

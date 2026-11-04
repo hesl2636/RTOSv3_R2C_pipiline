@@ -1,0 +1,712 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hm2b.runner/schema/projection-result/v1",
+  "title": "hm2b.projection-result/v1",
+  "description": "Projection result envelope: a success with files and an install plan, or a failure with errors and no files. Documentation only: projection/validate-result.js is authoritative for success results and projection/project.js assembles both branches.",
+  "$comment": "Rules the validator enforces and this document does not express: top-level member order is fixed by projection/result-fields.js; options must echo the resolved input field by field; environment must echo the input; targets must be the resolved option targets; coverage must cover every compiled workflow step exactly once in the applied stage order; files are ordered by path; targets are a non-empty subset of result.targets; paths must stay inside the manifest writeRoots (bundle asset roots are declared only by the projection that emits them: runner at the project root, agent-native under its namespace) without case-folded collisions or file/directory conflicts; content is LF text without a BOM plus one trailing LF and without a submit marker residue; modes are 0644 or 0755; installPlan has exactly one write per file; capabilityReport is selected targets times the eight capabilities in fixed order; degradation pointers must resolve in the compiled workflow; metadata.placeholders must equal the compiled workflow placeholder set.",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/success"
+    },
+    {
+      "$ref": "#/$defs/failure"
+    }
+  ],
+  "$defs": {
+    "success": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "ok",
+        "projection",
+        "compiledWorkflow",
+        "options",
+        "environment",
+        "targets",
+        "coverage",
+        "files",
+        "installPlan",
+        "capabilityReport",
+        "degradations",
+        "warnings",
+        "metadata"
+      ],
+      "properties": {
+        "schema": {
+          "const": "hm2b.projection-result/v1"
+        },
+        "ok": {
+          "const": true
+        },
+        "projection": {
+          "$ref": "#/$defs/projectionRef"
+        },
+        "compiledWorkflow": {
+          "$ref": "#/$defs/compiledWorkflowRef"
+        },
+        "options": {
+          "$ref": "#/$defs/options"
+        },
+        "environment": {
+          "$ref": "#/$defs/environment"
+        },
+        "targets": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "coverage": {
+          "$ref": "#/$defs/coverage"
+        },
+        "files": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/file"
+          }
+        },
+        "installPlan": {
+          "$ref": "#/$defs/installPlan"
+        },
+        "capabilityReport": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/capabilityReportEntry"
+          }
+        },
+        "degradations": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/degradation"
+          }
+        },
+        "warnings": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/warning"
+          }
+        },
+        "metadata": {
+          "$ref": "#/$defs/metadata"
+        }
+      }
+    },
+    "failure": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "ok",
+        "projection",
+        "compiledWorkflow",
+        "errors"
+      ],
+      "properties": {
+        "schema": {
+          "const": "hm2b.projection-result/v1"
+        },
+        "ok": {
+          "const": false
+        },
+        "projection": {
+          "$ref": "#/$defs/projectionRef"
+        },
+        "compiledWorkflow": {
+          "$ref": "#/$defs/compiledWorkflowRefFailure"
+        },
+        "errors": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/error"
+          }
+        }
+      }
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+      "maxLength": 64
+    },
+    "bundleId": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+      "maxLength": 40,
+      "not": {
+        "const": "hm2b"
+      }
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z][0-9A-Za-z.-]*)?$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "code": {
+      "type": "string",
+      "pattern": "^[A-Z][A-Z0-9_]{2,63}$"
+    },
+    "projectionRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "version"
+      ],
+      "properties": {
+        "id": {
+          "enum": [
+            "runner",
+            "agent-native"
+          ]
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "compiledWorkflowRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "version",
+        "digest",
+        "contentSha256"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/bundleId"
+        },
+        "version": {
+          "$ref": "#/$defs/version"
+        },
+        "digest": {
+          "$ref": "#/$defs/sha256"
+        },
+        "contentSha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "compiledWorkflowRefFailure": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "A failure is emitted before the compiled workflow is trusted, so the echoed identity fields may be null.",
+      "required": [
+        "id",
+        "version",
+        "digest",
+        "contentSha256"
+      ],
+      "properties": {
+        "id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+          "maxLength": 40
+        },
+        "version": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z][0-9A-Za-z.-]*)?$"
+        },
+        "digest": {
+          "$ref": "#/$defs/sha256"
+        },
+        "contentSha256": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "options": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "projection",
+        "compiledWorkflow",
+        "stageOrder",
+        "skills",
+        "targets",
+        "extra"
+      ],
+      "properties": {
+        "schema": {
+          "const": "hm2b.projection-options/v1"
+        },
+        "projection": {
+          "enum": [
+            "runner",
+            "agent-native"
+          ]
+        },
+        "compiledWorkflow": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "digest",
+            "id",
+            "version"
+          ],
+          "properties": {
+            "digest": {
+              "$ref": "#/$defs/sha256"
+            },
+            "id": {
+              "$ref": "#/$defs/bundleId"
+            },
+            "version": {
+              "$ref": "#/$defs/version"
+            }
+          }
+        },
+        "stageOrder": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "skills": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "targets": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "extra": {
+          "type": "object"
+        }
+      }
+    },
+    "environment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "engineVersion"
+      ],
+      "properties": {
+        "engineVersion": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Echoed input; only the runner target reads it (compiledWorkflow.requires.engine)."
+        }
+      }
+    },
+    "coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "stages",
+        "steps"
+      ],
+      "properties": {
+        "stages": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "steps": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        }
+      }
+    },
+    "file": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "targets",
+        "kind",
+        "content",
+        "mode",
+        "origin"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Project-root relative POSIX path inside the manifest writeRoots; bundle assets live at their declared paths (runner: project root, agent-native: under the namespace root)."
+        },
+        "targets": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "kind": {
+          "enum": [
+            "workflow",
+            "stage",
+            "task",
+            "role",
+            "skill",
+            "constitution",
+            "knowledge",
+            "checklist",
+            "hooks",
+            "mcp",
+            "agent",
+            "command",
+            "rules",
+            "metadata",
+            "readme",
+            "other"
+          ]
+        },
+        "content": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Final UTF-8 text: LF only, no BOM, ends with one LF."
+        },
+        "mode": {
+          "enum": [
+            420,
+            493
+          ],
+          "description": "0644 (420) or 0755 (493)."
+        },
+        "origin": {
+          "enum": [
+            "generated",
+            "asset"
+          ]
+        },
+        "assetId": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Required when origin is asset."
+        }
+      }
+    },
+    "installPlan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "root",
+        "steps"
+      ],
+      "properties": {
+        "schema": {
+          "const": "hm2b.install-plan/v1"
+        },
+        "root": {
+          "const": "project"
+        },
+        "steps": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "op",
+              "path",
+              "overwrite"
+            ],
+            "properties": {
+              "op": {
+                "const": "write"
+              },
+              "path": {
+                "type": "string",
+                "minLength": 1
+              },
+              "overwrite": {
+                "enum": [
+                  "replace",
+                  "fail-if-exists"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "capability": {
+      "enum": [
+        "state",
+        "gates",
+        "outputs",
+        "subagents",
+        "skills",
+        "preload",
+        "stage-invocation",
+        "skill-invocation"
+      ]
+    },
+    "level": {
+      "enum": [
+        "native",
+        "adapted",
+        "degraded",
+        "unavailable"
+      ]
+    },
+    "capabilityReportEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "target",
+        "capability",
+        "level",
+        "uses"
+      ],
+      "properties": {
+        "target": {
+          "$ref": "#/$defs/id"
+        },
+        "capability": {
+          "$ref": "#/$defs/capability"
+        },
+        "level": {
+          "$ref": "#/$defs/level",
+          "description": "Effective level; never better than the manifest declaration."
+        },
+        "uses": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "compiled workflow JSON Pointers; the empty string addresses the whole workflow."
+        }
+      }
+    },
+    "degradation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "level",
+        "pointer",
+        "reason",
+        "effect"
+      ],
+      "properties": {
+        "code": {
+          "$ref": "#/$defs/code"
+        },
+        "target": {
+          "$ref": "#/$defs/id"
+        },
+        "capability": {
+          "$ref": "#/$defs/capability"
+        },
+        "level": {
+          "enum": [
+            "degraded",
+            "unavailable"
+          ]
+        },
+        "pointer": {
+          "type": "string",
+          "description": "compiled workflow JSON Pointer that must resolve."
+        },
+        "field": {
+          "type": "string",
+          "minLength": 1
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "effect": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        }
+      }
+    },
+    "warning": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "message"
+      ],
+      "properties": {
+        "code": {
+          "$ref": "#/$defs/code"
+        },
+        "target": {
+          "$ref": "#/$defs/id"
+        },
+        "pointer": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1000
+        }
+      }
+    },
+    "idMapKind": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "idMap",
+        "artifacts",
+        "placeholders",
+        "runtime"
+      ],
+      "properties": {
+        "idMap": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "stages",
+              "steps",
+              "roles",
+              "skills"
+            ],
+            "properties": {
+              "stages": {
+                "$ref": "#/$defs/idMapKind"
+              },
+              "steps": {
+                "$ref": "#/$defs/idMapKind"
+              },
+              "roles": {
+                "$ref": "#/$defs/idMapKind"
+              },
+              "skills": {
+                "$ref": "#/$defs/idMapKind"
+              }
+            }
+          },
+          "description": "One entry per selected target; each kind maps compiled workflow ids to non-identity runtime names and is injective."
+        },
+        "artifacts": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": "Logical artifact name to one of the result file paths; bundle assets get one kebab-case entry per file (knowledge-<slug>, checklist-<id>, hooks, mcp)."
+        },
+        "placeholders": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "roles",
+            "skills",
+            "constitution"
+          ],
+          "properties": {
+            "roles": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "$ref": "#/$defs/id"
+              }
+            },
+            "skills": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "$ref": "#/$defs/id"
+              }
+            },
+            "constitution": {
+              "enum": [
+                "absent",
+                "present",
+                "placeholder"
+              ]
+            }
+          }
+        },
+        "runtime": {
+          "type": "object",
+          "description": "Projection-specific metadata; no timestamps, absolute paths or secrets."
+        }
+      }
+    },
+    "error": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "severity",
+        "code",
+        "path",
+        "pointer",
+        "message"
+      ],
+      "properties": {
+        "severity": {
+          "const": "error"
+        },
+        "code": {
+          "$ref": "#/$defs/code"
+        },
+        "path": {
+          "type": "string"
+        },
+        "pointer": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1000
+        },
+        "target": {
+          "$ref": "#/$defs/id"
+        },
+        "hint": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

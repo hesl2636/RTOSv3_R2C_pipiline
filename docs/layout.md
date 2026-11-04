@@ -1,114 +1,138 @@
 # Repository layout
 
-One repository root and one release channel: the engine, the workflow content
-and the agent adapters live in one tree and ship as the four assets of a GitHub
-Release ([What is published](#what-is-published)). Nothing goes to npm; the
-single `package.json` pins the build/test dependencies and the `engines.node`
-floor, and it is shipped inside the engine archive so an extracted engine can
-report its own version.
-
-## Target tree
+Single npm package at the root (`hm2b-framework`, private, no workspaces), with
+a nested engine package. The dependency direction is
+`core → compiled → assembler → projection → runtime/*`; `installer/`, `bin/` and
+`web/` are composition roots.
 
 ```text
 .
-├── bin/
-│   └── r2c.js                     # thin entry: imports src/cli.js and awaits main
-├── src/
-│   ├── cli.js                     # argv parsing, --json envelope, exit codes
-│   ├── manifest.js                # r2c.workflow/v1 discovery + strict validation
-│   ├── state.js                   # runId, state.json, events.jsonl, locks, claim
-│   ├── render.js                  # first step / next step / submit line text
-│   ├── gate.js                    # expect.outputs + gate[] execution
-│   ├── hook.js                    # hook stop / hook pre-tool-use dialects
-│   ├── version.js                 # restricted semver evaluator (requires.engine)
-│   ├── schema.js                  # schema revision table + error mapping
-│   ├── plugin.js                  # payload file set, r2c.plugin/v1 manifest, ustar container
-│   ├── engine.js                  # engine file set (same container and path rules)
-│   ├── adapter/                   # the single installer (install/doctor/...)
-│   │   ├── install.js             # detect → verify → plan → conflicts → receipt
-│   │   ├── plan.js                # declarations → concrete paths and rendered bytes
-│   │   ├── payload.js             # payload resolution, verification, materialisation
-│   │   ├── release.js             # release transport, credentials, SHA256SUMS
-│   │   ├── uninstall.js           # receipt-driven removal
-│   │   ├── doctor.js              # zero-model health checks
-│   │   ├── versions.js            # engine/payload version-set ownership (C7)
-│   │   └── util.js                # path, hash and atomic-write primitives
-│   └── acceptance/                # fixture + zero-model aggregator
-├── schema/                        # r2c.{workflow,state,latest,usage,adapter,
-│                                  #   adapter-map,payload}/v1 JSON Schemas
-├── shims/                         # hook.mjs + shared smoke-discovery.mjs
-├── test/                          # node --test suites (not published)
-├── pack/                          # workflow package = manifest root
-│   ├── workflows/<name>.yaml
-│   ├── tasks/<step-id>.md
-│   ├── skills/<id>/SKILL.md
-│   └── commands/<id>.md
-├── adapters/
-│   ├── claude-code/               # adapter.json, map.json, assets/, smoke.mjs
-│   ├── codex/
-│   ├── dsh/
-│   ├── omp/
-│   └── opencode/
-├── plugins/
-│   ├── upload/                    # frozen intranet upload plugin
-│   ├── analysis/                  # frozen intranet attribution analysis plugin
-│   └── intranet-mcp/              # frozen intranet MCP server definitions
-├── scripts/
-│   ├── release.mjs                # the only packager (the four release assets)
-│   ├── install.mjs                # the bootstrap, published verbatim as the install.mjs asset
-│   └── verify-sums.mjs            # SHA256SUMS verification
-├── docs/
-│   ├── layout.md                  # this file
-│   ├── install.md
-│   ├── legacy.md
-│   ├── plugins.md
-│   ├── compat.md
-│   ├── blue-zone/preflight.md
-│   └── agents/issue-tracker.md    # preserved as-is
-├── .github/workflows/             # ci, acceptance, live, release
-├── README.md
+├── package.json                  # hm2b-framework: framework version, bin: hm2b + hm2b-assembler
+├── package-lock.json
 ├── LICENSE
-├── .gitignore
-└── package-lock.json
+├── README.md
+├── CHANGELOG.md
+├── GLOSSARY.md
+├── bin/
+│   ├── hm2b-assembler.js         # framework CLI: bundle validate | compiled-workflow validate | compile | project
+│   └── assembler/                # one module per command
+├── core/                         # pure predicates (no node:*, no third party)
+│   ├── canonical-json.js
+│   ├── code-point.js
+│   ├── diagnostics.js
+│   ├── exit-codes.js
+│   ├── glob.js
+│   ├── paths.js
+│   ├── schema.js
+│   ├── semver.js
+│   └── node/                     # the only Node-only core seam
+│       ├── atomic-write.js
+│       ├── inflate.js
+│       └── sha256.js
+├── compiled/                           # hm2b.compiled-workflow/v2 contract (revision, serialize, paths)
+├── assembler/                    # bundle → compiled workflow: zip reader, validate, compile, limits, checks/assets.js
+├── projection/                   # registry, options, project, validate-result
+├── runtime/
+│   ├── shared/                   # renderRole, constitution, placeholder, submit, YAML writer
+│   ├── runner/
+│   │   ├── projection/           # runner projection.json + project.js + manifest.js
+│   │   ├── contract/             # pure hm2b.workflow/v1 validation (probe injection)
+│   │   ├── (revision docs)       # workflow / state / latest / usage
+│   │   ├── assets/
+│   │   │   ├── commands/         # generic hm2b-*.md host commands
+│   │   │   └── hook.mjs          # runtime hook shim
+│   │   └── engine/               # hm2b-runner package: bin/hm2b.js + sources
+│   └── agent-native/
+│       ├── projection/           # one projection, five targets
+│       │   ├── projection.json
+│       │   ├── project.js
+│       │   └── targets/          # <id>.js descriptors
+│       └── targets/<id>/assets/  # host integration assets (declared with sha256)
+├── installer/                    # install plan execution, receipts, runtime, release install
+├── web/                          # zero-build front end (serve.mjs is the only node file)
+├── examples/rtosv3/              # bundle/ (editable) + dist/ (committed deterministic zip)
+├── scripts/                      # install.mjs, build-bundle.mjs, release.mjs, verify-sums.mjs, lib/
+├── test/                         # node --test; mirrors the module tree
+└── docs/
 ```
 
-## Ownership
+Notes:
 
-| Path | Owner | Rules |
-| --- | --- | --- |
-| `bin/r2c.js` | engine | Zero logic. One import + `await main(argv)`; everything else lives in `src/`. |
-| `src/` | engine | Sole owner of argv parsing, the `--json` envelope, exit codes 0–5, manifest validation, state, gates, hooks, the installer and the acceptance aggregator. |
-| `schema/` | engine | `r2c.workflow/v1` is the single source of truth for manifest validation; the other six schemas pin the files the engine writes. Schema revisions are orthogonal to package versions. |
-| `test/` | engine | `node --test` only; never published. |
-| `pack/` | workflow authors | The only place workflow content exists: manifests, task files, skills, command sources. Adapters must not keep copies of these files. `pack/` is the manifest root (`workflows/` sits directly inside it). |
-| `adapters/<agent>/` | agent adapters | Declarations (`adapter.json`, `map.json`), agent-specific assets, optional `steps.mjs` / `smoke.mjs`. Copies of `pack/` content are forbidden; install-time generation only. |
-| `plugins/{upload,analysis,intranet-mcp}/` | intranet maintainers | Frozen. Not published to npm and never installed by default. See `docs/plugins.md`. |
-| `scripts/release.mjs` | release maintainer | The single packager; produces `r2c-engine-V.tgz`, `r2c-payload-V.tgz`, `install.mjs` and `SHA256SUMS.txt` — the whole release. |
-| `scripts/install.mjs` | release maintainer | The bootstrap; one copy, published unchanged as the `install.mjs` asset. Node built-ins only — no imports from `src/`. |
-| `docs/` | maintainers | `docs/agents/issue-tracker.md` is preserved unchanged; the remaining docs describe this layout, installation, legacy recovery, plugins, compatibility and blue-zone preflight. |
-| `.github/workflows/` | CI maintainers | Zero-secret gates; live agent probes stay manual and `continue-on-error`. |
+- Module paths, in dependency order: `core/`, `compiled/`, `assembler/`,
+  `projection/`, `runtime/shared`, `runtime/runner/contract`,
+  `runtime/runner/schema`, `runtime/runner/projection`, `runtime/runner/engine`, `runtime/agent-native`,
+  `installer/`, `bin/`, `web/`.
+- `runtime/runner/engine` is the only package allowed to import `yaml` and the
+  only one that may import `node:*` outside `core/node/` and the composition
+  roots. Its extracted archive layout is described in
+  `scripts/lib/engine-archive.mjs`.
+- `runtime/runner/assets` and `runtime/agent-native/targets/*/assets` are
+  payload content, not modules: the installer renders them for hosts.
+- `web/serve.mjs` is the single Node entry of the front end; the browser
+  imports the same `core/`, `compiled/`, `assembler/`, `projection/` and
+  `runtime/shared/` modules by relative URL.
 
-## What is published
+## Bundle and compiled workflow contract (v2)
 
-A release has exactly four assets and nothing else: `r2c-engine-V.tgz` (the
-runnable CLI), `r2c-payload-V.tgz` (adapters, workflow content and shims),
-`install.mjs` (the repository bootstrap, byte for byte) and `SHA256SUMS.txt`
-(one digest per other asset). Nothing is published to npm; `npm ci` in CI only
-installs the build/test dependencies. `scripts/release.mjs --check` enforces
-that asset whitelist, so `pack/`, `adapters/`, `plugins/`, `test/`, `docs/`,
-`scripts/` and `.github/` can only reach a release inside the two archives that
-declare them.
+`hm2b.bundle/v2` describes the bundle zip; `hm2b.compiled-workflow/v2` describes the compiled
+`workflow.compiled.json`. The manifest validator in `assembler/validate-bundle.js`
+and the checks under `assembler/checks/` are authoritative; the schema
+documents next to them are descriptive.
 
-## Runtime state
+`bundle.json` fields: `schema`, `id`, `name`, `version`, `description`,
+`stages`, `roles`, `tasks`, `skills`, `knowledgeBase`, `checklists`, `hooks`,
+`mcp`, `constitution`, `requires`.
 
-All run state lands inside the project under `.r2c/`:
+Archive layout, beside the flow files (`stages/`, `roles/`, `tasks/`,
+`skills/`, `constitution/`):
 
-| Path | Committed? |
+```text
+bundle.json
+knowledge-base/<group>[/<subgroup>]/<file>.md   # knowledgeBase[]
+checklists/<id>.md                              # checklists[]
+hooks/hooks.json                                # hooks.path, canonical JSON
+mcp.json                                        # mcp.path, canonical JSON + mcpServers object
+```
+
+Bundle paths are at most 100 UTF-8 bytes and 4 segments — four segments admit
+`knowledge-base/<group>/<subgroup>/<file>.md`. Admission is
+declaration-driven: an asset file under `knowledge-base/`, `checklists/`,
+`hooks/` or a top-level `mcp.json` that the manifest does not declare is one
+`BUNDLE_UNEXPECTED_PATH`; a declared file that is absent is
+`BUNDLE_ASSET_FILE_MISSING`. Only `hooks.json` and `mcp.json` have JSON body
+rules; both must be canonical JSON, and `mcp.json` must carry an object under
+`mcpServers`.
+
+Compiled workflow fields, in canonical order: `schema`, `id`, `name`, `version`,
+`description`, `source`, `requires` (absent when the bundle has none),
+`stages`, `roles`, `tasks`, `skills`, `knowledgeBase`, `checklists`, `hooks`,
+`mcp`, `constitution`. `knowledgeBase` entries are `{path, body, source}`
+sorted by path, `checklists` entries are `{id, body, source}` sorted by id,
+and `hooks`/`mcp` are one `{path, body, source}` record or `null`.
+`assembler/compile.js` embeds every asset body and its source hash, so the compiled workflow
+is the only input the projections read; `assembler/validate-compiled.js` re-checks
+the asset shapes, canonical JSON and sort order.
+
+The projections install the embedded assets: `runner` writes
+`knowledge-base/**`, `checklists/**`, `hooks/hooks.json` and `mcp.json` at the
+install root (the project root); `agent-native` writes the same relative paths
+once under the shared namespace `.agents/agent-native/<bundle-id>/` for all
+selected targets. Undeclared assets produce no file.
+
+## Schema documents
+
+The JSON Schema documents sit next to the module that owns the contract. They
+are descriptive: the hand-written validators stay authoritative and no schema
+runtime dependency is added.
+
+| Document | Owner |
 | --- | --- |
-| `.r2c/runs/`, `.r2c/latest.json`, `.r2c/usage/` | No — runtime only |
-| `.r2c/install/`, `.r2c/payload/`, `.r2c/engine/` | No — install receipts, payloads and installed engines |
-| `.r2c/ir.md`, `.r2c/sr-map.md`, `.r2c/artifacts/**` | Yes — business artifacts |
+| `assembler/schema/bundle.schema.json` | `assembler/validate-bundle.js` |
+| `assembler/schema/stage.schema.json` | `assembler/checks/stages.js` |
+| `compiled/schema/compiled-workflow.schema.json` | `assembler/validate-compiled.js` |
+| `projection/schema/options.schema.json` | `projection/options.js` |
+| `projection/schema/result.schema.json` | `projection/validate-result.js` |
+| `projection/schema/roles.schema.json` | `runtime/shared/render-role.js` |
 
-`.gitignore` lists those runtime paths, `node_modules/`, and `dist/`
-(local release output). Local-only patterns belong in `.git/info/exclude`,
-never in the committed file.
+Every document is canonical JSON, uses the `https://hm2b.runner/schema/` `$id`
+family and carries the schema revision it describes as its title.

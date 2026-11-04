@@ -1,0 +1,241 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>hm2b — bundle 检查器与构建</title>
+  <link rel="stylesheet" href="/web/style.css">
+  <script src="/web/boot-check.js"></script>
+  <script type="module" src="/web/app.js"></script>
+</head>
+<body>
+  <header class="bar">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true">h</span>
+      <div>
+        <h1>hm2b bundle 检查器</h1>
+        <p class="subtitle">上传 → 校验 → 编译产物预览 → 投影 → 构建。只读操作，不写入项目；浏览器不接触 GitHub token。</p>
+      </div>
+    </div>
+    <div class="badges">
+      <span class="badge" id="mode-badge">启动中</span>
+      <span class="badge badge-muted" id="degrade-badge" hidden>降级模式</span>
+      <span class="badge badge-warn" id="publish-badge">发布未启用</span>
+    </div>
+  </header>
+
+  <div id="fatal" class="banner banner-error" role="alert" hidden>
+    <strong>浏览器不支持</strong>
+    <p id="fatal-reasons"></p>
+    <p>请使用 Chrome/Edge 123+、Firefox 127+ 或 Safari 17.5+，或改用 CLI：</p>
+    <pre><code>node bin/hm2b-assembler.js bundle validate ./bundle.zip --json
+node bin/hm2b-assembler.js compile ./bundle.zip --out ./dist</code></pre>
+    <p>然后重新运行 <code>npm run web</code>。这里不做 user-agent 嗅探；只有缺少必需能力时才会显示。</p>
+  </div>
+
+  <main>
+    <section class="panel" aria-labelledby="upload-title">
+      <div class="panel-head">
+        <div class="title-group">
+          <span class="step" aria-hidden="true">01</span>
+          <h2 id="upload-title">上传 bundle</h2>
+        </div>
+        <span class="chip">zip ≤ <span id="limit-text">8 MiB</span></span>
+      </div>
+      <p class="hint">只接受单个 <code>.zip</code>。文件在内存中校验，不会保存到磁盘。</p>
+      <div class="row upload-row">
+        <input id="file-input" type="file" accept=".zip,application/zip,application/x-zip-compressed">
+        <label class="mono hint version-field">版本
+          <input id="bundle-version" type="text" inputmode="numeric" placeholder="留空沿用 bundle.json">
+        </label>
+        <button id="upload-button" class="btn-primary" type="button" disabled>校验并编译</button>
+      </div>
+      <p id="upload-status" class="status" role="status"></p>
+    </section>
+
+    <section id="mismatch" class="banner banner-error" role="alert" hidden>
+      <strong>WEB_CLIENT_SERVER_MISMATCH</strong>
+      <p id="mismatch-text">浏览器与服务端对同一个 bundle 的判断不一致。以服务端结果为准，发布已禁用。</p>
+    </section>
+
+    <section id="overview" class="panel overview" aria-labelledby="overview-title" hidden>
+      <div class="panel-head">
+        <div class="title-group">
+          <span class="step" aria-hidden="true">02</span>
+          <h2 id="overview-title">概览</h2>
+        </div>
+        <span class="chip" id="overview-bundle">—</span>
+      </div>
+      <div id="overview-grid" class="stat-grid"></div>
+      <details id="overview-meta-fold" class="fold">
+        <summary>技术标识</summary>
+        <div id="overview-meta" class="meta-grid"></div>
+      </details>
+    </section>
+
+    <section class="panel" aria-labelledby="report-title">
+      <div class="panel-head">
+        <div class="title-group">
+          <span class="step" aria-hidden="true">03</span>
+          <h2 id="report-title">校验结果</h2>
+        </div>
+        <span id="report-verdict" class="pill" hidden></span>
+      </div>
+      <div id="report-summary" class="summary" hidden></div>
+      <ul id="report-highlights" class="highlights" hidden></ul>
+      <div id="report-body" class="report" hidden>
+        <details id="report-details" class="fold">
+          <summary>全部诊断 <span id="diagnostic-count" class="count"></span></summary>
+          <div class="toolbar">
+            <label>级别
+              <select id="severity-filter">
+                <option value="all">全部</option>
+                <option value="error">错误</option>
+                <option value="warning">警告</option>
+              </select>
+            </label>
+            <label>路径前缀
+              <input id="path-filter" type="text" placeholder="tasks/" spellcheck="false">
+            </label>
+          </div>
+          <ul id="diagnostics" class="diagnostics"></ul>
+          <p id="diagnostics-empty" class="hint" hidden>没有匹配的诊断。</p>
+        </details>
+      </div>
+    </section>
+
+    <section class="panel" aria-labelledby="compiled-workflow-title">
+      <div class="panel-head">
+        <div class="title-group">
+          <span class="step" aria-hidden="true">04</span>
+          <h2 id="compiled-workflow-title">编译产物</h2>
+        </div>
+        <div class="panel-actions">
+          <span class="chip">只读</span>
+          <button id="download-compiled-workflow" class="btn-secondary" type="button" disabled>下载编译产物</button>
+        </div>
+      </div>
+      <div id="compiled-workflow-empty" class="hint">编译成功后在这里显示编译产物。</div>
+      <details id="compiled-workflow-body" class="fold compiled-workflow-body" hidden>
+        <summary>产物内容 <span id="compiled-workflow-summary" class="count"></span></summary>
+        <div class="compiled-workflow-top">
+          <div class="compiled-workflow-identity" id="compiled-workflow-identity"></div>
+          <div class="compiled-workflow-actions">
+            <span id="compiled-workflow-digest" class="mono hint"></span>
+          </div>
+        </div>
+        <details class="fold">
+          <summary>阶段与步骤 <span id="compiled-workflow-stage-count" class="count"></span></summary>
+          <ol id="compiled-workflow-stages" class="stages"></ol>
+        </details>
+        <div class="grid-2">
+          <details class="fold">
+            <summary>角色 <span id="compiled-workflow-role-count" class="count"></span></summary>
+            <ul id="compiled-workflow-roles" class="entities"></ul>
+          </details>
+          <details class="fold">
+            <summary>任务 <span id="compiled-workflow-task-count" class="count"></span></summary>
+            <ul id="compiled-workflow-tasks" class="entities"></ul>
+          </details>
+          <details class="fold">
+            <summary>技能 <span id="compiled-workflow-skill-count" class="count"></span></summary>
+            <ul id="compiled-workflow-skills" class="entities"></ul>
+          </details>
+        </div>
+        <details class="fold">
+          <summary>声明的资产 <span id="compiled-workflow-asset-count" class="count"></span></summary>
+          <div class="asset-grid">
+            <div>
+              <h4>知识库</h4>
+              <ul id="compiled-workflow-knowledge-base" class="entities"></ul>
+            </div>
+            <div>
+              <h4>检查单</h4>
+              <ul id="compiled-workflow-checklists" class="entities"></ul>
+            </div>
+            <div>
+              <h4>Hooks</h4>
+              <ul id="compiled-workflow-hooks" class="entities"></ul>
+            </div>
+            <div>
+              <h4>MCP</h4>
+              <ul id="compiled-workflow-mcp" class="entities"></ul>
+            </div>
+          </div>
+        </details>
+        <details class="fold">
+          <summary>宪法 <span id="compiled-workflow-constitution-state" class="count"></span></summary>
+          <div id="compiled-workflow-constitution"></div>
+        </details>
+        <details class="fold">
+          <summary>原始 JSON</summary>
+          <pre id="compiled-workflow-raw" class="raw"></pre>
+        </details>
+      </details>
+    </section>
+
+    <section class="panel" aria-labelledby="options-title">
+      <div class="panel-head">
+        <div class="title-group">
+          <span class="step" aria-hidden="true">05</span>
+          <h2 id="options-title">投影选项</h2>
+        </div>
+        <span class="chip" id="options-count">—</span>
+      </div>
+      <p class="hint">选项绑定到当前编译摘要，每次重新上传都会重置。编译产物本身不会被修改；服务端会重新校验每个选择。</p>
+      <p id="options-status" class="status" role="status"></p>
+      <div id="options-body" hidden>
+        <div class="row options-top">
+          <span class="mono hint">编译摘要 <span id="options-compiled-workflow-digest"></span></span>
+          <button id="reset-options" class="btn-secondary" type="button">恢复默认</button>
+        </div>
+        <div id="projection-controls"></div>
+        <details class="fold">
+          <summary>浏览器预览 <span id="preview-count" class="count"></span></summary>
+          <p class="hint">与构建使用同一套共享模块，只做预览，不写盘。</p>
+          <p id="preview-status" class="status" role="status"></p>
+          <div id="preview-body" hidden></div>
+        </details>
+      </div>
+    </section>
+
+    <section class="panel" aria-labelledby="build-title">
+      <div class="panel-head">
+        <div class="title-group">
+          <span class="step" aria-hidden="true">06</span>
+          <h2 id="build-title">构建产物</h2>
+        </div>
+        <div class="actions">
+          <button id="build-publish-button" class="btn-secondary" type="button" disabled>构建并发布</button>
+          <button id="build-button" class="btn-primary" type="button" disabled>构建</button>
+        </div>
+      </div>
+      <p class="hint">默认选项生成可发布的资产集；自定义选项只在本地构建。产物来自 release 工具，不会写入项目目录。</p>
+      <p id="build-status" class="status" role="status"></p>
+      <div id="build-body" hidden></div>
+    </section>
+
+    <section id="publish-panel" class="panel quiet" aria-labelledby="publish-title">
+      <div class="panel-head">
+        <div class="title-group">
+          <span class="step" aria-hidden="true">07</span>
+          <h2 id="publish-title">发布 Release</h2>
+        </div>
+        <button id="publish-button" class="btn-secondary" type="button" disabled>发布</button>
+      </div>
+      <p class="hint">发布在服务端执行：token 只留在服务端内存，页面不会接触。已发布的 Release 不会被改写，有误时发布新的 patch。</p>
+      <p id="publish-status" class="status" role="status"></p>
+      <div id="publish-body" hidden></div>
+    </section>
+  </main>
+
+  <noscript>
+    <div class="banner banner-error">
+      <strong>JavaScript 已禁用。</strong>
+      <p>此页面需要 ESM 与 Web API。请改用 CLI：</p>
+      <pre><code>node bin/hm2b-assembler.js bundle validate ./bundle.zip --json
+node bin/hm2b-assembler.js compile ./bundle.zip --out ./dist</code></pre>
+    </div>
+  </noscript>
+</body>
+</html>

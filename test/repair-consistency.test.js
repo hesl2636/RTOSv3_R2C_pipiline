@@ -19,14 +19,14 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { replayDerived } from '../src/state.js';
+import { replayDerived } from '../runtime/runner/engine/src/state.js';
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const BIN = join(REPO, 'bin', 'r2c.js');
-const PACK = join(REPO, 'pack');
+const BIN = join(REPO, 'runtime', 'runner', 'engine', 'bin', 'hm2b.js');
+const BUNDLE = join(REPO, 'examples', 'rtosv3', 'bundle');
 const REPAIR_WARNING = /repaired from events/;
 
-const MANIFEST_HEAD = `schema: r2c.workflow/v1
+const MANIFEST_HEAD = `schema: hm2b.workflow/v1
 id: workflow-repair
 name: repair
 version: 0.1.0
@@ -36,8 +36,8 @@ stages:
 
 function cleanEnv() {
   const env = { ...process.env };
-  delete env.R2C_SESSION_ID;
-  delete env.R2C_PROJECT_ROOT;
+  delete env.HM2B_SESSION_ID;
+  delete env.HM2B_PROJECT_ROOT;
   return env;
 }
 
@@ -58,8 +58,8 @@ function cliJson(args, options) {
 }
 
 function tempRoot(t) {
-  const root = mkdtempSync(join(tmpdir(), 'r2c-repair-project-'));
-  const outside = mkdtempSync(join(tmpdir(), 'r2c-repair-outside-'));
+  const root = mkdtempSync(join(tmpdir(), 'hm2b-repair-project-'));
+  const outside = mkdtempSync(join(tmpdir(), 'hm2b-repair-outside-'));
   t.after(() => {
     rmSync(root, { recursive: true, force: true });
     rmSync(outside, { recursive: true, force: true });
@@ -71,12 +71,37 @@ function tempRoot(t) {
 /** The shipped default manifest (4 stages, one prompt step each) in a temp project. */
 function defaultProject(t) {
   const project = tempRoot(t);
-  cpSync(
-    join(PACK, 'workflows', 'hm2B_drvport_pipiline.yaml'),
+  const bundle = JSON.parse(readFileSync(join(BUNDLE, 'bundle.json'), 'utf8'));
+  const manifest = {
+    schema: 'hm2b.workflow/v1',
+    id: 'hm2B_drvport_pipiline',
+    name: bundle.name,
+    version: bundle.version,
+    description: bundle.description,
+    stages: bundle.stages.map((stageId) => {
+      const stage = JSON.parse(readFileSync(join(BUNDLE, 'stages', `${stageId}.json`), 'utf8'));
+      const [step] = stage.steps;
+      return {
+        id: stage.id,
+        name: stage.name,
+        steps: [{
+          id: step.id,
+          name: step.name,
+          type: 'prompt',
+          agent: step.role,
+          taskFile: `tasks/${step.task}.md`,
+          skills: step.skills,
+        }],
+      };
+    }),
+  };
+  mkdirSync(join(project.root, 'workflows'), { recursive: true });
+  writeFileSync(
     join(project.root, 'workflows', 'hm2B_drvport_pipiline.yaml'),
+    `${JSON.stringify(manifest, null, 2)}\n`,
   );
-  cpSync(join(PACK, 'tasks'), join(project.root, 'tasks'), { recursive: true });
-  cpSync(join(PACK, 'skills'), join(project.root, 'skills'), { recursive: true });
+  cpSync(join(BUNDLE, 'tasks'), join(project.root, 'tasks'), { recursive: true });
+  cpSync(join(BUNDLE, 'skills'), join(project.root, 'skills'), { recursive: true });
   return project;
 }
 
@@ -116,11 +141,11 @@ function readJson(file) {
 }
 
 function readState(root, runId) {
-  return readJson(join(root, '.r2c', 'runs', runId, 'state.json'));
+  return readJson(join(root, '\.hm2b', 'runs', runId, 'state.json'));
 }
 
 function readEvents(root, runId) {
-  return readFileSync(join(root, '.r2c', 'runs', runId, 'events.jsonl'), 'utf8')
+  return readFileSync(join(root, '\.hm2b', 'runs', runId, 'events.jsonl'), 'utf8')
     .split(/\r?\n/)
     .filter(Boolean)
     .map((line) => JSON.parse(line));
@@ -169,10 +194,10 @@ function submit(project, sessionId, stepId, label) {
 test('default manifest: run and every submit are events-consistent without repair', (t) => {
   const project = defaultProject(t);
   const { runId, sessionId } = startRun(t, project);
-  const statePath = join(project.root, '.r2c', 'runs', runId, 'state.json');
+  const statePath = join(project.root, '\.hm2b', 'runs', runId, 'state.json');
 
   let state = assertNoDrift(project.root, runId, 'after run');
-  assert.equal(state.current_step_id, 'step-01479654-57d0-468a-9a53-78c821a29f5b');
+  assert.equal(state.current_step_id, 'analysis-design');
   assert.equal(state.stages[0].status, 'active');
 
   const stepIds = state.steps.map((step) => step.id);
