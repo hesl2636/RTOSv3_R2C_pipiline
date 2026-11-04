@@ -22,7 +22,7 @@ import {
 } from './primitives-browser.js';
 import { loadSharedModules } from './shared-imports.js';
 import { publishButtonState } from './publish-state.js';
-import webManifest from './web-manifest.json' with { type: 'json' };
+import { setupWorkspace } from './workspace-ui.js';
 
 const state = {
   csrf: null,
@@ -478,7 +478,7 @@ function renderNoCompiledWorkflow() {
   show(byId('compiled-workflow-empty'), true);
   show(byId('overview'), false);
   byId('download-compiled-workflow').disabled = true;
-  byId('compiled-workflow-empty').textContent = '未生成编译产物：bundle 必须先无错误通过校验，才能编译。';
+  byId('compiled-workflow-empty-description').textContent = '未生成编译产物：bundle 必须先无错误通过校验，才能编译。';
 }
 
 function downloadCompiledWorkflow() {
@@ -1426,6 +1426,7 @@ async function upload() {
 /* -------------------------------------------------------------------------- */
 
 async function bootstrap() {
+  setupWorkspace();
   const floor = probeBrowserFloor();
   state.floor = floor;
   window.__HM2B_FLOOR__ = floor;
@@ -1486,7 +1487,7 @@ async function bootstrap() {
   byId('severity-filter').addEventListener('change', renderDiagnostics);
   byId('path-filter').addEventListener('input', renderDiagnostics);
   byId('upload-button').disabled = selectedFile() === null;
-  setStatus(`就绪。导入根：${webManifest.imports.join(', ')}。`);
+  setStatus('已就绪。选择一个 bundle，点击「校验并编译」开始。');
 }
 
 if (typeof document !== 'undefined' && typeof window !== 'undefined') {

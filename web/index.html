@@ -3,20 +3,41 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>hm2b — bundle 检查器与构建</title>
+  <meta name="theme-color" content="#172d32">
+  <title>hm2b — 工作流构建台</title>
+  <link rel="icon" type="image/svg+xml" href="/web/favicon.svg">
   <link rel="stylesheet" href="/web/style.css">
   <script src="/web/boot-check.js"></script>
   <script type="module" src="/web/app.js"></script>
 </head>
 <body>
-  <header class="bar">
-    <div class="brand">
-      <span class="brand-mark" aria-hidden="true">h</span>
-      <div>
-        <h1>hm2b bundle 检查器</h1>
-        <p class="subtitle">上传 → 校验 → 编译产物预览 → 投影 → 构建。只读操作，不写入项目；浏览器不接触 GitHub token。</p>
-      </div>
+  <a class="skip-link" href="#main-content">跳转到主要内容</a>
+  <aside class="sidebar" aria-label="工作空间">
+    <a class="sidebar-brand" href="#upload-panel" aria-label="hm2b 工作流构建台">
+      <span class="brand-mark" aria-hidden="true">h.</span>
+      <span>hm2b<span class="brand-caption">WORKFLOW TOOLKIT</span></span>
+    </a>
+    <div class="workspace-label"><span class="workspace-dot" aria-hidden="true"></span>本地工作空间</div>
+    <nav class="workflow-nav" aria-label="构建流程">
+      <p class="nav-label">构建流程 <span>07</span></p>
+      <a class="nav-item is-active" href="#upload-panel" aria-current="location"><span class="nav-number">01</span>上传 bundle</a>
+      <a class="nav-item nav-overview" href="#overview"><span class="nav-number">02</span>概览</a>
+      <a class="nav-item" href="#report-panel"><span class="nav-number">03</span>校验结果</a>
+      <a class="nav-item" href="#compiled-panel"><span class="nav-number">04</span>编译产物</a>
+      <p class="nav-label nav-label-secondary">生成与交付</p>
+      <a class="nav-item" href="#options-panel"><span class="nav-number">05</span>投影选项</a>
+      <a class="nav-item" href="#build-panel"><span class="nav-number">06</span>构建产物</a>
+      <a class="nav-item" href="#publish-panel"><span class="nav-number">07</span>发布 Release</a>
+    </nav>
+    <div class="sidebar-footer">
+      <div class="local-note"><span class="workspace-dot" aria-hidden="true"></span><strong>构建留在本机</strong><p>文件在内存中校验，<br>GitHub 凭据仅由服务端使用。</p></div>
+      <span class="sidebar-caption">声明工作流，交付可用工具。</span>
     </div>
+  </aside>
+
+  <div class="workspace">
+  <header class="bar">
+    <div class="breadcrumb"><span>工作空间</span><span aria-hidden="true">/</span><strong>工作流构建台</strong></div>
     <div class="badges">
       <span class="badge" id="mode-badge">启动中</span>
       <span class="badge badge-muted" id="degrade-badge" hidden>降级模式</span>
@@ -33,8 +54,17 @@ node bin/hm2b-assembler.js compile ./bundle.zip --out ./dist</code></pre>
     <p>然后重新运行 <code>npm run web</code>。这里不做 user-agent 嗅探；只有缺少必需能力时才会显示。</p>
   </div>
 
-  <main>
-    <section class="panel" aria-labelledby="upload-title">
+  <main id="main-content" tabindex="-1">
+    <div class="workspace-intro">
+      <div><p class="eyebrow">BUNDLE WORKSPACE</p><h1>让工作流，<span>准备就绪。</span></h1><p class="intro-description">从一份 bundle 开始，完成校验、编译与投影，交付可安装的工作流。</p></div>
+      <span class="intro-mark" aria-hidden="true">{<span>h</span>}</span>
+    </div>
+    <nav class="journey" aria-label="快速跳转">
+      <a href="#upload-panel"><span class="journey-icon" aria-hidden="true">↥</span><span><strong>导入与校验</strong><small>检查 bundle，确认内容</small></span><span class="journey-arrow" aria-hidden="true">→</span></a>
+      <a href="#compiled-panel"><span class="journey-icon" aria-hidden="true">⌘</span><span><strong>编译与投影</strong><small>预览产物，选择目标</small></span><span class="journey-arrow" aria-hidden="true">→</span></a>
+      <a href="#build-panel"><span class="journey-icon" aria-hidden="true">↗</span><span><strong>构建与发布</strong><small>生成资产，交付 Release</small></span></a>
+    </nav>
+    <section id="upload-panel" class="panel upload-panel" aria-labelledby="upload-title">
       <div class="panel-head">
         <div class="title-group">
           <span class="step" aria-hidden="true">01</span>
@@ -42,13 +72,20 @@ node bin/hm2b-assembler.js compile ./bundle.zip --out ./dist</code></pre>
         </div>
         <span class="chip">zip ≤ <span id="limit-text">8 MiB</span></span>
       </div>
-      <p class="hint">只接受单个 <code>.zip</code>。文件在内存中校验，不会保存到磁盘。</p>
-      <div class="row upload-row">
-        <input id="file-input" type="file" accept=".zip,application/zip,application/x-zip-compressed">
-        <label class="mono hint version-field">版本
-          <input id="bundle-version" type="text" inputmode="numeric" placeholder="留空沿用 bundle.json">
+      <p class="hint panel-description">选择工作流 bundle，开始一次新的构建。</p>
+      <label id="upload-dropzone" class="upload-dropzone" for="file-input">
+        <input id="file-input" class="file-input" type="file" accept=".zip,application/zip,application/x-zip-compressed" aria-describedby="file-detail">
+        <span class="upload-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 16V4m-4 4 4-4 4 4M5 15v4a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-4" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+        <strong id="file-name">选择 zip 文件，或拖放到这里</strong>
+        <span id="file-detail" class="hint" aria-live="polite">单个 ZIP 文件 · 最大 8 MiB · 仅在内存中校验</span>
+        <span id="file-action" class="file-action" aria-hidden="true">选择文件 ↗</span>
+      </label>
+      <div class="upload-settings">
+        <label class="version-field" for="bundle-version">构建版本 <span class="optional">可选</span>
+          <input id="bundle-version" type="text" placeholder="沿用 bundle.json 中的版本" autocomplete="off" spellcheck="false" aria-describedby="version-hint">
         </label>
-        <button id="upload-button" class="btn-primary" type="button" disabled>校验并编译</button>
+        <span id="version-hint" class="hint">需要新版本时填写，如 1.0.1</span>
+        <button id="upload-button" class="btn-primary" type="button" disabled>校验并编译 <span aria-hidden="true">→</span></button>
       </div>
       <p id="upload-status" class="status" role="status"></p>
     </section>
@@ -73,7 +110,7 @@ node bin/hm2b-assembler.js compile ./bundle.zip --out ./dist</code></pre>
       </details>
     </section>
 
-    <section class="panel" aria-labelledby="report-title">
+    <section id="report-panel" class="panel" aria-labelledby="report-title">
       <div class="panel-head">
         <div class="title-group">
           <span class="step" aria-hidden="true">03</span>
@@ -81,6 +118,7 @@ node bin/hm2b-assembler.js compile ./bundle.zip --out ./dist</code></pre>
         </div>
         <span id="report-verdict" class="pill" hidden></span>
       </div>
+      <div class="empty-state report-empty"><span class="empty-icon" aria-hidden="true">✓</span><div><strong>等待校验 bundle</strong><p>上传并编译后，在这里查看错误、警告与详细诊断。</p></div><span class="empty-tag">待开始</span></div>
       <div id="report-summary" class="summary" hidden></div>
       <ul id="report-highlights" class="highlights" hidden></ul>
       <div id="report-body" class="report" hidden>
@@ -104,7 +142,7 @@ node bin/hm2b-assembler.js compile ./bundle.zip --out ./dist</code></pre>
       </div>
     </section>
 
-    <section class="panel" aria-labelledby="compiled-workflow-title">
+    <section id="compiled-panel" class="panel" aria-labelledby="compiled-workflow-title">
       <div class="panel-head">
         <div class="title-group">
           <span class="step" aria-hidden="true">04</span>
@@ -115,7 +153,7 @@ node bin/hm2b-assembler.js compile ./bundle.zip --out ./dist</code></pre>
           <button id="download-compiled-workflow" class="btn-secondary" type="button" disabled>下载编译产物</button>
         </div>
       </div>
-      <div id="compiled-workflow-empty" class="hint">编译成功后在这里显示编译产物。</div>
+      <div id="compiled-workflow-empty" class="empty-state"><span class="empty-icon" aria-hidden="true">{ }</span><div><strong>编译产物将在这里就绪</strong><p id="compiled-workflow-empty-description">预览阶段、角色、任务与技能，或下载完整编译产物。</p></div></div>
       <details id="compiled-workflow-body" class="fold compiled-workflow-body" hidden>
         <summary>产物内容 <span id="compiled-workflow-summary" class="count"></span></summary>
         <div class="compiled-workflow-top">
@@ -174,7 +212,7 @@ node bin/hm2b-assembler.js compile ./bundle.zip --out ./dist</code></pre>
       </details>
     </section>
 
-    <section class="panel" aria-labelledby="options-title">
+    <section id="options-panel" class="panel" aria-labelledby="options-title">
       <div class="panel-head">
         <div class="title-group">
           <span class="step" aria-hidden="true">05</span>
@@ -184,6 +222,7 @@ node bin/hm2b-assembler.js compile ./bundle.zip --out ./dist</code></pre>
       </div>
       <p class="hint">选项绑定到当前编译摘要，每次重新上传都会重置。编译产物本身不会被修改；服务端会重新校验每个选择。</p>
       <p id="options-status" class="status" role="status"></p>
+      <div class="empty-state options-empty"><span class="empty-icon" aria-hidden="true">☷</span><div><strong>等待编译产物</strong><p>编译成功后，选择投影目标、调整阶段顺序与技能范围。</p></div></div>
       <div id="options-body" hidden>
         <div class="row options-top">
           <span class="mono hint">编译摘要 <span id="options-compiled-workflow-digest"></span></span>
@@ -199,7 +238,7 @@ node bin/hm2b-assembler.js compile ./bundle.zip --out ./dist</code></pre>
       </div>
     </section>
 
-    <section class="panel" aria-labelledby="build-title">
+    <section id="build-panel" class="panel" aria-labelledby="build-title">
       <div class="panel-head">
         <div class="title-group">
           <span class="step" aria-hidden="true">06</span>
@@ -212,6 +251,7 @@ node bin/hm2b-assembler.js compile ./bundle.zip --out ./dist</code></pre>
       </div>
       <p class="hint">默认选项生成可发布的资产集；自定义选项只在本地构建。产物来自 release 工具，不会写入项目目录。</p>
       <p id="build-status" class="status" role="status"></p>
+      <div class="empty-state build-empty"><span class="empty-icon" aria-hidden="true">↓</span><div><strong>尚未生成构建产物</strong><p>完成校验和投影选择后，点击「构建」生成资产与安装命令。</p></div></div>
       <div id="build-body" hidden></div>
     </section>
 
@@ -227,7 +267,9 @@ node bin/hm2b-assembler.js compile ./bundle.zip --out ./dist</code></pre>
       <p id="publish-status" class="status" role="status"></p>
       <div id="publish-body" hidden></div>
     </section>
+    <footer class="workspace-footer"><span>hm2b <span aria-hidden="true">/</span> 工作流构建台</span><span>本地校验 · 共享编译 · 多目标投影</span></footer>
   </main>
+  </div>
 
   <noscript>
     <div class="banner banner-error">
