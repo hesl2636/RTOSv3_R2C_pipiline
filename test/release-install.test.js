@@ -268,7 +268,7 @@ test('runner installs the runtime and the pre-projected tree without compiling',
   assert.deepEqual(runtime.host_targets, AGENT_TARGETS);
 
   // Host roles and roles.json are installer-owned: four role files + one report.
-  const hostRoles = walk(target).filter((path) => /^\.(claude\/agents|codex\/agents|omp\/agents|opencode\/agents)\/runner-.*/.test(path));
+  const hostRoles = walk(target).filter((path) => /^\.(claude\/agents|codex\/agents|omp\/agents|opencode\/agents)\/bys-.*/.test(path));
   assert.equal(hostRoles.length, 16, 'four roles × four host targets');
   const roles = readJson(join(target, '.hm2b', 'projection', 'roles.json'));
   assert.equal(roles.schema, 'hm2b.projection.roles/v1');
@@ -380,9 +380,9 @@ test('agent-native installs the bundle only, never an engine', (t) => {
     assert.equal(sha256File(join(target, ...file.path.split('/'))), file.sha256, file.path);
   }
   assert.ok(existsSync(join(target, '.agents', 'agent-native', ID, 'roles.json')));
-  assert.ok(existsSync(join(target, '.dsh', 'agent-native', `${ID}.roles.md`)));
-  assert.ok(walk(target).some((path) => /^\.claude\/agents\/rtosv3-drvport-.*\.md$/.test(path)));
-  assert.ok(walk(target).some((path) => /^\.codex\/agents\/rtosv3-drvport-.*\.toml$/.test(path)));
+  assert.ok(existsSync(join(target, '.dsh', 'agent-native', `roles.md`)));
+  assert.ok(walk(target).some((path) => /^\.claude\/agents\/bys-.*\.md$/.test(path)));
+  assert.ok(walk(target).some((path) => /^\.codex\/agents\/bys-.*\.toml$/.test(path)));
 
   // No engine, no launcher, no runtime receipt, no runner host roles.
   assert.equal(existsSync(join(target, '.hm2b', 'engine')), false);
@@ -449,7 +449,7 @@ test('--target narrows the written files but roles.json is still installed', (t)
   assert.equal(two.status, 0, `${two.stdout}\n${two.stderr}`);
   assert.ok(existsSync(join(multi, '.claude', 'agents')));
   assert.ok(existsSync(join(multi, '.codex', 'agents')));
-  assert.ok(walk(multi).some((path) => path.startsWith('.agents/skills/rtosv3-drvport-')));
+  assert.ok(walk(multi).some((path) => path.startsWith('.agents/skills/workflow')));
   assert.equal(existsSync(join(multi, '.omp')), false);
   assert.equal(existsSync(join(multi, '.opencode')), false);
   assert.equal(existsSync(join(multi, '.dsh')), false);

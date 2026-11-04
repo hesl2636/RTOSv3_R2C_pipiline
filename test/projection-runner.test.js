@@ -244,7 +244,7 @@ test('the sample file set stays on the five payload roots', () => {
 test('generated workflow, task, skill and constitution bytes match the prototype oracle', () => {
   const { result } = sampleResult();
   const hashes = {
-    'workflows/rtosv3-drvport.yaml': '4210e7dc3b93b2660fb3868f501aa3a434d161bc23b234cc40520c1856ae3209',
+    'workflows/rtosv3-drvport.yaml': 'd5a6feb3738d1a3828da4c9958928a681b9d931818a773d29f3669dc77d1f01f',
     'tasks/analysis-design-orchestration.md': '85fb537bb05d3091e5afbc032b3f8f4658a6c3b95fc619a082e3c33ad8a97622',
     'skills/ar-miner/SKILL.md': 'fab07d93cfcc1a9b63ec87817988264b438d0d3c9f299702c00f11b840bca91f',
     'constitution/CONSTITUTION.md': 'c811548708ff4b8cb8556ecbd0be2a3da6dbc5fdbd223fd2b4d3520bcb4648cd',
@@ -260,7 +260,7 @@ test('workflow YAML is schema-ordered, quoted, 2-space, LF and omits empty colle
   assert.ok(yaml.startsWith('schema: "hm2b.workflow/v1"\nid: "rtosv3-drvport"\nname: '));
   assert.ok(yaml.endsWith('\n'));
   assert.equal(yaml.includes('\r'), false);
-  assert.ok(yaml.includes('        type: "prompt"\n        agent: "runner-bys-architect"\n        taskFile: "tasks/analysis-design-orchestration.md"\n        skills:\n          - "ar-miner"\n'));
+  assert.ok(yaml.includes('        type: "prompt"\n        agent: "bys-architect"\n        taskFile: "tasks/analysis-design-orchestration.md"\n        skills:\n          - "ar-miner"\n'));
   for (const forbidden of ['timeout:', 'skill:', 'prompt:', 'mcp:', 'subagent:', 'input:']) {
     const key = `\n${forbidden.endsWith(':') ? forbidden : `${forbidden}:`}`;
     assert.equal(yaml.includes(key), false, forbidden);
@@ -274,10 +274,10 @@ test('workflow YAML is schema-ordered, quoted, 2-space, LF and omits empty colle
   const step = doc.stages[0].steps[0];
   assert.deepEqual(Object.keys(step), ['id', 'name', 'type', 'agent', 'taskFile', 'skills']);
   assert.equal(step.type, 'prompt');
-  assert.equal(step.agent, 'runner-bys-architect');
+  assert.equal(step.agent, 'bys-architect');
   for (const stage of doc.stages) {
     for (const item of stage.steps) {
-      assert.equal(item.agent, `runner-${sampleCompiledWorkflow().compiledWorkflow.stages.flatMap((entry) => entry.steps).find((entry) => entry.id === item.id).role}`);
+      assert.equal(item.agent, `${sampleCompiledWorkflow().compiledWorkflow.stages.flatMap((entry) => entry.steps).find((entry) => entry.id === item.id).role}`);
       assert.equal(item.skill, undefined);
       assert.equal(item.timeout, undefined);
     }
@@ -435,7 +435,7 @@ test('role copies are normalised: bare id, agent header, fixed key order, verbat
     [
       '---',
       'id: "lead"',
-      'agent: "runner-lead"',
+      'agent: "lead"',
       'description: "Leads the step."',
       'title: "Lead"',
       'mode: "subagent"',
@@ -469,7 +469,7 @@ test('placeholder roles use the fixed instructions and keep the agent header', (
   const { result } = { result: runProject({ compiledWorkflow, compiledWorkflowDigest: sha256Hex(canonicalJson(compiledWorkflow)) }) };
   assert.equal(result.ok, true);
   const content = fileByPath(result, 'roles/worker.md').content;
-  assert.ok(content.startsWith('---\nid: "worker"\nagent: "runner-worker"\ndescription: "Placeholder worker."\nplaceholder: true\n---\n'));
+  assert.ok(content.startsWith('---\nid: "worker"\nagent: "worker"\ndescription: "Placeholder worker."\nplaceholder: true\n---\n'));
   assert.ok(content.includes('> **占位（placeholder）** 本角色由规范包声明为占位：未提供角色正文。\n\n按当前步骤的任务书执行；不要臆测本角色未声明的专有职责。\n\n<!-- hm2b:placeholder role=worker -->\n'));
 });
 
@@ -512,7 +512,7 @@ test('metadata records idMap, artifacts, placeholders and runtime', () => {
     runner: {
       stages: {},
       steps: {},
-      roles: Object.fromEntries(Object.keys(compiledWorkflow.roles).sort().map((id) => [id, `runner-${id}`])),
+      roles: Object.fromEntries(Object.keys(compiledWorkflow.roles).sort().map((id) => [id, `${id}`])),
       skills: {},
     },
   });

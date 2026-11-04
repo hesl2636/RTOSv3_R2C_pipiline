@@ -96,7 +96,7 @@ function miniCompiledWorkflow({ id = 'mini', role = {}, skills = {} } = {}) {
 }
 
 function roleFile(result, roleId = 'worker') {
-  return result.files.find((file) => file.path === `.opencode/agents/mini-${roleId}.md`);
+  return result.files.find((file) => file.path === `.opencode/agents/${roleId}.md`);
 }
 
 function permissionLines(content) {
@@ -164,7 +164,7 @@ test('the opencode capability matrix is the fixed declared order', () => {
 
 test('the rendered placeholder agent matches the prototype byte for byte', () => {
   const { result } = opencodeSample();
-  const file = result.files.find((path) => path.path === '.opencode/agents/rtosv3-drvport-bys-architect.md');
+  const file = result.files.find((path) => path.path === '.opencode/agents/bys-architect.md');
   const expected = [
     '---',
     'description: 占位：分析设计阶段主控角色，正文待补；委派时机见分析设计任务书。',
@@ -364,7 +364,7 @@ test('placeholder banners and the {{submit}} receipt stay identical to Claude', 
   const opencode = runProject({ compiledWorkflow, compiledWorkflowDigest, raw: { targets: ['opencode'] } });
   const claude = runProject({ compiledWorkflow, compiledWorkflowDigest, raw: { targets: ['claude-code'] } });
   const byName = (result, name) => result.files.find((file) => file.path.endsWith(`/${name}/SKILL.md`)).content;
-  for (const name of ['rtosv3-drvport-stage-analysis-design', 'rtosv3-drvport-workflow', 'rtosv3-drvport-skill-ar-miner']) {
+  for (const name of ['stage-analysis-design', 'workflow', 'ar-miner']) {
     assert.equal(byName(opencode, name), byName(claude, name), name);
   }
   for (const file of opencode.files.filter((item) => item.kind === 'stage')) {
@@ -373,8 +373,8 @@ test('placeholder banners and the {{submit}} receipt stay identical to Claude', 
   assert.equal(opencode.files.find((file) => file.kind === 'workflow').content.includes('constitution:begin'), false);
   for (const file of opencode.files) assert.equal(file.content.includes('{{submit}}'), false, file.path);
   const body = (content) => content.slice(content.indexOf('\n---\n') + 5);
-  const claudeRole = claude.files.find((file) => file.path === '.claude/agents/rtosv3-drvport-bys-architect.md');
-  const opencodeRole = opencode.files.find((file) => file.path === '.opencode/agents/rtosv3-drvport-bys-architect.md');
+  const claudeRole = claude.files.find((file) => file.path === '.claude/agents/bys-architect.md');
+  const opencodeRole = opencode.files.find((file) => file.path === '.opencode/agents/bys-architect.md');
   assert.equal(body(opencodeRole.content), body(claudeRole.content));
 });
 
@@ -410,8 +410,8 @@ test('claude + opencode share skills and warn once about the mirrored roots', ()
   assert.equal(result.ok, true);
   const shared = result.files.filter((file) => file.path.startsWith('.agents/skills/'));
   for (const file of shared) assert.deepEqual(file.targets, ['opencode']);
-  assert.ok(result.files.some((file) => file.path === '.claude/agents/rtosv3-drvport-bys-architect.md'));
-  assert.ok(result.files.some((file) => file.path === '.opencode/agents/rtosv3-drvport-bys-architect.md'));
+  assert.ok(result.files.some((file) => file.path === '.claude/agents/bys-architect.md'));
+  assert.ok(result.files.some((file) => file.path === '.opencode/agents/bys-architect.md'));
   assert.deepEqual(result.warnings.map((warning) => warning.code), ['SKILL_MIRRORED_ROOTS']);
   assert.equal(result.warnings[0].target, 'opencode');
   const validation = validateResult(result, { compiledWorkflow, compiledWorkflowDigest, options: result.options, manifest: MANIFEST });

@@ -315,7 +315,7 @@ test('a changed bundle id is a new identity, never an in-place migration', (t) =
   assert.deepEqual(snapshot(projectRoot), before, 'nothing of the old identity is rewritten');
 });
 
-test('a different bundle id on another projection is a separate identity that can coexist', (t) => {
+test('a different bundle id with the same bare names conflicts on agent-native', (t) => {
   const projectRoot = tempProject(t);
   const first = sample('agent-native');
   assert.equal(installProjection({ result: first.result, compiledWorkflowBytes: first.compiledWorkflowBytes, projectRoot, clock: CLOCK }).code, 'OK');
@@ -323,19 +323,12 @@ test('a different bundle id on another projection is a separate identity that ca
 
   const other = customSample({ projectionId: 'agent-native', compiledWorkflowPatch: { id: 'other-workflow' } });
   const second = installProjection({ result: other.result, compiledWorkflowBytes: other.compiledWorkflowBytes, projectRoot, clock: LATER });
-  assert.equal(second.code, 'OK');
-  assert.equal(second.mode, 'fresh');
-  assert.equal(second.receiptPath, '.hm2b/install/receipts/agent-native/other-workflow.json');
+  assert.equal(second.code, 'INSTALL_CONFLICTS');
   for (const path of firstPaths) {
     assert.equal(existsSync(absolute(projectRoot, path)), true, `first identity keeps ${path}`);
   }
   assert.equal(existsSync(absolute(projectRoot, '.hm2b/install/receipts/agent-native/rtosv3-drvport.json')), true);
-
-  const removed = uninstallProjection({ projectRoot, projectionId: 'agent-native', bundleId: 'other-workflow', clock: LATER });
-  assert.equal(removed.code, 'OK');
-  for (const path of firstPaths) {
-    assert.equal(existsSync(absolute(projectRoot, path)), true, `uninstalling the new identity keeps ${path}`);
-  }
+  assert.equal(existsSync(absolute(projectRoot, '.hm2b/install/receipts/agent-native/other-workflow.json')), false);
 });
 
 test('switching projection needs an explicit uninstall; installing never removes the other projection', (t) => {

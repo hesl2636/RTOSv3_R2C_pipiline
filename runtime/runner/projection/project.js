@@ -41,7 +41,7 @@ function recordOf(pairs) {
 }
 
 function checkRoleName(roleId) {
-  const name = `${TARGET}-${roleId}`;
+  const name = roleId;
   if (!ROLE_ID_RE.test(name) || [...name].length > ROLE_NAME_MAX) {
     return nameError(
       'ROLE_NAME_TOO_LONG',
@@ -211,7 +211,7 @@ export function projectRunner(input) {
     name: stage.name,
     steps: stage.steps.map((step) => {
       const stepDoc = { id: step.id, name: step.name, type: 'prompt' };
-      if (step.role !== undefined) stepDoc.agent = `${TARGET}-${step.role}`;
+      if (step.role !== undefined) stepDoc.agent = step.role;
       stepDoc.taskFile = `tasks/${step.task}.md`;
       if (Array.isArray(step.skills) && step.skills.length > 0) stepDoc.skills = [...step.skills];
       if (Array.isArray(step.outputs) && step.outputs.length > 0) stepDoc.expect = { outputs: [...step.outputs] };
@@ -320,7 +320,7 @@ export function projectRunner(input) {
   // --- roles --------------------------------------------------------------
   for (const roleId of roleIds) {
     const role = compiledWorkflow.roles[roleId];
-    const lines = ['---', `id: ${quote(roleId)}`, `agent: ${quote(`${TARGET}-${roleId}`)}`];
+    const lines = ['---', `id: ${quote(roleId)}`, `agent: ${quote(roleId)}`];
     if (role.description !== undefined) lines.push(`description: ${quote(role.description)}`);
     if (role.title !== undefined) lines.push(`title: ${quote(role.title)}`);
     if (role.mode !== undefined) lines.push(`mode: ${quote(role.mode)}`);
@@ -408,7 +408,7 @@ export function projectRunner(input) {
 
   // --- metadata -----------------------------------------------------------
   const rolesMap = {};
-  for (const roleId of roleIds) rolesMap[roleId] = `${TARGET}-${roleId}`;
+  for (const roleId of roleIds) rolesMap[roleId] = roleId;
   const artifacts = new Map([
     ['workflow', `workflows/${compiledWorkflow.id}.yaml`],
   ]);

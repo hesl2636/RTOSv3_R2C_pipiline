@@ -70,7 +70,7 @@ test('smoke expectations are per-namespace, closed and host-native', () => {
     }
     const skills = expectations.find((entry) => entry.kind === 'skills');
     assert.ok(skills !== undefined, `${id}: skills`);
-    assert.equal(skills.prefix, 'demo-bundle-');
+    assert.equal(skills.prefix, '');
   }
 });
 
@@ -80,7 +80,7 @@ test('dsh exposes a role catalogue instead of per-role agent files', () => {
   assert.deepEqual(agents, {
     kind: 'agents',
     root: '.dsh/agent-native',
-    prefix: 'demo-bundle.',
+    prefix: '',
     format: 'md',
   });
   assert.equal(TARGETS['claude-code'].smoke('x').some((entry) => entry.root === '.dsh/agent-native'), false);

@@ -202,10 +202,10 @@ test('an excluded role skill degrades preload only on targets with a seam', () =
     assert.deepEqual(row.uses, ['/roles/worker/skills/0']);
   }
 
-  const claude = file(result, '.claude/agents/mini-worker.md').content;
+  const claude = file(result, '.claude/agents/worker.md').content;
   assert.equal(claude, [
     '---',
-    'name: mini-worker',
+    'name: worker',
     'description: Runs the miniature step.',
     'skills:',
     '  - helper',
@@ -215,7 +215,7 @@ test('an excluded role skill degrades preload only on targets with a seam', () =
     '',
   ].join('\n'));
   assert.equal(claude.includes('other'), false);
-  const ompAgent = file(result, '.omp/agents/mini-worker.md').content;
+  const ompAgent = file(result, '.omp/agents/worker.md').content;
   assert.ok(ompAgent.includes('autoloadSkills:\n  - helper\n'));
   assert.equal(ompAgent.includes('other'), false);
 });

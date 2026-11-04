@@ -7,7 +7,7 @@
  * artefacts (path→sha256, result digest, resolved options, metadata, capability
  * rows, degradations, roles.json bytes), never renderer intermediates.
  *
- * Byte-total reconciliation with the clean skill names: 139,143 B after removing the bundle prefix from skill, stage and workflow display names.
+ * Byte-total reconciliation with the clean names: 138,183 B after removing the bundle prefix from skill, stage, workflow, role and dsh file names.
  * `.dsh/agent-native/<ns>.cordis.patch.yml` (3,615 B) is replaced 1:1 by
  * `.dsh/agent-native/<ns>.roles.md` (2,261 B), and `roles.json` gained 636 B of
  * target-field metadata from #98/#99. 143,338 − 3,615 + 2,261 + 636 = 142,620.
@@ -48,7 +48,7 @@ const NS = 'rtosv3-drvport';
 const COMPILED_WORKFLOW_DIGEST = '518643ab9c92d270a66bd4545cba660d0511243070c3479234edec3225b6d23c';
 
 // Hard anchors from the ticket; the byte total is the recomputed baseline.
-const BASELINE = { files: 98, bytes: 139143, degradations: 45, capabilities: 40, warnings: 1 };
+const BASELINE = { files: 98, bytes: 138183, degradations: 45, capabilities: 40, warnings: 1 };
 const RUNNER = { files: 45, degradations: 4, capabilities: 8, warnings: 0 };
 
 function sha256(value) {
@@ -219,30 +219,30 @@ test('40 placeholders are visible in the products (1 constitution + 4 roles + 35
     // 1 constitution placeholder: every stage skill carries the inline block, in both roots.
     for (const root of ['.claude', '.agents']) {
       for (const stage of data.options.stageOrder) {
-        const text = product(out, `${root}/skills/${NS}-stage-${stage}/SKILL.md`);
+        const text = product(out, `${root}/skills/stage-${stage}/SKILL.md`);
         assert.match(text, /<!-- constitution:begin scope=global placeholder=true -->/, `${root} ${stage}`);
       }
     }
 
     // 35 skill placeholders: banner + frontmatter flag, mirrored byte-identically.
     for (const skill of placeholders.skills) {
-      const claude = product(out, `.claude/skills/${NS}-skill-${skill}/SKILL.md`);
-      const shared = product(out, `.agents/skills/${NS}-skill-${skill}/SKILL.md`);
+      const claude = product(out, `.claude/skills/${skill}/SKILL.md`);
+      const shared = product(out, `.agents/skills/${skill}/SKILL.md`);
       assert.equal(claude, shared, `${skill} copies`);
       assert.match(shared, /^placeholder: true$/m, skill);
       assert.match(shared, /> \*\*占位（placeholder）\*\*/, skill);
     }
 
     // 4 role placeholders: one marker per role in each of the five target carriers.
-    const catalogue = product(out, `.dsh/agent-native/${NS}.roles.md`);
+    const catalogue = product(out, `.dsh/agent-native/roles.md`);
     for (const role of placeholders.roles) {
       const marker = `<!-- hm2b:placeholder role=${role} -->`;
       assert.equal(catalogue.split(marker).length - 1, 1, `dsh catalogue ${role}`);
       for (const path of [
-        `.claude/agents/${NS}-${role}.md`,
-        `.codex/agents/${NS}-${role}.toml`,
-        `.omp/agents/${NS}-${role}.md`,
-        `.opencode/agents/${NS}-${role}.md`,
+        `.claude/agents/${role}.md`,
+        `.codex/agents/${role}.toml`,
+        `.omp/agents/${role}.md`,
+        `.opencode/agents/${role}.md`,
       ]) {
         assert.equal(product(out, path).split(marker).length - 1, 1, `${path} ${role}`);
       }
@@ -285,10 +285,10 @@ test('one changed compiled workflow byte changes the compiled workflow digest, t
     assert.equal(data.counts.files, BASELINE.files);
     assert.notEqual(data.compiledWorkflow.digest, COMPILED_WORKFLOW_DIGEST);
     assert.notEqual(snapshotDigest(data), SNAPSHOT.resultDigest);
-    assert.notEqual(data.files.find((file) => file.path === `.agents/skills/${NS}-workflow/SKILL.md`).sha256,
-      SNAPSHOT.files.find((file) => file.path === `.agents/skills/${NS}-workflow/SKILL.md`).sha256);
-    assert.notEqual(data.files.find((file) => file.path === `.claude/skills/${NS}-workflow/SKILL.md`).sha256,
-      SNAPSHOT.files.find((file) => file.path === `.claude/skills/${NS}-workflow/SKILL.md`).sha256);
+    assert.notEqual(data.files.find((file) => file.path === `.agents/skills/workflow/SKILL.md`).sha256,
+      SNAPSHOT.files.find((file) => file.path === '.agents/skills/workflow/SKILL.md').sha256);
+    assert.notEqual(data.files.find((file) => file.path === `.claude/skills/workflow/SKILL.md`).sha256,
+      SNAPSHOT.files.find((file) => file.path === '.claude/skills/workflow/SKILL.md').sha256);
     assert.notEqual(data.files.find((file) => file.path === `.agents/agent-native/${NS}/roles.json`).sha256,
       SNAPSHOT.rolesJson.sha256);
   } finally {

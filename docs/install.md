@@ -28,6 +28,14 @@ node .hm2b/release/bundle-rtosv3-drvport-v1.0.0/install.mjs \
 `gh` must be logged in (`gh auth login`); the downloaded tree is disposable and
 ignored by `git` when `.hm2b/` is ignored.
 
+If the tag is already published, do not reuse it: type the next patch (for
+example `1.0.1`) into the web page's **版本** field before uploading. The server
+rewrites `bundle.json`, recompiles, and the **构建并发布** button publishes that
+new tag in one step. A published Release is never overwritten.
+
+The web server reads the local `gh auth token` at startup, so publishing needs
+no `GH_TOKEN` wrapper. Set `HM2B_WEB_GH_AUTH=off` to keep the surface read-only.
+
 `--projection agent-native` installs only host files and one receipt; it never
 installs a runtime. `--target <id>` (repeatable) narrows the host set without
 re-projecting; the bundle's `roles.json` is still installed. `--project <dir>`

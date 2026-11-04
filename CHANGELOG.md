@@ -19,10 +19,15 @@ step-by-step across the engine, the payload, and all five agent adapters; see
   Huawei uses IR for *initial requirement*; `hm2b.ir/v2` documents are now
   rejected. The R2C bundle's own IR/SR/AR references remain domain content and
   are unchanged.
-- Agent-native skills keep the bundle's own skill id as the visible name
-  (`r2c-design`, `stage-analysis-design`, `workflow`). The bundle prefix now
-  remains only in the on-disk directory, so `/skill:` and role
-  `skills`/`autoloadSkills` no longer carry `rtosv3-drvport-`.
+- Agent-native no longer renders the bundle id in any host-visible name:
+  skill, stage, workflow and role directories/frontmatter are bare
+  (`r2c-design`, `stage-analysis-design`, `bys-architect`), and dsh writes
+  `.dsh/agent-native/roles.md`. Two bundles whose bare names overlap now fail
+  with `INSTALL_CONFLICTS` instead of relying on a namespace prefix.
+- The web upload accepts an explicit version override, rewrites
+  `bundle.json`, recompiles it, and the **构建并发布** action builds and
+  publishes in one click. The server reads the local `gh auth token` at
+  startup, so no `GH_TOKEN` shell wrapper is needed.
 - Web build output lists every target's install command at once, and each
   command first runs `gh release download` into `.hm2b/release/<tag>/` then
   installs offline with `--release-base`. The manual `install.mjs` bootstrap

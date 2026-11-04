@@ -89,8 +89,21 @@ function isAlive(pid) {
 }
 
 function startupSecrets(env) {
-  return [env.GH_TOKEN, env.GITHUB_TOKEN]
+  const configured = [env.GH_TOKEN, env.GITHUB_TOKEN]
     .filter((value) => typeof value === 'string' && value !== '');
+  if (configured.length > 0) return configured;
+  if (env.HM2B_WEB_GH_AUTH === 'off') return [];
+  // Read the local gh session once at startup; the browser still never sees
+  // the token, and publish no longer requires a wrapper shell.
+  const result = spawnSync('gh', ['auth', 'token'], {
+    encoding: 'utf8',
+    timeout: 5000,
+    windowsHide: true,
+  });
+  if (result.status === 0 && typeof result.stdout === 'string' && result.stdout.trim() !== '') {
+    return [result.stdout.trim()];
+  }
+  return [];
 }
 
 async function sweepStaleSessions(ownTempRoot) {
@@ -355,6 +368,18 @@ async function main() {
         return;
       }
       status = 200;
+      if (path === '/api/uploads') {
+        const requestedVersion = new URL(request.url, 'http://127.0.0.1').searchParams.get('version');
+        if (requestedVersion !== null && requestedVersion !== '') {
+          const rewritten = builds.rewriteVersion(bytes, requestedVersion);
+          if (rewritten === null) {
+            status = 400;
+            sendWebError(response, status, 'WEB_VERSION_INVALID', 'version must be a semver without build metadata');
+            return;
+          }
+          bytes = rewritten;
+        }
+      }
       const data = await runValidation(bytes);
       if (path === '/api/uploads') {
         data.uploadId = data.compiledWorkflow === null ? null : await builds.persistUpload(bytes, data);

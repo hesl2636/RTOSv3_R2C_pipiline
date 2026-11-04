@@ -128,7 +128,7 @@ test('runner projection: engine, runtime, payload and receipts from a local mirr
     'roles/bys-architect.md',
     `.hm2b/install/receipts/runner/${BUNDLE_ID}.json`,
     '.hm2b/projection/roles.json',
-    '.claude/agents/runner-bys-architect.md',
+    '.claude/agents/bys-architect.md',
     '.claude/commands/hm2b-run.md',
     '.codex/hooks.json',
     '.dsh/hm2b/runtime.cordis.patch.yml',
@@ -173,9 +173,9 @@ test('agent-native projection: host files and one receipt, no runtime', (t) => {
   assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
 
   const files = walk(project);
-  assert.ok(files.includes('.claude/agents/rtosv3-drvport-bys-architect.md'));
-  assert.ok(files.includes('.claude/skills/rtosv3-drvport-workflow/SKILL.md'));
-  assert.ok(files.includes('.codex/agents/rtosv3-drvport-bys-architect.toml'));
+  assert.ok(files.includes('.claude/agents/bys-architect.md'));
+  assert.ok(files.includes('.claude/skills/workflow/SKILL.md'));
+  assert.ok(files.includes('.codex/agents/bys-architect.toml'));
   assert.ok(files.includes('.agents/agent-native/rtosv3-drvport/roles.json'));
   assert.equal(existsSync(join(project, '.hm2b/engine')), false, 'agent-native never installs a runtime');
   assert.equal(existsSync(join(project, '.hm2b/bin/hm2b.js')), false, 'agent-native never writes a launcher');

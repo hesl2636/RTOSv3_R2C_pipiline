@@ -399,18 +399,18 @@ test('render-roles renders four host definitions named runner-<id> and dsh none'
 
   const expected = new Set();
   for (const roleId of roleIds) {
-    expected.add(`.claude/agents/runner-${roleId}.md`);
-    expected.add(`.codex/agents/runner-${roleId}.toml`);
-    expected.add(`.omp/agents/runner-${roleId}.md`);
-    expected.add(`.opencode/agents/runner-${roleId}.md`);
+    expected.add(`.claude/agents/${roleId}.md`);
+    expected.add(`.codex/agents/${roleId}.toml`);
+    expected.add(`.omp/agents/${roleId}.md`);
+    expected.add(`.opencode/agents/${roleId}.md`);
   }
   assert.deepEqual([...new Set(roleFiles.map((file) => file.path))].sort(), [...expected].sort());
   for (const path of expected) assert.equal(existsSync(join(projectRoot, ...path.split('/'))), true, path);
 
-  const claude = read(projectRoot, `.claude/agents/runner-${roleIds[0]}.md`);
-  assert.match(claude, new RegExp(`runner-${roleIds[0]}`));
+  const claude = read(projectRoot, `.claude/agents/${roleIds[0]}.md`);
+  assert.match(claude, new RegExp(roleIds[0]));
   assert.equal(claude.includes('rtosv3-drvport'), false, 'host roles use the runner namespace');
-  assert.equal(read(projectRoot, `.codex/agents/runner-${roleIds[0]}.toml`).includes(`runner-${roleIds[0]}`), true);
+  assert.equal(read(projectRoot, `.codex/agents/${roleIds[0]}.toml`).includes(roleIds[0]), true);
   assert.equal(existsSync(join(projectRoot, '.dsh/agent-native')), false);
 
   const rolesText = read(projectRoot, '.hm2b/projection/roles.json');
@@ -419,7 +419,7 @@ test('render-roles renders four host definitions named runner-<id> and dsh none'
   assert.equal(roles.schema, 'hm2b.projection.roles/v1');
   assert.deepEqual(Object.keys(roles.targets).sort(), [...RUNNER_ROLE_TARGETS].sort());
   assert.equal(roles.targets.dsh, undefined);
-  assert.deepEqual(roles.targets['claude-code'].roles.map((role) => role.name), roleIds.map((id) => `runner-${id}`));
+  assert.deepEqual(roles.targets['claude-code'].roles.map((role) => role.name), roleIds.map((id) => id));
   assert.equal(rolesText.includes(projectRoot.replaceAll('\\', '/')), false);
   const metadataFile = receipt.files.find((file) => file.path === '.hm2b/projection/roles.json');
   assert.equal(metadataFile.kind, 'metadata');

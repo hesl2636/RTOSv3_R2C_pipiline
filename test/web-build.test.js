@@ -9,7 +9,7 @@
  */
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
-import { cpSync, existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import test from 'node:test';
@@ -55,8 +55,8 @@ const ASSETS = [
   'install.mjs',
   'workflow.compiled.json',
 ];
-const RUNNER_CANONICAL = { files: 45, bytes: 48877, degradations: 4, capabilities: 8, warnings: 0 };
-const AGENT_NATIVE_CANONICAL = { files: 98, bytes: 139143, degradations: 45, capabilities: 40, warnings: 1 };
+const RUNNER_CANONICAL = { files: 45, bytes: 48821, degradations: 4, capabilities: 8, warnings: 0 };
+const AGENT_NATIVE_CANONICAL = { files: 98, bytes: 138183, degradations: 45, capabilities: 40, warnings: 1 };
 
 function tempDir(t, prefix) {
   const dir = mkdtempSync(join(tmpdir(), `hm2b-web-build-${prefix}-`));
@@ -112,11 +112,11 @@ function expected({ projectionId, raw = null, engineVersion, bundle = SAMPLE }) 
   };
 }
 
-async function uploadBytes(server, csrf, zip) {
+async function uploadBytes(server, csrf, zip, query = '') {
   const response = await httpRequest({
     port: server.port,
     method: 'POST',
-    path: '/api/uploads',
+    path: `/api/uploads${query}`,
     headers: postHeaders(server, csrf, {
       'Content-Type': 'application/zip',
       'Content-Length': String(zip.length),
@@ -346,6 +346,26 @@ test('compiled workflow v2 asset groups are listed in every projection summary w
   }
 });
 
+test('upload version override rewrites the bundle manifest and every release artifact name', async (t) => {
+  const server = await startWebServer(t);
+  const { csrf } = await sessionOf(server);
+  const uploaded = await uploadBytes(server, csrf, readFileSync(SAMPLE), '?version=1.0.1');
+  assert.equal(uploaded.compiledWorkflow.version, '1.0.1');
+
+  const response = await build(server, csrf, { uploadId: uploaded.uploadId, options: {} });
+  assert.equal(response.status, 200, JSON.stringify(response.json));
+  const data = response.json.data;
+  assert.equal(data.tag, 'bundle-rtosv3-drvport-v1.0.1');
+  assert.ok(data.artifacts.some((asset) => asset.name === 'bundle-rtosv3-drvport-v1.0.1.zip'));
+  for (const item of data.install.commands) assert.match(item.command, /--version 1\.0\.1\b/);
+
+  const native = projectionOf(data, 'agent-native');
+  const paths = native.files.map((file) => file.path);
+  assert.equal(paths.includes('.claude/skills/r2c-design/SKILL.md'), true);
+  assert.equal(paths.some((path) => /(?:^|\/)rtosv3-drvport-(?:skill|stage|workflow)-/.test(path)), false);
+  assert.equal(paths.includes('.claude/agents/bys-architect.md'), true);
+});
+
 test('custom options build locally, record the actual options and stay unpublishable', async (t) => {
   const server = await startWebServer(t);
   const { csrf, engineVersion } = await sessionOf(server);
@@ -454,7 +474,11 @@ test('a custom build chain re-projects the downloaded compiled workflow and inst
   for (const [projectionId, target] of [['runner', null], ['agent-native', 'claude-code']]) {
     const item = data.install.commands.find((entry) => entry.projection === projectionId && entry.target === target);
     assert.ok(item, `${projectionId}/${String(target)}`);
-    const run = runChain(item.command, root);
+    const chainRoot = join(root, projectionId);
+    mkdirSync(chainRoot, { recursive: true });
+    writeFileSync(join(chainRoot, 'workflow.compiled.json'), download.raw);
+    const command = item.command.replace(/ --project \.$/, ` --project ${chainRoot}`);
+    const run = runChain(command, root);
     assert.equal(run.status, 0, `${item.command}\n${run.stdout}\n${run.stderr}`);
 
     const resultDir = join(root, '.hm2b', 'build', target === null ? projectionId : `${projectionId}-${target}`);
@@ -470,7 +494,7 @@ test('a custom build chain re-projects the downloaded compiled workflow and inst
       'the result directory carries the downloaded compiled workflow bytes',
     );
 
-    const receiptPath = join(root, '.hm2b', 'install', 'receipts', projectionId, 'rtosv3-drvport.json');
+    const receiptPath = join(chainRoot, '.hm2b', 'install', 'receipts', projectionId, 'rtosv3-drvport.json');
     assert.equal(existsSync(receiptPath), true, `missing receipt ${receiptPath}`);
     const receipt = JSON.parse(readFileSync(receiptPath, 'utf8'));
     assert.equal(receipt.bundle.id, 'rtosv3-drvport');

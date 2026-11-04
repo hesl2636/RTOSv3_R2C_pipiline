@@ -867,6 +867,8 @@ async function preview() {
   if (body === null) return;
   clear(body);
   if (button !== null) button.disabled = true;
+  const publishButton = byId('build-publish-button');
+  if (publishButton !== null) publishButton.disabled = true;
   if (state.compiledWorkflow === null) {
     show(body, false);
     if (status !== null) status.textContent = '请先上传并通过校验，才能预览投影。';
@@ -959,6 +961,8 @@ async function preview() {
       : '请先修正上方选项；选项无效时无法构建。';
   }
   if (button !== null) button.disabled = !ok || state.uploadId === null;
+  const buildPublish = byId('build-publish-button');
+  if (buildPublish !== null) buildPublish.disabled = !ok || state.uploadId === null;
 }
 
 function copyable(text) {
@@ -1222,7 +1226,7 @@ function renderBuild(build) {
 
 async function buildAssets() {
   const status = byId('build-status');
-  if (state.compiledWorkflow === null || state.uploadId === null) return;
+  if (state.compiledWorkflow === null || state.uploadId === null) return null;
   if (status !== null) status.textContent = '正在服务端构建…';
   let payload;
   try {
@@ -1248,11 +1252,11 @@ async function buildAssets() {
         const suffix = details === null || details === undefined ? '' : ` — ${JSON.stringify(details)}`;
         status.textContent = `${code}: ${payload?.error?.message ?? '构建失败'}${suffix}`;
       }
-      return;
+      return null;
     }
   } catch (error) {
     if (status !== null) status.textContent = `构建失败：${error instanceof Error ? error.message : String(error)}`;
-    return;
+    return null;
   }
   const build = payload.data;
   for (const projection of build.projections) {
@@ -1267,6 +1271,19 @@ async function buildAssets() {
       ? `默认构建：${build.artifacts.length} 个资源，可发布。`
       : `自定义选项：${build.artifacts.length} 个仅本地资源（publishable: false）。`;
   }
+  return build;
+}
+
+async function buildAndPublish() {
+  const build = await buildAssets();
+  if (build === null) return;
+  if (!build.publishable) return;
+  if (state.publish?.enabled !== true) {
+    const status = byId('publish-status');
+    if (status !== null) status.textContent = '构建完成；发布未启用（服务端没有可用的 gh token）。';
+    return;
+  }
+  await publishRelease();
 }
 
 /* -------------------------------------------------------------------------- */
@@ -1308,9 +1325,19 @@ function refreshButton() {
   if (button !== null) button.disabled = selectedFile() === null;
 }
 
+function requestedVersion() {
+  const input = byId('bundle-version');
+  return input === null ? '' : input.value.trim();
+}
+
 async function upload() {
   const file = selectedFile();
   if (file === null) return;
+  const version = requestedVersion();
+  if (version !== '' && !/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(version)) {
+    setStatus('版本必须是 semver，例如 1.0.1；不能带 +build 元数据。');
+    return;
+  }
   clearMismatch();
   show(byId('overview'), false);
   setStatus('正在读取文件…');
@@ -1322,7 +1349,7 @@ async function upload() {
   }
 
   let localReport = null;
-  if (!state.degraded) {
+  if (!state.degraded && version === '') {
     setStatus('正在浏览器中用共享校验器校验…');
     try {
       localReport = await validateBundleAsync(bytes, { inflateRaw, sha256: sha256Hex }, { path: 'bundle.zip' });
@@ -1337,7 +1364,7 @@ async function upload() {
   setStatus('正在上传，由服务端做权威校验与编译…');
   let payload;
   try {
-    const response = await fetch('/api/uploads', {
+    const response = await fetch(`/api/uploads${version === '' ? '' : `?version=${encodeURIComponent(version)}`}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/zip',
@@ -1365,7 +1392,7 @@ async function upload() {
     return;
   }
 
-  if (localReport !== null && !sameReport(localReport, data.report)) {
+  if (localReport !== null && version === '' && !sameReport(localReport, data.report)) {
     setMismatch('相同字节下，浏览器校验报告与服务端报告不一致。');
   }
   renderReport(data.report);
@@ -1449,6 +1476,9 @@ async function bootstrap() {
   byId('reset-options').addEventListener('click', () => resetOptions());
   byId('build-button').addEventListener('click', () => {
     void buildAssets();
+  });
+  byId('build-publish-button').addEventListener('click', () => {
+    void buildAndPublish();
   });
   byId('publish-button').addEventListener('click', () => {
     void publishRelease();

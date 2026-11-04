@@ -34,7 +34,7 @@ const capabilities = Object.freeze({
   },
   subagents: {
     level: 'degraded',
-    note: '角色以宿主原生定义安装并按 runner-<id> 命名，但 runner 只输出角色提示、从不强制派发。',
+    note: '角色以宿主原生定义安装并按裸 role id 命名，但 runner 只输出角色提示、从不强制派发。',
   },
   skills: {
     level: 'native',

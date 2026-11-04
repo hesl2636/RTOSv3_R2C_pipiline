@@ -196,16 +196,16 @@ test('role TOMLs match the prototype oracle byte for byte', () => {
   const { result } = codexSample();
   const byPath = new Map(result.files.map((file) => [file.path, file.content]));
   const hashes = {
-    '.codex/agents/rtosv3-drvport-bys-architect.toml': '8c9da9ed40dda49dacf2072f5eebaa78bf16999de1dcaad60d5283a204f0f3bd',
-    '.codex/agents/rtosv3-drvport-bys-designer.toml': '2747f7cedf0eaf3d1cf11e6b1f9e4468f6c7fffd411c529e6b8f2fcf863bf1ba',
-    '.codex/agents/rtosv3-drvport-bys-impl-lead.toml': '8e9249c147be284b841201c5416dd8d6209d980afe7ad3b8600d1188e31535fe',
-    '.codex/agents/rtosv3-drvport-bys-release-lead.toml': 'b0365bca01634865717de621348b79e6f4b4a50fc25571ef0e1c3fdaff2ae445',
+    '.codex/agents/bys-architect.toml': 'ca7831924123b85810bd5557c1df444e7318892b9a5709ffeeeb0b97f537c20b',
+    '.codex/agents/bys-designer.toml': '1770f037ad30d6f4a2cef1de3c0cf2c553cdd3ca77d24780c17fc12698fa3aaf',
+    '.codex/agents/bys-impl-lead.toml': '699bdfbefba0d9d7b991d8268964e662a35bb0234d2f00aa1d110b94154f0b58',
+    '.codex/agents/bys-release-lead.toml': 'c79bd1e98f67806e3e3d4587925da755819ab32dd10d6bd1b93311c7cc1247ba',
   };
   for (const [path, hash] of Object.entries(hashes)) {
     assert.equal(sha256(byPath.get(path)), hash, path);
   }
-  assert.equal(byPath.get('.codex/agents/rtosv3-drvport-bys-architect.toml'), [
-    'name = "rtosv3-drvport-bys-architect"',
+  assert.equal(byPath.get('.codex/agents/bys-architect.toml'), [
+    'name = "bys-architect"',
     'description = "占位：分析设计阶段主控角色，正文待补；委派时机见分析设计任务书。"',
     'developer_instructions = """',
     '> **占位（placeholder）** 本角色由规范包声明为占位：未提供角色正文。',
@@ -289,8 +289,8 @@ test('shared skills are the Claude bytes at the shared root', () => {
 test('the role body is identical to Claude; only the shell differs', () => {
   const codex = codexSample().result;
   const claude = claudeSample();
-  const toml = codex.files.find((file) => file.path === '.codex/agents/rtosv3-drvport-bys-architect.toml').content;
-  const md = claude.files.find((file) => file.path === '.claude/agents/rtosv3-drvport-bys-architect.md').content;
+  const toml = codex.files.find((file) => file.path === '.codex/agents/bys-architect.toml').content;
+  const md = claude.files.find((file) => file.path === '.claude/agents/bys-architect.md').content;
   const mdBody = md.slice(md.indexOf('\n---\n') + 5);
   const start = toml.indexOf('"""') + 3;
   const tomlBody = toml.slice(start, toml.lastIndexOf('"""'));
@@ -302,7 +302,7 @@ test('submit receipts and constitution placement are identical to Claude', () =>
   const codex = codexSample().result;
   const claude = claudeSample();
   const pick = (result, path) => result.files.find((file) => file.path === path).content;
-  const relative = 'rtosv3-drvport-stage-analysis-design/SKILL.md';
+  const relative = 'stage-analysis-design/SKILL.md';
   const codexStage = pick(codex, `.agents/skills/${relative}`);
   const claudeStage = pick(claude, `.claude/skills/${relative}`);
   assert.equal(codexStage, claudeStage);
@@ -311,8 +311,8 @@ test('submit receipts and constitution placement are identical to Claude', () =>
   assert.match(codexStage, /^# hm2b-submit: step=analysis-design$/m);
   assert.doesNotMatch(codexStage, /\{\{submit\}\}/);
   assert.doesNotMatch(codexStage, /node \.hm2b\/bin\/hm2b\.js/);
-  const entry = pick(codex, '.agents/skills/rtosv3-drvport-workflow/SKILL.md');
-  assert.equal(entry, pick(claude, '.claude/skills/rtosv3-drvport-workflow/SKILL.md'));
+  const entry = pick(codex, '.agents/skills/workflow/SKILL.md');
+  assert.equal(entry, pick(claude, '.claude/skills/workflow/SKILL.md'));
   assert.doesNotMatch(entry, /constitution:begin/);
 });
 
@@ -341,7 +341,7 @@ test('a tool allow-list degrades by field and names the lost tokens', () => {
   assert.equal(deny.pointer, '/roles/worker');
   assert.match(deny.reason, /任务|task/);
   assert.match(deny.effect, /task（角色仍可再派子 agent）/);
-  const file = result.files.find((item) => item.path === '.codex/agents/mini-worker.toml');
+  const file = result.files.find((item) => item.path === '.codex/agents/worker.toml');
   assert.doesNotMatch(file.content, /features\.shell_tool/);
   assert.doesNotMatch(file.content, /^tools\s*=/m);
 });
@@ -351,7 +351,7 @@ test('a bash-only deny is adapted to features.shell_tool = false', () => {
   const result = runProject({ compiledWorkflow, compiledWorkflowDigest: 'a'.repeat(64), raw: { targets: ['codex'] } });
   assert.equal(result.ok, true);
   assert.equal(result.degradations.some((record) => record.field === 'tools_deny'), false);
-  const file = result.files.find((item) => item.path === '.codex/agents/mini-shell.toml');
+  const file = result.files.find((item) => item.path === '.codex/agents/shell.toml');
   assert.match(file.content, /^features\.shell_tool = false$/m);
   const roles = JSON.parse(result.files.find((item) => item.path === '.agents/agent-native/mini/roles.json').content);
   assert.equal(roles.targets.codex.roles[0].fields.tools_deny.state, 'adapted');
@@ -363,7 +363,7 @@ test('model tiers without an alias are omitted; high efforts clamp', () => {
   });
   const result = runProject({ compiledWorkflow, compiledWorkflowDigest: 'a'.repeat(64), raw: { targets: ['codex'] } });
   assert.equal(result.ok, true);
-  const file = result.files.find((item) => item.path === '.codex/agents/mini-worker.toml');
+  const file = result.files.find((item) => item.path === '.codex/agents/worker.toml');
   assert.doesNotMatch(file.content, /^model\s*=/m);
   assert.match(file.content, /^model_reasoning_effort = "high"$/m);
   const model = result.degradations.find((record) => record.field === 'model');
@@ -385,10 +385,10 @@ test('preload has no seam: skills stay out of the TOML and degrade per use', () 
   ]);
   assert.match(preload[0].reason, /没有按 agent 预载技能的接缝/);
   assert.equal(result.capabilityReport.find((row) => row.capability === 'preload').level, 'unavailable');
-  const file = result.files.find((item) => item.path === '.codex/agents/mini-worker.toml');
+  const file = result.files.find((item) => item.path === '.codex/agents/worker.toml');
   assert.doesNotMatch(file.content, /^skills\s*=/m);
   assert.doesNotMatch(file.content, /autoloadSkills/);
-  assert.equal(result.files.some((item) => item.path === '.agents/skills/mini-skill-helper/SKILL.md'), true);
+  assert.equal(result.files.some((item) => item.path === '.agents/skills/helper/SKILL.md'), true);
   const roles = JSON.parse(result.files.find((item) => item.path === '.agents/agent-native/mini/roles.json').content);
   assert.equal(roles.targets.codex.roles[0].fields.skills.state, 'unavailable');
 });
@@ -402,7 +402,7 @@ test('mode=primary is skipped with a warning instead of faking an agent', () => 
   });
   const result = runProject({ compiledWorkflow, compiledWorkflowDigest: 'a'.repeat(64), raw: { targets: ['codex'] } });
   assert.equal(result.ok, true);
-  assert.equal(result.files.some((file) => file.path === '.codex/agents/mini-primary.toml'), false);
+  assert.equal(result.files.some((file) => file.path === '.codex/agents/primary.toml'), false);
   assert.deepEqual(result.warnings, [{
     code: 'ROLE_EXPOSURE_SKIPPED',
     target: 'codex',

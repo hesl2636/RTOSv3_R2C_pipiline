@@ -161,11 +161,11 @@ test('the submit token is sliced literally, never through $ replacement semantic
 
 test('renderRole renders the baseline Claude role byte-for-byte', () => {
   const rendered = renderRole(SAMPLE_ROLE, 'claude-code', ctx(new Map()));
-  assert.equal(rendered.name, 'rtosv3-drvport-bys-architect');
-  assert.equal(rendered.basename, 'rtosv3-drvport-bys-architect.md');
+  assert.equal(rendered.name, 'bys-architect');
+  assert.equal(rendered.basename, 'bys-architect.md');
   assert.equal(rendered.format, 'md');
   assert.equal(rendered.exposure, 'subagent');
-  assert.equal(sha256(rendered.content), '1c689ab30c3e4b4aec4f3ee8e04e244b91739b8c36922ae47f6603a43c805dc4');
+  assert.equal(sha256(rendered.content), 'e7d61157b65bc90831d9c1b3927bbe90f7567935c932498375afe6fffbf5837b');
   assert.deepEqual(Object.keys(rendered.fields), [
     'id', 'description', 'instructions', 'mode', 'model', 'title', 'placeholder',
   ]);
@@ -177,7 +177,7 @@ test('renderRole renders the baseline Claude role byte-for-byte', () => {
 test('renderRole maps tools, denies and preload names for Claude', () => {
   const skillNames = new Map([['codebase-search', 'codebase-search']]);
   const rendered = renderRole(FULL_ROLE, 'claude-code', ctx(skillNames));
-  assert.match(rendered.content, /^---\nname: rtosv3-drvport-bys-architect\n/);
+  assert.match(rendered.content, /^---\nname: bys-architect\n/);
   assert.match(rendered.content, /\nmodel: opus\n/);
   assert.match(rendered.content, /\neffort: high\n/);
   assert.match(rendered.content, /\ntools:\n {2}- Read\n {2}- Write\n {2}- Edit\n {2}- Glob\n {2}- Grep\n/);
@@ -195,8 +195,8 @@ test('renderRole resolves the closed registry when ctx omits a target table', ()
     namespace: 'rtosv3-drvport',
     skillNames: new Map(),
   });
-  assert.equal(rendered.name, 'rtosv3-drvport-bys-architect');
-  assert.equal(sha256(rendered.content), '1c689ab30c3e4b4aec4f3ee8e04e244b91739b8c36922ae47f6603a43c805dc4');
+  assert.equal(rendered.name, 'bys-architect');
+  assert.equal(sha256(rendered.content), 'e7d61157b65bc90831d9c1b3927bbe90f7567935c932498375afe6fffbf5837b');
   assert.throws(() => renderRole(SAMPLE_ROLE, 'claude-code', { namespace: 'rtosv3-drvport' }), /ctx\.skillNames/);
 });
 

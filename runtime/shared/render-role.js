@@ -167,7 +167,7 @@ export function renderRole(role, targetId, ctx) {
     throw projectionError('PROJECTION_INTERNAL', 'renderRole needs role.id');
   }
   const descriptor = descriptorFor(ctx, targetId);
-  const name = `${ctx.namespace}-${role.id}`;
+  const name = role.id;
   if (!ROLE_ID_RE.test(name) || [...name].length > MAX_ROLE_NAME) {
     throw projectionError('PROJECTION_NAME_TOO_LONG', `rendered role name ${name} is not a kebab id of at most 64 characters`, {
       target: targetId,

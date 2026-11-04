@@ -88,7 +88,7 @@ test('project writes the 45-file Claude tree and prints one envelope line', () =
     assert.equal(files.some((file) => /(?:^|[\\/])CLAUDE\.md$/.test(file)), false);
     assert.equal(files.some((file) => /\.hm2b[\\/]/.test(file)), false);
     assert.equal(existsSync(join(out, '.agents', 'agent-native', 'rtosv3-drvport', 'roles.json')), true);
-    const stage = readFileSync(join(out, '.claude', 'skills', 'rtosv3-drvport-stage-analysis-design', 'SKILL.md'), 'utf8');
+    const stage = readFileSync(join(out, '.claude', 'skills', 'stage-analysis-design', 'SKILL.md'), 'utf8');
     assert.ok(stage.indexOf('<!-- constitution:begin') < stage.indexOf('# 阶段'));
     assert.equal(stage.includes('{{submit}}'), false);
   } finally {

@@ -45,6 +45,9 @@ node bin/hm2b-assembler.js compile ./bundle.zip --out ./dist</code></pre>
       <p class="hint">只接受单个 <code>.zip</code>。文件在内存中校验，不会保存到磁盘。</p>
       <div class="row upload-row">
         <input id="file-input" type="file" accept=".zip,application/zip,application/x-zip-compressed">
+        <label class="mono hint version-field">版本
+          <input id="bundle-version" type="text" inputmode="numeric" placeholder="留空沿用 bundle.json">
+        </label>
         <button id="upload-button" class="btn-primary" type="button" disabled>校验并编译</button>
       </div>
       <p id="upload-status" class="status" role="status"></p>
@@ -202,7 +205,10 @@ node bin/hm2b-assembler.js compile ./bundle.zip --out ./dist</code></pre>
           <span class="step" aria-hidden="true">06</span>
           <h2 id="build-title">构建产物</h2>
         </div>
-        <button id="build-button" class="btn-primary" type="button" disabled>构建</button>
+        <div class="actions">
+          <button id="build-publish-button" class="btn-secondary" type="button" disabled>构建并发布</button>
+          <button id="build-button" class="btn-primary" type="button" disabled>构建</button>
+        </div>
       </div>
       <p class="hint">默认选项生成可发布的资产集；自定义选项只在本地构建。产物来自 release 工具，不会写入项目目录。</p>
       <p id="build-status" class="status" role="status"></p>

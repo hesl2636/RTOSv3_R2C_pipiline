@@ -6,7 +6,7 @@
  * v1 does not guess that row (the `insert:` entry key and the preset plugin
  * shape were not first-hand verified when the contract froze), so the target
  * ships the shared `.agents/skills` tree plus one aggregate, manually driven
- * role catalogue `.dsh/agent-native/<ns>.roles.md`. No preset lines, no
+ * role catalogue `.dsh/agent-native/roles.md`. No preset lines, no
  * `allowedAgentPresets`, and `subagents` stays `unavailable`.
  *
  * Data only: capability matrix, exposure, field states and the catalogue byte
@@ -80,7 +80,7 @@ function roleCatalogue({ compiledWorkflow, roleIds, renderedByRole }) {
   const files = [];
   const artifacts = {};
   if (roleIds.length === 0) return { files, artifacts };
-  const path = `${AGENTS_ROOT}/${compiledWorkflow.id}.roles.md`;
+  const path = `${AGENTS_ROOT}/roles.md`;
   const sections = roleIds.map((roleId) => renderedByRole.get(roleId).content);
   files.push({
     path,
@@ -127,7 +127,7 @@ export const dshTarget = Object.freeze({
     Object.freeze({ path: 'runtime/agent-native/targets/dsh/assets/index.mjs', sha256: '485d979b63f439c69fc26bccea9ee2b9ec2673660ff3e1b81e425ea8c267faf7' }),
     Object.freeze({ path: 'runtime/agent-native/targets/dsh/assets/package.json', sha256: '2a3fd663c4034d73957def32f48ce2f44bf566d915d19c4543dc376c6472bf30' }),
     ],
-    smoke: (namespace) => layoutSmoke(namespace, { skillsRoot: '.agents/skills', extra: [{ kind: 'agents', root: '.dsh/agent-native', prefix: `${namespace}.`, format: 'md' }] }),
+    smoke: (namespace) => layoutSmoke(namespace, { skillsRoot: '.agents/skills', extra: [{ kind: 'agents', root: '.dsh/agent-native', prefix: '', format: 'md' }] }),
   }),
   layout: Object.freeze({
     skillsRoot: '.agents/skills',
@@ -141,7 +141,7 @@ export const dshTarget = Object.freeze({
     extension: 'md',
     formatName: 'md',
     identity: Object.freeze({ state: 'adapted', reason: '角色段落标题承载渲染名' }),
-    basename: (name) => `${name}.roles.md`,
+    basename: () => 'roles.md',
     exposure({ mode }) {
       if (mode === 'any') return 'both';
       return mode;

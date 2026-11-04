@@ -20,10 +20,10 @@ const ROLE_ID = 'bys-architect';
 const SKILL_ID = 'v3-kb';
 const HOST_TARGETS = ['claude-code', 'codex', 'omp', 'opencode'];
 const AGENT_PATHS = {
-  'claude-code': `.claude/agents/runner-${ROLE_ID}.md`,
-  codex: `.codex/agents/runner-${ROLE_ID}.toml`,
-  omp: `.omp/agents/runner-${ROLE_ID}.md`,
-  opencode: `.opencode/agents/runner-${ROLE_ID}.md`,
+  'claude-code': `.claude/agents/${ROLE_ID}.md`,
+  codex: `.codex/agents/${ROLE_ID}.toml`,
+  omp: `.omp/agents/${ROLE_ID}.md`,
+  opencode: `.opencode/agents/${ROLE_ID}.md`,
 };
 
 function read(projectRoot, path) {
@@ -65,7 +65,7 @@ test('host roles never preload a skill the runner install did not place', (t) =>
 
   const claudePath = AGENT_PATHS['claude-code'];
   const claude = read(projectRoot, claudePath);
-  assert.match(claude, new RegExp(`^name: runner-${ROLE_ID}$`, 'm'));
+  assert.match(claude, new RegExp(`^name: ${ROLE_ID}$`, 'm'));
   assert.equal(claude.includes(compiledWorkflow.roles[ROLE_ID].description), true, 'role description is unchanged');
   assert.match(claude, /占位（placeholder）/, 'role instructions are unchanged');
 

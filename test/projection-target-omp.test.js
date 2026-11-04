@@ -135,7 +135,7 @@ function miniCompiledWorkflow({ id = 'mini', roleId = 'worker', role = {}, skill
 }
 
 function roleFile(result, roleId = 'worker') {
-  return result.files.find((file) => file.path === `.omp/agents/mini-${roleId}.md`);
+  return result.files.find((file) => file.path === `.omp/agents/${roleId}.md`);
 }
 
 function ompDegradations(result, pointer, field) {
@@ -189,10 +189,10 @@ test('sample omp role bytes match the prototype oracle', () => {
   const { result } = ompSample();
   const byPath = new Map(result.files.map((file) => [file.path, file.content]));
   const hashes = {
-    '.omp/agents/rtosv3-drvport-bys-architect.md': 'adf799b37a3e0b904109d930d259e3e8578e45cc57937c4bc65e8a4ade1b3cee',
-    '.omp/agents/rtosv3-drvport-bys-designer.md': '62dbe92405a8109bde8e58926bff6c54771fdfffff62558a4363dcd4b211c105',
-    '.omp/agents/rtosv3-drvport-bys-impl-lead.md': '8544abe18bbeed178bfbd08cd8c827015ad0c4e1a6dba8ddf5b22930ab48afc1',
-    '.omp/agents/rtosv3-drvport-bys-release-lead.md': 'd7244a17980b06a97a635d5f8556a3b0508f93deac07d55d81d60a5fa04c1c43',
+    '.omp/agents/bys-architect.md': '7c3d5035a1d6b2ce31dc235378d21b62450161353725e7951fb452b3b45873c7',
+    '.omp/agents/bys-designer.md': 'd815d3a58ea2ab4f4062a463cf92bfcd533b8d3d81ba4b99315ab85b5600d7b1',
+    '.omp/agents/bys-impl-lead.md': 'fe7f2814ebab4833f3aabe4dcab01d132de647cd7bc34fe8a1f2a857aa5e598e',
+    '.omp/agents/bys-release-lead.md': '89db87bd699b62699e25d961a609941e0153af9d08c5236daa6405111602d347',
   };
   for (const [path, hash] of Object.entries(hashes)) assert.equal(sha256(byPath.get(path)), hash, path);
 });
@@ -214,7 +214,7 @@ test('full-field omp frontmatter: tools, thinking-level and autoloadSkills order
   assert.equal(result.ok, true);
   assert.equal(roleFile(result).content, [
     '---',
-    'name: mini-worker',
+    'name: worker',
     'description: Runs the miniature step.',
     'tools:',
     '  - read',

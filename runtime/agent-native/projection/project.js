@@ -103,14 +103,14 @@ export function projectAgentNative(input) {
   const coverageSteps = renderedStageOrder.flatMap((stage) => stage.steps.map((step) => step.id));
 
   const roleIds = sorted(Object.keys(compiledWorkflow.roles ?? {}));
-  // Display names stay clean: the bundle prefix only guards on-disk collisions.
-  // Skill commands (omp `/skill:<name>`, Claude `skills:`) read these names.
+  // Every rendered name is the bare id: no bundle prefix reaches a skill,
+  // stage, workflow or role entry, in directories or frontmatter.
   const workflowName = 'workflow';
-  const workflowDir = `${compiledWorkflow.id}-workflow`;
+  const workflowDir = workflowName;
   const stageName = (stage) => `stage-${stage.id}`;
   const stageNames = compiledWorkflow.stages.map(stageName);
   const skillNames = new Map([...selectedSkills].map((id) => [id, id]));
-  const roleNames = roleIds.map((id) => `${compiledWorkflow.id}-${id}`);
+  const roleNames = roleIds.map((id) => id);
 
   // --- names: kebab, <=64, cross-kind unique within a target --------------
   const nameErrors = [];
@@ -128,7 +128,7 @@ export function projectAgentNative(input) {
     checkName(stageName(stage), `/stages/${index}`);
   }
   for (const skillId of selectedSkills) checkName(skillNames.get(skillId), `/skills/${skillId}`);
-  for (const roleId of roleIds) checkName(`${compiledWorkflow.id}-${roleId}`, `/roles/${roleId}`);
+  for (const roleId of roleIds) checkName(roleId, `/roles/${roleId}`);
   for (const target of targets) {
     const seen = new Set();
     for (const name of [workflowName, ...stageNames, ...sorted([...selectedSkills].map((id) => skillNames.get(id))), ...roleNames]) {
@@ -183,7 +183,7 @@ export function projectAgentNative(input) {
       if (step.role === undefined) {
         bullets.push('- 执行者：主会话直接执行。');
       } else {
-        bullets.push(`- 执行者：子 agent \`${compiledWorkflow.id}-${step.role}\`（派发时把本文开头的宪法块与本步骤全文一并交给它）。`);
+        bullets.push(`- 执行者：子 agent \`${step.role}\`（派发时把本文开头的宪法块与本步骤全文一并交给它）。`);
       }
       const stepSkills = sorted(step.skills.filter((id) => selectedSkills.has(id)).map((id) => skillNames.get(id)));
       if (stepSkills.length > 0) {
@@ -262,10 +262,10 @@ export function projectAgentNative(input) {
   for (const [root, group] of skillGroups) {
     addFile(`${root}/${workflowDir}/SKILL.md`, group, 'workflow', workflowLines);
     for (const stage of renderedStageOrder) {
-      addFile(`${root}/${compiledWorkflow.id}-${stageName(stage)}/SKILL.md`, group, 'stage', stageContents.get(stage.id));
+      addFile(`${root}/${stageName(stage)}/SKILL.md`, group, 'stage', stageContents.get(stage.id));
     }
     for (const skillId of sorted(selectedSkills)) {
-      addFile(`${root}/${compiledWorkflow.id}-skill-${skillId}/SKILL.md`, group, 'skill', skillContents.get(skillId));
+      addFile(`${root}/${skillNames.get(skillId)}/SKILL.md`, group, 'skill', skillContents.get(skillId));
     }
   }
 
@@ -531,7 +531,7 @@ export function projectAgentNative(input) {
     idMap[target] = {
       stages: {},
       steps: {},
-      roles: Object.fromEntries(roleIds.map((roleId) => [roleId, `${compiledWorkflow.id}-${roleId}`])),
+      roles: Object.fromEntries(roleIds.map((roleId) => [roleId, roleId])),
       skills: Object.fromEntries(sorted(selectedSkills).map((skillId) => [skillId, skillNames.get(skillId)])),
     };
   }
@@ -545,10 +545,10 @@ export function projectAgentNative(input) {
     'roles-json': rolesJsonPath,
   };
   for (const stage of renderedStageOrder) {
-    artifacts[`stage-${stage.id}`] = `${pickSkillRoot}/${compiledWorkflow.id}-${stageName(stage)}/SKILL.md`;
+    artifacts[`stage-${stage.id}`] = `${pickSkillRoot}/${stageName(stage)}/SKILL.md`;
   }
   for (const skillId of sorted(selectedSkills)) {
-    artifacts[`skill-${skillId}`] = `${pickSkillRoot}/${compiledWorkflow.id}-skill-${skillId}/SKILL.md`;
+    artifacts[`skill-${skillId}`] = `${pickSkillRoot}/${skillNames.get(skillId)}/SKILL.md`;
   }
   for (const [key, path] of Object.entries(extraArtifacts)) artifacts[key] = path;
   for (const [key, path] of assetArtifacts) artifacts[key] = path;

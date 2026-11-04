@@ -256,7 +256,8 @@ function targetSmokeCheck(projectRoot, receipts) {
     const namespace = receipt.bundle?.id;
     if (typeof namespace !== 'string' || namespace === '') continue;
     const targets = new Set(receipt.host_targets ?? []);
-    for (const file of receipt.files ?? []) {
+    const receiptFiles = Array.isArray(receipt.files) ? receipt.files : [];
+    for (const file of receiptFiles) {
       for (const target of file.targets ?? []) targets.add(target);
     }
     for (const target of [...targets].sort(compareCodePoints)) {
@@ -278,10 +279,20 @@ function targetSmokeCheck(projectRoot, receipts) {
         }
         const dir = join(projectRoot, ...expectation.root.split('/'));
         let names = [];
-        try {
-          names = readdirSync(dir).filter((name) => name.startsWith(expectation.prefix));
-        } catch {
-          names = [];
+        if (expectation.prefix === '') {
+          // Bare names are scoped by this receipt, not by a bundle prefix; an
+          // unrelated host skill in the same root must not fail the smoke.
+          const rootPrefix = `${expectation.root}/`;
+          names = [...new Set(receiptFiles
+            .filter((file) => (file.targets ?? []).includes(target) && typeof file.path === 'string' && file.path.startsWith(rootPrefix))
+            .map((file) => file.path.slice(rootPrefix.length).split('/')[0])
+            .filter((name) => name !== ''))];
+        } else {
+          try {
+            names = readdirSync(dir).filter((name) => name.startsWith(expectation.prefix));
+          } catch {
+            names = [];
+          }
         }
         if (names.length === 0) {
           missing.push(`${expectation.kind}:${expectation.root}/${expectation.prefix}*`);

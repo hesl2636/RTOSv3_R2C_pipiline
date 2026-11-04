@@ -142,7 +142,7 @@ export function createPublishService({
   const { randomBytes, spawnSync, mkdir, resolve, spawn } = node;
   // Release credentials stay in this closure: never serialized, never logged,
   // never placed in a URL or an argv (decision #75 §8).
-  const token = startupToken(env);
+  const token = startupToken(env) ?? secrets.find((value) => typeof value === 'string' && value !== '') ?? null;
   const repo = resolvePublishRepo(root, env, spawnSync);
   const apiBase = resolveGithubApi(env);
   const config = Object.freeze({
@@ -223,6 +223,7 @@ export function createPublishService({
         TMPDIR: tmpDir,
         TEMP: tmpDir,
         TMP: tmpDir,
+        GH_TOKEN: token,
         GH_REPO: config.repo,
       });
       if (apiBase === DEFAULT_GITHUB_API) delete childEnv.HM2B_GITHUB_API;

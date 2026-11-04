@@ -132,7 +132,7 @@ const PUBLISH_ENV = (fixture, extra = {}) => ({
 /* -------------------------------------------------------------------------- */
 
 test('no token: the session says why, the API answers 403 and the button stays disabled', async (t) => {
-  const server = await startWebServer(t, { GH_TOKEN: '', GITHUB_TOKEN: '', GH_REPO: REPO });
+  const server = await startWebServer(t, { GH_TOKEN: '', GITHUB_TOKEN: '', GH_REPO: REPO, HM2B_WEB_GH_AUTH: 'off' });
   const session = await sessionOf(server);
   assert.deepEqual(session.publish, { enabled: false, reason: 'no-token', repo: REPO });
   assert.equal(JSON.stringify(session).includes('ghp_'), false);

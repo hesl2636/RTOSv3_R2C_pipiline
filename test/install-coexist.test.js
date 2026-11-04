@@ -110,32 +110,19 @@ function writeReceipt(projectRoot, { projection = 'agent-native', bundle = 'othe
   writeFileSync(path, canonicalJson(receipt));
 }
 
-test('two agent-native bundles with different ids coexist and uninstall independently', (t) => {
+test('two agent-native bundles with bare names conflict instead of overwriting each other', (t) => {
   const projectRoot = tempProject(t);
   const first = sample('agent-native');
   const second = customSample({ projectionId: 'agent-native', compiledWorkflowPatch: { id: 'alpha-flow' } });
 
   assert.equal(install(projectRoot, first).code, 'OK');
-  assert.equal(install(projectRoot, second, { clock: LATER }).code, 'OK');
+  const refused = install(projectRoot, second, { clock: LATER });
+  assert.equal(refused.code, 'INSTALL_CONFLICTS', 'bare skill/role names are not namespaced by bundle id');
 
   const firstReceipt = receiptOf(projectRoot, 'agent-native', 'rtosv3-drvport');
-  const secondReceipt = receiptOf(projectRoot, 'agent-native', 'alpha-flow');
-  const firstPaths = receiptPaths(firstReceipt);
-  const secondPaths = receiptPaths(secondReceipt);
-  assert.equal(firstPaths.length, 98);
-  assert.equal(secondPaths.length, 98);
-  assert.deepEqual(firstPaths.filter((path) => secondPaths.includes(path)), [], 'the <ns> keeps the two identities apart');
-  for (const path of [...firstPaths, ...secondPaths]) {
-    assert.equal(existsSync(absolute(projectRoot, path)), true, `${path} exists`);
+  for (const path of receiptPaths(firstReceipt)) {
+    assert.equal(existsSync(absolute(projectRoot, path)), true, `the first identity keeps ${path}`);
   }
-
-  const removed = uninstallProjection({ projectRoot, projectionId: 'agent-native', bundleId: 'alpha-flow', clock: LATER });
-  assert.equal(removed.code, 'OK');
-  assert.deepEqual(removed.leftover, []);
-  for (const path of firstPaths) {
-    assert.equal(existsSync(absolute(projectRoot, path)), true, `uninstalling alpha-flow keeps ${path}`);
-  }
-  receiptOf(projectRoot, 'agent-native', 'rtosv3-drvport');
   assert.equal(existsSync(absolute(projectRoot, '.hm2b/install/receipts/agent-native/alpha-flow.json')), false);
 });
 

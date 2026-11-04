@@ -7,6 +7,7 @@
  * results.
  */
 import { compileBundle } from '../assembler/compile.js';
+import { readZip, writeZip } from '../assembler/zip.js';
 import { BUNDLE_ID_MAX, isValidId } from '../assembler/ids.js';
 import { LIMITS } from '../assembler/limits.js';
 import { isPlainObject } from '../assembler/util.js';
@@ -57,6 +58,30 @@ export function parseBuildBody(body) {
     return webError(400, 'WEB_BODY_INVALID', 'options must be an object keyed by projection id');
   }
   return { uploadId: body.uploadId, options: body.options ?? null, compiledWorkflowDigest: body.compiledWorkflowDigest };
+}
+
+/**
+ * Rewrite only the bundle manifest version, keeping every other entry byte for
+ * byte. The caller recompiles the result, so the compiled workflow's source
+ * hash and version both describe the new release.
+ */
+export function rewriteBundleVersion(bytes, version) {
+  if (!isValidVersion(version) || String(version).includes('+')) return null;
+  const read = readZip(bytes, { inflateRaw });
+  if (!read.ok) return null;
+  const files = [...read.entries.values()].map((entry) => ({ path: entry.path, data: entry.data }));
+  const index = files.findIndex((file) => file.path === 'bundle.json');
+  if (index < 0) return null;
+  let manifest;
+  try {
+    manifest = JSON.parse(new TextDecoder().decode(files[index].data));
+  } catch {
+    return null;
+  }
+  if (manifest === null || typeof manifest !== 'object') return null;
+  manifest.version = version;
+  files[index] = { path: 'bundle.json', data: new TextEncoder().encode(`${JSON.stringify(manifest, null, 2)}\n`) };
+  return writeZip(files);
 }
 
 export async function runValidation(bytes) {
@@ -724,6 +749,7 @@ export function createBuildService({
     uploads,
     builds,
     uploadLimit,
+    rewriteVersion: rewriteBundleVersion,
     touchUpload,
     persistUpload,
     performBuild,

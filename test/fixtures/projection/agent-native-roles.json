@@ -11,13 +11,13 @@
       "roles": [
         {
           "id": "bys-architect",
-          "name": "rtosv3-drvport-bys-architect",
+          "name": "bys-architect",
           "placeholder": true,
           "exposure": "subagent",
           "artifact": {
-            "path": ".claude/agents/rtosv3-drvport-bys-architect.md",
+            "path": ".claude/agents/bys-architect.md",
             "format": "md",
-            "sha256": "1c689ab30c3e4b4aec4f3ee8e04e244b91739b8c36922ae47f6603a43c805dc4"
+            "sha256": "e7d61157b65bc90831d9c1b3927bbe90f7567935c932498375afe6fffbf5837b"
           },
           "fields": {
             "id": {
@@ -51,13 +51,13 @@
         },
         {
           "id": "bys-designer",
-          "name": "rtosv3-drvport-bys-designer",
+          "name": "bys-designer",
           "placeholder": true,
           "exposure": "subagent",
           "artifact": {
-            "path": ".claude/agents/rtosv3-drvport-bys-designer.md",
+            "path": ".claude/agents/bys-designer.md",
             "format": "md",
-            "sha256": "061d1ac313479984538ccb955319a81b66cae44d43890dbb1ed24049fce6ebac"
+            "sha256": "5e948bce384b4d7fb8a1b227aae63cfb9ab05638fbb47901ba502e7e2c1e1c8c"
           },
           "fields": {
             "id": {
@@ -91,13 +91,13 @@
         },
         {
           "id": "bys-impl-lead",
-          "name": "rtosv3-drvport-bys-impl-lead",
+          "name": "bys-impl-lead",
           "placeholder": true,
           "exposure": "subagent",
           "artifact": {
-            "path": ".claude/agents/rtosv3-drvport-bys-impl-lead.md",
+            "path": ".claude/agents/bys-impl-lead.md",
             "format": "md",
-            "sha256": "c5c60bc295103fb137e99a06b371b87524bac6572b4529be529ff9b4d4f93caf"
+            "sha256": "a7b020c3899dec0b0c2c721a27477806e4fbecee4a613c6b18b0917a2767c20f"
           },
           "fields": {
             "id": {
@@ -131,13 +131,13 @@
         },
         {
           "id": "bys-release-lead",
-          "name": "rtosv3-drvport-bys-release-lead",
+          "name": "bys-release-lead",
           "placeholder": true,
           "exposure": "subagent",
           "artifact": {
-            "path": ".claude/agents/rtosv3-drvport-bys-release-lead.md",
+            "path": ".claude/agents/bys-release-lead.md",
             "format": "md",
-            "sha256": "b2f621c5babee8492da63b7c5b6e39517efa1a03c78ef65fd1d7481aaaa9d279"
+            "sha256": "fc548b3965fd3a19eee4619113e7d8a31fba07111e46bbe26b16dadf0312fa14"
           },
           "fields": {
             "id": {
@@ -183,13 +183,13 @@
       "roles": [
         {
           "id": "bys-architect",
-          "name": "rtosv3-drvport-bys-architect",
+          "name": "bys-architect",
           "placeholder": true,
           "exposure": "subagent",
           "artifact": {
-            "path": ".codex/agents/rtosv3-drvport-bys-architect.toml",
+            "path": ".codex/agents/bys-architect.toml",
             "format": "toml",
-            "sha256": "8c9da9ed40dda49dacf2072f5eebaa78bf16999de1dcaad60d5283a204f0f3bd"
+            "sha256": "ca7831924123b85810bd5557c1df444e7318892b9a5709ffeeeb0b97f537c20b"
           },
           "fields": {
             "id": {
@@ -224,13 +224,13 @@
         },
         {
           "id": "bys-designer",
-          "name": "rtosv3-drvport-bys-designer",
+          "name": "bys-designer",
           "placeholder": true,
           "exposure": "subagent",
           "artifact": {
-            "path": ".codex/agents/rtosv3-drvport-bys-designer.toml",
+            "path": ".codex/agents/bys-designer.toml",
             "format": "toml",
-            "sha256": "2747f7cedf0eaf3d1cf11e6b1f9e4468f6c7fffd411c529e6b8f2fcf863bf1ba"
+            "sha256": "1770f037ad30d6f4a2cef1de3c0cf2c553cdd3ca77d24780c17fc12698fa3aaf"
           },
           "fields": {
             "id": {
@@ -265,13 +265,13 @@
         },
         {
           "id": "bys-impl-lead",
-          "name": "rtosv3-drvport-bys-impl-lead",
+          "name": "bys-impl-lead",
           "placeholder": true,
           "exposure": "subagent",
           "artifact": {
-            "path": ".codex/agents/rtosv3-drvport-bys-impl-lead.toml",
+            "path": ".codex/agents/bys-impl-lead.toml",
             "format": "toml",
-            "sha256": "8e9249c147be284b841201c5416dd8d6209d980afe7ad3b8600d1188e31535fe"
+            "sha256": "699bdfbefba0d9d7b991d8268964e662a35bb0234d2f00aa1d110b94154f0b58"
           },
           "fields": {
             "id": {
@@ -306,13 +306,13 @@
         },
         {
           "id": "bys-release-lead",
-          "name": "rtosv3-drvport-bys-release-lead",
+          "name": "bys-release-lead",
           "placeholder": true,
           "exposure": "subagent",
           "artifact": {
-            "path": ".codex/agents/rtosv3-drvport-bys-release-lead.toml",
+            "path": ".codex/agents/bys-release-lead.toml",
             "format": "toml",
-            "sha256": "b0365bca01634865717de621348b79e6f4b4a50fc25571ef0e1c3fdaff2ae445"
+            "sha256": "c79bd1e98f67806e3e3d4587925da755819ab32dd10d6bd1b93311c7cc1247ba"
           },
           "fields": {
             "id": {
@@ -359,13 +359,13 @@
       "roles": [
         {
           "id": "bys-architect",
-          "name": "rtosv3-drvport-bys-architect",
+          "name": "bys-architect",
           "placeholder": true,
           "exposure": "subagent",
           "artifact": {
-            "path": ".dsh/agent-native/rtosv3-drvport.roles.md",
+            "path": ".dsh/agent-native/roles.md",
             "format": "md",
-            "sha256": "3ec5e2a357d3587b683890c239e050c372baca8d5b089c9fa18c9cf923255809"
+            "sha256": "11d6bc9ed0dc17fc7e6139d9429696cfdb6fc419e9a9126af74f4aa53ff3d8a8"
           },
           "fields": {
             "id": {
@@ -400,13 +400,13 @@
         },
         {
           "id": "bys-designer",
-          "name": "rtosv3-drvport-bys-designer",
+          "name": "bys-designer",
           "placeholder": true,
           "exposure": "subagent",
           "artifact": {
-            "path": ".dsh/agent-native/rtosv3-drvport.roles.md",
+            "path": ".dsh/agent-native/roles.md",
             "format": "md",
-            "sha256": "3ec5e2a357d3587b683890c239e050c372baca8d5b089c9fa18c9cf923255809"
+            "sha256": "11d6bc9ed0dc17fc7e6139d9429696cfdb6fc419e9a9126af74f4aa53ff3d8a8"
           },
           "fields": {
             "id": {
@@ -441,13 +441,13 @@
         },
         {
           "id": "bys-impl-lead",
-          "name": "rtosv3-drvport-bys-impl-lead",
+          "name": "bys-impl-lead",
           "placeholder": true,
           "exposure": "subagent",
           "artifact": {
-            "path": ".dsh/agent-native/rtosv3-drvport.roles.md",
+            "path": ".dsh/agent-native/roles.md",
             "format": "md",
-            "sha256": "3ec5e2a357d3587b683890c239e050c372baca8d5b089c9fa18c9cf923255809"
+            "sha256": "11d6bc9ed0dc17fc7e6139d9429696cfdb6fc419e9a9126af74f4aa53ff3d8a8"
           },
           "fields": {
             "id": {
@@ -482,13 +482,13 @@
         },
         {
           "id": "bys-release-lead",
-          "name": "rtosv3-drvport-bys-release-lead",
+          "name": "bys-release-lead",
           "placeholder": true,
           "exposure": "subagent",
           "artifact": {
-            "path": ".dsh/agent-native/rtosv3-drvport.roles.md",
+            "path": ".dsh/agent-native/roles.md",
             "format": "md",
-            "sha256": "3ec5e2a357d3587b683890c239e050c372baca8d5b089c9fa18c9cf923255809"
+            "sha256": "11d6bc9ed0dc17fc7e6139d9429696cfdb6fc419e9a9126af74f4aa53ff3d8a8"
           },
           "fields": {
             "id": {
@@ -535,13 +535,13 @@
       "roles": [
         {
           "id": "bys-architect",
-          "name": "rtosv3-drvport-bys-architect",
+          "name": "bys-architect",
           "placeholder": true,
           "exposure": "subagent",
           "artifact": {
-            "path": ".omp/agents/rtosv3-drvport-bys-architect.md",
+            "path": ".omp/agents/bys-architect.md",
             "format": "md",
-            "sha256": "adf799b37a3e0b904109d930d259e3e8578e45cc57937c4bc65e8a4ade1b3cee"
+            "sha256": "7c3d5035a1d6b2ce31dc235378d21b62450161353725e7951fb452b3b45873c7"
           },
           "fields": {
             "id": {
@@ -575,13 +575,13 @@
         },
         {
           "id": "bys-designer",
-          "name": "rtosv3-drvport-bys-designer",
+          "name": "bys-designer",
           "placeholder": true,
           "exposure": "subagent",
           "artifact": {
-            "path": ".omp/agents/rtosv3-drvport-bys-designer.md",
+            "path": ".omp/agents/bys-designer.md",
             "format": "md",
-            "sha256": "62dbe92405a8109bde8e58926bff6c54771fdfffff62558a4363dcd4b211c105"
+            "sha256": "d815d3a58ea2ab4f4062a463cf92bfcd533b8d3d81ba4b99315ab85b5600d7b1"
           },
           "fields": {
             "id": {
@@ -615,13 +615,13 @@
         },
         {
           "id": "bys-impl-lead",
-          "name": "rtosv3-drvport-bys-impl-lead",
+          "name": "bys-impl-lead",
           "placeholder": true,
           "exposure": "subagent",
           "artifact": {
-            "path": ".omp/agents/rtosv3-drvport-bys-impl-lead.md",
+            "path": ".omp/agents/bys-impl-lead.md",
             "format": "md",
-            "sha256": "8544abe18bbeed178bfbd08cd8c827015ad0c4e1a6dba8ddf5b22930ab48afc1"
+            "sha256": "fe7f2814ebab4833f3aabe4dcab01d132de647cd7bc34fe8a1f2a857aa5e598e"
           },
           "fields": {
             "id": {
@@ -655,13 +655,13 @@
         },
         {
           "id": "bys-release-lead",
-          "name": "rtosv3-drvport-bys-release-lead",
+          "name": "bys-release-lead",
           "placeholder": true,
           "exposure": "subagent",
           "artifact": {
-            "path": ".omp/agents/rtosv3-drvport-bys-release-lead.md",
+            "path": ".omp/agents/bys-release-lead.md",
             "format": "md",
-            "sha256": "d7244a17980b06a97a635d5f8556a3b0508f93deac07d55d81d60a5fa04c1c43"
+            "sha256": "89db87bd699b62699e25d961a609941e0153af9d08c5236daa6405111602d347"
           },
           "fields": {
             "id": {
@@ -707,11 +707,11 @@
       "roles": [
         {
           "id": "bys-architect",
-          "name": "rtosv3-drvport-bys-architect",
+          "name": "bys-architect",
           "placeholder": true,
           "exposure": "subagent",
           "artifact": {
-            "path": ".opencode/agents/rtosv3-drvport-bys-architect.md",
+            "path": ".opencode/agents/bys-architect.md",
             "format": "md",
             "sha256": "caa5393db87cb14e97a12b5f26f34cad52cfb30d1b702de608eb660d15563bae"
           },
@@ -748,11 +748,11 @@
         },
         {
           "id": "bys-designer",
-          "name": "rtosv3-drvport-bys-designer",
+          "name": "bys-designer",
           "placeholder": true,
           "exposure": "subagent",
           "artifact": {
-            "path": ".opencode/agents/rtosv3-drvport-bys-designer.md",
+            "path": ".opencode/agents/bys-designer.md",
             "format": "md",
             "sha256": "e9545bb6aaaa4923a1c7cd6624cfeee1e4fe35c9c86f8763ba8e86882ba14dda"
           },
@@ -789,11 +789,11 @@
         },
         {
           "id": "bys-impl-lead",
-          "name": "rtosv3-drvport-bys-impl-lead",
+          "name": "bys-impl-lead",
           "placeholder": true,
           "exposure": "subagent",
           "artifact": {
-            "path": ".opencode/agents/rtosv3-drvport-bys-impl-lead.md",
+            "path": ".opencode/agents/bys-impl-lead.md",
             "format": "md",
             "sha256": "bb157589b52e23d94e11a8dfca29d86f4a1abdc05a79729d774e5a807307931d"
           },
@@ -830,11 +830,11 @@
         },
         {
           "id": "bys-release-lead",
-          "name": "rtosv3-drvport-bys-release-lead",
+          "name": "bys-release-lead",
           "placeholder": true,
           "exposure": "subagent",
           "artifact": {
-            "path": ".opencode/agents/rtosv3-drvport-bys-release-lead.md",
+            "path": ".opencode/agents/bys-release-lead.md",
             "format": "md",
             "sha256": "06178969e1a1496d4c36e6ca08c9dc3c6bb645f7afefbfd7505257dc6e6435ea"
           },

@@ -43,7 +43,7 @@ const CAPABILITIES = [
   'stage-invocation', 'skill-invocation',
 ];
 const NS = 'rtosv3-drvport';
-const CATALOGUE = `.dsh/agent-native/${NS}.roles.md`;
+const CATALOGUE = '.dsh/agent-native/roles.md';
 const BANNER = [
   `# agent-native · ${NS} · dsh 角色目录`,
   '',
@@ -186,7 +186,7 @@ test('the catalogue has the fixed banner and one section per role in role-id ord
 
   assert.ok(file.content.startsWith(`${BANNER}\n\n`), 'fixed banner');
   const roleIds = Object.keys(compiledWorkflow.roles).sort();
-  const headings = roleIds.map((id) => `## ${NS}-${id}\n`);
+  const headings = roleIds.map((id) => `## ${id}\n`);
   let cursor = file.content.indexOf(BANNER) + BANNER.length;
   for (const [index, roleId] of roleIds.entries()) {
     const role = compiledWorkflow.roles[roleId];
@@ -241,17 +241,17 @@ test('role bodies stay byte-verbatim (awkward whitespace, placeholders)', () => 
   const compiledWorkflow = miniCompiledWorkflow({ roles });
   const result = runProject({ compiledWorkflow, compiledWorkflowDigest: 'f'.repeat(64), raw: { targets: ['dsh'] } });
   assert.equal(result.ok, true);
-  const content = result.files.find((file) => file.path === '.dsh/agent-native/mini.roles.md').content;
+  const content = result.files.find((file) => file.path === '.dsh/agent-native/roles.md').content;
   const sections = content.split('\n## ').slice(1);
   assert.deepEqual(sections.map((section) => section.split('\n')[0]), [
-    'mini-alpha', 'mini-beta', 'mini-gamma',
+    'alpha', 'beta', 'gamma',
   ]);
   assert.ok(content.includes(roles.alpha.instructions));
   assert.ok(content.includes(placeholderInstructions('beta')));
   assert.ok(content.includes(roles.gamma.instructions));
   assert.equal(content.includes(roles.beta.instructions), false, 'the draft placeholder body is replaced');
   for (const record of Object.entries(result.metadata.idMap?.dsh?.roles ?? {})) {
-    assert.equal(record[1], `mini-${record[0]}`);
+    assert.equal(record[1], record[0]);
   }
 });
 
@@ -260,7 +260,7 @@ test('R = 0 produces no catalogue but still emits roles.json', () => {
   const result = runProject({ compiledWorkflow, compiledWorkflowDigest: 'f'.repeat(64), raw: { targets: ['dsh'] } });
   assert.equal(result.ok, true);
   assert.equal(result.files.some((file) => file.path.endsWith('.roles.md')), false);
-  assert.equal(result.files.some((file) => file.path === '.dsh/agent-native/mini.roles.md'), false);
+  assert.equal(result.files.some((file) => file.path === '.dsh/agent-native/roles.md'), false);
   assert.deepEqual(result.files.map((file) => file.path).filter((path) => path.startsWith('.dsh/')), []);
   const rolesJson = result.files.find((file) => file.path === '.agents/agent-native/mini/roles.json');
   assert.ok(rolesJson);
