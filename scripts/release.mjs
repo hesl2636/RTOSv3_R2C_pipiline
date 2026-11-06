@@ -70,9 +70,11 @@ function usage(message) {
     'usage: node scripts/release.mjs [--out DIR] | --check [--out DIR] | --compat\n'
     + '       node scripts/release.mjs --bundle <zip|dir> --out DIR [--tag TAG] [--options FILE] [--json]\n'
     + '       node scripts/release.mjs --bundle <zip|dir> --check [--out DIR] [--tag TAG]\n'
-    + '       node scripts/release.mjs --bundle <zip|dir> --publish [--out DIR] [--tag TAG] [--commit SHA] [--json]\n'
-    + '       node scripts/release.mjs --publish --out <built-dir> [--tag TAG] [--commit SHA] [--json]\n'
+    + '       node scripts/release.mjs --bundle <zip|dir> --publish [--out DIR] [--tag TAG] [--commit SHA] [--allow-published] [--json]\n'
+    + '       node scripts/release.mjs --publish --out <built-dir> [--tag TAG] [--commit SHA] [--allow-published] [--json]\n'
     + '       --out must already hold a build; publishing never re-projects or re-packs.\n'
+    + '       --allow-published turns an already published tag into a successful no-op:\n'
+    + '       the published assets are never rewritten and a differing build is reported as a note.\n'
     + '       --publish reads GH_TOKEN/GITHUB_TOKEN from the launch environment; it never prompts.\n'
     + '       GH_REPO and HM2B_GITHUB_API are operator settings (default: ' + DEFAULT_RELEASE_REPO + ', '
     + GITHUB_API_BASE + ').\n',
@@ -92,6 +94,7 @@ function parseArgs(argv) {
     json: false,
     publish: false,
     commit: null,
+    allowPublished: false,
   };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
@@ -108,6 +111,7 @@ function parseArgs(argv) {
       options.tag = value;
       index += 1;
     } else if (arg === '--publish') options.publish = true;
+    else if (arg === '--allow-published') options.allowPublished = true;
     else if (arg === '--commit') {
       const value = argv[index + 1];
       if (value === undefined || value.startsWith('--')) usage('--commit requires a commit sha');
@@ -139,6 +143,7 @@ function parseArgs(argv) {
     usage('--json only applies to a bundle build or publish');
   }
   if (options.commit !== null && !options.publish) usage('--commit only applies to --publish');
+  if (options.allowPublished && !options.publish) usage('--allow-published only applies to --publish');
   if (options.publish && options.check) usage('--publish and --check are mutually exclusive');
   if (options.publish && options.bundle === null && !options.outSet) {
     usage('--publish without --bundle requires --out <built-dir>');
@@ -715,6 +720,7 @@ async function publishBundleCli(options) {
     plan,
     assets,
     targetCommitish: commit,
+    reusePublished: options.allowPublished,
     onPhase: options.json
       ? (phase) => emitJsonLine({ event: 'phase', phase })
       : (phase) => process.stdout.write(`phase ${phase}\n`),
@@ -743,6 +749,12 @@ async function publishBundleCli(options) {
     const hint = RECOVERY_HINT[published.recovery];
     if (hint !== undefined) process.stderr.write(`recovery: ${hint}\n`);
     process.exit(1);
+  }
+  if (published.state === 'ALREADY_PUBLISHED') {
+    process.stdout.write(
+      `already published ${published.tag} (release ${String(published.releaseId)}): nothing was uploaded, patched or deleted\n`,
+    );
+    return;
   }
   process.stdout.write(
     `published ${published.tag}: ${plan.assets.length} assets (release ${String(published.releaseId)})\n`,

@@ -15,7 +15,7 @@
  */
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -330,6 +330,92 @@ test('a same-name upload with identical bytes resumes instead of failing', async
   assert.equal(fixture.release(TAG).draft, false);
 });
 
+test('reusePublished turns an identical published tag into a no-op success', async (t) => {
+  const { plan, assets } = buildLocal();
+  for (const withDigest of [true, false]) {
+    const fixture = await startGithubFixture(t, {
+      repo: REPO,
+      withDigest,
+      releases: [{ tag: TAG, assets: assets.map((asset) => ({ name: asset.name, data: asset.data })) }],
+    });
+
+    const result = await publishBundle({
+      client: clientFor(fixture),
+      repo: REPO,
+      plan,
+      assets,
+      targetCommitish: COMMIT,
+      reusePublished: true,
+    });
+
+    assert.equal(result.ok, true, `${String(withDigest)}: ${result.failures.join('; ')}`);
+    assert.equal(result.state, 'ALREADY_PUBLISHED');
+    assert.equal(result.published, true);
+    assert.equal(result.releaseId, 1);
+    assert.deepEqual(result.failures, []);
+    assert.deepEqual(result.cleanup, { draftDeleted: false, tagDeleted: false });
+    assert.deepEqual(result.transitions, ['PRECHECK']);
+    assert.deepEqual(fixture.calls.filter((call) => call.method !== 'GET'), []);
+    assert.equal(fixture.assets(TAG).length, assets.length, 'the published asset set is untouched');
+  }
+});
+
+test('reusePublished reports a differing build without touching the release', async (t) => {
+  const { plan, assets } = buildLocal();
+  const tampered = assets.map((asset) => (
+    asset.name === 'install.mjs' ? { name: asset.name, data: Buffer.from('// INSTALL\n', 'utf8') } : { name: asset.name, data: asset.data }
+  ));
+  const fixture = await startGithubFixture(t, {
+    repo: REPO,
+    releases: [{ tag: TAG, assets: tampered }],
+  });
+
+  const result = await publishBundle({
+    client: clientFor(fixture),
+    repo: REPO,
+    plan,
+    assets,
+    targetCommitish: COMMIT,
+    reusePublished: true,
+  });
+
+  assert.equal(result.ok, true, result.failures.join('; '));
+  assert.equal(result.state, 'ALREADY_PUBLISHED');
+  assert.equal(result.published, true);
+  assert.equal(result.recovery, null);
+  assert.deepEqual(result.failures, []);
+  assert.match(result.notes.join(' '), /stays as published; this build differs: install\.mjs is sha256:/);
+  assert.match(result.notes.join(' '), /bump the version and push a new bundle tag/);
+  assert.deepEqual(fixture.calls.filter((call) => call.method !== 'GET'), []);
+  assert.deepEqual(
+    fixture.assets(TAG).map((asset) => [asset.name, sha256Hex(asset.data)]),
+    tampered.map((asset) => [asset.name, sha256Hex(asset.data)]),
+    'the published bytes stay as published',
+  );
+});
+
+test('reusePublished reports a different asset set without touching the release', async (t) => {
+  const { plan, assets } = buildLocal();
+  const fixture = await startGithubFixture(t, {
+    repo: REPO,
+    releases: [{ tag: TAG, assets: [{ name: 'install.mjs', data: Buffer.from('// install\n', 'utf8') }] }],
+  });
+
+  const result = await publishBundle({
+    client: clientFor(fixture),
+    repo: REPO,
+    plan,
+    assets,
+    targetCommitish: COMMIT,
+    reusePublished: true,
+  });
+
+  assert.equal(result.ok, true, result.failures.join('; '));
+  assert.equal(result.state, 'ALREADY_PUBLISHED');
+  assert.match(result.notes.join(' '), /the release holds \[install\.mjs\], this build produces \[/);
+  assert.deepEqual(fixture.calls.filter((call) => call.method !== 'GET'), []);
+});
+
 test('an already published version is never moved, deleted or rebuilt', async (t) => {
   const { plan, assets } = buildLocal();
   const fixture = await startGithubFixture(t, {
@@ -461,11 +547,11 @@ function writeBuiltRelease(t, options = null, repo = undefined) {
   return { dir, result };
 }
 
-async function publishBuiltRelease(dir, fixture) {
+async function publishBuiltRelease(dir, fixture, extra = []) {
   return new Promise((resolveChild, rejectChild) => {
     const child = spawn(
       process.execPath,
-      ['scripts/release.mjs', '--publish', '--out', dir, '--commit', COMMIT, '--json'],
+      ['scripts/release.mjs', '--publish', '--out', dir, '--commit', COMMIT, ...extra, '--json'],
       {
         cwd: ROOT,
         env: { ...process.env, GH_TOKEN: TOKEN, GH_REPO: fixture.repo, HM2B_GITHUB_API: fixture.origin },
@@ -508,6 +594,37 @@ test('--publish --out preserves bytes and publishes when the pinned repository m
     assert.deepEqual(readFileSync(join(built.dir, asset.name)), asset.data, `${asset.name} must stay frozen`);
     const upload = uploadCalls(fixture).find((call) => new URL(call.url, fixture.origin).searchParams.get('name') === asset.name);
     assert.deepEqual(upload?.body, asset.data, `${asset.name} uploads the built bytes`);
+  }
+});
+
+test('--allow-published only applies to --publish', () => {
+  const result = spawnSync(
+    process.execPath,
+    ['scripts/release.mjs', '--bundle', SAMPLE_ZIP, '--check', '--allow-published'],
+    { cwd: ROOT, encoding: 'utf8' },
+  );
+  assert.equal(result.status, 2);
+  assert.match(result.stderr, /--allow-published only applies to --publish/);
+});
+
+test('--publish --allow-published exits 0 and rewrites nothing when the release matches', async (t) => {
+  const built = writeBuiltRelease(t, null, REPO);
+  const fixture = await startGithubFixture(t, { repo: REPO });
+  const names = readdirSync(built.dir).sort();
+  fixture.addRelease({
+    tag: TAG,
+    assets: names.map((name) => ({ name, data: readFileSync(join(built.dir, name)) })),
+  });
+
+  const result = await publishBuiltRelease(built.dir, fixture, ['--allow-published']);
+  assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+  const final = result.stdout.split('\n').filter((line) => line.startsWith('{')).map((line) => JSON.parse(line))
+    .find((event) => event.event === 'result');
+  assert.equal(final?.state, 'ALREADY_PUBLISHED', result.stdout);
+  assert.equal(final?.ok, true);
+  assert.deepEqual(fixture.calls.filter((call) => call.method !== 'GET'), []);
+  for (const name of names) {
+    assert.deepEqual(fixture.assetData(TAG, name), readFileSync(join(built.dir, name)), `${name} must stay frozen`);
   }
 });
 
