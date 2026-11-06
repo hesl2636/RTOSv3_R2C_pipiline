@@ -22,7 +22,7 @@ import {
   parseBundleTag,
 } from './release-tags.js';
 
-export const DEFAULT_RELEASE_REPO = 'hesl2636/hm2B_drvport_pipiline';
+export const DEFAULT_RELEASE_REPO = 'hesl2636/hm2B_drvport_pipeline';
 export const RELEASE_PAGE_SIZE = 100;
 export const RELEASE_MAX_PAGES = 10;
 const SUMS_LINE = /^([0-9a-f]{64})\s+\*?(.+)$/;

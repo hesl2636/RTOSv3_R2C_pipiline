@@ -45,7 +45,13 @@ import { delimiter, dirname, extname, isAbsolute, join, relative, resolve } from
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { gunzipSync } from 'node:zlib';
 
-const RELEASE_REPO = process.env.GH_REPO?.trim() || 'hesl2636/hm2B_drvport_pipiline';
+/**
+ * Publishing repository used when `GH_REPO` is unset. Exported so a test can
+ * pin it to `installer/release-source.js`'s `DEFAULT_RELEASE_REPO`: this file is
+ * also published as the standalone `install.mjs` asset, so it cannot import it.
+ */
+export const DEFAULT_RELEASE_REPO = 'hesl2636/hm2B_drvport_pipeline';
+const RELEASE_REPO = process.env.GH_REPO?.trim() || DEFAULT_RELEASE_REPO;
 const RELEASE_REPO_RE = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 const DEFAULT_RELEASE_BASE = `https://github.com/${RELEASE_REPO}/releases/download`;
 const GITHUB_API = `https://api.github.com`;

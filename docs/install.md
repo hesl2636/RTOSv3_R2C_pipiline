@@ -26,31 +26,31 @@ commands: `curl.exe` bypasses Windows PowerShell's `curl` alias for
 **OMP (Oh My Pi)**
 
 ```powershell
-curl.exe -fsSL https://github.com/hesl2636/hm2B_drvport_pipiline/releases/download/bundle-rtosv3-drvport-v1.0.0/install | node - --target omp
+curl.exe -fsSL https://github.com/hesl2636/hm2B_drvport_pipeline/releases/download/bundle-rtosv3-drvport-v1.0.0/install | node - --target omp
 ```
 
 **OpenCode**
 
 ```powershell
-curl.exe -fsSL https://github.com/hesl2636/hm2B_drvport_pipiline/releases/download/bundle-rtosv3-drvport-v1.0.0/install | node - --target opencode
+curl.exe -fsSL https://github.com/hesl2636/hm2B_drvport_pipeline/releases/download/bundle-rtosv3-drvport-v1.0.0/install | node - --target opencode
 ```
 
 **Codex**
 
 ```powershell
-curl.exe -fsSL https://github.com/hesl2636/hm2B_drvport_pipiline/releases/download/bundle-rtosv3-drvport-v1.0.0/install | node - --target codex
+curl.exe -fsSL https://github.com/hesl2636/hm2B_drvport_pipeline/releases/download/bundle-rtosv3-drvport-v1.0.0/install | node - --target codex
 ```
 
 **Claude Code**
 
 ```powershell
-curl.exe -fsSL https://github.com/hesl2636/hm2B_drvport_pipiline/releases/download/bundle-rtosv3-drvport-v1.0.0/install | node - --target claude-code
+curl.exe -fsSL https://github.com/hesl2636/hm2B_drvport_pipeline/releases/download/bundle-rtosv3-drvport-v1.0.0/install | node - --target claude-code
 ```
 
 **dsh**
 
 ```powershell
-curl.exe -fsSL https://github.com/hesl2636/hm2B_drvport_pipiline/releases/download/bundle-rtosv3-drvport-v1.0.0/install | node - --target dsh
+curl.exe -fsSL https://github.com/hesl2636/hm2B_drvport_pipeline/releases/download/bundle-rtosv3-drvport-v1.0.0/install | node - --target dsh
 ```
 
 Each agent command installs agent-native skills and roles for that host. An
@@ -61,7 +61,7 @@ than enforced by a runner.
 ### Runner: managed workflow, all supported hosts
 
 ```powershell
-curl.exe -fsSL https://github.com/hesl2636/hm2B_drvport_pipiline/releases/download/bundle-rtosv3-drvport-v1.0.0/install | node - --projection runner
+curl.exe -fsSL https://github.com/hesl2636/hm2B_drvport_pipeline/releases/download/bundle-rtosv3-drvport-v1.0.0/install | node - --projection runner
 ```
 
 Runner records progress, controls step order and enforces output/gate checks.
@@ -84,6 +84,11 @@ fetches private assets through the GitHub API and verifies its pinned
 pins the launcher and its installer to that publishing repository.
 Use the same `GH_REPO` when publishing an existing build directory; a different
 repository is rejected before any GitHub write and requires a rebuild.
+
+A build directory produced before the 2026-11 repository rename still pins the
+old name in its launcher, so publishing it now fails with
+`RELEASE_REPOSITORY_MISMATCH`. Rebuild it from the tag, or publish it as the
+repository it was built for: `GH_REPO=hesl2636/hm2B_drvport_pipiline`.
 
 If the tag is already published, do not reuse it: type the next patch (for
 example `1.0.1`) into the web page's **版本** field before uploading. The server

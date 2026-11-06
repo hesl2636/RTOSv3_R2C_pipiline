@@ -10,12 +10,13 @@ import { fileURLToPath } from 'node:url';
 import { runInNewContext } from 'node:vm';
 import { canonicalJson } from '../core/canonical-json.js';
 import { buildBundleRelease } from '../scripts/lib/bundle-release.mjs';
+import { DEFAULT_RELEASE_REPO } from '../installer/release-source.js';
 import { installCommands } from '../web/build.js';
 import { MINIMAL_MANIFEST, minimalZip } from './helpers/minimal-bundle.js';
 
 const ROOT = fileURLToPath(new URL('../', import.meta.url));
 const SAMPLE = path.join(ROOT, 'examples/rtosv3/dist/bundle-rtosv3-drvport-v1.0.0.zip');
-const GITHUB = 'https://api.github.com/repos/hesl2636/hm2B_drvport_pipiline';
+const GITHUB = `https://api.github.com/repos/${DEFAULT_RELEASE_REPO}`;
 let sampleRelease;
 
 function sample() {
@@ -351,7 +352,7 @@ test('the generated per-agent commands install only their selected host through 
   const launcher = built.assets.find((asset) => asset.name === 'install').data;
   const hostRoots = { 'claude-code': '.claude', codex: '.codex', dsh: '.dsh', omp: '.omp', opencode: '.opencode' };
   const install = installCommands({
-    id: 'rtosv3-drvport', version: '1.0.0', publishable: true, repo: 'hesl2636/hm2B_drvport_pipiline',
+    id: 'rtosv3-drvport', version: '1.0.0', publishable: true, repo: DEFAULT_RELEASE_REPO,
     projections: [{ id: 'runner', targets: ['runner'] }, { id: 'agent-native', targets: Object.keys(hostRoots) }],
   });
   const env = { ...process.env };

@@ -10,10 +10,10 @@ product, and `FILES.sha256` covers every file in `bundle/`.
 - On 2026-11-02 that repository was unavailable: `gh api repos/hesl2636/RTOSv3_R2C_pipline`
   and `git ls-remote` both returned Not Found, and a public search found no
   repository with that name.
-- The sample is therefore vendored from the `pack/` tree of
-  `hm2B_drvport_pipiline` at commit `66252455d8d0b9da649f46af1692314dffced948`
-  (`pack@6625245`). The same commit provides 4 tasks, 35 skills and the
-  4-stage workflow.
+- The sample is therefore vendored from the `pack/` tree of this repository at
+  commit `66252455d8d0b9da649f46af1692314dffced948` (`pack@6625245`, from
+  before the 2026-11 rename that corrected the *pipeline* spelling). The same
+  commit provides 4 tasks, 35 skills and the 4-stage workflow.
 - `pack/` is unchanged by this example; `bundle/` is the migrated, bundle-shaped
   copy. If the upstream repository becomes available, re-baseline deliberately
   and bump the bundle version.

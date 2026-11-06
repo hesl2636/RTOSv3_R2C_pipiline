@@ -68,13 +68,13 @@ function tempRoot(t) {
   return { root, outside };
 }
 
-/** The shipped default manifest (4 stages, one prompt step each) in a temp project. */
+/** The example bundle's 4-stage manifest (one prompt step per stage) in a temp project. */
 function defaultProject(t) {
   const project = tempRoot(t);
   const bundle = JSON.parse(readFileSync(join(BUNDLE, 'bundle.json'), 'utf8'));
   const manifest = {
     schema: 'hm2b.workflow/v1',
-    id: 'hm2B_drvport_pipiline',
+    id: 'fixture-workflow',
     name: bundle.name,
     version: bundle.version,
     description: bundle.description,
@@ -97,7 +97,7 @@ function defaultProject(t) {
   };
   mkdirSync(join(project.root, 'workflows'), { recursive: true });
   writeFileSync(
-    join(project.root, 'workflows', 'hm2B_drvport_pipiline.yaml'),
+    join(project.root, 'workflows', 'fixture-workflow.yaml'),
     `${JSON.stringify(manifest, null, 2)}\n`,
   );
   cpSync(join(BUNDLE, 'tasks'), join(project.root, 'tasks'), { recursive: true });
