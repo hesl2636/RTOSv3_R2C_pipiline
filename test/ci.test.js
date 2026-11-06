@@ -64,9 +64,10 @@ test('ci runs the node matrix, tests, bundle check and release gate', () => {
 
 test('release publishes bundle tags only, through the bundle channel', () => {
   const release = workflow('release.yml');
-  assert.match(release, /--bundle examples\/rtosv3\/dist\/bundle-rtosv3-drvport-v1\.0\.0\.zip/);
+  assert.match(release, /--bundle "examples\/rtosv3\/dist\/\$\{GITHUB_REF_NAME\}\.zip"/);
+  assert.doesNotMatch(release, /bundle-rtosv3-drvport-v\d+\.\d+\.\d+\.zip/, 'the archive must follow the tag, not a pinned version');
   assert.match(release, /--check --tag/);
-  assert.match(release, /--publish --tag/);
+  assert.match(release, /--publish --allow-published --tag/);
   assert.match(release, /GH_TOKEN:/);
   assert.doesNotMatch(release, /r2c-payload-|gh release create|"v\$\{version\}"/);
 });

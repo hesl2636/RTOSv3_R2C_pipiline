@@ -26,11 +26,11 @@ jobs:
         run: node scripts/release.mjs --check
       - name: Check the bundle release for this tag
         run: >-
-          node scripts/release.mjs --bundle examples/rtosv3/dist/bundle-rtosv3-drvport-v1.0.0.zip
+          node scripts/release.mjs --bundle "examples/rtosv3/dist/${GITHUB_REF_NAME}.zip"
           --check --tag "${{ github.ref_name }}"
       - name: Publish the immutable bundle Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: >-
-          node scripts/release.mjs --bundle examples/rtosv3/dist/bundle-rtosv3-drvport-v1.0.0.zip
-          --publish --tag "${{ github.ref_name }}" --commit "${{ github.sha }}"
+          node scripts/release.mjs --bundle "examples/rtosv3/dist/${GITHUB_REF_NAME}.zip"
+          --publish --allow-published --tag "${{ github.ref_name }}" --commit "${{ github.sha }}"

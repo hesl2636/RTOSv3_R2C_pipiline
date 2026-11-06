@@ -132,6 +132,14 @@ step-by-step across the engine, the payload, and all five agent adapters; see
 
 ### Fixed
 
+- The `release` workflow follows its tag instead of a pinned archive
+  (`examples/rtosv3/dist/${GITHUB_REF_NAME}.zip`), so a patch version can be
+  released at all: `bundle-rtosv3-drvport-v1.0.1` used to fail with
+  `RELEASE_TAG_MISMATCH` because the job always published the 1.0.0 zip. The
+  publish step now passes `--allow-published`: re-pushing a tag whose release
+  is already published is a successful no-op that reports the drift as a note
+  and never uploads, patches or deletes anything. Without the flag the publish
+  still fails with `RELEASE_TAG_CONFLICT` (the Web UI keeps that behaviour).
 - Web build failures are diagnosable: the page used to show only
   `stderr`/`log`/`exitCode` from a `--json` child, and that child reports
   packager failures as an `error` event on stdout, so a failed build (for

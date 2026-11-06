@@ -13,7 +13,10 @@
  *   created it, the tag. A failure after publish never rewrites the published
  *   assets: it reports "mark prerelease or publish a new patch".
  * - Same-name uploads are never replaced (422 is final unless the bytes are
- *   already identical); published releases are read-only.
+ *   already identical); published releases are read-only. With
+ *   `reusePublished`, an already published tag is a successful no-op that
+ *   reports drift as a note (a consumed version can never be republished);
+ *   without it the publish fails as an immutable-version conflict.
  * - The token is only ever in the client's `authorization` header; every
  *   string this module returns is redacted.
  */
@@ -58,7 +61,7 @@ function errorLine(error) {
  * @param {{client: {token: string|null, request: Function}, repo: string,
  *          plan: object, assets: Array<{name: string, data: Buffer|Uint8Array}>,
  *          targetCommitish?: string|null, releaseBody?: string|null,
- *          onPhase?: (phase: string) => void}} input
+ *          reusePublished?: boolean, onPhase?: (phase: string) => void}} input
  * @returns {Promise<object>} `{ok, state, published, tag, releaseId,
  *   transitions, trace, failures, notes, cleanup, recovery}`
  */
@@ -69,6 +72,7 @@ export async function publishBundle({
   assets,
   targetCommitish = null,
   releaseBody = null,
+  reusePublished = false,
   onPhase = null,
 } = {}) {
   if (client === null || typeof client !== 'object' || typeof client.request !== 'function') {
@@ -132,6 +136,43 @@ export async function publishBundle({
     const cleanup = await rollback();
     notes.push('nothing was published; the draft was deleted and the version can be reused');
     return finish({ ok: false, state: 'FAILED', published: false, cleanup, recovery: 'retry' });
+  }
+
+  /**
+   * Compare the assets of the published release with this build. Returns
+   * `null` when they are byte for byte identical, otherwise one sentence
+   * naming the first difference. Only reads: the published set is never
+   * touched, so this is diagnostics, not a gate.
+   */
+  async function describePublishedDrift() {
+    const listed = await call('PRECHECK', 'GET', `/repos/${repo}/releases/${releaseId}/assets?per_page=100`);
+    if (!listed.ok || !Array.isArray(listed.data)) {
+      return `the published assets cannot be listed (HTTP ${listed.status})`;
+    }
+    const remote = listed.data.filter((entry) => typeof entry?.name === 'string');
+    const remoteNames = remote.map((entry) => entry.name).sort(compareCodePoints);
+    if (!sameList(remoteNames, localNames)) {
+      return `the release holds [${remoteNames.join(', ')}], this build produces [${localNames.join(', ')}]`;
+    }
+    for (const asset of [...local.values()].sort((left, right) => compareCodePoints(left.name, right.name))) {
+      const entry = remote.find((candidate) => candidate.name === asset.name);
+      if (Number(entry.size) !== asset.size) {
+        return `${asset.name} is ${String(entry.size)} bytes on the release, this build produces ${asset.size}`;
+      }
+      let digest = typeof entry.digest === 'string' && entry.digest !== '' ? entry.digest.toLowerCase() : null;
+      if (digest === null) {
+        const target = typeof entry.url === 'string' && entry.url !== ''
+          ? entry.url
+          : `/repos/${repo}/releases/assets/${entry.id}`;
+        const response = await call('PRECHECK', 'GET', target, { accept: 'application/octet-stream', parse: 'bytes' });
+        if (!response.ok) return `${asset.name} cannot be re-read (HTTP ${response.status})`;
+        digest = `sha256:${sha256Hex(Buffer.from(response.data))}`;
+      }
+      if (digest !== `sha256:${asset.sha256}`) {
+        return `${asset.name} is ${digest} on the release, this build produces sha256:${asset.sha256}`;
+      }
+    }
+    return null;
   }
 
   // ---- PRECHECK ----------------------------------------------------------
@@ -219,6 +260,16 @@ export async function publishBundle({
     if (existing.status === 200 && existing.data?.draft !== true) {
       published = true;
       releaseId = typeof existing.data?.id === 'number' ? existing.data.id : null;
+      if (reusePublished) {
+        const drift = await describePublishedDrift();
+        if (drift === null) {
+          notes.push(`${plan.tag} is already published with the identical asset set; nothing was uploaded, patched or deleted`);
+        } else {
+          notes.push(`${plan.tag} is already published and stays as published; this build differs: ${drift}`);
+          notes.push(`bump the version and push a new bundle tag to publish new bytes; ${plan.tag} is never rewritten`);
+        }
+        return finish({ ok: true, state: 'ALREADY_PUBLISHED', published: true, releaseId });
+      }
       failures.push(`RELEASE_TAG_CONFLICT: ${plan.tag} is already published; release versions are immutable (publish ${String(plan.version)} with a new patch version instead)`);
       notes.push('nothing was uploaded, patched or deleted');
       return finish({ ok: false, state: 'ALREADY_PUBLISHED', published: true, releaseId, recovery: 'new-patch' });
