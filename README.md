@@ -17,8 +17,8 @@ hm2b 把一份声明式工作流 bundle（zip，`hm2b.bundle/v2`）编译成 `wo
 ```powershell
 node --version
 gh auth status
-git clone https://github.com/hesl2636/hm2B_drvport_pipiline.git
-cd hm2b_drvport_pipiline
+git clone https://github.com/hesl2636/hm2B_drvport_pipeline.git
+cd hm2B_drvport_pipeline
 ```
 
 在源码目录安装唯一依赖 `yaml`：执行 `npm ci`。
@@ -26,7 +26,7 @@ cd hm2b_drvport_pipiline
 下文用到的变量：
 
 ```powershell
-$REPO    = "hesl2636/hm2B_drvport_pipiline"
+$REPO    = "hesl2636/hm2B_drvport_pipeline"
 $BUNDLE  = "rtosv3-drvport"
 $VERSION = "1.0.2"      # 每次发布换新号；已发布的版本不能复用
 $TAG     = "bundle-$BUNDLE-v$VERSION"
@@ -63,37 +63,37 @@ node web/serve.mjs
 #### OMP（Oh My Pi）
 
 ```powershell
-curl.exe -fsSL https://github.com/hesl2636/hm2B_drvport_pipiline/releases/download/bundle-rtosv3-drvport-v1.0.0/install | node - --target omp
+curl.exe -fsSL https://github.com/hesl2636/hm2B_drvport_pipeline/releases/download/bundle-rtosv3-drvport-v1.0.0/install | node - --target omp
 ```
 
 #### OpenCode
 
 ```powershell
-curl.exe -fsSL https://github.com/hesl2636/hm2B_drvport_pipiline/releases/download/bundle-rtosv3-drvport-v1.0.0/install | node - --target opencode
+curl.exe -fsSL https://github.com/hesl2636/hm2B_drvport_pipeline/releases/download/bundle-rtosv3-drvport-v1.0.0/install | node - --target opencode
 ```
 
 #### Codex
 
 ```powershell
-curl.exe -fsSL https://github.com/hesl2636/hm2B_drvport_pipiline/releases/download/bundle-rtosv3-drvport-v1.0.0/install | node - --target codex
+curl.exe -fsSL https://github.com/hesl2636/hm2B_drvport_pipeline/releases/download/bundle-rtosv3-drvport-v1.0.0/install | node - --target codex
 ```
 
 #### Claude Code
 
 ```powershell
-curl.exe -fsSL https://github.com/hesl2636/hm2B_drvport_pipiline/releases/download/bundle-rtosv3-drvport-v1.0.0/install | node - --target claude-code
+curl.exe -fsSL https://github.com/hesl2636/hm2B_drvport_pipeline/releases/download/bundle-rtosv3-drvport-v1.0.0/install | node - --target claude-code
 ```
 
 #### dsh
 
 ```powershell
-curl.exe -fsSL https://github.com/hesl2636/hm2B_drvport_pipiline/releases/download/bundle-rtosv3-drvport-v1.0.0/install | node - --target dsh
+curl.exe -fsSL https://github.com/hesl2636/hm2B_drvport_pipeline/releases/download/bundle-rtosv3-drvport-v1.0.0/install | node - --target dsh
 ```
 
 #### runner（完整流程，接入全部支持的工具）
 
 ```powershell
-curl.exe -fsSL https://github.com/hesl2636/hm2B_drvport_pipiline/releases/download/bundle-rtosv3-drvport-v1.0.0/install | node - --projection runner
+curl.exe -fsSL https://github.com/hesl2636/hm2B_drvport_pipeline/releases/download/bundle-rtosv3-drvport-v1.0.0/install | node - --projection runner
 ```
 
 Release 自带的 `install` 启动器固定了 bundle id、版本和允许的投影；它拉取同 tag 的 `install.mjs`，校验安装脚本及资产摘要后安装。

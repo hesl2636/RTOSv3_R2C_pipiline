@@ -43,6 +43,8 @@ import {
   parseBundleTag,
   verifyPayloadArchive,
 } from '../scripts/lib/bundle-release.mjs';
+import { DEFAULT_RELEASE_REPO as FRAMEWORK_RELEASE_REPO } from '../installer/release-source.js';
+import { DEFAULT_RELEASE_REPO as BOOTSTRAP_RELEASE_REPO } from '../scripts/install.mjs';
 import { createReleaseTarGz, readReleaseTarGz } from '../installer/release-tar.js';
 import {
   ASSET_CHECKLISTS,
@@ -622,6 +624,14 @@ test('--bundle requires an explicit --out', () => {
   const result = runRelease(['--bundle', SAMPLE_ZIP]);
   assert.equal(result.status, 2);
   assert.match(result.stderr, /--bundle requires --out/);
+});
+
+test('the published install.mjs defaults to the framework release repository', () => {
+  // scripts/install.mjs ships verbatim as the `install.mjs` asset, so it cannot
+  // import the framework constant; this keeps the two literals from drifting
+  // apart, which a repository rename otherwise silences until install time.
+  assert.equal(BOOTSTRAP_RELEASE_REPO, FRAMEWORK_RELEASE_REPO);
+  assert.match(BOOTSTRAP_RELEASE_REPO, /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/);
 });
 
 test('the bundle CLI builds and checks a launcher pinned to GH_REPO', (t) => {

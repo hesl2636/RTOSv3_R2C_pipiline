@@ -1,6 +1,6 @@
 # Issue tracker: GitHub
 
-Issues and specs for this repo live as GitHub issues in `hesl2636/hm2B_drvport_pipiline`.
+Issues and specs for this repo live as GitHub issues in `hesl2636/hm2B_drvport_pipeline`.
 
 **Canonical**: GitHub issues. No local copy is kept in the repo: `.scratch/` is gitignored and the wayfinder map lives only in issue #1.
 
@@ -23,7 +23,7 @@ The agent host has no `gh` binary. Equivalent: GitHub REST via the credential al
 ```bash
 TOKEN=$(printf 'protocol=https\nhost=github.com\n\n' | git credential fill | sed -n 's/^password=//p')
 curl -s -H "Authorization: Bearer $TOKEN" -H "Accept: application/vnd.github+json" \
-  https://api.github.com/repos/hesl2636/hm2B_drvport_pipiline/issues
+  https://api.github.com/repos/hesl2636/hm2B_drvport_pipeline/issues
 ```
 
 Creating issues/labels, sub-issue links (`POST /issues/<parent>/sub_issues` with `sub_issue_id`) and blocking edges (`POST /issues/<child>/dependencies/blocked_by` with `issue_id`) all work through this API. A git proxy is configured only for `https://github.com`; `api.github.com` is reachable directly.

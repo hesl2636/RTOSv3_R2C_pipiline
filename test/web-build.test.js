@@ -25,6 +25,7 @@ import { normalizeOptions } from '../projection/options.js';
 import { project } from '../projection/project.js';
 import { getProjection } from '../projection/registry.js';
 import { readReleaseTarGz } from '../installer/release-tar.js';
+import { DEFAULT_RELEASE_REPO } from '../installer/release-source.js';
 import { PAYLOAD_MANIFEST_NAME } from '../scripts/lib/bundle-release.mjs';
 import { installCommands } from '../web/build.js';
 import { assetZip } from './helpers/minimal-bundle.js';
@@ -280,14 +281,14 @@ test('canonical build is publishable and matches the CLI projection numbers', as
     ...['claude-code', 'codex', 'dsh', 'omp', 'opencode'].map((target) => ({
       projection: 'agent-native',
       target,
-      command: `curl -fsSL https://github.com/hesl2636/hm2B_drvport_pipiline/releases/download/${TAG}/install | node - --target ${target}`,
-      powershellCommand: `curl.exe -fsSL https://github.com/hesl2636/hm2B_drvport_pipiline/releases/download/${TAG}/install | node - --target ${target}`,
+      command: `curl -fsSL https://github.com/${DEFAULT_RELEASE_REPO}/releases/download/${TAG}/install | node - --target ${target}`,
+      powershellCommand: `curl.exe -fsSL https://github.com/${DEFAULT_RELEASE_REPO}/releases/download/${TAG}/install | node - --target ${target}`,
     })),
     {
       projection: 'runner',
       target: null,
-      command: 'curl -fsSL https://github.com/hesl2636/hm2B_drvport_pipiline/releases/download/bundle-rtosv3-drvport-v1.0.0/install | node - --projection runner',
-      powershellCommand: 'curl.exe -fsSL https://github.com/hesl2636/hm2B_drvport_pipiline/releases/download/bundle-rtosv3-drvport-v1.0.0/install | node - --projection runner',
+      command: `curl -fsSL https://github.com/${DEFAULT_RELEASE_REPO}/releases/download/bundle-rtosv3-drvport-v1.0.0/install | node - --projection runner`,
+      powershellCommand: `curl.exe -fsSL https://github.com/${DEFAULT_RELEASE_REPO}/releases/download/bundle-rtosv3-drvport-v1.0.0/install | node - --projection runner`,
     },
   ]);
 

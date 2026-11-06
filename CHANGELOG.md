@@ -8,6 +8,27 @@ step-by-step across the engine, the payload, and all five agent adapters; see
 
 ### Changed
 
+- Repository rename: the project repository is `hesl2636/hm2B_drvport_pipeline`
+  (the GitHub repo was renamed from `hm2B_drvport_pipiline`, which misspelled
+  *pipeline*). Every surface carries the corrected name now:
+  `DEFAULT_RELEASE_REPO`, the `GH_REPO` fallback in `scripts/install.mjs`,
+  `LICENSE`, `docs/install.md`, `docs/agents/issue-tracker.md`,
+  `examples/rtosv3/README.md`, the runner command asset, the README clone line
+  and the release tests. The old name survives as a GitHub redirect, in this
+  entry, and as the explicit fallback for build directories made before the
+  rename: publishing one now fails with `RELEASE_REPOSITORY_MISMATCH` unless it
+  is rebuilt or published with `GH_REPO=hesl2636/hm2B_drvport_pipiline`.
+- Bootstrap default: `scripts/install.mjs` exports `DEFAULT_RELEASE_REPO`, and a
+  test pins it to the framework's constant. The file ships verbatim as the
+  `install.mjs` asset, so the two literals cannot share an import; the test is
+  what keeps the next rename from drifting.
+- Test cleanup: the unused `dropPayloadManifest` helper is gone, the repair
+  fixture names its workflow after its role instead of the repository, and the
+  web-build and launcher tests derive the repository from
+  `DEFAULT_RELEASE_REPO` rather than a second literal.
+- Docs: the example README dates its vendored `pack@6625245` tree to before the
+  rename, and `hm2b-run`'s description names the workflow, not the repository.
+
 - Rename: the project is `hm2b`, the framework package is `hm2b-framework`, the
   engine package is `hm2b-runner`, and the runtime projection is `runner`. The
   runtime receipt is `hm2b.runtime/v1`, the payload manifest is

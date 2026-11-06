@@ -1,13 +1,12 @@
-/**
+/*
  * Runtime two-step fixture.
  *
- * The repository tracks exactly one `workflows/*.yaml` (the default manifest)
- * and one acceptance fixture yaml, so tests that need a generic project build
- * this one in their temp dir instead of tracking a third copy. Shape matches
- * the old `test/fixtures/two-step`: step-a reads tasks/a.md (skills and MCP
+ * The repository tracks no `workflows/` manifest of its own, so tests that need
+ * a project build this one in their temp dir. Shape matches the old
+ * `test/fixtures/two-step`: step-a reads tasks/a.md (skills and MCP
  * whitelists), step-b is prompt-only with an inline body.
  */
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 export const TWO_STEP_YAML = `schema: hm2b.workflow/v1
@@ -54,12 +53,4 @@ export function writeTwoStepProject(root, { yaml = TWO_STEP_YAML } = {}) {
   writeFileSync(join(root, 'workflows', 'two-step.yaml'), yaml);
   writeFileSync(join(root, 'tasks', 'a.md'), TWO_STEP_TASK);
   return root;
-}
-
-/**
- * Drop the manifest the installer copies into the project root (#40), for
- * fixtures that bring their own workflow: discovery refuses two manifests.
- */
-export function dropPayloadManifest(root) {
-  rmSync(join(root, 'workflows', 'hm2B_drvport_pipiline.yaml'), { force: true });
 }

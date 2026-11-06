@@ -669,7 +669,7 @@ test('an omitted --version resolves the latest bundle release through the releas
   }));
 
   const fixture = await startGithubFixture(t, {
-    repo: 'hesl2636/hm2B_drvport_pipiline',
+    repo: 'hesl2636/hm2B_drvport_pipeline',
     releases: [
       { tag: `bundle-${ID}-v0.9.0`, assets },
       { tag: `bundle-${ID}-v2.0.0`, draft: true, assets },
